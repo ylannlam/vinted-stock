@@ -75,3 +75,8 @@ ALTER TABLE public.items ADD CONSTRAINT items_status_check
 
 -- Ajouter la colonne date d'envoi
 ALTER TABLE public.items ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ;
+
+-- ============================================================
+-- MIGRATION v3 — Colonne lien Shein
+-- ============================================================
+ALTER TABLE public.items ADD COLUMN IF NOT EXISTS shein_url TEXT;

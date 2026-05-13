@@ -6,6 +6,7 @@ const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
 export default function AddItemModal({ categories, onClose, onAdded }) {
   const [category, setCategory] = useState(categories[0])
   const [size, setSize] = useState('M')
+  const [sheinUrl, setSheinUrl] = useState('')
   const [photo, setPhoto] = useState(null)
   const [preview, setPreview] = useState(null)
   const [uploading, setUploading] = useState(false)
@@ -74,7 +75,7 @@ export default function AddItemModal({ categories, onClose, onAdded }) {
 
       const { data, error: insertErr } = await supabase
         .from('items')
-        .insert({ category, size, photo_url: publicUrl, status: 'en_stock' })
+        .insert({ category, size, photo_url: publicUrl, status: 'en_stock', shein_url: sheinUrl.trim() || null })
         .select()
         .single()
       if (insertErr) throw insertErr
@@ -214,6 +215,20 @@ export default function AddItemModal({ categories, onClose, onAdded }) {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Lien Shein */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Lien Shein <span className="text-gray-400 font-normal">(optionnel)</span>
+            </label>
+            <input
+              type="url"
+              value={sheinUrl}
+              onChange={e => setSheinUrl(e.target.value)}
+              placeholder="https://www.shein.com/..."
+              className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            />
           </div>
 
           {error && (

@@ -76,10 +76,27 @@ export default function ItemCard({ item, onMarkSold, onMarkSent, onDelete }) {
         )}
 
         <div className="flex items-center justify-between gap-2">
-          {/* Badge taille */}
-          <span className="text-xs font-semibold text-gray-700 bg-gray-100 px-2.5 py-1 rounded-full flex-shrink-0">
-            {item.size}
-          </span>
+          {/* Badge taille + lien Shein */}
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-xs font-semibold text-gray-700 bg-gray-100 px-2.5 py-1 rounded-full flex-shrink-0">
+              {item.size}
+            </span>
+            {item.shein_url && (
+              <a
+                href={item.shein_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={e => e.stopPropagation()}
+                className="w-6 h-6 flex items-center justify-center rounded-full bg-pink-50 text-pink-500 hover:bg-pink-100 transition-colors flex-shrink-0"
+                aria-label="Voir sur Shein"
+              >
+                <svg className="w-3 h-3 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+              </a>
+            )}
+          </div>
 
           {/* Action selon statut */}
           {isStock && (
