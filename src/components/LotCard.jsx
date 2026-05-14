@@ -11,7 +11,13 @@ export default function LotCard({ items, lotIndex, onMarkSent }) {
       {/* En-tête du lot */}
       <div className="flex items-center gap-2 px-3 py-2 bg-orange-50">
         <span className="text-xs font-bold text-orange-600">Lot {lotIndex}</span>
-        <span className="text-xs text-gray-400">{items.length} article{items.length > 1 ? 's' : ''}</span>
+        <div className="flex items-center gap-1 flex-wrap">
+          {items.map(item => (
+            <span key={item.id} className="text-[10px] font-bold bg-white text-gray-700 px-1.5 py-0.5 rounded-full border border-gray-200">
+              {item.size}
+            </span>
+          ))}
+        </div>
 
         <div className="flex items-center gap-1.5 ml-auto">
           {bordereau_url && (
