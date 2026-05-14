@@ -123,6 +123,15 @@ export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onM
           </button>
         )}
 
+        {/* Taille au centre de la photo — uniquement À envoyer */}
+        {isPending && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <span className="text-2xl font-black text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">
+              {item.size}
+            </span>
+          </div>
+        )}
+
         {/* Bouton édition — bas droite */}
         <button
           onClick={() => onEdit(item)}
