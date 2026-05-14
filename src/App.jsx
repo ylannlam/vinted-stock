@@ -217,7 +217,7 @@ export default function App() {
 
   const filteredItems = (() => {
     if (activeTab === TAB_A_RECEVOIR) return items.filter(i => i.status === 'a_recevoir')
-    if (activeTab === TAB_A_ENVOYER)  return items.filter(i => i.status === 'vendu')
+    if (activeTab === TAB_A_ENVOYER)  return items.filter(i => i.status === 'vendu').sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     if (activeTab === TAB_ENVOYES)    return items.filter(i => i.status === 'envoye')
     const base = activeTab === TAB_TOUT
       ? items.filter(i => i.status === 'en_stock')
