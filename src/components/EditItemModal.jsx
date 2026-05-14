@@ -7,7 +7,11 @@ const initQty = () => Object.fromEntries(SIZES.map(s => [s, 0]))
 export default function EditItemModal({ item, categories, onClose, onUpdated }) {
   const [category, setCategory] = useState(item.category)
   const [size, setSize] = useState(item.size)
-  const [status, setStatus] = useState(item.status === 'a_recevoir' ? 'a_recevoir' : 'en_stock')
+  const isPending = item.status === 'vendu'
+  const [status, setStatus] = useState(
+    item.status === 'a_recevoir' ? 'a_recevoir' :
+    item.status === 'vendu'      ? 'vendu'      : 'en_stock'
+  )
   const [sheinUrl, setSheinUrl] = useState(item.shein_url ?? '')
   const [photo, setPhoto] = useState(null)
   const [preview, setPreview] = useState(item.photo_url)
@@ -194,17 +198,31 @@ export default function EditItemModal({ item, categories, onClose, onUpdated }) 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Statut</label>
             <div className="flex rounded-xl border-2 border-gray-200 overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setStatus('en_stock')}
-                className={`flex-1 py-2 text-sm font-semibold transition-colors ${
-                  status === 'en_stock'
-                    ? 'bg-teal-500 text-white'
-                    : 'bg-white text-gray-500 hover:bg-gray-50'
-                }`}
-              >
-                En stock
-              </button>
+              {isPending ? (
+                <button
+                  type="button"
+                  onClick={() => setStatus('vendu')}
+                  className={`flex-1 py-2 text-sm font-semibold transition-colors ${
+                    status === 'vendu'
+                      ? 'bg-orange-500 text-white'
+                      : 'bg-white text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  À envoyer
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setStatus('en_stock')}
+                  className={`flex-1 py-2 text-sm font-semibold transition-colors ${
+                    status === 'en_stock'
+                      ? 'bg-teal-500 text-white'
+                      : 'bg-white text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  En stock
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setStatus('a_recevoir')}
