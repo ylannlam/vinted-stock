@@ -7,6 +7,7 @@ import CategoryTabs from './components/CategoryTabs'
 import Gallery from './components/Gallery'
 import FilterBar from './components/FilterBar'
 import LotModal from './components/LotModal'
+import LotVenteModal from './components/LotVenteModal'
 import AddItemModal from './components/AddItemModal'
 import EditItemModal from './components/EditItemModal'
 import SoldModal from './components/SoldModal'
@@ -20,6 +21,7 @@ export default function App() {
   const [filterSizes, setFilterSizes] = useState([])
   const [filterCategories, setFilterCategories] = useState([])
   const [showLotModal, setShowLotModal] = useState(false)
+  const [showLotVenteModal, setShowLotVenteModal] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [editItem, setEditItem] = useState(null)
   const [soldItem, setSoldItem] = useState(null)
@@ -130,6 +132,19 @@ export default function App() {
     }
   }
 
+  async function handleLotVente(ids) {
+    const { data, error } = await supabase
+      .from('items')
+      .update({ status: 'vendu' })
+      .in('id', ids)
+      .select()
+    if (error) { alert('Erreur : ' + error.message); return }
+    if (data) {
+      setItems(prev => prev.map(i => data.find(d => d.id === i.id) ?? i))
+      setActiveTab(TAB_A_ENVOYER)
+    }
+  }
+
   async function handleToggleReception(itemId, value) {
     const { data, error } = await supabase
       .from('items').update({ reception_needed: value }).eq('id', itemId).select().single()
@@ -222,6 +237,21 @@ export default function App() {
         items={items}
       />
       {activeTab === TAB_TOUT && (
+        <div className="flex items-center justify-end px-3 py-1.5 bg-white border-b border-gray-100">
+          <button
+            onClick={() => setShowLotVenteModal(true)}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full bg-green-50 text-green-600 hover:bg-green-100 transition-colors"
+          >
+            <svg className="w-3.5 h-3.5 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+            Faire un lot
+          </button>
+        </div>
+      )}
+
+      {activeTab === TAB_TOUT && (
         <FilterBar
           categories={CATEGORIES}
           sizes={filterSizes}
@@ -277,6 +307,14 @@ export default function App() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
           </svg>
         </button>
+      )}
+
+      {showLotVenteModal && (
+        <LotVenteModal
+          items={items.filter(i => i.status === 'en_stock')}
+          onClose={() => setShowLotVenteModal(false)}
+          onConfirm={handleLotVente}
+        />
       )}
 
       {showLotModal && (
