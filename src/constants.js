@@ -9,7 +9,8 @@ export const CATEGORIES = [
   'Top / Autre',
 ]
 
-export const TAB_TOUT        = '__tout__'
-export const TAB_A_RECEVOIR  = '__a_recevoir__'
-export const TAB_A_ENVOYER   = '__a_envoyer__'
-export const TAB_ENVOYES     = '__envoyes__'
+export const TAB_TOUT          = '__tout__'
+export const TAB_A_RECEVOIR    = '__a_recevoir__'
+export const TAB_A_ENVOYER     = '__a_envoyer__'
+export const TAB_A_ENVOYER_LOT = '__a_envoyer_lot__'
+export const TAB_ENVOYES       = '__envoyes__'

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
-import { CATEGORIES, TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_ENVOYES } from './constants'
+import { CATEGORIES, TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES } from './constants'
 import Login from './Login'
 import Header from './components/Header'
 import CategoryTabs from './components/CategoryTabs'
@@ -203,12 +203,13 @@ export default function App() {
 
   if (!user) return <Login />
 
-  const isSpecialTab = activeTab === TAB_TOUT || activeTab === TAB_A_RECEVOIR || activeTab === TAB_A_ENVOYER || activeTab === TAB_ENVOYES
+  const isSpecialTab = activeTab === TAB_TOUT || activeTab === TAB_A_RECEVOIR || activeTab === TAB_A_ENVOYER || activeTab === TAB_A_ENVOYER_LOT || activeTab === TAB_ENVOYES
 
   const filteredItems = (() => {
-    if (activeTab === TAB_A_RECEVOIR) return items.filter(i => i.status === 'a_recevoir')
-    if (activeTab === TAB_A_ENVOYER)  return items.filter(i => i.status === 'vendu').sort((a, b) => new Date(b.sold_at ?? b.created_at) - new Date(a.sold_at ?? a.created_at))
-    if (activeTab === TAB_ENVOYES)    return items.filter(i => i.status === 'envoye')
+    if (activeTab === TAB_A_RECEVOIR)    return items.filter(i => i.status === 'a_recevoir')
+    if (activeTab === TAB_A_ENVOYER)     return items.filter(i => i.status === 'vendu').sort((a, b) => new Date(b.sold_at ?? b.created_at) - new Date(a.sold_at ?? a.created_at))
+    if (activeTab === TAB_A_ENVOYER_LOT) return items.filter(i => i.status === 'vendu' && i.bordereau_url).sort((a, b) => new Date(b.sold_at ?? b.created_at) - new Date(a.sold_at ?? a.created_at))
+    if (activeTab === TAB_ENVOYES)       return items.filter(i => i.status === 'envoye')
     const base = activeTab === TAB_TOUT
       ? items.filter(i => i.status === 'en_stock')
       : items.filter(i => i.category === activeTab && i.status === 'en_stock')
@@ -266,11 +267,11 @@ export default function App() {
         onEdit={setEditItem}
         onToggleReception={handleToggleReception}
         onLotMarkSent={handleLotMarkSent}
-        isPendingTab={activeTab === TAB_A_ENVOYER}
+        isLotTab={activeTab === TAB_A_ENVOYER_LOT}
         showAddHint={!isSpecialTab}
       />
 
-      {(activeTab !== TAB_A_ENVOYER && activeTab !== TAB_ENVOYES) && (
+      {(activeTab !== TAB_A_ENVOYER && activeTab !== TAB_A_ENVOYER_LOT && activeTab !== TAB_ENVOYES) && (
         <button
           onClick={() => setShowAddModal(true)}
           className={`fixed bottom-6 right-5 w-14 h-14 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-105 z-40 ${

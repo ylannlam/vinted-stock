@@ -1,4 +1,4 @@
-import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_ENVOYES } from '../constants'
+import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES } from '../constants'
 
 export default function CategoryTabs({ categories, active, onChange, items }) {
   const aRecevoirCount = items.filter(i => i.status === 'a_recevoir').length
@@ -80,6 +80,14 @@ export default function CategoryTabs({ categories, active, onChange, items }) {
             {aEnvoyerCount > 0 && (
               <span className={badgeClass(active === TAB_A_ENVOYER, 'orange')}>{aEnvoyerCount}</span>
             )}
+          </button>
+
+          {/* Lots */}
+          <button
+            onClick={() => onChange(TAB_A_ENVOYER_LOT)}
+            className={tabClass(active === TAB_A_ENVOYER_LOT, 'orange')}
+          >
+            Lots
           </button>
 
           {/* Articles envoyés */}

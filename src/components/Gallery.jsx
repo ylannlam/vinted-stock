@@ -1,7 +1,7 @@
 import ItemCard from './ItemCard'
 import LotCard from './LotCard'
 
-export default function Gallery({ items, categories, loading, onMarkSold, onMarkSent, onMarkUnsent, onMarkReceived, onDelete, onUpdateCategory, onBordereauDrop, onEdit, onToggleReception, onLotMarkSent, isPendingTab, showAddHint }) {
+export default function Gallery({ items, categories, loading, onMarkSold, onMarkSent, onMarkUnsent, onMarkReceived, onDelete, onUpdateCategory, onBordereauDrop, onEdit, onToggleReception, onLotMarkSent, isLotTab, showAddHint }) {
   if (loading) {
     return (
       <div className="p-2 grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
@@ -35,65 +35,31 @@ export default function Gallery({ items, categories, loading, onMarkSold, onMark
     )
   }
 
-  // Onglet "À envoyer" : grouper par bordereau_url
-  if (isPendingTab) {
-    const lots = {}
-    const solo = []
-
-    items.forEach(item => {
-      if (item.bordereau_url) {
-        if (!lots[item.bordereau_url]) lots[item.bordereau_url] = []
-        lots[item.bordereau_url].push(item)
-      } else {
-        solo.push(item)
-      }
-    })
-
-    const lotGroups = Object.values(lots)
-
+  // Onglet "Lots" : grouper par bordereau_url
+  if (isLotTab) {
+    const grouped = Object.values(
+      items.reduce((acc, item) => {
+        const key = item.bordereau_url
+        if (!acc[key]) acc[key] = []
+        acc[key].push(item)
+        return acc
+      }, {})
+    )
     return (
       <div className="p-2 pb-28 space-y-2">
-        {/* Lots groupés */}
-        {lotGroups.map((group, idx) => (
-          <div key={group[0].bordereau_url} className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
-            <LotCard
-              items={group}
-              lotIndex={idx + 1}
-              onMarkSent={onLotMarkSent}
-            />
-          </div>
+        {grouped.map((group, idx) => (
+          <LotCard
+            key={group[0].bordereau_url}
+            items={group}
+            lotIndex={idx + 1}
+            onMarkSent={onLotMarkSent}
+          />
         ))}
-
-        {/* Articles sans bordereau */}
-        {solo.length > 0 && (
-          <>
-            {lotGroups.length > 0 && (
-              <p className="text-xs text-gray-400 px-1 pt-1">Sans bordereau</p>
-            )}
-            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
-              {solo.map(item => (
-                <ItemCard
-                  key={item.id}
-                  item={item}
-                  categories={categories}
-                  onMarkSold={onMarkSold}
-                  onMarkSent={onMarkSent}
-                  onMarkUnsent={onMarkUnsent}
-                  onMarkReceived={onMarkReceived}
-                  onDelete={onDelete}
-                  onUpdateCategory={onUpdateCategory}
-                  onBordereauDrop={onBordereauDrop}
-                  onEdit={onEdit}
-                  onToggleReception={onToggleReception}
-                />
-              ))}
-            </div>
-          </>
-        )}
       </div>
     )
   }
 
+  // Vue normale
   return (
     <div className="p-2 pb-28 grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
       {items.map(item => (
