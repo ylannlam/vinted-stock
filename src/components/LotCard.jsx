@@ -22,14 +22,14 @@ export default function LotCard({ items, lotIndex, onMarkSent, onDeleteLot }) {
           ))}
         </div>
 
-        {/* Ligne 2 : actions */}
+        {/* Ligne 2 : actions gauche */}
         <div className="flex items-center gap-1.5">
           {bordereau_url && (
             <a
               href={bordereau_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-0.5 text-[10px] font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-1.5 py-1 rounded-full transition-colors"
+              className="flex items-center gap-0.5 text-[10px] font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-1.5 py-1 rounded-full transition-colors flex-shrink-0"
             >
               <svg className="w-2.5 h-2.5 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -37,62 +37,62 @@ export default function LotCard({ items, lotIndex, onMarkSent, onDeleteLot }) {
               PDF
             </a>
           )}
-
           <button
             onClick={() => setOpen(v => !v)}
-            className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 px-2 py-1 rounded-full hover:bg-gray-50 transition-colors"
+            className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 px-2 py-1 rounded-full hover:bg-gray-50 transition-colors flex-shrink-0"
           >
             {open ? 'Réduire' : 'Voir articles'}
           </button>
+        </div>
 
-          <div className="ml-auto flex items-center gap-1.5">
-            {confirmDelete ? (
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] text-gray-600 font-medium">Remettre en stock ?</span>
-                <button
-                  onClick={() => { setConfirmDelete(false); onDeleteLot(items[0].bordereau_url) }}
-                  className="text-xs font-bold bg-red-500 text-white px-2.5 py-1 rounded-full"
-                >Oui</button>
-                <button
-                  onClick={() => setConfirmDelete(false)}
-                  className="text-xs font-semibold bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full"
-                >Non</button>
-              </div>
-            ) : !confirm ? (
-              <>
-                <button
-                  onClick={() => setConfirmDelete(true)}
-                  className="flex items-center gap-1 text-xs font-bold bg-red-100 text-red-500 px-2.5 py-1 rounded-full hover:bg-red-200 transition-colors"
-                >
-                  <svg className="w-3 h-3 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                  Supprimer
-                </button>
-                <button
-                  onClick={() => setConfirm(true)}
-                  className="flex items-center gap-1 text-xs font-bold bg-orange-500 text-white px-3 py-1 rounded-full hover:bg-orange-600 transition-colors"
-                >
-                  <svg className="w-3 h-3 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-                  </svg>
-                  Envoyer
-                </button>
-              </>
-            ) : (
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] text-gray-600 font-medium">Bien emballé ?</span>
-                <button
-                  onClick={() => { setConfirm(false); onMarkSent(items.map(i => i.id)) }}
-                  className="text-xs font-bold bg-orange-500 text-white px-2.5 py-1 rounded-full"
-                >Oui</button>
-                <button
-                  onClick={() => setConfirm(false)}
-                  className="text-xs font-semibold bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full"
-                >Non</button>
-              </div>
-            )}
-          </div>
+        {/* Ligne 3 : actions droite (toujours visibles) */}
+        <div className="flex items-center justify-end gap-1.5">
+          {confirmDelete ? (
+            <>
+              <span className="text-[10px] text-gray-600 font-medium">Remettre en stock ?</span>
+              <button
+                onClick={() => { setConfirmDelete(false); onDeleteLot(items[0].bordereau_url) }}
+                className="text-xs font-bold bg-red-500 text-white px-2.5 py-1 rounded-full flex-shrink-0"
+              >Oui</button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="text-xs font-semibold bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full flex-shrink-0"
+              >Non</button>
+            </>
+          ) : confirm ? (
+            <>
+              <span className="text-[10px] text-gray-600 font-medium">Bien emballé ?</span>
+              <button
+                onClick={() => { setConfirm(false); onMarkSent(items.map(i => i.id)) }}
+                className="text-xs font-bold bg-orange-500 text-white px-2.5 py-1 rounded-full flex-shrink-0"
+              >Oui</button>
+              <button
+                onClick={() => setConfirm(false)}
+                className="text-xs font-semibold bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full flex-shrink-0"
+              >Non</button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="flex items-center gap-1 text-xs font-bold bg-red-100 text-red-500 px-2.5 py-1 rounded-full hover:bg-red-200 transition-colors flex-shrink-0"
+              >
+                <svg className="w-3 h-3 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Supprimer
+              </button>
+              <button
+                onClick={() => setConfirm(true)}
+                className="flex items-center gap-1 text-xs font-bold bg-orange-500 text-white px-3 py-1 rounded-full hover:bg-orange-600 transition-colors flex-shrink-0"
+              >
+                <svg className="w-3 h-3 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                </svg>
+                Envoyer
+              </button>
+            </>
+          )}
         </div>
       </div>
 
