@@ -1,6 +1,6 @@
 import ItemCard from './ItemCard'
 
-export default function Gallery({ items, categories, loading, onMarkSold, onMarkSent, onMarkUnsent, onMarkReceived, onDelete, onUpdateCategory, onBordereauDrop, onEdit, showAddHint, selectionMode, selectedIds, onToggleSelect }) {
+export default function Gallery({ items, categories, loading, onMarkSold, onMarkSent, onMarkUnsent, onMarkReceived, onDelete, onUpdateCategory, onBordereauDrop, onEdit, showAddHint }) {
   if (loading) {
     return (
       <div className="p-2 grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
@@ -49,9 +49,6 @@ export default function Gallery({ items, categories, loading, onMarkSold, onMark
           onUpdateCategory={onUpdateCategory}
           onBordereauDrop={onBordereauDrop}
           onEdit={onEdit}
-          selectionMode={selectionMode}
-          selected={selectedIds?.has(item.id)}
-          onToggleSelect={onToggleSelect}
         />
       ))}
     </div>

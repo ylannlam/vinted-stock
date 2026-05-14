@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 
-export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onMarkUnsent, onDelete, onUpdateCategory, onBordereauDrop, onEdit, onMarkReceived, selectionMode, selected, onToggleSelect }) {
+export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onMarkUnsent, onDelete, onUpdateCategory, onBordereauDrop, onEdit, onMarkReceived }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmSent, setConfirmSent] = useState(false)
   const [confirmReceived, setConfirmReceived] = useState(false)
@@ -280,26 +280,6 @@ export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onM
           )}
         </div>
       </div>
-
-      {/* Overlay sélection lot */}
-      {selectionMode && (
-        <div
-          onClick={() => onToggleSelect(item.id)}
-          className={`absolute inset-0 z-10 cursor-pointer rounded-xl transition-all ${
-            selected ? 'bg-blue-500/20 ring-2 ring-blue-500 ring-inset' : 'bg-transparent hover:bg-blue-500/5'
-          }`}
-        >
-          <div className={`absolute top-2 left-2 w-5 h-5 rounded-full border-2 flex items-center justify-center shadow-sm ${
-            selected ? 'bg-blue-500 border-blue-500' : 'bg-white/90 border-gray-300'
-          }`}>
-            {selected && (
-              <svg className="w-3 h-3 text-white pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-              </svg>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Overlay confirmation envoi */}
       {confirmSent && (

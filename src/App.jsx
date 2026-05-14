@@ -6,7 +6,7 @@ import Header from './components/Header'
 import CategoryTabs from './components/CategoryTabs'
 import Gallery from './components/Gallery'
 import FilterBar from './components/FilterBar'
-import BatchBar from './components/BatchBar'
+import LotModal from './components/LotModal'
 import AddItemModal from './components/AddItemModal'
 import EditItemModal from './components/EditItemModal'
 import SoldModal from './components/SoldModal'
@@ -19,8 +19,7 @@ export default function App() {
   const [itemsLoading, setItemsLoading] = useState(false)
   const [filterSizes, setFilterSizes] = useState([])
   const [filterCategories, setFilterCategories] = useState([])
-  const [selectionMode, setSelectionMode] = useState(false)
-  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [showLotModal, setShowLotModal] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [editItem, setEditItem] = useState(null)
   const [soldItem, setSoldItem] = useState(null)
@@ -131,26 +130,12 @@ export default function App() {
     }
   }
 
-  function toggleSelect(id) {
-    setSelectedIds(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
-  }
-
-  function exitSelectionMode() {
-    setSelectionMode(false)
-    setSelectedIds(new Set())
-  }
-
-  async function handleBatchBordereau(file) {
+  async function handleLotBordereau(ids, file) {
     try {
       const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`
       const { error: uploadErr } = await supabase.storage.from('bordereaux').upload(fileName, file)
       if (uploadErr) throw uploadErr
       const { data: { publicUrl } } = supabase.storage.from('bordereaux').getPublicUrl(fileName)
-      const ids = [...selectedIds]
       const { data, error } = await supabase
         .from('items').update({ bordereau_url: publicUrl }).in('id', ids).select()
       if (error) throw error
@@ -160,9 +145,8 @@ export default function App() {
     }
   }
 
-  async function handleBatchMarkSent() {
+  async function handleLotMarkSent(ids) {
     try {
-      const ids = [...selectedIds]
       const { data, error } = await supabase
         .from('items')
         .update({ status: 'envoye', sent_at: new Date().toISOString() })
@@ -170,7 +154,6 @@ export default function App() {
       if (error) throw error
       if (data) {
         setItems(prev => prev.map(i => data.find(d => d.id === i.id) ?? i))
-        exitSelectionMode()
         setActiveTab(TAB_ENVOYES)
       }
     } catch (err) {
@@ -246,14 +229,14 @@ export default function App() {
       {activeTab === TAB_A_ENVOYER && (
         <div className="flex items-center justify-end px-3 py-1.5 bg-white border-b border-gray-100">
           <button
-            onClick={() => { setSelectionMode(v => !v); setSelectedIds(new Set()) }}
-            className={`text-xs font-semibold px-3 py-1 rounded-full transition-colors ${
-              selectionMode
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
+            onClick={() => setShowLotModal(true)}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full bg-orange-50 text-orange-600 hover:bg-orange-100 transition-colors"
           >
-            {selectionMode ? 'Annuler' : 'Sélectionner un lot'}
+            <svg className="w-3.5 h-3.5 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+            Faire un lot
           </button>
         </div>
       )}
@@ -271,19 +254,7 @@ export default function App() {
         onBordereauDrop={handleBordereauDrop}
         onEdit={setEditItem}
         showAddHint={!isSpecialTab}
-        selectionMode={selectionMode}
-        selectedIds={selectedIds}
-        onToggleSelect={toggleSelect}
       />
-
-      {selectionMode && selectedIds.size > 0 && (
-        <BatchBar
-          count={selectedIds.size}
-          onBordereau={handleBatchBordereau}
-          onMarkSent={handleBatchMarkSent}
-          onCancel={exitSelectionMode}
-        />
-      )}
 
       {(activeTab !== TAB_A_ENVOYER && activeTab !== TAB_ENVOYES) && (
         <button
@@ -299,6 +270,15 @@ export default function App() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
           </svg>
         </button>
+      )}
+
+      {showLotModal && (
+        <LotModal
+          items={items.filter(i => i.status === 'vendu')}
+          onClose={() => setShowLotModal(false)}
+          onBordereau={handleLotBordereau}
+          onMarkSent={handleLotMarkSent}
+        />
       )}
 
       {showAddModal && (
