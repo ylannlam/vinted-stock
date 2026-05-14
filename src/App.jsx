@@ -130,6 +130,12 @@ export default function App() {
     }
   }
 
+  async function handleToggleReception(itemId, value) {
+    const { data, error } = await supabase
+      .from('items').update({ reception_needed: value }).eq('id', itemId).select().single()
+    if (!error && data) setItems(prev => prev.map(i => i.id === data.id ? data : i))
+  }
+
   async function handleLotBordereau(ids, file) {
     try {
       const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`
@@ -253,6 +259,7 @@ export default function App() {
         onUpdateCategory={handleUpdateCategory}
         onBordereauDrop={handleBordereauDrop}
         onEdit={setEditItem}
+        onToggleReception={handleToggleReception}
         showAddHint={!isSpecialTab}
       />
 
