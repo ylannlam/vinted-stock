@@ -23,11 +23,16 @@ export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onM
 
   const canDropBordereau = isPending || isSent
 
+  function handleDragEnter(e) {
+    if (!canDropBordereau) return
+    e.preventDefault()
+    setIsDragOver(true)
+  }
+
   function handleDragOver(e) {
     if (!canDropBordereau) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'copy'
-    setIsDragOver(true)
   }
 
   function handleDragLeave(e) {
@@ -47,6 +52,7 @@ export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onM
 
   return (
     <div
+      onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
