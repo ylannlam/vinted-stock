@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 
 export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onMarkUnsent, onDelete, onUpdateCategory, onBordereauDrop, onEdit, onMarkReceived }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -6,6 +6,16 @@ export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onM
   const [editingCategory, setEditingCategory] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const pdfInputRef = useRef(null)
+
+  async function handlePdfInput(e) {
+    const file = e.target.files[0]
+    if (!file || file.type !== 'application/pdf') return
+    e.target.value = ''
+    setUploading(true)
+    await onBordereauDrop(item.id, file)
+    setUploading(false)
+  }
   const isOrdered = item.status === 'a_recevoir'
   const isStock   = item.status === 'en_stock'
   const isPending = item.status === 'vendu'
@@ -225,20 +235,41 @@ export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onM
             </button>
           )}
 
-          {(isPending || isSent) && item.bordereau_url && (
-            <a
-              href={item.bordereau_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-0.5 text-[10px] font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-1.5 py-0.5 rounded-full transition-colors flex-shrink-0"
-              aria-label="Télécharger bordereau"
-            >
-              <svg className="w-2.5 h-2.5 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              PDF
-            </a>
+          {(isPending || isSent) && (
+            <>
+              {item.bordereau_url && (
+                <a
+                  href={item.bordereau_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-0.5 text-[10px] font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-1.5 py-0.5 rounded-full transition-colors flex-shrink-0"
+                  aria-label="Télécharger bordereau"
+                >
+                  <svg className="w-2.5 h-2.5 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  PDF
+                </a>
+              )}
+              <button
+                onClick={() => pdfInputRef.current?.click()}
+                className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-100 text-gray-400 hover:bg-blue-100 hover:text-blue-500 transition-colors flex-shrink-0"
+                aria-label="Ajouter un bordereau"
+              >
+                <svg className="w-3 h-3 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+              </button>
+              <input
+                ref={pdfInputRef}
+                type="file"
+                accept="application/pdf"
+                onChange={handlePdfInput}
+                className="hidden"
+              />
+            </>
           )}
         </div>
       </div>
