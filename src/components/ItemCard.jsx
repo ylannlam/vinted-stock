@@ -3,6 +3,7 @@ import { useState, useRef } from 'react'
 export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onMarkUnsent, onDelete, onUpdateCategory, onBordereauDrop, onEdit, onMarkReceived, selectionMode, selected, onToggleSelect }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmSent, setConfirmSent] = useState(false)
+  const [confirmReceived, setConfirmReceived] = useState(false)
   const [editingCategory, setEditingCategory] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -195,7 +196,7 @@ export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onM
           {/* Action selon statut — icône seule */}
           {isOrdered && (
             <button
-              onClick={() => onMarkReceived(item)}
+              onClick={() => setConfirmReceived(true)}
               className="w-6 h-6 flex items-center justify-center rounded-full bg-purple-500 text-white hover:bg-purple-600 active:bg-purple-700 transition-colors flex-shrink-0"
               aria-label="Marquer reçu"
             >
@@ -316,6 +317,29 @@ export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onM
             <button
               onClick={() => setConfirmSent(false)}
               className="bg-blue-500 text-white text-[10px] font-semibold px-2.5 py-1 rounded-full border border-blue-400"
+            >
+              Non
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Overlay confirmation reçu */}
+      {confirmReceived && (
+        <div className="absolute inset-0 z-10 bg-purple-600/95 flex flex-col items-center justify-center rounded-xl p-2 gap-2">
+          <p className="text-white text-[10px] font-bold text-center leading-tight">
+            L'article est bien arrivé ?
+          </p>
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => { setConfirmReceived(false); onMarkReceived(item) }}
+              className="bg-white text-purple-600 text-[10px] font-bold px-2.5 py-1 rounded-full"
+            >
+              Oui !
+            </button>
+            <button
+              onClick={() => setConfirmReceived(false)}
+              className="bg-purple-500 text-white text-[10px] font-semibold px-2.5 py-1 rounded-full border border-purple-400"
             >
               Non
             </button>

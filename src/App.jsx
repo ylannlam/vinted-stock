@@ -105,7 +105,11 @@ export default function App() {
       .eq('id', item.id)
       .select()
       .single()
-    if (!error && data) setItems(prev => prev.map(i => i.id === data.id ? data : i))
+    if (error) { alert('Erreur : ' + error.message); return }
+    if (data) {
+      setItems(prev => prev.map(i => i.id === data.id ? data : i))
+      setActiveTab(data.category)
+    }
   }
 
   async function handleBordereauDrop(itemId, file) {
