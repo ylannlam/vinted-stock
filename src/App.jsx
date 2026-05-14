@@ -6,6 +6,7 @@ import Header from './components/Header'
 import CategoryTabs from './components/CategoryTabs'
 import Gallery from './components/Gallery'
 import FilterBar from './components/FilterBar'
+import BatchBar from './components/BatchBar'
 import AddItemModal from './components/AddItemModal'
 import EditItemModal from './components/EditItemModal'
 import SoldModal from './components/SoldModal'
@@ -18,6 +19,8 @@ export default function App() {
   const [itemsLoading, setItemsLoading] = useState(false)
   const [filterSizes, setFilterSizes] = useState([])
   const [filterCategories, setFilterCategories] = useState([])
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState(new Set())
   const [showAddModal, setShowAddModal] = useState(false)
   const [editItem, setEditItem] = useState(null)
   const [soldItem, setSoldItem] = useState(null)
@@ -124,6 +127,53 @@ export default function App() {
     }
   }
 
+  function toggleSelect(id) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function exitSelectionMode() {
+    setSelectionMode(false)
+    setSelectedIds(new Set())
+  }
+
+  async function handleBatchBordereau(file) {
+    try {
+      const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`
+      const { error: uploadErr } = await supabase.storage.from('bordereaux').upload(fileName, file)
+      if (uploadErr) throw uploadErr
+      const { data: { publicUrl } } = supabase.storage.from('bordereaux').getPublicUrl(fileName)
+      const ids = [...selectedIds]
+      const { data, error } = await supabase
+        .from('items').update({ bordereau_url: publicUrl }).in('id', ids).select()
+      if (error) throw error
+      if (data) setItems(prev => prev.map(i => data.find(d => d.id === i.id) ?? i))
+    } catch (err) {
+      alert('Erreur : ' + err.message)
+    }
+  }
+
+  async function handleBatchMarkSent() {
+    try {
+      const ids = [...selectedIds]
+      const { data, error } = await supabase
+        .from('items')
+        .update({ status: 'envoye', sent_at: new Date().toISOString() })
+        .in('id', ids).select()
+      if (error) throw error
+      if (data) {
+        setItems(prev => prev.map(i => data.find(d => d.id === i.id) ?? i))
+        exitSelectionMode()
+        setActiveTab(TAB_ENVOYES)
+      }
+    } catch (err) {
+      alert('Erreur : ' + err.message)
+    }
+  }
+
   async function handleUpdateCategory(itemId, newCategory) {
     const { data, error } = await supabase
       .from('items')
@@ -189,6 +239,21 @@ export default function App() {
         />
       )}
 
+      {activeTab === TAB_A_ENVOYER && (
+        <div className="flex items-center justify-end px-3 py-1.5 bg-white border-b border-gray-100">
+          <button
+            onClick={() => { setSelectionMode(v => !v); setSelectedIds(new Set()) }}
+            className={`text-xs font-semibold px-3 py-1 rounded-full transition-colors ${
+              selectionMode
+                ? 'bg-blue-500 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            {selectionMode ? 'Annuler' : 'Sélectionner un lot'}
+          </button>
+        </div>
+      )}
+
       <Gallery
         items={filteredItems}
         categories={CATEGORIES}
@@ -202,7 +267,19 @@ export default function App() {
         onBordereauDrop={handleBordereauDrop}
         onEdit={setEditItem}
         showAddHint={!isSpecialTab}
+        selectionMode={selectionMode}
+        selectedIds={selectedIds}
+        onToggleSelect={toggleSelect}
       />
+
+      {selectionMode && selectedIds.size > 0 && (
+        <BatchBar
+          count={selectedIds.size}
+          onBordereau={handleBatchBordereau}
+          onMarkSent={handleBatchMarkSent}
+          onCancel={exitSelectionMode}
+        />
+      )}
 
       {(activeTab !== TAB_A_ENVOYER && activeTab !== TAB_ENVOYES) && (
         <button
