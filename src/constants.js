@@ -3,9 +3,13 @@ export const CATEGORIES = [
   'Motif fleuri',
   'Jaune-Bleu-Violet',
   'Marron-Rouge-Rose',
-  'Vert-Noir-Bleu',
-  'Petit pois / Top +Autre',
+  'Vert',
+  'Vert foncé / Bleu foncé / Noir',
+  'Petit pois',
+  'Top / Autre',
 ]
 
-export const TAB_A_ENVOYER = '__a_envoyer__'
-export const TAB_ENVOYES   = '__envoyes__'
+export const TAB_TOUT        = '__tout__'
+export const TAB_A_RECEVOIR  = '__a_recevoir__'
+export const TAB_A_ENVOYER   = '__a_envoyer__'
+export const TAB_ENVOYES     = '__envoyes__'

@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
-import { CATEGORIES, TAB_A_ENVOYER, TAB_ENVOYES } from './constants'
+import { CATEGORIES, TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_ENVOYES } from './constants'
 import Login from './Login'
 import Header from './components/Header'
 import CategoryTabs from './components/CategoryTabs'
 import Gallery from './components/Gallery'
+import FilterBar from './components/FilterBar'
 import AddItemModal from './components/AddItemModal'
+import EditItemModal from './components/EditItemModal'
 import SoldModal from './components/SoldModal'
 
 export default function App() {
@@ -14,7 +16,10 @@ export default function App() {
   const [activeTab, setActiveTab] = useState(CATEGORIES[0])
   const [items, setItems] = useState([])
   const [itemsLoading, setItemsLoading] = useState(false)
+  const [filterSizes, setFilterSizes] = useState([])
+  const [filterCategories, setFilterCategories] = useState([])
   const [showAddModal, setShowAddModal] = useState(false)
+  const [editItem, setEditItem] = useState(null)
   const [soldItem, setSoldItem] = useState(null)
 
   useEffect(() => {
@@ -42,9 +47,17 @@ export default function App() {
     setItemsLoading(false)
   }
 
-  function handleItemAdded(newItem) {
-    setItems(prev => [newItem, ...prev])
-    setActiveTab(newItem.category)
+  function handleItemUpdated(updatedItem, newItems = []) {
+    setItems(prev => [
+      ...newItems,
+      ...prev.map(i => i.id === updatedItem.id ? updatedItem : i),
+    ])
+    setEditItem(null)
+  }
+
+  function handleItemAdded(newItems) {
+    setItems(prev => [...newItems, ...prev])
+    setActiveTab(newItems[0].category)
     setShowAddModal(false)
   }
 
@@ -60,12 +73,65 @@ export default function App() {
       .eq('id', item.id)
       .select()
       .single()
-    if (!error && data) setItems(prev => prev.map(i => i.id === data.id ? data : i))
+    if (error) { alert('Erreur : ' + error.message); return }
+    if (data) {
+      setItems(prev => prev.map(i => i.id === data.id ? data : i))
+      setActiveTab(TAB_ENVOYES)
+    }
   }
 
   async function handleDelete(itemId) {
     const { error } = await supabase.from('items').delete().eq('id', itemId)
     if (!error) setItems(prev => prev.filter(i => i.id !== itemId))
+  }
+
+  async function handleMarkUnsent(item) {
+    const { data, error } = await supabase
+      .from('items')
+      .update({ status: 'vendu', sent_at: null })
+      .eq('id', item.id)
+      .select()
+      .single()
+    if (!error && data) setItems(prev => prev.map(i => i.id === data.id ? data : i))
+  }
+
+  async function handleMarkReceived(item) {
+    const { data, error } = await supabase
+      .from('items')
+      .update({ status: 'en_stock' })
+      .eq('id', item.id)
+      .select()
+      .single()
+    if (!error && data) setItems(prev => prev.map(i => i.id === data.id ? data : i))
+  }
+
+  async function handleBordereauDrop(itemId, file) {
+    try {
+      const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`
+      const { error: uploadErr } = await supabase.storage.from('bordereaux').upload(fileName, file)
+      if (uploadErr) throw uploadErr
+      const { data: { publicUrl } } = supabase.storage.from('bordereaux').getPublicUrl(fileName)
+      const { data, error: updateErr } = await supabase
+        .from('items')
+        .update({ bordereau_url: publicUrl })
+        .eq('id', itemId)
+        .select()
+        .single()
+      if (updateErr) throw updateErr
+      setItems(prev => prev.map(i => i.id === data.id ? data : i))
+    } catch (err) {
+      console.error('Bordereau upload failed:', err.message)
+    }
+  }
+
+  async function handleUpdateCategory(itemId, newCategory) {
+    const { data, error } = await supabase
+      .from('items')
+      .update({ category: newCategory })
+      .eq('id', itemId)
+      .select()
+      .single()
+    if (!error && data) setItems(prev => prev.map(i => i.id === data.id ? data : i))
   }
 
   async function handleLogout() {
@@ -89,12 +155,19 @@ export default function App() {
 
   if (!user) return <Login />
 
-  const isSpecialTab = activeTab === TAB_A_ENVOYER || activeTab === TAB_ENVOYES
+  const isSpecialTab = activeTab === TAB_TOUT || activeTab === TAB_A_RECEVOIR || activeTab === TAB_A_ENVOYER || activeTab === TAB_ENVOYES
 
-  const filteredItems =
-    activeTab === TAB_A_ENVOYER ? items.filter(i => i.status === 'vendu') :
-    activeTab === TAB_ENVOYES   ? items.filter(i => i.status === 'envoye') :
-    items.filter(i => i.category === activeTab && i.status === 'en_stock')
+  const filteredItems = (() => {
+    if (activeTab === TAB_A_RECEVOIR) return items.filter(i => i.status === 'a_recevoir')
+    if (activeTab === TAB_A_ENVOYER)  return items.filter(i => i.status === 'vendu')
+    if (activeTab === TAB_ENVOYES)    return items.filter(i => i.status === 'envoye')
+    const base = activeTab === TAB_TOUT
+      ? items.filter(i => i.status === 'en_stock')
+      : items.filter(i => i.category === activeTab && i.status === 'en_stock')
+    return base
+      .filter(i => filterSizes.length === 0 || filterSizes.includes(i.size))
+      .filter(i => filterCategories.length === 0 || filterCategories.includes(i.category))
+  })()
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -105,19 +178,40 @@ export default function App() {
         onChange={setActiveTab}
         items={items}
       />
+      {activeTab === TAB_TOUT && (
+        <FilterBar
+          categories={CATEGORIES}
+          sizes={filterSizes}
+          onSizesChange={setFilterSizes}
+          selectedCategories={filterCategories}
+          onCategoriesChange={setFilterCategories}
+          total={filteredItems.length}
+        />
+      )}
+
       <Gallery
         items={filteredItems}
+        categories={CATEGORIES}
         loading={itemsLoading}
         onMarkSold={setSoldItem}
         onMarkSent={handleMarkSent}
+        onMarkUnsent={handleMarkUnsent}
+        onMarkReceived={handleMarkReceived}
         onDelete={handleDelete}
+        onUpdateCategory={handleUpdateCategory}
+        onBordereauDrop={handleBordereauDrop}
+        onEdit={setEditItem}
         showAddHint={!isSpecialTab}
       />
 
-      {!isSpecialTab && (
+      {(activeTab !== TAB_A_ENVOYER && activeTab !== TAB_ENVOYES) && (
         <button
           onClick={() => setShowAddModal(true)}
-          className="fixed bottom-6 right-5 w-14 h-14 bg-teal-500 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-teal-600 active:bg-teal-700 transition-all hover:scale-105 z-40"
+          className={`fixed bottom-6 right-5 w-14 h-14 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-105 z-40 ${
+            activeTab === TAB_A_RECEVOIR
+              ? 'bg-purple-500 hover:bg-purple-600 active:bg-purple-700'
+              : 'bg-teal-500 hover:bg-teal-600 active:bg-teal-700'
+          }`}
           aria-label="Ajouter un article"
         >
           <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -129,8 +223,19 @@ export default function App() {
       {showAddModal && (
         <AddItemModal
           categories={CATEGORIES}
+          defaultCategory={isSpecialTab ? CATEGORIES[0] : activeTab}
+          defaultStatus={activeTab === TAB_A_RECEVOIR ? 'a_recevoir' : 'en_stock'}
           onClose={() => setShowAddModal(false)}
           onAdded={handleItemAdded}
+        />
+      )}
+
+      {editItem && (
+        <EditItemModal
+          item={editItem}
+          categories={CATEGORIES}
+          onClose={() => setEditItem(null)}
+          onUpdated={handleItemUpdated}
         />
       )}
 

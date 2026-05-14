@@ -80,3 +80,21 @@ ALTER TABLE public.items ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ;
 -- MIGRATION v3 — Colonne lien Shein
 -- ============================================================
 ALTER TABLE public.items ADD COLUMN IF NOT EXISTS shein_url TEXT;
+
+-- ============================================================
+-- MIGRATION v5 — Statut "à recevoir" + photo optionnelle
+-- ============================================================
+ALTER TABLE public.items DROP CONSTRAINT IF EXISTS items_status_check;
+ALTER TABLE public.items ADD CONSTRAINT items_status_check
+  CHECK (status IN ('en_stock', 'vendu', 'envoye', 'a_recevoir'));
+
+ALTER TABLE public.items ALTER COLUMN photo_url DROP NOT NULL;
+
+-- ============================================================
+-- MIGRATION v4 — Renommage catégorie Vert-Noir-Bleu
+-- Les anciens articles "Vert-Noir-Bleu" passent dans le nouveau
+-- groupe. Reassigner manuellement ceux qui sont purement "Vert".
+-- ============================================================
+UPDATE public.items
+SET category = 'Vert foncé / Bleu foncé / Noir'
+WHERE category = 'Vert-Noir-Bleu';
