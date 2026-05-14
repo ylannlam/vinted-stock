@@ -166,6 +166,20 @@ export default function App() {
     }
   }
 
+  async function handleDeleteLot(bordereauUrl) {
+    try {
+      const { data, error } = await supabase
+        .from('items')
+        .update({ status: 'en_stock', bordereau_url: null, sold_at: null })
+        .eq('bordereau_url', bordereauUrl)
+        .select()
+      if (error) throw error
+      if (data) setItems(prev => prev.map(i => data.find(d => d.id === i.id) ?? i))
+    } catch (err) {
+      alert('Erreur : ' + err.message)
+    }
+  }
+
   async function handleToggleReception(itemId, value) {
     const { data, error } = await supabase
       .from('items').update({ reception_needed: value }).eq('id', itemId).select().single()
@@ -271,6 +285,7 @@ export default function App() {
         onEdit={setEditItem}
         onToggleReception={handleToggleReception}
         onLotMarkSent={handleLotMarkSent}
+        onDeleteLot={handleDeleteLot}
         isLotTab={activeTab === TAB_A_ENVOYER_LOT}
         showAddHint={!isSpecialTab}
       />
