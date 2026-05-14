@@ -135,7 +135,7 @@ export default function App() {
   async function handleLotVente(ids) {
     const { data, error } = await supabase
       .from('items')
-      .update({ status: 'vendu' })
+      .update({ status: 'vendu', sold_at: new Date().toISOString() })
       .in('id', ids)
       .select()
     if (error) { alert('Erreur : ' + error.message); return }
@@ -217,7 +217,7 @@ export default function App() {
 
   const filteredItems = (() => {
     if (activeTab === TAB_A_RECEVOIR) return items.filter(i => i.status === 'a_recevoir')
-    if (activeTab === TAB_A_ENVOYER)  return items.filter(i => i.status === 'vendu').sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    if (activeTab === TAB_A_ENVOYER)  return items.filter(i => i.status === 'vendu').sort((a, b) => new Date(b.sold_at ?? b.created_at) - new Date(a.sold_at ?? a.created_at))
     if (activeTab === TAB_ENVOYES)    return items.filter(i => i.status === 'envoye')
     const base = activeTab === TAB_TOUT
       ? items.filter(i => i.status === 'en_stock')

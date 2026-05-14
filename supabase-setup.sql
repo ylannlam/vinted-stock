@@ -96,6 +96,11 @@ ALTER TABLE public.items ALTER COLUMN photo_url DROP NOT NULL;
 ALTER TABLE public.items ADD COLUMN IF NOT EXISTS reception_needed BOOLEAN DEFAULT false;
 
 -- ============================================================
+-- MIGRATION v7 — Date de vente
+-- ============================================================
+ALTER TABLE public.items ADD COLUMN IF NOT EXISTS sold_at TIMESTAMPTZ;
+
+-- ============================================================
 -- MIGRATION v4 — Renommage catégorie Vert-Noir-Bleu
 -- Les anciens articles "Vert-Noir-Bleu" passent dans le nouveau
 -- groupe. Reassigner manuellement ceux qui sont purement "Vert".

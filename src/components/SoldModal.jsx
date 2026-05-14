@@ -32,7 +32,7 @@ export default function SoldModal({ item, onClose, onSold }) {
 
       const { data, error: updateErr } = await supabase
         .from('items')
-        .update({ status: 'vendu', bordereau_url: publicUrl })
+        .update({ status: 'vendu', bordereau_url: publicUrl, sold_at: new Date().toISOString() })
         .eq('id', item.id)
         .select()
         .single()
