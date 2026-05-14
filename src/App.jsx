@@ -14,7 +14,7 @@ import SoldModal from './components/SoldModal'
 export default function App() {
   const [user, setUser] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState(CATEGORIES[0])
+  const [activeTab, setActiveTab] = useState(() => localStorage.getItem('activeTab') ?? CATEGORIES[0])
   const [items, setItems] = useState([])
   const [itemsLoading, setItemsLoading] = useState(false)
   const [filterSizes, setFilterSizes] = useState([])
@@ -23,6 +23,10 @@ export default function App() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [editItem, setEditItem] = useState(null)
   const [soldItem, setSoldItem] = useState(null)
+
+  useEffect(() => {
+    localStorage.setItem('activeTab', activeTab)
+  }, [activeTab])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
