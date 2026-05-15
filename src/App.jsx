@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
-import { CATEGORIES, TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES } from './constants'
+import { CATEGORIES, TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED } from './constants'
 import Login from './Login'
 import Header from './components/Header'
 import CategoryTabs from './components/CategoryTabs'
@@ -10,11 +10,15 @@ import LotModal from './components/LotModal'
 import AddItemModal from './components/AddItemModal'
 import EditItemModal from './components/EditItemModal'
 import SoldModal from './components/SoldModal'
+import AdminCodeModal from './components/AdminCodeModal'
+import VintedAccountsTab from './components/VintedAccountsTab'
 
 export default function App() {
   const [user, setUser] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('activeTab') ?? CATEGORIES[0])
+  const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem('isAdmin') === '1')
+  const [showAdminModal, setShowAdminModal] = useState(false)
   const [items, setItems] = useState([])
   const [itemsLoading, setItemsLoading] = useState(false)
   const [filterSizes, setFilterSizes] = useState([])
@@ -203,6 +207,14 @@ export default function App() {
   async function handleLogout() {
     await supabase.auth.signOut()
     setItems([])
+    setIsAdmin(false)
+    localStorage.removeItem('isAdmin')
+  }
+
+  function handleAdminUnlock() {
+    setIsAdmin(true)
+    localStorage.setItem('isAdmin', '1')
+    setShowAdminModal(false)
   }
 
   if (authLoading) {
@@ -221,7 +233,7 @@ export default function App() {
 
   if (!user) return <Login />
 
-  const isSpecialTab = activeTab === TAB_TOUT || activeTab === TAB_A_RECEVOIR || activeTab === TAB_A_ENVOYER || activeTab === TAB_A_ENVOYER_LOT || activeTab === TAB_ENVOYES
+  const isSpecialTab = activeTab === TAB_TOUT || activeTab === TAB_A_RECEVOIR || activeTab === TAB_A_ENVOYER || activeTab === TAB_A_ENVOYER_LOT || activeTab === TAB_ENVOYES || activeTab === TAB_COMPTES_VINTED
 
   const filteredItems = (() => {
     if (activeTab === TAB_A_RECEVOIR)    return items.filter(i => i.status === 'a_recevoir')
@@ -242,14 +254,21 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header onLogout={handleLogout} />
+      <Header
+        onLogout={handleLogout}
+        onShowAdminCode={() => setShowAdminModal(true)}
+        isAdmin={isAdmin}
+      />
       <CategoryTabs
         categories={CATEGORIES}
         active={activeTab}
         onChange={setActiveTab}
         items={items}
+        isAdmin={isAdmin}
       />
-      {(activeTab === TAB_TOUT || CATEGORIES.includes(activeTab)) && (
+      {activeTab === TAB_COMPTES_VINTED && <VintedAccountsTab />}
+
+      {activeTab !== TAB_COMPTES_VINTED && (activeTab === TAB_TOUT || CATEGORIES.includes(activeTab)) && (
         <div className="flex items-center justify-end px-3 py-1.5 bg-white border-b border-gray-100">
           <button
             onClick={() => setShowLotModal(true)}
@@ -275,26 +294,28 @@ export default function App() {
         />
       )}
 
-      <Gallery
-        items={filteredItems}
-        categories={CATEGORIES}
-        loading={itemsLoading}
-        onMarkSold={setSoldItem}
-        onMarkSent={handleMarkSent}
-        onMarkUnsent={handleMarkUnsent}
-        onMarkReceived={handleMarkReceived}
-        onDelete={handleDelete}
-        onUpdateCategory={handleUpdateCategory}
-        onBordereauDrop={handleBordereauDrop}
-        onEdit={setEditItem}
-        onToggleReception={handleToggleReception}
-        onLotMarkSent={handleLotMarkSent}
-        onDeleteLot={handleDeleteLot}
-        isLotTab={activeTab === TAB_A_ENVOYER_LOT}
-        showAddHint={!isSpecialTab}
-      />
+      {activeTab !== TAB_COMPTES_VINTED && (
+        <Gallery
+          items={filteredItems}
+          categories={CATEGORIES}
+          loading={itemsLoading}
+          onMarkSold={setSoldItem}
+          onMarkSent={handleMarkSent}
+          onMarkUnsent={handleMarkUnsent}
+          onMarkReceived={handleMarkReceived}
+          onDelete={handleDelete}
+          onUpdateCategory={handleUpdateCategory}
+          onBordereauDrop={handleBordereauDrop}
+          onEdit={setEditItem}
+          onToggleReception={handleToggleReception}
+          onLotMarkSent={handleLotMarkSent}
+          onDeleteLot={handleDeleteLot}
+          isLotTab={activeTab === TAB_A_ENVOYER_LOT}
+          showAddHint={!isSpecialTab}
+        />
+      )}
 
-      {(activeTab !== TAB_A_ENVOYER && activeTab !== TAB_A_ENVOYER_LOT && activeTab !== TAB_ENVOYES) && (
+      {(activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_A_ENVOYER && activeTab !== TAB_A_ENVOYER_LOT && activeTab !== TAB_ENVOYES) && (
         <button
           onClick={() => setShowAddModal(true)}
           className={`fixed bottom-6 right-5 w-14 h-14 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-105 z-40 ${
@@ -342,6 +363,13 @@ export default function App() {
           item={soldItem}
           onClose={() => setSoldItem(null)}
           onSold={handleItemSold}
+        />
+      )}
+
+      {showAdminModal && (
+        <AdminCodeModal
+          onSuccess={handleAdminUnlock}
+          onClose={() => setShowAdminModal(false)}
         />
       )}
     </div>

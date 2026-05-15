@@ -1,6 +1,6 @@
-import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES } from '../constants'
+import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED } from '../constants'
 
-export default function CategoryTabs({ categories, active, onChange, items }) {
+export default function CategoryTabs({ categories, active, onChange, items, isAdmin }) {
   const aRecevoirCount = items.filter(i => i.status === 'a_recevoir').length
   const aEnvoyerCount  = items.filter(i => i.status === 'vendu').length
   const envoyesCount   = items.filter(i => i.status === 'envoye').length
@@ -100,6 +100,21 @@ export default function CategoryTabs({ categories, active, onChange, items }) {
               <span className={badgeClass(active === TAB_ENVOYES, 'blue')}>{envoyesCount}</span>
             )}
           </button>
+
+          {/* Comptes Vinted (admin uniquement) */}
+          {isAdmin && (
+            <>
+              <div className="flex items-center px-1">
+                <div className="w-px h-5 bg-gray-200" />
+              </div>
+              <button
+                onClick={() => onChange(TAB_COMPTES_VINTED)}
+                className={tabClass(active === TAB_COMPTES_VINTED, 'teal')}
+              >
+                🔐 Comptes
+              </button>
+            </>
+          )}
 
         </div>
       </div>
