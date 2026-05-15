@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-const ADMIN_CODE = import.meta.env.VITE_ADMIN_CODE
+const ADMIN_CODE = import.meta.env.VITE_ADMIN_CODE || '1234'
 
 export default function AdminCodeModal({ onSuccess, onClose }) {
   const [digits, setDigits] = useState([])
