@@ -101,6 +101,35 @@ ALTER TABLE public.items ADD COLUMN IF NOT EXISTS reception_needed BOOLEAN DEFAU
 ALTER TABLE public.items ADD COLUMN IF NOT EXISTS sold_at TIMESTAMPTZ;
 
 -- ============================================================
+-- MIGRATION v8 — Table comptes Vinted (admin)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.vinted_accounts (
+  id                UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
+  created_at        TIMESTAMPTZ DEFAULT NOW(),
+  pseudo            TEXT        NOT NULL,
+  email             TEXT,
+  password          TEXT,
+  methode_connexion TEXT        CHECK (methode_connexion IN ('google', 'apple', 'email')),
+  telephone         TEXT,
+  telephone_type    TEXT        CHECK (telephone_type IN ('onoff', 'autre')),
+  telephone_email   TEXT,
+  statut            TEXT        DEFAULT 'actif' CHECK (statut IN ('actif', 'banni_temp', 'banni_def', 'suspendu')),
+  notes             TEXT,
+  deban_at          TIMESTAMPTZ,
+  ads_power_num     TEXT
+);
+
+ALTER TABLE public.vinted_accounts ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY IF NOT EXISTS "Authenticated users can manage accounts"
+  ON public.vinted_accounts FOR ALL TO authenticated
+  USING (true) WITH CHECK (true);
+
+-- Colonnes ajoutées progressivement (idempotentes)
+ALTER TABLE public.vinted_accounts ADD COLUMN IF NOT EXISTS deban_at     TIMESTAMPTZ;
+ALTER TABLE public.vinted_accounts ADD COLUMN IF NOT EXISTS ads_power_num TEXT;
+
+-- ============================================================
 -- MIGRATION v4 — Renommage catégorie Vert-Noir-Bleu
 -- Les anciens articles "Vert-Noir-Bleu" passent dans le nouveau
 -- groupe. Reassigner manuellement ceux qui sont purement "Vert".
