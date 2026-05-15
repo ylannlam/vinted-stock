@@ -20,6 +20,22 @@ function StatutBadge({ statut }) {
   return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${s.bg}`}>{s.label}</span>
 }
 
+function DebanCountdown({ deban_at }) {
+  if (!deban_at) return null
+  const now = new Date()
+  const target = new Date(deban_at)
+  const diff = target - now
+  if (diff <= 0) return <span className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">Débanni</span>
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+  const label = days > 0 ? `${days}j ${hours}h` : `${hours}h`
+  return (
+    <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">
+      ⏱ {label}
+    </span>
+  )
+}
+
 export default function VintedAccountsTab() {
   const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -110,15 +126,23 @@ export default function VintedAccountsTab() {
               className="flex items-center gap-3 px-4 py-3 cursor-pointer"
               onClick={() => setExpanded(expanded === account.id ? null : account.id)}
             >
-              <div className="w-9 h-9 rounded-full bg-teal-100 flex items-center justify-center flex-shrink-0">
+              <div className="w-9 h-9 rounded-full bg-teal-100 flex items-center justify-center flex-shrink-0 relative">
                 <span className="text-sm font-bold text-teal-700">
                   {account.pseudo?.[0]?.toUpperCase() ?? '?'}
                 </span>
+                {account.ads_power_num && (
+                  <span className="absolute -top-1 -right-1 text-[9px] font-bold bg-gray-700 text-white w-4 h-4 rounded-full flex items-center justify-center">
+                    {account.ads_power_num}
+                  </span>
+                )}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="font-semibold text-gray-900 text-sm">{account.pseudo}</p>
                   <StatutBadge statut={account.statut} />
+                  {account.statut === 'banni_temp' && account.deban_at && (
+                    <DebanCountdown deban_at={account.deban_at} />
+                  )}
                   {account.methode_connexion && (
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize ${METHODE_COLORS[account.methode_connexion] ?? 'bg-gray-100 text-gray-600'}`}>
                       {account.methode_connexion}
@@ -141,6 +165,12 @@ export default function VintedAccountsTab() {
             {expanded === account.id && (
               <div className="border-t border-gray-100 px-4 py-3 space-y-2 bg-gray-50">
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                  {account.ads_power_num && (
+                    <Info label="N° AdsPower" value={`#${account.ads_power_num}`} mono />
+                  )}
+                  {account.deban_at && account.statut === 'banni_temp' && (
+                    <Info label="Débanni le" value={new Date(account.deban_at).toLocaleDateString('fr-FR')} />
+                  )}
                   {account.password && (
                     <Info label="Mot de passe" value={account.password} mono />
                   )}

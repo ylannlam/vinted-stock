@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 const EMPTY = {
+  ads_power_num: '',
   pseudo: '',
   email: '',
   password: '',
@@ -9,6 +10,7 @@ const EMPTY = {
   telephone_type: 'onoff',
   telephone_email: '',
   statut: 'actif',
+  deban_at: '',
   notes: '',
 }
 
@@ -47,15 +49,27 @@ export default function AccountFormModal({ account, onClose, onSave }) {
 
         <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
 
-          <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">Pseudo *</label>
-            <input
-              value={form.pseudo}
-              onChange={e => set('pseudo', e.target.value)}
-              placeholder="@pseudo_vinted"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-teal-400"
-              required
-            />
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">N° AdsPower</label>
+              <input
+                value={form.ads_power_num}
+                onChange={e => set('ads_power_num', e.target.value.replace(/\D/g, ''))}
+                placeholder="01"
+                inputMode="numeric"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-mono text-center focus:outline-none focus:border-teal-400"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">Pseudo *</label>
+              <input
+                value={form.pseudo}
+                onChange={e => set('pseudo', e.target.value)}
+                placeholder="@pseudo_vinted"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-teal-400"
+                required
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -179,6 +193,18 @@ export default function AccountFormModal({ account, onClose, onSave }) {
               ))}
             </div>
           </div>
+
+          {form.statut === 'banni_temp' && (
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">Date de débannissement</label>
+              <input
+                type="date"
+                value={form.deban_at ? form.deban_at.slice(0, 10) : ''}
+                onChange={e => set('deban_at', e.target.value ? new Date(e.target.value).toISOString() : '')}
+                className="w-full border border-orange-200 bg-orange-50 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-orange-400"
+              />
+            </div>
+          )}
 
           <div>
             <label className="text-xs font-semibold text-gray-500 mb-1 block">Notes</label>
