@@ -57,15 +57,20 @@ export default function VintedAccountsTab() {
   }
 
   async function handleSave(form) {
-    const { id, ...fields } = form
+    const { id, ...raw } = form
+    const fields = Object.fromEntries(
+      Object.entries(raw).map(([k, v]) => [k, v === '' ? null : v])
+    )
     if (id) {
       const { data, error } = await supabase
         .from('vinted_accounts').update(fields).eq('id', id).select().single()
-      if (!error && data) setAccounts(prev => prev.map(a => a.id === data.id ? data : a))
+      if (error) { alert('Erreur : ' + error.message); return }
+      if (data) setAccounts(prev => prev.map(a => a.id === data.id ? data : a))
     } else {
       const { data, error } = await supabase
         .from('vinted_accounts').insert(fields).select().single()
-      if (!error && data) setAccounts(prev => [data, ...prev])
+      if (error) { alert('Erreur : ' + error.message); return }
+      if (data) setAccounts(prev => [data, ...prev])
     }
     setEditAccount(undefined)
   }
