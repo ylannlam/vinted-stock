@@ -4,6 +4,11 @@ export default function CategoryTabs({ categories, active, onChange, items, isAd
   const aRecevoirCount = items.filter(i => i.status === 'a_recevoir').length
   const aEnvoyerCount  = items.filter(i => i.status === 'vendu').length
   const envoyesCount   = items.filter(i => i.status === 'envoye').length
+  const lotsCount = (() => {
+    const pending = items.filter(i => i.status === 'vendu' && i.bordereau_url)
+    const counts = pending.reduce((acc, i) => { acc[i.bordereau_url] = (acc[i.bordereau_url] || 0) + 1; return acc }, {})
+    return Object.values(counts).filter(n => n > 1).length
+  })()
 
   function tabClass(isActive, color = 'teal') {
     const colors = {
@@ -88,6 +93,9 @@ export default function CategoryTabs({ categories, active, onChange, items, isAd
             className={tabClass(active === TAB_A_ENVOYER_LOT, 'orange')}
           >
             Lots
+            {lotsCount > 0 && (
+              <span className={badgeClass(active === TAB_A_ENVOYER_LOT, 'orange')}>{lotsCount}</span>
+            )}
           </button>
 
           {/* Articles envoyés */}
