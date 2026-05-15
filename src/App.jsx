@@ -237,7 +237,7 @@ export default function App() {
 
   const filteredItems = (() => {
     if (activeTab === TAB_A_RECEVOIR)    return items.filter(i => i.status === 'a_recevoir')
-    if (activeTab === TAB_A_ENVOYER)     return items.filter(i => i.status === 'vendu').sort((a, b) => new Date(b.sold_at ?? b.created_at) - new Date(a.sold_at ?? a.created_at))
+    if (activeTab === TAB_A_ENVOYER)     return items.filter(i => i.status === 'vendu' && !i.bordereau_url).sort((a, b) => new Date(b.sold_at ?? b.created_at) - new Date(a.sold_at ?? a.created_at))
     if (activeTab === TAB_A_ENVOYER_LOT) {
       const pending = items.filter(i => i.status === 'vendu' && i.bordereau_url)
       const counts = pending.reduce((acc, i) => { acc[i.bordereau_url] = (acc[i.bordereau_url] || 0) + 1; return acc }, {})

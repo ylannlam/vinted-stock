@@ -2,7 +2,7 @@ import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES
 
 export default function CategoryTabs({ categories, active, onChange, items, isAdmin }) {
   const aRecevoirCount = items.filter(i => i.status === 'a_recevoir').length
-  const aEnvoyerCount  = items.filter(i => i.status === 'vendu').length
+  const aEnvoyerCount  = items.filter(i => i.status === 'vendu' && !i.bordereau_url).length
   const envoyesCount   = items.filter(i => i.status === 'envoye').length
   const lotsCount = (() => {
     const pending = items.filter(i => i.status === 'vendu' && i.bordereau_url)
