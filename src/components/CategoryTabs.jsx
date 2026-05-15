@@ -2,7 +2,12 @@ import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES
 
 export default function CategoryTabs({ categories, active, onChange, items, isAdmin }) {
   const aRecevoirCount = items.filter(i => i.status === 'a_recevoir').length
-  const aEnvoyerCount  = items.filter(i => i.status === 'vendu' && !i.bordereau_url).length
+  const lotBordereaux = new Set(
+    Object.entries(items.filter(i => i.status === 'vendu' && i.bordereau_url)
+      .reduce((acc, i) => { acc[i.bordereau_url] = (acc[i.bordereau_url] || 0) + 1; return acc }, {}))
+      .filter(([, n]) => n > 1).map(([url]) => url)
+  )
+  const aEnvoyerCount  = items.filter(i => i.status === 'vendu' && !lotBordereaux.has(i.bordereau_url)).length
   const envoyesCount   = items.filter(i => i.status === 'envoye').length
   const lotsCount = (() => {
     const pending = items.filter(i => i.status === 'vendu' && i.bordereau_url)
