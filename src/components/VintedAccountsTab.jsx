@@ -77,7 +77,9 @@ export default function VintedAccountsTab() {
     if (expanded === id) setExpanded(null)
   }
 
-  const displayed = filterStatut ? accounts.filter(a => a.statut === filterStatut) : accounts
+  const ORDER = { actif: 0, banni_temp: 1, suspendu: 2, banni_def: 3 }
+  const displayed = (filterStatut ? accounts.filter(a => a.statut === filterStatut) : accounts)
+    .sort((a, b) => (ORDER[a.statut] ?? 9) - (ORDER[b.statut] ?? 9))
 
   return (
     <div className="pb-28">
