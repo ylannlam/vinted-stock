@@ -151,7 +151,7 @@ export default function App() {
       if (error) throw error
       if (data) {
         setItems(prev => prev.map(i => data.find(d => d.id === i.id) ?? i))
-        setActiveTab(TAB_A_ENVOYER)
+        setActiveTab(TAB_A_ENVOYER_LOT)
       }
     } catch (err) {
       alert('Erreur : ' + err.message)
