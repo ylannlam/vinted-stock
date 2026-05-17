@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import UserManagementModal from './UserManagementModal'
+import TaskAssignModal from './TaskAssignModal'
 
 const ROLE_CONFIG = {
   employe: { label: 'Employé', color: 'text-purple-600 bg-purple-100' },
@@ -8,7 +9,23 @@ const ROLE_CONFIG = {
   admin:   { label: 'Admin',   color: 'text-teal-600 bg-teal-100' },
 }
 
-const STATUT_LABELS = { en_cours: 'En cours', image_faite: 'Image faite', importe_dotb: 'Importé DOTB' }
+const STATUT_LABELS = {
+  en_cours:     'En cours',
+  image_faite:  'Images faites',
+  importe_dotb: 'Posté sur Vinted',
+}
+
+const TASK_STATUT_LABELS = {
+  assignee: 'Assignée',
+  en_cours: 'En cours',
+  termine:  'Terminée',
+}
+
+function taskBadgeCls(s) {
+  if (s === 'assignee') return 'bg-orange-100 text-orange-600'
+  if (s === 'en_cours') return 'bg-blue-100 text-blue-600'
+  return 'bg-green-100 text-green-700'
+}
 
 function startOfWeek() {
   const d = new Date()
@@ -21,23 +38,33 @@ function startOfWeek() {
 export default function EmployeesTab() {
   const [profiles, setProfiles]   = useState([])
   const [workItems, setWorkItems] = useState([])
+  const [tasks, setTasks]         = useState([])
+  const [fonds, setFonds]         = useState([])
   const [loading, setLoading]     = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editUser, setEditUser]   = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [deleting, setDeleting]   = useState(false)
   const [deleteError, setDeleteError] = useState('')
-  const [selected, setSelected]   = useState(null) // profile pour la vue détail
+  const [selected, setSelected]   = useState(null)
   const [noteInputs, setNoteInputs]   = useState({})
   const [savingNote, setSavingNote]   = useState({})
+  const [showTaskModal, setShowTaskModal] = useState(false)
 
   useEffect(() => { fetchData() }, [])
 
   async function fetchData() {
     setLoading(true)
-    const [{ data: p }, { data: w }] = await Promise.all([
+    const [
+      { data: p },
+      { data: w },
+      { data: t },
+      { data: f },
+    ] = await Promise.all([
       supabase.from('profiles').select('*').order('created_at', { ascending: true }),
       supabase.from('work_items').select('*').order('created_at', { ascending: false }),
+      supabase.from('tasks').select('*').order('created_at', { ascending: false }),
+      supabase.from('fonds').select('*').order('nom', { ascending: true }),
     ])
     if (p) {
       setProfiles(p)
@@ -46,6 +73,8 @@ export default function EmployeesTab() {
       setNoteInputs(notes)
     }
     if (w) setWorkItems(w)
+    if (t) setTasks(t)
+    if (f) setFonds(f)
     setLoading(false)
   }
 
@@ -73,6 +102,7 @@ export default function EmployeesTab() {
       if (!res.ok) { const d = await res.json(); throw new Error(d.error ?? 'Erreur') }
       setProfiles(prev => prev.filter(p => p.id !== userId))
       setWorkItems(prev => prev.filter(i => i.employe_id !== userId))
+      setTasks(prev => prev.filter(t => t.employe_id !== userId))
       setDeleteConfirm(null)
       if (selected?.id === userId) setSelected(null)
     } catch (err) { setDeleteError(err.message) }
@@ -110,7 +140,9 @@ export default function EmployeesTab() {
 
   // ── Vue détail employé ───────────────────────────────────────
   if (selected) {
-    const stats = statsFor(selected.id)
+    const stats        = statsFor(selected.id)
+    const employeTasks = tasks.filter(t => t.employe_id === selected.id)
+
     return (
       <div className="p-4 max-w-2xl mx-auto">
         <button
@@ -135,16 +167,28 @@ export default function EmployeesTab() {
               </div>
               <div className="text-xs text-gray-500 mt-0.5">{selected.email}</div>
             </div>
-            <button
-              onClick={() => { setEditUser(selected); setShowModal(true) }}
-              className="p-1.5 text-gray-400 hover:text-teal-600 transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowTaskModal(true)}
+                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-orange-500 text-white hover:bg-orange-600 transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Assigner une tâche
+              </button>
+              <button
+                onClick={() => { setEditUser(selected); setShowModal(true) }}
+                className="p-1.5 text-gray-400 hover:text-teal-600 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </button>
+            </div>
           </div>
+
           {/* Stats */}
           <div className="grid grid-cols-4 gap-2 mt-4">
             {[
@@ -182,7 +226,60 @@ export default function EmployeesTab() {
           </div>
         </div>
 
-        {/* Liste des articles */}
+        {/* Section Tâches */}
+        <div className="flex items-center gap-2 mb-3">
+          <h3 className="text-sm font-bold text-gray-900">Tâches</h3>
+          <span className="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full font-medium">{employeTasks.length}</span>
+        </div>
+
+        {employeTasks.length === 0 ? (
+          <p className="text-sm text-gray-400 italic mb-5">Aucune tâche assignée.</p>
+        ) : (
+          <div className="space-y-2 mb-5">
+            {employeTasks.map(task => {
+              const fond = fonds.find(f => f.id === task.fond_id)
+              return (
+                <div key={task.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
+                  <div className="flex items-start gap-3">
+                    {fond && (
+                      <img
+                        src={fond.image_url}
+                        alt={fond.nom}
+                        className="w-12 h-12 rounded-xl object-cover border border-gray-200 shrink-0"
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      {fond && (
+                        <>
+                          <div className="text-xs font-semibold text-gray-700">{fond.nom}</div>
+                          <div className="text-xs text-gray-400 mb-0.5">Compte : {fond.compte_vinted_pseudo}</div>
+                        </>
+                      )}
+                      <a
+                        href={task.lien_shein}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium text-teal-600 hover:underline block truncate"
+                      >
+                        {task.lien_shein}
+                      </a>
+                      {task.message && (
+                        <p className="text-xs text-gray-400 italic mt-1">{task.message}</p>
+                      )}
+                      <div className="mt-1.5">
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${taskBadgeCls(task.statut)}`}>
+                          {TASK_STATUT_LABELS[task.statut]}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Section Articles soumis */}
         <div className="flex items-center gap-2 mb-3">
           <h3 className="text-sm font-bold text-gray-900">Articles soumis</h3>
           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{stats.all.length}</span>
@@ -192,67 +289,109 @@ export default function EmployeesTab() {
           <p className="text-sm text-gray-400 italic">Aucun article soumis.</p>
         ) : (
           <div className="space-y-2">
-            {stats.all.map(item => (
-              <div key={item.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <a href={item.lien_shein} target="_blank" rel="noopener noreferrer"
-                      className="text-sm font-medium text-teal-600 hover:underline block truncate">
-                      {item.lien_shein}
-                    </a>
-                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      <span className="text-xs text-gray-500">{item.categorie}</span>
-                      {item.taille && (
-                        <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{item.taille}</span>
+            {stats.all.map(item => {
+              const fond = fonds.find(f => f.id === item.fond_id)
+              return (
+                <div key={item.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
+                  <div className="flex items-start gap-3">
+                    {fond && (
+                      <img
+                        src={fond.image_url}
+                        alt={fond.nom}
+                        className="w-12 h-12 rounded-xl object-cover border border-gray-200 shrink-0"
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      {fond && (
+                        <div className="text-xs text-gray-500 mb-0.5">Compte : <span className="font-medium">{fond.compte_vinted_pseudo}</span></div>
                       )}
-                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                        item.statut === 'en_cours'    ? 'bg-gray-100 text-gray-600' :
-                        item.statut === 'image_faite' ? 'bg-blue-100 text-blue-600' :
-                                                        'bg-green-100 text-green-600'
-                      }`}>{STATUT_LABELS[item.statut]}</span>
-                      <span className="text-xs text-gray-400">
-                        {new Date(item.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                      <a
+                        href={item.lien_shein}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium text-teal-600 hover:underline block truncate"
+                      >
+                        {item.lien_shein}
+                      </a>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        {item.taille && (
+                          <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{item.taille}</span>
+                        )}
+                        {item.prix_shein != null && (
+                          <span className="text-xs text-gray-600 font-medium">{parseFloat(item.prix_shein).toFixed(2)} €</span>
+                        )}
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                          item.statut === 'en_cours'    ? 'bg-gray-100 text-gray-600' :
+                          item.statut === 'image_faite' ? 'bg-blue-100 text-blue-600' :
+                                                          'bg-green-100 text-green-600'
+                        }`}>{STATUT_LABELS[item.statut]}</span>
+                        <span className="text-xs text-gray-400">
+                          {new Date(item.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+
+                      {/* Miniatures images */}
+                      {Array.isArray(item.images_urls) && item.images_urls.length > 0 && (
+                        <div className="flex gap-1.5 mt-2 flex-wrap">
+                          {item.images_urls.slice(0, 4).map((url, i) => (
+                            <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                              <img
+                                src={url}
+                                alt={`img ${i + 1}`}
+                                className="w-10 h-10 rounded-lg object-cover border border-gray-200 hover:opacity-80 transition-opacity"
+                              />
+                            </a>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Badge admin status */}
+                      <div className="mt-1.5">
+                        {item.admin_status === 'valide' && (
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ Validé</span>
+                        )}
+                        {item.admin_status === 'refuse' && (
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700">✗ Refusé</span>
+                        )}
+                        {(!item.admin_status || item.admin_status === 'en_attente') && (
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">· En attente</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Boutons valider / refuser */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => handleSetAdminStatus(item.id, item.admin_status === 'valide' ? 'en_attente' : 'valide')}
+                        title="Valider"
+                        className={`p-1.5 rounded-lg transition-colors ${
+                          item.admin_status === 'valide'
+                            ? 'bg-green-100 text-green-600'
+                            : 'text-gray-400 hover:bg-green-50 hover:text-green-600'
+                        }`}
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => handleSetAdminStatus(item.id, item.admin_status === 'refuse' ? 'en_attente' : 'refuse')}
+                        title="Refuser"
+                        className={`p-1.5 rounded-lg transition-colors ${
+                          item.admin_status === 'refuse'
+                            ? 'bg-red-100 text-red-500'
+                            : 'text-gray-400 hover:bg-red-50 hover:text-red-500'
+                        }`}
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
                     </div>
                   </div>
-                  {/* Boutons valider / refuser */}
-                  <div className="flex items-center gap-1 shrink-0">
-                    {item.admin_status === 'valide' && (
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ Validé</span>
-                    )}
-                    {item.admin_status === 'refuse' && (
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700">✗ Refusé</span>
-                    )}
-                    <button
-                      onClick={() => handleSetAdminStatus(item.id, item.admin_status === 'valide' ? 'en_attente' : 'valide')}
-                      title="Valider"
-                      className={`p-1.5 rounded-lg transition-colors ${
-                        item.admin_status === 'valide'
-                          ? 'bg-green-100 text-green-600'
-                          : 'text-gray-400 hover:bg-green-50 hover:text-green-600'
-                      }`}
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => handleSetAdminStatus(item.id, item.admin_status === 'refuse' ? 'en_attente' : 'refuse')}
-                      title="Refuser"
-                      className={`p-1.5 rounded-lg transition-colors ${
-                        item.admin_status === 'refuse'
-                          ? 'bg-red-100 text-red-500'
-                          : 'text-gray-400 hover:bg-red-50 hover:text-red-500'
-                      }`}
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
 
@@ -261,6 +400,18 @@ export default function EmployeesTab() {
             user={editUser}
             onClose={() => { setShowModal(false); setEditUser(null) }}
             onSaved={handleSaved}
+          />
+        )}
+
+        {showTaskModal && (
+          <TaskAssignModal
+            employe={selected}
+            fonds={fonds}
+            onClose={() => setShowTaskModal(false)}
+            onCreated={task => {
+              setTasks(prev => [task, ...prev])
+              setShowTaskModal(false)
+            }}
           />
         )}
       </div>
@@ -301,15 +452,14 @@ export default function EmployeesTab() {
 
       <div className="space-y-3">
         {profiles.map(profile => {
-          const roleCfg  = ROLE_CONFIG[profile.role] ?? { label: profile.role, color: 'bg-gray-100 text-gray-600' }
+          const roleCfg   = ROLE_CONFIG[profile.role] ?? { label: profile.role, color: 'bg-gray-100 text-gray-600' }
           const isEmploye = profile.role === 'employe'
-          const stats    = isEmploye ? statsFor(profile.id) : null
+          const stats     = isEmploye ? statsFor(profile.id) : null
 
           return (
             <div key={profile.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="p-4">
                 <div className="flex items-start justify-between gap-2">
-                  {/* Partie cliquable (employés seulement) */}
                   <div
                     className={`flex-1 min-w-0 ${isEmploye ? 'cursor-pointer' : ''}`}
                     onClick={() => isEmploye && setSelected(profile)}
@@ -331,7 +481,6 @@ export default function EmployeesTab() {
                       <div className="text-xs text-teal-500 mt-1.5">Voir les articles →</div>
                     )}
                   </div>
-                  {/* Actions */}
                   <div className="flex items-center gap-1 shrink-0">
                     <button
                       onClick={() => { setEditUser(profile); setShowModal(true) }}

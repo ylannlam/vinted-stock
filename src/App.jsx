@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
-import { CATEGORIES, TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE, TAB_EMPLOYEES } from './constants'
+import { CATEGORIES, TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE, TAB_EMPLOYEES, TAB_FONDS } from './constants'
 import Login from './Login'
 import Header from './components/Header'
 import CategoryTabs from './components/CategoryTabs'
@@ -13,6 +13,7 @@ import SoldModal from './components/SoldModal'
 import VintedAccountsTab from './components/VintedAccountsTab'
 import WorkspaceTab from './components/WorkspaceTab'
 import EmployeesTab from './components/EmployeesTab'
+import FondsLibrary from './components/FondsLibrary'
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -289,7 +290,7 @@ export default function App() {
   }
 
   // Stock / Admin: full UI
-  const isSpecialTab = activeTab === TAB_TOUT || activeTab === TAB_A_RECEVOIR || activeTab === TAB_A_ENVOYER || activeTab === TAB_A_ENVOYER_LOT || activeTab === TAB_ENVOYES || activeTab === TAB_COMPTES_VINTED || activeTab === TAB_EMPLOYEES
+  const isSpecialTab = activeTab === TAB_TOUT || activeTab === TAB_A_RECEVOIR || activeTab === TAB_A_ENVOYER || activeTab === TAB_A_ENVOYER_LOT || activeTab === TAB_ENVOYES || activeTab === TAB_COMPTES_VINTED || activeTab === TAB_EMPLOYEES || activeTab === TAB_FONDS
 
   const filteredItems = (() => {
     if (activeTab === TAB_A_RECEVOIR)    return items.filter(i => i.status === 'a_recevoir')
@@ -326,8 +327,9 @@ export default function App() {
 
       {activeTab === TAB_EMPLOYEES && <EmployeesTab />}
       {activeTab === TAB_COMPTES_VINTED && <VintedAccountsTab />}
+      {activeTab === TAB_FONDS && <FondsLibrary />}
 
-      {activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_EMPLOYEES && (activeTab === TAB_TOUT || CATEGORIES.includes(activeTab)) && (
+      {activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_EMPLOYEES && activeTab !== TAB_FONDS && (activeTab === TAB_TOUT || CATEGORIES.includes(activeTab)) && (
         <div className="flex items-center justify-end px-3 py-1.5 bg-white border-b border-gray-100">
           <button
             onClick={() => setShowLotModal(true)}
@@ -353,7 +355,7 @@ export default function App() {
         />
       )}
 
-      {activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_EMPLOYEES && (
+      {activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_EMPLOYEES && activeTab !== TAB_FONDS && (
         <Gallery
           items={filteredItems}
           categories={CATEGORIES}
@@ -374,7 +376,7 @@ export default function App() {
         />
       )}
 
-      {activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_EMPLOYEES && activeTab !== TAB_A_ENVOYER && activeTab !== TAB_A_ENVOYER_LOT && activeTab !== TAB_ENVOYES && (
+      {activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_EMPLOYEES && activeTab !== TAB_FONDS && activeTab !== TAB_A_ENVOYER && activeTab !== TAB_A_ENVOYER_LOT && activeTab !== TAB_ENVOYES && (
         <button
           onClick={() => setShowAddModal(true)}
           className={`fixed bottom-6 right-5 w-14 h-14 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-105 z-40 ${

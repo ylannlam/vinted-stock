@@ -209,3 +209,65 @@ CREATE POLICY "vinted_accounts_admin" ON vinted_accounts
 
 ALTER TABLE work_items ADD COLUMN IF NOT EXISTS admin_status TEXT DEFAULT 'en_attente' CHECK (admin_status IN ('en_attente', 'valide', 'refuse'));
 ALTER TABLE profiles    ADD COLUMN IF NOT EXISTS note_admin TEXT;
+
+-- ============================================================
+-- MIGRATION v11 — Fonds, tâches, images articles
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS fonds (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nom TEXT NOT NULL,
+  image_url TEXT NOT NULL,
+  compte_vinted_pseudo TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE fonds ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "fonds_read_authenticated" ON fonds;
+CREATE POLICY "fonds_read_authenticated" ON fonds
+  FOR SELECT USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "fonds_admin_write" ON fonds;
+CREATE POLICY "fonds_admin_write" ON fonds
+  FOR ALL USING (get_my_role() = 'admin');
+
+CREATE TABLE IF NOT EXISTS tasks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  employe_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  lien_shein TEXT NOT NULL,
+  fond_id UUID REFERENCES fonds(id) ON DELETE SET NULL,
+  message TEXT,
+  statut TEXT NOT NULL DEFAULT 'assignee' CHECK (statut IN ('assignee', 'en_cours', 'termine')),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "tasks_own_or_admin" ON tasks;
+CREATE POLICY "tasks_own_or_admin" ON tasks
+  FOR ALL USING (auth.uid() = employe_id OR get_my_role() = 'admin');
+
+ALTER TABLE work_items ADD COLUMN IF NOT EXISTS fond_id UUID REFERENCES fonds(id) ON DELETE SET NULL;
+ALTER TABLE work_items ADD COLUMN IF NOT EXISTS prix_shein NUMERIC(10,2);
+ALTER TABLE work_items ADD COLUMN IF NOT EXISTS images_urls TEXT[] DEFAULT '{}';
+
+INSERT INTO storage.buckets (id, name, public) VALUES ('fonds', 'fonds', true) ON CONFLICT DO NOTHING;
+INSERT INTO storage.buckets (id, name, public) VALUES ('work_images', 'work_images', true) ON CONFLICT DO NOTHING;
+
+DROP POLICY IF EXISTS "fonds_upload_admin" ON storage.objects;
+CREATE POLICY "fonds_upload_admin" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'fonds' AND get_my_role() = 'admin');
+DROP POLICY IF EXISTS "fonds_read_public" ON storage.objects;
+CREATE POLICY "fonds_read_public" ON storage.objects
+  FOR SELECT USING (bucket_id = 'fonds');
+DROP POLICY IF EXISTS "fonds_delete_admin" ON storage.objects;
+CREATE POLICY "fonds_delete_admin" ON storage.objects
+  FOR DELETE USING (bucket_id = 'fonds' AND get_my_role() = 'admin');
+
+DROP POLICY IF EXISTS "work_images_upload_auth" ON storage.objects;
+CREATE POLICY "work_images_upload_auth" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'work_images' AND auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "work_images_read_public" ON storage.objects;
+CREATE POLICY "work_images_read_public" ON storage.objects
+  FOR SELECT USING (bucket_id = 'work_images');
+DROP POLICY IF EXISTS "work_images_delete_auth" ON storage.objects;
+CREATE POLICY "work_images_delete_auth" ON storage.objects
+  FOR DELETE USING (bucket_id = 'work_images' AND auth.role() = 'authenticated');
