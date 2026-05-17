@@ -318,3 +318,8 @@ CREATE POLICY "fond_comptes_admin_write" ON fond_comptes
 
 -- compte_vinted_pseudo devient optionnel (remplacé par fond_comptes)
 ALTER TABLE fonds ALTER COLUMN compte_vinted_pseudo DROP NOT NULL;
+
+-- ============================================================
+-- MIGRATION v14 — categorie devient optionnel dans work_items
+-- ============================================================
+ALTER TABLE work_items ALTER COLUMN categorie DROP NOT NULL;
