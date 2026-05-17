@@ -271,3 +271,27 @@ CREATE POLICY "work_images_read_public" ON storage.objects
 DROP POLICY IF EXISTS "work_images_delete_auth" ON storage.objects;
 CREATE POLICY "work_images_delete_auth" ON storage.objects
   FOR DELETE USING (bucket_id = 'work_images' AND auth.role() = 'authenticated');
+
+-- ============================================================
+-- MIGRATION v12 — Fonds liés aux vrais comptes Vinted + employe_comptes
+-- ============================================================
+
+-- Lier les fonds aux vrais comptes Vinted
+ALTER TABLE fonds ADD COLUMN IF NOT EXISTS compte_vinted_id UUID REFERENCES vinted_accounts(id) ON DELETE SET NULL;
+
+-- Table d'association employé ↔ comptes Vinted autorisés
+CREATE TABLE IF NOT EXISTS employe_comptes (
+  employe_id       UUID NOT NULL REFERENCES profiles(id)        ON DELETE CASCADE,
+  compte_vinted_id UUID NOT NULL REFERENCES vinted_accounts(id) ON DELETE CASCADE,
+  PRIMARY KEY (employe_id, compte_vinted_id)
+);
+ALTER TABLE employe_comptes ENABLE ROW LEVEL SECURITY;
+
+-- Employé : lit ses propres associations ; admin : tout
+DROP POLICY IF EXISTS "employe_comptes_select" ON employe_comptes;
+CREATE POLICY "employe_comptes_select" ON employe_comptes
+  FOR SELECT USING (auth.uid() = employe_id OR get_my_role() = 'admin');
+
+DROP POLICY IF EXISTS "employe_comptes_admin_write" ON employe_comptes;
+CREATE POLICY "employe_comptes_admin_write" ON employe_comptes
+  FOR ALL USING (get_my_role() = 'admin');

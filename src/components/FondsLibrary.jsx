@@ -1,64 +1,83 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
+async function downloadFond(fond) {
+  try {
+    const res  = await fetch(fond.image_url)
+    const blob = await res.blob()
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = `${fond.nom}.${blob.type.split('/')[1] || 'jpg'}`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch {
+    window.open(fond.image_url, '_blank')
+  }
+}
+
 export default function FondsLibrary() {
-  const [fonds, setFonds]       = useState([])
-  const [loading, setLoading]   = useState(false)
+  const [fonds, setFonds]               = useState([])
+  const [comptes, setComptes]           = useState([])
+  const [loading, setLoading]           = useState(false)
 
-  // Formulaire ajout
-  const [nom, setNom]                     = useState('')
-  const [compteVinted, setCompteVinted]   = useState('')
-  const [imageFile, setImageFile]         = useState(null)
-  const [adding, setAdding]               = useState(false)
-  const [addError, setAddError]           = useState('')
+  const [nom, setNom]                   = useState('')
+  const [selectedCompteId, setSelectedCompteId] = useState('')
+  const [imageFile, setImageFile]       = useState(null)
+  const [adding, setAdding]             = useState(false)
+  const [addError, setAddError]         = useState('')
 
-  // Suppression
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [deleting, setDeleting]           = useState(false)
 
-  useEffect(() => { fetchFonds() }, [])
+  useEffect(() => { fetchAll() }, [])
 
-  async function fetchFonds() {
+  async function fetchAll() {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('fonds')
-      .select('*')
-      .order('created_at', { ascending: false })
-    if (!error && data) setFonds(data)
+    const [{ data: f }, { data: c }] = await Promise.all([
+      supabase.from('fonds').select('*').order('created_at', { ascending: false }),
+      supabase.from('vinted_accounts').select('id, pseudo, statut').order('pseudo', { ascending: true }),
+    ])
+    if (f) setFonds(f)
+    if (c) setComptes(c)
     setLoading(false)
   }
 
   async function handleAdd(e) {
     e.preventDefault()
-    if (!nom.trim() || !compteVinted.trim() || !imageFile) {
+    if (!nom.trim() || !selectedCompteId || !imageFile) {
       setAddError('Tous les champs sont requis.')
       return
     }
     setAdding(true)
     setAddError('')
-
     try {
-      const ext      = imageFile.name.split('.').pop()
+      const compte  = comptes.find(c => c.id === selectedCompteId)
+      const ext     = imageFile.name.split('.').pop()
       const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-      const { error: uploadErr } = await supabase.storage
-        .from('fonds')
-        .upload(fileName, imageFile)
+
+      const { error: uploadErr } = await supabase.storage.from('fonds').upload(fileName, imageFile)
       if (uploadErr) throw uploadErr
 
       const { data: { publicUrl } } = supabase.storage.from('fonds').getPublicUrl(fileName)
 
       const { data, error: insertErr } = await supabase
         .from('fonds')
-        .insert({ nom: nom.trim(), image_url: publicUrl, compte_vinted_pseudo: compteVinted.trim() })
-        .select()
-        .single()
+        .insert({
+          nom:                  nom.trim(),
+          image_url:            publicUrl,
+          compte_vinted_pseudo: compte.pseudo,
+          compte_vinted_id:     selectedCompteId,
+        })
+        .select().single()
       if (insertErr) throw insertErr
 
       setFonds(prev => [data, ...prev])
       setNom('')
-      setCompteVinted('')
+      setSelectedCompteId('')
       setImageFile(null)
-      // reset file input
       const fi = document.getElementById('fonds-file-input')
       if (fi) fi.value = ''
     } catch (err) {
@@ -71,9 +90,8 @@ export default function FondsLibrary() {
   async function handleDelete(fond) {
     setDeleting(true)
     try {
-      // Extraire le filename de l'URL
-      const urlParts  = fond.image_url.split('/')
-      const fileName  = urlParts[urlParts.length - 1]
+      const parts    = fond.image_url.split('/')
+      const fileName = parts[parts.length - 1]
       await supabase.storage.from('fonds').remove([fileName])
       const { error } = await supabase.from('fonds').delete().eq('id', fond.id)
       if (error) throw error
@@ -102,13 +120,17 @@ export default function FondsLibrary() {
               placeholder="Nom du fond"
               className="flex-1 border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
             />
-            <input
-              type="text"
-              value={compteVinted}
-              onChange={e => setCompteVinted(e.target.value)}
-              placeholder="Compte Vinted (pseudo)"
-              className="flex-1 border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
-            />
+            <select
+              value={selectedCompteId}
+              onChange={e => setSelectedCompteId(e.target.value)}
+              required
+              className="flex-1 border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition bg-white"
+            >
+              <option value="">— Compte Vinted —</option>
+              {comptes.map(c => (
+                <option key={c.id} value={c.id}>{c.pseudo}</option>
+              ))}
+            </select>
           </div>
           <div className="flex items-center gap-3">
             <label className="flex-1 cursor-pointer">
@@ -160,11 +182,19 @@ export default function FondsLibrary() {
           {fonds.map(fond => (
             <div key={fond.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="relative">
-                <img
-                  src={fond.image_url}
-                  alt={fond.nom}
-                  className="w-full h-32 object-cover"
-                />
+                <img src={fond.image_url} alt={fond.nom} className="w-full h-32 object-cover" />
+                {/* Télécharger */}
+                <button
+                  onClick={() => downloadFond(fond)}
+                  className="absolute bottom-2 left-2 w-7 h-7 bg-white/90 hover:bg-white text-gray-700 rounded-full flex items-center justify-center shadow transition-colors"
+                  title="Télécharger"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                </button>
+                {/* Supprimer */}
                 <button
                   onClick={() => setDeleteConfirm(fond)}
                   className="absolute top-2 right-2 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center transition-colors shadow"
@@ -194,18 +224,12 @@ export default function FondsLibrary() {
             </p>
             <p className="text-sm text-gray-400 mb-5">Cette action est irréversible.</p>
             <div className="flex gap-3">
-              <button
-                onClick={() => setDeleteConfirm(null)}
-                disabled={deleting}
-                className="flex-1 border border-gray-200 rounded-xl py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              >
+              <button onClick={() => setDeleteConfirm(null)} disabled={deleting}
+                className="flex-1 border border-gray-200 rounded-xl py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
                 Annuler
               </button>
-              <button
-                onClick={() => handleDelete(deleteConfirm)}
-                disabled={deleting}
-                className="flex-1 bg-red-500 text-white rounded-xl py-2 text-sm font-medium hover:bg-red-600 disabled:opacity-50"
-              >
+              <button onClick={() => handleDelete(deleteConfirm)} disabled={deleting}
+                className="flex-1 bg-red-500 text-white rounded-xl py-2 text-sm font-medium hover:bg-red-600 disabled:opacity-50">
                 {deleting ? 'Suppression...' : 'Supprimer'}
               </button>
             </div>

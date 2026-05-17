@@ -36,19 +36,21 @@ function startOfWeek() {
 }
 
 export default function EmployeesTab() {
-  const [profiles, setProfiles]   = useState([])
-  const [workItems, setWorkItems] = useState([])
-  const [tasks, setTasks]         = useState([])
-  const [fonds, setFonds]         = useState([])
-  const [loading, setLoading]     = useState(false)
-  const [showModal, setShowModal] = useState(false)
-  const [editUser, setEditUser]   = useState(null)
+  const [profiles, setProfiles]           = useState([])
+  const [workItems, setWorkItems]         = useState([])
+  const [tasks, setTasks]                 = useState([])
+  const [fonds, setFonds]                 = useState([])
+  const [vintedAccounts, setVintedAccounts] = useState([])
+  const [employeComptes, setEmployeComptes] = useState([])
+  const [loading, setLoading]             = useState(false)
+  const [showModal, setShowModal]         = useState(false)
+  const [editUser, setEditUser]           = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
-  const [deleting, setDeleting]   = useState(false)
-  const [deleteError, setDeleteError] = useState('')
-  const [selected, setSelected]   = useState(null)
-  const [noteInputs, setNoteInputs]   = useState({})
-  const [savingNote, setSavingNote]   = useState({})
+  const [deleting, setDeleting]           = useState(false)
+  const [deleteError, setDeleteError]     = useState('')
+  const [selected, setSelected]           = useState(null)
+  const [noteInputs, setNoteInputs]       = useState({})
+  const [savingNote, setSavingNote]       = useState({})
   const [showTaskModal, setShowTaskModal] = useState(false)
 
   useEffect(() => { fetchData() }, [])
@@ -60,11 +62,15 @@ export default function EmployeesTab() {
       { data: w },
       { data: t },
       { data: f },
+      { data: va },
+      { data: ec },
     ] = await Promise.all([
       supabase.from('profiles').select('*').order('created_at', { ascending: true }),
       supabase.from('work_items').select('*').order('created_at', { ascending: false }),
       supabase.from('tasks').select('*').order('created_at', { ascending: false }),
       supabase.from('fonds').select('*').order('nom', { ascending: true }),
+      supabase.from('vinted_accounts').select('id, pseudo, statut').order('pseudo', { ascending: true }),
+      supabase.from('employe_comptes').select('*'),
     ])
     if (p) {
       setProfiles(p)
@@ -75,7 +81,24 @@ export default function EmployeesTab() {
     if (w) setWorkItems(w)
     if (t) setTasks(t)
     if (f) setFonds(f)
+    if (va) setVintedAccounts(va)
+    if (ec) setEmployeComptes(ec)
     setLoading(false)
+  }
+
+  async function toggleCompte(employeId, compteId, isAssigned) {
+    if (isAssigned) {
+      await supabase.from('employe_comptes')
+        .delete()
+        .eq('employe_id', employeId)
+        .eq('compte_vinted_id', compteId)
+      setEmployeComptes(prev => prev.filter(ec => !(ec.employe_id === employeId && ec.compte_vinted_id === compteId)))
+    } else {
+      const { data } = await supabase.from('employe_comptes')
+        .insert({ employe_id: employeId, compte_vinted_id: compteId })
+        .select().single()
+      if (data) setEmployeComptes(prev => [...prev, data])
+    }
   }
 
   function statsFor(userId) {
@@ -225,6 +248,38 @@ export default function EmployeesTab() {
             </button>
           </div>
         </div>
+
+        {/* Comptes autorisés */}
+        {selected.role === 'employe' && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-4">
+            <h3 className="text-sm font-bold text-gray-900 mb-3">Comptes Vinted autorisés</h3>
+            {vintedAccounts.length === 0 ? (
+              <p className="text-xs text-gray-400 italic">Aucun compte Vinted enregistré.</p>
+            ) : (
+              <div className="space-y-2">
+                {vintedAccounts.map(compte => {
+                  const isAssigned = employeComptes.some(
+                    ec => ec.employe_id === selected.id && ec.compte_vinted_id === compte.id
+                  )
+                  return (
+                    <label key={compte.id} className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isAssigned}
+                        onChange={() => toggleCompte(selected.id, compte.id, isAssigned)}
+                        className="w-4 h-4 accent-teal-500 rounded"
+                      />
+                      <span className="text-sm text-gray-800 font-medium">{compte.pseudo}</span>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                        compte.statut === 'actif' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
+                      }`}>{compte.statut}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Section Tâches */}
         <div className="flex items-center gap-2 mb-3">

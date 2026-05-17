@@ -44,10 +44,11 @@ export default function WorkspaceTab({ profile }) {
   const userId = profile.id
   const note   = profile.note_admin ?? null
 
-  const [items, setItems]   = useState([])
-  const [tasks, setTasks]   = useState([])
-  const [fonds, setFonds]   = useState([])
-  const [loading, setLoading] = useState(false)
+  const [items, setItems]         = useState([])
+  const [tasks, setTasks]         = useState([])
+  const [fonds, setFonds]         = useState([])
+  const [fondsFiltrés, setFondsFiltrés] = useState([])
+  const [loading, setLoading]     = useState(false)
   const [noteDismissed, setNoteDismissed] = useState(
     () => note ? sessionStorage.getItem('note_dismissed') === note : true
   )
@@ -75,15 +76,42 @@ export default function WorkspaceTab({ profile }) {
       { data: itemsData },
       { data: tasksData },
       { data: fondsData },
+      { data: comptesData },
     ] = await Promise.all([
       supabase.from('work_items').select('*').eq('employe_id', userId).order('created_at', { ascending: false }),
       supabase.from('tasks').select('*').eq('employe_id', userId).order('created_at', { ascending: false }),
       supabase.from('fonds').select('*').order('nom', { ascending: true }),
+      supabase.from('employe_comptes').select('compte_vinted_id').eq('employe_id', userId),
     ])
     if (itemsData) setItems(itemsData)
     if (tasksData) setTasks(tasksData)
-    if (fondsData) setFonds(fondsData)
+    if (fondsData) {
+      setFonds(fondsData)
+      const assignedIds = new Set(comptesData?.map(ec => ec.compte_vinted_id) ?? [])
+      setFondsFiltrés(
+        assignedIds.size > 0
+          ? fondsData.filter(f => f.compte_vinted_id && assignedIds.has(f.compte_vinted_id))
+          : []
+      )
+    }
     setLoading(false)
+  }
+
+  async function handleDownloadFond(fond) {
+    try {
+      const res  = await fetch(fond.image_url)
+      const blob = await res.blob()
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
+      a.download = `${fond.nom}.${blob.type.split('/')[1] || 'jpg'}`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch {
+      window.open(fond.image_url, '_blank')
+    }
   }
 
   function handleFilesChange(e) {
@@ -279,6 +307,39 @@ export default function WorkspaceTab({ profile }) {
         </div>
       )}
 
+      {/* Mes fonds */}
+      {fondsFiltrés.length > 0 && (
+        <div className="mb-5">
+          <div className="flex items-center gap-2 mb-3">
+            <h3 className="text-sm font-bold text-gray-900">Mes fonds</h3>
+            <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{fondsFiltrés.length}</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {fondsFiltrés.map(fond => (
+              <div key={fond.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="relative">
+                  <img src={fond.image_url} alt={fond.nom} className="w-full h-24 object-cover" />
+                  <button
+                    onClick={() => handleDownloadFond(fond)}
+                    className="absolute bottom-2 right-2 w-7 h-7 bg-white/90 hover:bg-white text-gray-700 rounded-full flex items-center justify-center shadow transition-colors"
+                    title="Télécharger"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="px-3 py-2">
+                  <div className="text-xs font-semibold text-gray-900 truncate">{fond.nom}</div>
+                  <div className="text-[10px] text-gray-500 truncate">Compte : {fond.compte_vinted_pseudo}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Formulaire d'ajout */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-6">
         <h3 className="text-sm font-bold text-gray-900 mb-3">Ajouter un article</h3>
@@ -298,7 +359,7 @@ export default function WorkspaceTab({ profile }) {
             className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition bg-white"
           >
             <option value="">— Aucun fond —</option>
-            {fonds.map(f => (
+            {fondsFiltrés.map(f => (
               <option key={f.id} value={f.id}>
                 {f.nom} — Compte : {f.compte_vinted_pseudo}
               </option>
