@@ -110,12 +110,15 @@ export default function WorkspaceTab({ profile }) {
 
   async function handleDownloadFond(fond) {
     try {
-      const res  = await fetch(fond.image_url)
-      const blob = await res.blob()
-      const url  = URL.createObjectURL(blob)
-      const a    = document.createElement('a')
+      const parts    = fond.image_url.split('/')
+      const fileName = parts[parts.length - 1]
+      const { data, error } = await supabase.storage.from('fonds').download(fileName)
+      if (error) throw error
+      const ext = fileName.split('.').pop() || 'jpg'
+      const url = URL.createObjectURL(data)
+      const a   = document.createElement('a')
       a.href     = url
-      a.download = `${fond.nom}.${blob.type.split('/')[1] || 'jpg'}`
+      a.download = `${fond.nom}.${ext}`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
