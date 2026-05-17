@@ -282,7 +282,7 @@ export default function App() {
           <div className="bg-teal-50 border-b border-teal-100 px-4 py-2.5">
             <span className="text-sm font-semibold text-teal-700">Espace de travail</span>
           </div>
-          <WorkspaceTab userId={user.id} userPseudo={profile.pseudo} />
+          <WorkspaceTab profile={profile} />
         </div>
       </div>
     )

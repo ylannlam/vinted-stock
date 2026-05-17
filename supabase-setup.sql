@@ -202,3 +202,10 @@ CREATE POLICY "vinted_accounts_admin" ON vinted_accounts
 -- INSERT INTO profiles (id, pseudo, email, role)
 -- SELECT id, 'Admin', email, 'admin' FROM auth.users LIMIT 1
 -- ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================
+-- MIGRATION v10 — Améliorations espace employé
+-- ============================================================
+
+ALTER TABLE work_items ADD COLUMN IF NOT EXISTS admin_status TEXT DEFAULT 'en_attente' CHECK (admin_status IN ('en_attente', 'valide', 'refuse'));
+ALTER TABLE profiles    ADD COLUMN IF NOT EXISTS note_admin TEXT;

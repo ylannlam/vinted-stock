@@ -8,52 +8,57 @@ const ROLE_CONFIG = {
   admin:   { label: 'Admin',   color: 'text-teal-600 bg-teal-100' },
 }
 
-function startOfToday() {
-  const d = new Date()
-  d.setHours(0, 0, 0, 0)
-  return d.toISOString()
-}
+const STATUT_LABELS = { en_cours: 'En cours', image_faite: 'Image faite', importe_dotb: 'Importé DOTB' }
 
 function startOfWeek() {
   const d = new Date()
   const day = d.getDay()
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1)
-  d.setDate(diff)
+  d.setDate(d.getDate() - day + (day === 0 ? -6 : 1))
   d.setHours(0, 0, 0, 0)
   return d.toISOString()
 }
 
 export default function EmployeesTab() {
-  const [profiles, setProfiles] = useState([])
-  const [workItems, setWorkItems] = useState([]) // all work_items for stats
-  const [loading, setLoading] = useState(false)
+  const [profiles, setProfiles]   = useState([])
+  const [workItems, setWorkItems] = useState([])
+  const [loading, setLoading]     = useState(false)
   const [showModal, setShowModal] = useState(false)
-  const [editUser, setEditUser] = useState(null)
+  const [editUser, setEditUser]   = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
-  const [deleting, setDeleting] = useState(false)
+  const [deleting, setDeleting]   = useState(false)
   const [deleteError, setDeleteError] = useState('')
-  const [expanded, setExpanded] = useState({}) // userId -> bool
+  const [selected, setSelected]   = useState(null) // profile pour la vue détail
+  const [noteInputs, setNoteInputs]   = useState({})
+  const [savingNote, setSavingNote]   = useState({})
 
-  useEffect(() => {
-    fetchData()
-  }, [])
+  useEffect(() => { fetchData() }, [])
 
   async function fetchData() {
     setLoading(true)
-    const [{ data: profilesData }, { data: workData }] = await Promise.all([
+    const [{ data: p }, { data: w }] = await Promise.all([
       supabase.from('profiles').select('*').order('created_at', { ascending: true }),
       supabase.from('work_items').select('*').order('created_at', { ascending: false }),
     ])
-    if (profilesData) setProfiles(profilesData)
-    if (workData) setWorkItems(workData)
+    if (p) {
+      setProfiles(p)
+      const notes = {}
+      p.forEach(x => { notes[x.id] = x.note_admin ?? '' })
+      setNoteInputs(notes)
+    }
+    if (w) setWorkItems(w)
     setLoading(false)
   }
 
-  function statsForUser(userId) {
-    const userItems = workItems.filter(i => i.employe_id === userId)
-    const today = userItems.filter(i => i.created_at >= startOfToday()).length
-    const week  = userItems.filter(i => i.created_at >= startOfWeek()).length
-    return { today, week, all: userItems }
+  function statsFor(userId) {
+    const list = workItems.filter(i => i.employe_id === userId)
+    const todayStr = new Date().toISOString().slice(0, 10)
+    return {
+      today:     list.filter(i => i.created_at.slice(0, 10) === todayStr).length,
+      week:      list.filter(i => i.created_at >= startOfWeek()).length,
+      validated: list.filter(i => i.admin_status === 'valide').length,
+      refused:   list.filter(i => i.admin_status === 'refuse').length,
+      all:       list,
+    }
   }
 
   async function handleDelete(userId) {
@@ -65,34 +70,204 @@ export default function EmployeesTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId }),
       })
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error ?? 'Erreur lors de la suppression')
-      }
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error ?? 'Erreur') }
       setProfiles(prev => prev.filter(p => p.id !== userId))
       setWorkItems(prev => prev.filter(i => i.employe_id !== userId))
       setDeleteConfirm(null)
-    } catch (err) {
-      setDeleteError(err.message)
-    } finally {
-      setDeleting(false)
-    }
+      if (selected?.id === userId) setSelected(null)
+    } catch (err) { setDeleteError(err.message) }
+    finally { setDeleting(false) }
   }
 
-  function handleSaved(updatedProfile) {
+  function handleSaved(updated) {
     setProfiles(prev => {
-      const exists = prev.find(p => p.id === updatedProfile.id)
-      if (exists) return prev.map(p => p.id === updatedProfile.id ? { ...p, ...updatedProfile } : p)
-      return [...prev, updatedProfile]
+      const exists = prev.find(p => p.id === updated.id)
+      if (exists) return prev.map(p => p.id === updated.id ? { ...p, ...updated } : p)
+      return [...prev, updated]
     })
+    if (selected?.id === updated.id) setSelected(prev => ({ ...prev, ...updated }))
     setShowModal(false)
     setEditUser(null)
   }
 
-  function toggleExpand(userId) {
-    setExpanded(prev => ({ ...prev, [userId]: !prev[userId] }))
+  async function handleSetAdminStatus(itemId, status) {
+    const { data, error } = await supabase
+      .from('work_items').update({ admin_status: status }).eq('id', itemId).select().single()
+    if (!error && data) setWorkItems(prev => prev.map(i => i.id === data.id ? data : i))
   }
 
+  async function handleSaveNote(userId) {
+    setSavingNote(prev => ({ ...prev, [userId]: true }))
+    const note = noteInputs[userId] ?? ''
+    const { error } = await supabase
+      .from('profiles').update({ note_admin: note || null }).eq('id', userId)
+    if (!error) {
+      setProfiles(prev => prev.map(p => p.id === userId ? { ...p, note_admin: note || null } : p))
+      if (selected?.id === userId) setSelected(prev => ({ ...prev, note_admin: note || null }))
+    }
+    setSavingNote(prev => ({ ...prev, [userId]: false }))
+  }
+
+  // ── Vue détail employé ───────────────────────────────────────
+  if (selected) {
+    const stats = statsFor(selected.id)
+    return (
+      <div className="p-4 max-w-2xl mx-auto">
+        <button
+          onClick={() => setSelected(null)}
+          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors mb-4"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Retour
+        </button>
+
+        {/* Carte employé */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-4">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-gray-900 text-base">{selected.pseudo}</span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${ROLE_CONFIG[selected.role]?.color}`}>
+                  {ROLE_CONFIG[selected.role]?.label}
+                </span>
+              </div>
+              <div className="text-xs text-gray-500 mt-0.5">{selected.email}</div>
+            </div>
+            <button
+              onClick={() => { setEditUser(selected); setShowModal(true) }}
+              className="p-1.5 text-gray-400 hover:text-teal-600 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </button>
+          </div>
+          {/* Stats */}
+          <div className="grid grid-cols-4 gap-2 mt-4">
+            {[
+              { v: stats.today,     l: "Aujourd'hui", c: 'text-teal-600' },
+              { v: stats.week,      l: 'Cette semaine', c: 'text-teal-600' },
+              { v: stats.validated, l: 'Validés',   c: 'text-green-600' },
+              { v: stats.refused,   l: 'Refusés',   c: 'text-red-500' },
+            ].map(s => (
+              <div key={s.l} className="bg-gray-50 rounded-xl p-2 text-center">
+                <div className={`text-lg font-bold ${s.c}`}>{s.v}</div>
+                <div className="text-[10px] text-gray-500 leading-tight">{s.l}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Message pour l'employé */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-4">
+          <h3 className="text-sm font-bold text-gray-900 mb-2">Message pour {selected.pseudo}</h3>
+          <textarea
+            value={noteInputs[selected.id] ?? ''}
+            onChange={e => setNoteInputs(prev => ({ ...prev, [selected.id]: e.target.value }))}
+            placeholder="Écris un message visible par l'employé à sa prochaine connexion..."
+            rows={3}
+            className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition resize-none"
+          />
+          <div className="flex justify-end mt-2">
+            <button
+              onClick={() => handleSaveNote(selected.id)}
+              disabled={savingNote[selected.id]}
+              className="px-4 py-1.5 bg-teal-500 text-white rounded-xl text-sm font-semibold hover:bg-teal-600 disabled:opacity-50 transition-colors"
+            >
+              {savingNote[selected.id] ? 'Envoi...' : 'Envoyer'}
+            </button>
+          </div>
+        </div>
+
+        {/* Liste des articles */}
+        <div className="flex items-center gap-2 mb-3">
+          <h3 className="text-sm font-bold text-gray-900">Articles soumis</h3>
+          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{stats.all.length}</span>
+        </div>
+
+        {stats.all.length === 0 ? (
+          <p className="text-sm text-gray-400 italic">Aucun article soumis.</p>
+        ) : (
+          <div className="space-y-2">
+            {stats.all.map(item => (
+              <div key={item.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <a href={item.lien_shein} target="_blank" rel="noopener noreferrer"
+                      className="text-sm font-medium text-teal-600 hover:underline block truncate">
+                      {item.lien_shein}
+                    </a>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <span className="text-xs text-gray-500">{item.categorie}</span>
+                      {item.taille && (
+                        <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{item.taille}</span>
+                      )}
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                        item.statut === 'en_cours'    ? 'bg-gray-100 text-gray-600' :
+                        item.statut === 'image_faite' ? 'bg-blue-100 text-blue-600' :
+                                                        'bg-green-100 text-green-600'
+                      }`}>{STATUT_LABELS[item.statut]}</span>
+                      <span className="text-xs text-gray-400">
+                        {new Date(item.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                  </div>
+                  {/* Boutons valider / refuser */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    {item.admin_status === 'valide' && (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ Validé</span>
+                    )}
+                    {item.admin_status === 'refuse' && (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700">✗ Refusé</span>
+                    )}
+                    <button
+                      onClick={() => handleSetAdminStatus(item.id, item.admin_status === 'valide' ? 'en_attente' : 'valide')}
+                      title="Valider"
+                      className={`p-1.5 rounded-lg transition-colors ${
+                        item.admin_status === 'valide'
+                          ? 'bg-green-100 text-green-600'
+                          : 'text-gray-400 hover:bg-green-50 hover:text-green-600'
+                      }`}
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => handleSetAdminStatus(item.id, item.admin_status === 'refuse' ? 'en_attente' : 'refuse')}
+                      title="Refuser"
+                      className={`p-1.5 rounded-lg transition-colors ${
+                        item.admin_status === 'refuse'
+                          ? 'bg-red-100 text-red-500'
+                          : 'text-gray-400 hover:bg-red-50 hover:text-red-500'
+                      }`}
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {showModal && (
+          <UserManagementModal
+            user={editUser}
+            onClose={() => { setShowModal(false); setEditUser(null) }}
+            onSaved={handleSaved}
+          />
+        )}
+      </div>
+    )
+  }
+
+  // ── Vue liste ────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16 text-gray-400">
@@ -107,7 +282,6 @@ export default function EmployeesTab() {
 
   return (
     <div className="p-4 max-w-2xl mx-auto">
-      {/* Header row */}
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-base font-bold text-gray-900">Employés</h2>
         <button
@@ -122,114 +296,70 @@ export default function EmployeesTab() {
       </div>
 
       {profiles.length === 0 && (
-        <div className="text-center py-12 text-gray-400 text-sm">Aucun utilisateur trouvé.</div>
+        <p className="text-center py-12 text-gray-400 text-sm">Aucun utilisateur trouvé.</p>
       )}
 
       <div className="space-y-3">
         {profiles.map(profile => {
-          const roleCfg = ROLE_CONFIG[profile.role] ?? { label: profile.role, color: 'bg-gray-100 text-gray-600' }
+          const roleCfg  = ROLE_CONFIG[profile.role] ?? { label: profile.role, color: 'bg-gray-100 text-gray-600' }
           const isEmploye = profile.role === 'employe'
-          const stats = isEmploye ? statsForUser(profile.id) : null
-          const isExp = expanded[profile.id] ?? false
+          const stats    = isEmploye ? statsFor(profile.id) : null
 
           return (
             <div key={profile.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="p-4">
                 <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
+                  {/* Partie cliquable (employés seulement) */}
+                  <div
+                    className={`flex-1 min-w-0 ${isEmploye ? 'cursor-pointer' : ''}`}
+                    onClick={() => isEmploye && setSelected(profile)}
+                  >
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-gray-900">{profile.pseudo}</span>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${roleCfg.color}`}>
-                        {roleCfg.label}
-                      </span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${roleCfg.color}`}>{roleCfg.label}</span>
                     </div>
                     <div className="text-xs text-gray-500 mt-0.5">{profile.email}</div>
                     {isEmploye && stats && (
-                      <div className="text-xs text-gray-500 mt-1">
-                        Aujourd'hui: <span className="font-semibold text-gray-700">{stats.today}</span> articles
-                        {' | '}
-                        Cette semaine: <span className="font-semibold text-gray-700">{stats.week}</span> articles
+                      <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                        <span className="text-xs text-gray-500">Aujourd'hui : <b className="text-gray-700">{stats.today}</b></span>
+                        <span className="text-xs text-gray-500">Semaine : <b className="text-gray-700">{stats.week}</b></span>
+                        <span className="text-xs text-green-600 font-semibold">{stats.validated} ✓</span>
+                        {stats.refused > 0 && <span className="text-xs text-red-500 font-semibold">{stats.refused} ✗</span>}
                       </div>
                     )}
-                    <div className="text-[11px] text-gray-400 mt-0.5">
-                      Créé le {new Date(profile.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
                     {isEmploye && (
-                      <button
-                        onClick={() => toggleExpand(profile.id)}
-                        className="p-1.5 text-gray-400 hover:text-gray-700 transition-colors"
-                        aria-label={isExp ? 'Réduire' : 'Voir les articles'}
-                      >
-                        <svg className={`w-4 h-4 transition-transform ${isExp ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </button>
+                      <div className="text-xs text-teal-500 mt-1.5">Voir les articles →</div>
                     )}
+                  </div>
+                  {/* Actions */}
+                  <div className="flex items-center gap-1 shrink-0">
                     <button
                       onClick={() => { setEditUser(profile); setShowModal(true) }}
                       className="p-1.5 text-gray-400 hover:text-teal-600 transition-colors"
-                      aria-label="Modifier"
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                       </svg>
                     </button>
                     <button
                       onClick={() => { setDeleteConfirm(profile.id); setDeleteError('') }}
                       className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
-                      aria-label="Supprimer"
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                       </svg>
                     </button>
                   </div>
                 </div>
               </div>
-
-              {/* Expandable work items */}
-              {isEmploye && isExp && stats && (
-                <div className="border-t border-gray-100 px-4 pb-3 pt-3">
-                  {stats.all.length === 0 ? (
-                    <p className="text-xs text-gray-400 italic">Aucun article enregistré.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {stats.all.slice(0, 20).map(wi => (
-                        <div key={wi.id} className="flex items-center gap-2 text-xs">
-                          <a
-                            href={wi.lien_shein}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-teal-600 hover:underline truncate max-w-[160px]"
-                          >
-                            {wi.lien_shein}
-                          </a>
-                          <span className="text-gray-400 shrink-0">{wi.categorie}</span>
-                          {wi.taille && <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full shrink-0">{wi.taille}</span>}
-                          <span className={`px-1.5 py-0.5 rounded-full font-semibold shrink-0 ${
-                            wi.statut === 'en_cours' ? 'bg-gray-100 text-gray-600' :
-                            wi.statut === 'image_faite' ? 'bg-blue-100 text-blue-600' :
-                            'bg-green-100 text-green-600'
-                          }`}>
-                            {wi.statut === 'en_cours' ? 'En cours' : wi.statut === 'image_faite' ? 'Image faite' : 'Importé DOTB'}
-                          </span>
-                        </div>
-                      ))}
-                      {stats.all.length > 20 && (
-                        <p className="text-xs text-gray-400 italic">+ {stats.all.length - 20} articles supplémentaires</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           )
         })}
       </div>
 
-      {/* Delete confirm modal */}
+      {/* Confirm suppression */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
@@ -239,18 +369,12 @@ export default function EmployeesTab() {
               <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-2.5 mb-3">{deleteError}</div>
             )}
             <div className="flex gap-3 mt-4">
-              <button
-                onClick={() => { setDeleteConfirm(null); setDeleteError('') }}
-                disabled={deleting}
-                className="flex-1 border border-gray-200 rounded-xl py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
-              >
+              <button onClick={() => { setDeleteConfirm(null); setDeleteError('') }} disabled={deleting}
+                className="flex-1 border border-gray-200 rounded-xl py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
                 Annuler
               </button>
-              <button
-                onClick={() => handleDelete(deleteConfirm)}
-                disabled={deleting}
-                className="flex-1 bg-red-500 text-white rounded-xl py-2 text-sm font-medium hover:bg-red-600 transition-colors disabled:opacity-50"
-              >
+              <button onClick={() => handleDelete(deleteConfirm)} disabled={deleting}
+                className="flex-1 bg-red-500 text-white rounded-xl py-2 text-sm font-medium hover:bg-red-600 disabled:opacity-50">
                 {deleting ? 'Suppression...' : 'Supprimer'}
               </button>
             </div>
@@ -258,7 +382,6 @@ export default function EmployeesTab() {
         </div>
       )}
 
-      {/* Create / Edit modal */}
       {showModal && (
         <UserManagementModal
           user={editUser}
