@@ -44,11 +44,13 @@ export default function WorkspaceTab({ profile }) {
   const userId = profile.id
   const note   = profile.note_admin ?? null
 
-  const [items, setItems]         = useState([])
-  const [tasks, setTasks]         = useState([])
-  const [fonds, setFonds]         = useState([])
+  const [items, setItems]               = useState([])
+  const [tasks, setTasks]               = useState([])
+  const [fonds, setFonds]               = useState([])
+  const [fondComptes, setFondComptes]   = useState([])
+  const [vintedAccounts, setVintedAccounts] = useState([])
   const [fondsFiltrés, setFondsFiltrés] = useState([])
-  const [loading, setLoading]     = useState(false)
+  const [loading, setLoading]           = useState(false)
   const [noteDismissed, setNoteDismissed] = useState(
     () => note ? sessionStorage.getItem('note_dismissed') === note : true
   )
@@ -76,21 +78,30 @@ export default function WorkspaceTab({ profile }) {
       { data: itemsData },
       { data: tasksData },
       { data: fondsData },
-      { data: comptesData },
+      { data: employeComptesData },
+      { data: fcData },
+      { data: vaData },
     ] = await Promise.all([
       supabase.from('work_items').select('*').eq('employe_id', userId).order('created_at', { ascending: false }),
       supabase.from('tasks').select('*').eq('employe_id', userId).order('created_at', { ascending: false }),
       supabase.from('fonds').select('*').order('nom', { ascending: true }),
       supabase.from('employe_comptes').select('compte_vinted_id').eq('employe_id', userId),
+      supabase.from('fond_comptes').select('*'),
+      supabase.from('vinted_accounts').select('id, pseudo'),
     ])
     if (itemsData) setItems(itemsData)
     if (tasksData) setTasks(tasksData)
+    if (fcData)    setFondComptes(fcData)
+    if (vaData)    setVintedAccounts(vaData)
     if (fondsData) {
       setFonds(fondsData)
-      const assignedIds = new Set(comptesData?.map(ec => ec.compte_vinted_id) ?? [])
+      const assignedIds = new Set(employeComptesData?.map(ec => ec.compte_vinted_id) ?? [])
       setFondsFiltrés(
         assignedIds.size > 0
-          ? fondsData.filter(f => f.compte_vinted_id && assignedIds.has(f.compte_vinted_id))
+          ? fondsData.filter(fond => {
+              const fondCIds = fcData?.filter(fc => fc.fond_id === fond.id).map(fc => fc.compte_vinted_id) ?? []
+              return fondCIds.some(cId => assignedIds.has(cId))
+            })
           : []
       )
     }
@@ -263,10 +274,16 @@ export default function WorkspaceTab({ profile }) {
                     )}
                     <div className="flex-1 min-w-0">
                       {fond && (
-                        <div className="text-xs font-semibold text-gray-700">{fond.nom}</div>
-                      )}
-                      {fond && (
-                        <div className="text-xs text-gray-400 mb-1">Compte : {fond.compte_vinted_pseudo}</div>
+                        <>
+                          <div className="text-xs font-semibold text-gray-700">{fond.nom}</div>
+                          {(() => {
+                            const cIds = fondComptes.filter(fc => fc.fond_id === fond.id).map(fc => fc.compte_vinted_id)
+                            const ps   = vintedAccounts.filter(v => cIds.includes(v.id)).map(v => v.pseudo)
+                            return ps.length > 0
+                              ? <div className="text-xs text-gray-400 mb-1">{ps.join(' · ')}</div>
+                              : null
+                          })()}
+                        </>
                       )}
                       <a
                         href={task.lien_shein}
@@ -332,7 +349,13 @@ export default function WorkspaceTab({ profile }) {
                 </div>
                 <div className="px-3 py-2">
                   <div className="text-xs font-semibold text-gray-900 truncate">{fond.nom}</div>
-                  <div className="text-[10px] text-gray-500 truncate">Compte : {fond.compte_vinted_pseudo}</div>
+                  {(() => {
+                    const cIds = fondComptes.filter(fc => fc.fond_id === fond.id).map(fc => fc.compte_vinted_id)
+                    const ps   = vintedAccounts.filter(v => cIds.includes(v.id)).map(v => v.pseudo)
+                    return ps.length > 0
+                      ? <div className="text-[10px] text-gray-500 truncate">{ps.join(' · ')}</div>
+                      : null
+                  })()}
                 </div>
               </div>
             ))}
@@ -361,7 +384,7 @@ export default function WorkspaceTab({ profile }) {
             <option value="">— Aucun fond —</option>
             {fondsFiltrés.map(f => (
               <option key={f.id} value={f.id}>
-                {f.nom} — Compte : {f.compte_vinted_pseudo}
+                {f.nom}
               </option>
             ))}
           </select>
@@ -461,6 +484,8 @@ export default function WorkspaceTab({ profile }) {
                   key={item.id}
                   item={item}
                   fonds={fonds}
+                  fondComptes={fondComptes}
+                  vintedAccounts={vintedAccounts}
                   onCycle={handleCycleStatus}
                   onEdit={setEditItem}
                   onDelete={setDeleteConfirm}
@@ -518,7 +543,7 @@ export default function WorkspaceTab({ profile }) {
         <WorkItemModal
           item={editItem}
           userId={userId}
-          fonds={fonds}
+          fonds={fondsFiltrés}
           onClose={() => setEditItem(null)}
           onSaved={saved => {
             setItems(prev => prev.map(i => i.id === saved.id ? saved : i))
@@ -530,9 +555,14 @@ export default function WorkspaceTab({ profile }) {
   )
 }
 
-function ItemRow({ item, fonds, onCycle, onEdit, onDelete }) {
-  const ab   = adminBadge(item.admin_status ?? 'en_attente')
-  const fond = fonds.find(f => f.id === item.fond_id)
+function ItemRow({ item, fonds, fondComptes, vintedAccounts, onCycle, onEdit, onDelete }) {
+  const ab        = adminBadge(item.admin_status ?? 'en_attente')
+  const fond      = fonds.find(f => f.id === item.fond_id)
+  const fondPseudos = fond
+    ? fondComptes.filter(fc => fc.fond_id === fond.id)
+        .map(fc => vintedAccounts.find(v => v.id === fc.compte_vinted_id)?.pseudo)
+        .filter(Boolean)
+    : []
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
@@ -545,8 +575,12 @@ function ItemRow({ item, fonds, onCycle, onEdit, onDelete }) {
           />
         )}
         <div className="flex-1 min-w-0">
-          {fond && (
-            <div className="text-xs text-gray-500 mb-0.5">Compte : <span className="font-medium">{fond.compte_vinted_pseudo}</span></div>
+          {fond && fondPseudos.length > 0 && (
+            <div className="text-xs text-gray-500 mb-0.5">
+              {fondPseudos.map((p, i) => (
+                <span key={i} className="font-medium">{i > 0 ? ' · ' : ''}{p}</span>
+              ))}
+            </div>
           )}
           <a
             href={item.lien_shein}
@@ -697,7 +731,7 @@ function WorkItemModal({ item, userId, fonds, onClose, onSaved }) {
               className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition bg-white">
               <option value="">— Aucun fond —</option>
               {fonds.map(f => (
-                <option key={f.id} value={f.id}>{f.nom} — Compte : {f.compte_vinted_pseudo}</option>
+                <option key={f.id} value={f.id}>{f.nom}</option>
               ))}
             </select>
           </div>

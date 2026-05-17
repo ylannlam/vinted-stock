@@ -40,6 +40,7 @@ export default function EmployeesTab() {
   const [workItems, setWorkItems]         = useState([])
   const [tasks, setTasks]                 = useState([])
   const [fonds, setFonds]                 = useState([])
+  const [fondComptes, setFondComptes]     = useState([])
   const [vintedAccounts, setVintedAccounts] = useState([])
   const [employeComptes, setEmployeComptes] = useState([])
   const [loading, setLoading]             = useState(false)
@@ -64,6 +65,7 @@ export default function EmployeesTab() {
       { data: f },
       { data: va },
       { data: ec },
+      { data: fc },
     ] = await Promise.all([
       supabase.from('profiles').select('*').order('created_at', { ascending: true }),
       supabase.from('work_items').select('*').order('created_at', { ascending: false }),
@@ -71,6 +73,7 @@ export default function EmployeesTab() {
       supabase.from('fonds').select('*').order('nom', { ascending: true }),
       supabase.from('vinted_accounts').select('id, pseudo, statut').order('pseudo', { ascending: true }),
       supabase.from('employe_comptes').select('*'),
+      supabase.from('fond_comptes').select('*'),
     ])
     if (p) {
       setProfiles(p)
@@ -83,6 +86,7 @@ export default function EmployeesTab() {
     if (f) setFonds(f)
     if (va) setVintedAccounts(va)
     if (ec) setEmployeComptes(ec)
+    if (fc) setFondComptes(fc)
     setLoading(false)
   }
 
@@ -307,7 +311,13 @@ export default function EmployeesTab() {
                       {fond && (
                         <>
                           <div className="text-xs font-semibold text-gray-700">{fond.nom}</div>
-                          <div className="text-xs text-gray-400 mb-0.5">Compte : {fond.compte_vinted_pseudo}</div>
+                          {(() => {
+                            const ps = fondComptes.filter(fc => fc.fond_id === fond.id)
+                              .map(fc => vintedAccounts.find(v => v.id === fc.compte_vinted_id)?.pseudo).filter(Boolean)
+                            return ps.length > 0
+                              ? <div className="text-xs text-gray-400 mb-0.5">{ps.join(' · ')}</div>
+                              : null
+                          })()}
                         </>
                       )}
                       <a
@@ -357,9 +367,13 @@ export default function EmployeesTab() {
                       />
                     )}
                     <div className="flex-1 min-w-0">
-                      {fond && (
-                        <div className="text-xs text-gray-500 mb-0.5">Compte : <span className="font-medium">{fond.compte_vinted_pseudo}</span></div>
-                      )}
+                      {fond && (() => {
+                        const ps = fondComptes.filter(fc => fc.fond_id === fond.id)
+                          .map(fc => vintedAccounts.find(v => v.id === fc.compte_vinted_id)?.pseudo).filter(Boolean)
+                        return ps.length > 0
+                          ? <div className="text-xs text-gray-500 mb-0.5 font-medium">{ps.join(' · ')}</div>
+                          : null
+                      })()}
                       <a
                         href={item.lien_shein}
                         target="_blank"

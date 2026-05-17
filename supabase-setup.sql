@@ -295,3 +295,26 @@ CREATE POLICY "employe_comptes_select" ON employe_comptes
 DROP POLICY IF EXISTS "employe_comptes_admin_write" ON employe_comptes;
 CREATE POLICY "employe_comptes_admin_write" ON employe_comptes
   FOR ALL USING (get_my_role() = 'admin');
+
+-- ============================================================
+-- MIGRATION v13 — Fond → plusieurs comptes Vinted
+-- ============================================================
+
+-- Table intermédiaire fond ↔ comptes (many-to-many)
+CREATE TABLE IF NOT EXISTS fond_comptes (
+  fond_id          UUID NOT NULL REFERENCES fonds(id)          ON DELETE CASCADE,
+  compte_vinted_id UUID NOT NULL REFERENCES vinted_accounts(id) ON DELETE CASCADE,
+  PRIMARY KEY (fond_id, compte_vinted_id)
+);
+ALTER TABLE fond_comptes ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "fond_comptes_read" ON fond_comptes;
+CREATE POLICY "fond_comptes_read" ON fond_comptes
+  FOR SELECT USING (auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "fond_comptes_admin_write" ON fond_comptes;
+CREATE POLICY "fond_comptes_admin_write" ON fond_comptes
+  FOR ALL USING (get_my_role() = 'admin');
+
+-- compte_vinted_pseudo devient optionnel (remplacé par fond_comptes)
+ALTER TABLE fonds ALTER COLUMN compte_vinted_pseudo DROP NOT NULL;

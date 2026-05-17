@@ -19,43 +19,57 @@ async function downloadFond(fond) {
 }
 
 export default function FondsLibrary() {
-  const [fonds, setFonds]               = useState([])
-  const [comptes, setComptes]           = useState([])
-  const [loading, setLoading]           = useState(false)
+  const [fonds, setFonds]           = useState([])
+  const [fondComptes, setFondComptes] = useState([])   // { fond_id, compte_vinted_id }
+  const [comptes, setComptes]       = useState([])     // vinted_accounts
+  const [loading, setLoading]       = useState(false)
 
-  const [nom, setNom]                   = useState('')
-  const [selectedCompteId, setSelectedCompteId] = useState('')
-  const [imageFile, setImageFile]       = useState(null)
-  const [adding, setAdding]             = useState(false)
-  const [addError, setAddError]         = useState('')
+  // Formulaire ajout
+  const [nom, setNom]               = useState('')
+  const [selectedIds, setSelectedIds] = useState([])   // compte_vinted_ids cochés
+  const [imageFile, setImageFile]   = useState(null)
+  const [adding, setAdding]         = useState(false)
+  const [addError, setAddError]     = useState('')
 
+  // Suppression
   const [deleteConfirm, setDeleteConfirm] = useState(null)
-  const [deleting, setDeleting]           = useState(false)
+  const [deleting, setDeleting]     = useState(false)
 
   useEffect(() => { fetchAll() }, [])
 
   async function fetchAll() {
     setLoading(true)
-    const [{ data: f }, { data: c }] = await Promise.all([
+    const [{ data: f }, { data: fc }, { data: c }] = await Promise.all([
       supabase.from('fonds').select('*').order('created_at', { ascending: false }),
+      supabase.from('fond_comptes').select('*'),
       supabase.from('vinted_accounts').select('id, pseudo, statut').order('pseudo', { ascending: true }),
     ])
-    if (f) setFonds(f)
-    if (c) setComptes(c)
+    if (f)  setFonds(f)
+    if (fc) setFondComptes(fc)
+    if (c)  setComptes(c)
     setLoading(false)
+  }
+
+  function getComptesForFond(fondId) {
+    return fondComptes
+      .filter(fc => fc.fond_id === fondId)
+      .map(fc => comptes.find(c => c.id === fc.compte_vinted_id))
+      .filter(Boolean)
+  }
+
+  function toggleId(id) {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    )
   }
 
   async function handleAdd(e) {
     e.preventDefault()
-    if (!nom.trim() || !selectedCompteId || !imageFile) {
-      setAddError('Tous les champs sont requis.')
-      return
-    }
+    if (!nom.trim() || !imageFile) { setAddError('Nom et image requis.'); return }
     setAdding(true)
     setAddError('')
     try {
-      const compte  = comptes.find(c => c.id === selectedCompteId)
-      const ext     = imageFile.name.split('.').pop()
+      const ext      = imageFile.name.split('.').pop()
       const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
 
       const { error: uploadErr } = await supabase.storage.from('fonds').upload(fileName, imageFile)
@@ -63,20 +77,24 @@ export default function FondsLibrary() {
 
       const { data: { publicUrl } } = supabase.storage.from('fonds').getPublicUrl(fileName)
 
-      const { data, error: insertErr } = await supabase
+      const { data: fondData, error: insertErr } = await supabase
         .from('fonds')
-        .insert({
-          nom:                  nom.trim(),
-          image_url:            publicUrl,
-          compte_vinted_pseudo: compte.pseudo,
-          compte_vinted_id:     selectedCompteId,
-        })
+        .insert({ nom: nom.trim(), image_url: publicUrl, compte_vinted_pseudo: null })
         .select().single()
       if (insertErr) throw insertErr
 
-      setFonds(prev => [data, ...prev])
+      // Associer les comptes sélectionnés
+      if (selectedIds.length > 0) {
+        await supabase.from('fond_comptes').insert(
+          selectedIds.map(cId => ({ fond_id: fondData.id, compte_vinted_id: cId }))
+        )
+        const newFc = selectedIds.map(cId => ({ fond_id: fondData.id, compte_vinted_id: cId }))
+        setFondComptes(prev => [...prev, ...newFc])
+      }
+
+      setFonds(prev => [fondData, ...prev])
       setNom('')
-      setSelectedCompteId('')
+      setSelectedIds([])
       setImageFile(null)
       const fi = document.getElementById('fonds-file-input')
       if (fi) fi.value = ''
@@ -95,7 +113,9 @@ export default function FondsLibrary() {
       await supabase.storage.from('fonds').remove([fileName])
       const { error } = await supabase.from('fonds').delete().eq('id', fond.id)
       if (error) throw error
+      // fond_comptes supprimé en cascade
       setFonds(prev => prev.filter(f => f.id !== fond.id))
+      setFondComptes(prev => prev.filter(fc => fc.fond_id !== fond.id))
       setDeleteConfirm(null)
     } catch (err) {
       alert('Erreur : ' + err.message)
@@ -112,26 +132,34 @@ export default function FondsLibrary() {
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-6">
         <h3 className="text-sm font-bold text-gray-900 mb-3">Ajouter un fond</h3>
         <form onSubmit={handleAdd} className="space-y-3">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={nom}
-              onChange={e => setNom(e.target.value)}
-              placeholder="Nom du fond"
-              className="flex-1 border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
-            />
-            <select
-              value={selectedCompteId}
-              onChange={e => setSelectedCompteId(e.target.value)}
-              required
-              className="flex-1 border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition bg-white"
-            >
-              <option value="">— Compte Vinted —</option>
-              {comptes.map(c => (
-                <option key={c.id} value={c.id}>{c.pseudo}</option>
-              ))}
-            </select>
-          </div>
+          <input
+            type="text"
+            value={nom}
+            onChange={e => setNom(e.target.value)}
+            placeholder="Nom du fond"
+            className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
+          />
+
+          {/* Comptes associés — checkboxes */}
+          {comptes.length > 0 && (
+            <div className="border border-gray-200 rounded-xl p-3">
+              <div className="text-xs font-semibold text-gray-600 mb-2">Comptes Vinted associés</div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {comptes.map(c => (
+                  <label key={c.id} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(c.id)}
+                      onChange={() => toggleId(c.id)}
+                      className="w-4 h-4 accent-teal-500 rounded"
+                    />
+                    <span className="text-sm text-gray-700 truncate">{c.pseudo}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center gap-3">
             <label className="flex-1 cursor-pointer">
               <div className="border border-dashed border-gray-300 rounded-xl px-3 py-2.5 text-sm text-gray-500 hover:border-teal-400 hover:text-teal-600 transition text-center">
@@ -153,6 +181,7 @@ export default function FondsLibrary() {
               />
             )}
           </div>
+
           {addError && (
             <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-3 py-2">{addError}</div>
           )}
@@ -179,38 +208,49 @@ export default function FondsLibrary() {
         <p className="text-center py-12 text-gray-400 text-sm italic">Aucun fond enregistré.</p>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {fonds.map(fond => (
-            <div key={fond.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-              <div className="relative">
-                <img src={fond.image_url} alt={fond.nom} className="w-full h-32 object-cover" />
-                {/* Télécharger */}
-                <button
-                  onClick={() => downloadFond(fond)}
-                  className="absolute bottom-2 left-2 w-7 h-7 bg-white/90 hover:bg-white text-gray-700 rounded-full flex items-center justify-center shadow transition-colors"
-                  title="Télécharger"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                </button>
-                {/* Supprimer */}
-                <button
-                  onClick={() => setDeleteConfirm(fond)}
-                  className="absolute top-2 right-2 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center transition-colors shadow"
-                  title="Supprimer"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+          {fonds.map(fond => {
+            const fondAccounts = getComptesForFond(fond.id)
+            return (
+              <div key={fond.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="relative">
+                  <img src={fond.image_url} alt={fond.nom} className="w-full h-32 object-cover" />
+                  <button
+                    onClick={() => downloadFond(fond)}
+                    className="absolute bottom-2 left-2 w-7 h-7 bg-white/90 hover:bg-white text-gray-700 rounded-full flex items-center justify-center shadow transition-colors"
+                    title="Télécharger"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => setDeleteConfirm(fond)}
+                    className="absolute top-2 right-2 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center transition-colors shadow"
+                    title="Supprimer"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="p-3">
+                  <div className="text-sm font-semibold text-gray-900 truncate">{fond.nom}</div>
+                  {fondAccounts.length > 0 ? (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {fondAccounts.map(c => (
+                        <span key={c.id} className="text-[10px] bg-teal-50 text-teal-700 px-1.5 py-0.5 rounded-full font-medium">
+                          {c.pseudo}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-gray-400 mt-0.5 italic">Aucun compte associé</div>
+                  )}
+                </div>
               </div>
-              <div className="p-3">
-                <div className="text-sm font-semibold text-gray-900 truncate">{fond.nom}</div>
-                <div className="text-xs text-gray-500 mt-0.5 truncate">Compte : {fond.compte_vinted_pseudo}</div>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -219,9 +259,7 @@ export default function FondsLibrary() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
             <h3 className="font-bold text-gray-900 mb-2">Supprimer ce fond ?</h3>
-            <p className="text-sm text-gray-500 mb-1">
-              <strong>{deleteConfirm.nom}</strong> — {deleteConfirm.compte_vinted_pseudo}
-            </p>
+            <p className="text-sm text-gray-500 mb-1"><strong>{deleteConfirm.nom}</strong></p>
             <p className="text-sm text-gray-400 mb-5">Cette action est irréversible.</p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteConfirm(null)} disabled={deleting}
