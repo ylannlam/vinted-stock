@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
-import { CATEGORIES, TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED } from './constants'
+import { CATEGORIES, TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE, TAB_EMPLOYEES } from './constants'
 import Login from './Login'
 import Header from './components/Header'
 import CategoryTabs from './components/CategoryTabs'
@@ -10,15 +10,16 @@ import LotModal from './components/LotModal'
 import AddItemModal from './components/AddItemModal'
 import EditItemModal from './components/EditItemModal'
 import SoldModal from './components/SoldModal'
-import AdminCodeModal from './components/AdminCodeModal'
 import VintedAccountsTab from './components/VintedAccountsTab'
+import WorkspaceTab from './components/WorkspaceTab'
+import EmployeesTab from './components/EmployeesTab'
 
 export default function App() {
   const [user, setUser] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
+  const [profile, setProfile] = useState(null)
+  const [profileLoading, setProfileLoading] = useState(false)
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('activeTab') ?? CATEGORIES[0])
-  const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem('isAdmin') === '1')
-  const [showAdminModal, setShowAdminModal] = useState(false)
   const [items, setItems] = useState([])
   const [itemsLoading, setItemsLoading] = useState(false)
   const [filterSizes, setFilterSizes] = useState([])
@@ -44,8 +45,31 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (user) fetchItems()
+    if (user) fetchProfile()
+    else { setProfile(null); setItems([]) }
   }, [user])
+
+  async function fetchProfile() {
+    setProfileLoading(true)
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single()
+    setProfile(data ?? null)
+    setProfileLoading(false)
+  }
+
+  useEffect(() => {
+    const role = profile?.role
+    if (role === 'stock' || role === 'admin') {
+      fetchItems()
+    }
+    // Set default tab for employe
+    if (role === 'employe') {
+      setActiveTab(TAB_WORKSPACE)
+    }
+  }, [profile])
 
   async function fetchItems() {
     setItemsLoading(true)
@@ -207,17 +231,11 @@ export default function App() {
   async function handleLogout() {
     await supabase.auth.signOut()
     setItems([])
-    setIsAdmin(false)
-    localStorage.removeItem('isAdmin')
+    setProfile(null)
   }
 
-  function handleAdminUnlock() {
-    setIsAdmin(true)
-    localStorage.setItem('isAdmin', '1')
-    setShowAdminModal(false)
-  }
-
-  if (authLoading) {
+  // --- Loading state ---
+  if (authLoading || profileLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="flex items-center gap-3 text-gray-400">
@@ -233,7 +251,45 @@ export default function App() {
 
   if (!user) return <Login />
 
-  const isSpecialTab = activeTab === TAB_TOUT || activeTab === TAB_A_RECEVOIR || activeTab === TAB_A_ENVOYER || activeTab === TAB_A_ENVOYER_LOT || activeTab === TAB_ENVOYES || activeTab === TAB_COMPTES_VINTED
+  // Profile not found
+  if (!profile) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="text-center max-w-sm">
+          <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h2 className="text-lg font-bold text-gray-900 mb-2">Compte non configuré</h2>
+          <p className="text-gray-500 text-sm mb-4">Votre compte n'a pas encore été configuré. Contactez votre administrateur.</p>
+          <button onClick={handleLogout} className="text-sm text-red-500 hover:text-red-700 font-medium">Se déconnecter</button>
+        </div>
+      </div>
+    )
+  }
+
+  const userRole = profile?.role ?? null
+  const isAdmin = userRole === 'admin'
+  const isEmploye = userRole === 'employe'
+
+  // Employe: show workspace only
+  if (isEmploye) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Header onLogout={handleLogout} profile={profile} />
+        <div className="px-0 py-0">
+          <div className="bg-teal-50 border-b border-teal-100 px-4 py-2.5">
+            <span className="text-sm font-semibold text-teal-700">Espace de travail</span>
+          </div>
+          <WorkspaceTab userId={user.id} userPseudo={profile.pseudo} />
+        </div>
+      </div>
+    )
+  }
+
+  // Stock / Admin: full UI
+  const isSpecialTab = activeTab === TAB_TOUT || activeTab === TAB_A_RECEVOIR || activeTab === TAB_A_ENVOYER || activeTab === TAB_A_ENVOYER_LOT || activeTab === TAB_ENVOYES || activeTab === TAB_COMPTES_VINTED || activeTab === TAB_EMPLOYEES
 
   const filteredItems = (() => {
     if (activeTab === TAB_A_RECEVOIR)    return items.filter(i => i.status === 'a_recevoir')
@@ -259,21 +315,19 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header
-        onLogout={handleLogout}
-        onShowAdminCode={() => setShowAdminModal(true)}
-        isAdmin={isAdmin}
-      />
+      <Header onLogout={handleLogout} profile={profile} />
       <CategoryTabs
         categories={CATEGORIES}
         active={activeTab}
         onChange={setActiveTab}
         items={items}
-        isAdmin={isAdmin}
+        userRole={userRole}
       />
+
+      {activeTab === TAB_EMPLOYEES && <EmployeesTab />}
       {activeTab === TAB_COMPTES_VINTED && <VintedAccountsTab />}
 
-      {activeTab !== TAB_COMPTES_VINTED && (activeTab === TAB_TOUT || CATEGORIES.includes(activeTab)) && (
+      {activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_EMPLOYEES && (activeTab === TAB_TOUT || CATEGORIES.includes(activeTab)) && (
         <div className="flex items-center justify-end px-3 py-1.5 bg-white border-b border-gray-100">
           <button
             onClick={() => setShowLotModal(true)}
@@ -299,7 +353,7 @@ export default function App() {
         />
       )}
 
-      {activeTab !== TAB_COMPTES_VINTED && (
+      {activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_EMPLOYEES && (
         <Gallery
           items={filteredItems}
           categories={CATEGORIES}
@@ -320,7 +374,7 @@ export default function App() {
         />
       )}
 
-      {(activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_A_ENVOYER && activeTab !== TAB_A_ENVOYER_LOT && activeTab !== TAB_ENVOYES) && (
+      {activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_EMPLOYEES && activeTab !== TAB_A_ENVOYER && activeTab !== TAB_A_ENVOYER_LOT && activeTab !== TAB_ENVOYES && (
         <button
           onClick={() => setShowAddModal(true)}
           className={`fixed bottom-6 right-5 w-14 h-14 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-105 z-40 ${
@@ -368,13 +422,6 @@ export default function App() {
           item={soldItem}
           onClose={() => setSoldItem(null)}
           onSold={handleItemSold}
-        />
-      )}
-
-      {showAdminModal && (
-        <AdminCodeModal
-          onSuccess={handleAdminUnlock}
-          onClose={() => setShowAdminModal(false)}
         />
       )}
     </div>

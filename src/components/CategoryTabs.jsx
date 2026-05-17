@@ -1,6 +1,13 @@
-import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED } from '../constants'
+import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_EMPLOYEES } from '../constants'
 
-export default function CategoryTabs({ categories, active, onChange, items, isAdmin }) {
+export default function CategoryTabs({ categories, active, onChange, items, userRole }) {
+  const isAdmin = userRole === 'admin'
+  const isStock = userRole === 'stock'
+  const isEmploye = userRole === 'employe'
+
+  // employes don't see any of these tabs
+  if (isEmploye) return null
+
   const aRecevoirCount = items.filter(i => i.status === 'a_recevoir').length
   const lotBordereaux = new Set(
     Object.entries(items.filter(i => i.status === 'vendu' && i.bordereau_url)
@@ -114,7 +121,7 @@ export default function CategoryTabs({ categories, active, onChange, items, isAd
             )}
           </button>
 
-          {/* Comptes Vinted (admin uniquement) */}
+          {/* Comptes Vinted + Employés (admin uniquement) */}
           {isAdmin && (
             <>
               <div className="flex items-center px-1">
@@ -125,6 +132,12 @@ export default function CategoryTabs({ categories, active, onChange, items, isAd
                 className={tabClass(active === TAB_COMPTES_VINTED, 'teal')}
               >
                 🔐 Comptes
+              </button>
+              <button
+                onClick={() => onChange(TAB_EMPLOYEES)}
+                className={tabClass(active === TAB_EMPLOYEES, 'teal')}
+              >
+                👥 Employés
               </button>
             </>
           )}

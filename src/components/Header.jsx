@@ -1,4 +1,12 @@
-export default function Header({ onLogout, onShowAdminCode, isAdmin }) {
+export default function Header({ onLogout, profile }) {
+  const roleConfig = {
+    admin:   { label: 'Admin',   color: 'text-teal-600 bg-teal-50' },
+    stock:   { label: 'Stock',   color: 'text-orange-600 bg-orange-50' },
+    employe: { label: 'Employé', color: 'text-purple-600 bg-purple-50' },
+  }
+  const role = profile?.role ?? null
+  const roleCfg = role ? roleConfig[role] : null
+
   return (
     <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between sticky top-0 z-30 h-14">
       <div className="flex items-center gap-2.5">
@@ -12,16 +20,13 @@ export default function Header({ onLogout, onShowAdminCode, isAdmin }) {
       </div>
 
       <div className="flex items-center gap-3">
-        {!isAdmin && (
-          <button
-            onClick={onShowAdminCode}
-            className="text-xs font-semibold text-gray-400 hover:text-gray-700 transition-colors"
-          >
-            Admin
-          </button>
+        {profile?.pseudo && (
+          <span className="text-sm font-medium text-gray-700">{profile.pseudo}</span>
         )}
-        {isAdmin && (
-          <span className="text-[10px] font-bold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full">Admin</span>
+        {roleCfg && (
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${roleCfg.color}`}>
+            {roleCfg.label}
+          </span>
         )}
         <button
           onClick={onLogout}

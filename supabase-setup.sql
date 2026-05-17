@@ -137,3 +137,68 @@ ALTER TABLE public.vinted_accounts ADD COLUMN IF NOT EXISTS ads_power_num TEXT;
 UPDATE public.items
 SET category = 'Vert foncé / Bleu foncé / Noir'
 WHERE category = 'Vert-Noir-Bleu';
+
+-- ============================================================
+-- MIGRATION v9 — Système multi-utilisateurs avec rôles
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION get_my_role()
+RETURNS TEXT AS $$
+  SELECT role FROM profiles WHERE id = auth.uid()
+$$ LANGUAGE sql SECURITY DEFINER STABLE;
+
+CREATE TABLE IF NOT EXISTS profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  pseudo TEXT NOT NULL,
+  email TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('employe', 'stock', 'admin')),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS work_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  employe_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  lien_shein TEXT NOT NULL,
+  categorie TEXT NOT NULL,
+  taille TEXT,
+  statut TEXT NOT NULL DEFAULT 'en_cours' CHECK (statut IN ('en_cours', 'image_faite', 'importe_dotb')),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE work_items ENABLE ROW LEVEL SECURITY;
+
+-- profiles RLS
+DROP POLICY IF EXISTS "profiles_read_authenticated" ON profiles;
+CREATE POLICY "profiles_read_authenticated" ON profiles
+  FOR SELECT USING (auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "profiles_admin_write" ON profiles;
+CREATE POLICY "profiles_admin_write" ON profiles
+  FOR ALL USING (get_my_role() = 'admin');
+
+-- work_items RLS
+DROP POLICY IF EXISTS "work_items_own_or_admin" ON work_items;
+CREATE POLICY "work_items_own_or_admin" ON work_items
+  FOR ALL USING (auth.uid() = employe_id OR get_my_role() = 'admin');
+
+-- Update items table to require stock/admin role
+DROP POLICY IF EXISTS "Authenticated users can do everything" ON items;
+DROP POLICY IF EXISTS "Allow all for authenticated" ON items;
+DROP POLICY IF EXISTS "Authenticated users — full access" ON items;
+CREATE POLICY "items_stock_admin" ON items
+  FOR ALL USING (get_my_role() IN ('stock', 'admin'));
+
+-- Update vinted_accounts to require admin role
+DROP POLICY IF EXISTS "Authenticated users can do everything" ON vinted_accounts;
+DROP POLICY IF EXISTS "Allow all for authenticated" ON vinted_accounts;
+DROP POLICY IF EXISTS "Authenticated users can manage accounts" ON vinted_accounts;
+CREATE POLICY "vinted_accounts_admin" ON vinted_accounts
+  FOR ALL USING (get_my_role() = 'admin');
+
+-- Bootstrap: insert admin profile for existing auth user
+-- Run this separately with your user ID:
+-- INSERT INTO profiles (id, pseudo, email, role)
+-- SELECT id, 'Admin', email, 'admin' FROM auth.users LIMIT 1
+-- ON CONFLICT (id) DO NOTHING;
