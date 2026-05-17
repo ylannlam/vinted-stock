@@ -196,7 +196,6 @@ export default function FondsLibrary() {
               </div>
             )
           })()}
-          )}
 
           <div className="flex items-center gap-3">
             <label className="flex-1 cursor-pointer">
