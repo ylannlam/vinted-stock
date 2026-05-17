@@ -344,7 +344,7 @@ export default function EmployeesTab() {
           </div>
         )}
 
-        {/* Section Articles soumis */}
+        {/* Section Articles soumis — groupés par compte Vinted */}
         <div className="flex items-center gap-2 mb-3">
           <h3 className="text-sm font-bold text-gray-900">Articles soumis</h3>
           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{stats.all.length}</span>
@@ -352,117 +352,110 @@ export default function EmployeesTab() {
 
         {stats.all.length === 0 ? (
           <p className="text-sm text-gray-400 italic">Aucun article soumis.</p>
-        ) : (
-          <div className="space-y-2">
-            {stats.all.map(item => {
-              const fond = fonds.find(f => f.id === item.fond_id)
-              return (
-                <div key={item.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
-                  <div className="flex items-start gap-3">
+        ) : (() => {
+          // Grouper par compte_vinted_id
+          const grouped = {}
+          stats.all.forEach(item => {
+            const key = item.compte_vinted_id ?? '__none__'
+            if (!grouped[key]) grouped[key] = []
+            grouped[key].push(item)
+          })
+          const usedAccountIds = [...new Set(stats.all.map(i => i.compte_vinted_id).filter(Boolean))]
+          const orderedAccounts = vintedAccounts.filter(v => usedAccountIds.includes(v.id))
+          const noneItems = grouped['__none__'] ?? []
+
+          const renderItem = (item) => {
+            const fond = fonds.find(f => f.id === item.fond_id)
+            return (
+              <div key={item.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
+                <div className="flex items-start gap-3">
+                  {fond && (
+                    <img src={fond.image_url} alt={fond.nom}
+                      className="w-12 h-12 rounded-xl object-cover border border-gray-200 shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
                     {fond && (
-                      <img
-                        src={fond.image_url}
-                        alt={fond.nom}
-                        className="w-12 h-12 rounded-xl object-cover border border-gray-200 shrink-0"
-                      />
+                      <div className="text-xs text-gray-500 mb-0.5 font-medium">{fond.nom}</div>
                     )}
-                    <div className="flex-1 min-w-0">
-                      {fond && (() => {
-                        const ps = fondComptes.filter(fc => fc.fond_id === fond.id)
-                          .map(fc => vintedAccounts.find(v => v.id === fc.compte_vinted_id)?.pseudo).filter(Boolean)
-                        return ps.length > 0
-                          ? <div className="text-xs text-gray-500 mb-0.5 font-medium">{ps.join(' · ')}</div>
-                          : null
-                      })()}
-                      <a
-                        href={item.lien_shein}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm font-medium text-teal-600 hover:underline block truncate"
-                      >
-                        {item.lien_shein}
-                      </a>
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        {item.taille && (
-                          <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{item.taille}</span>
-                        )}
-                        {item.prix_shein != null && (
-                          <span className="text-xs text-gray-600 font-medium">{parseFloat(item.prix_shein).toFixed(2)} €</span>
-                        )}
-                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                          item.statut === 'en_cours'    ? 'bg-gray-100 text-gray-600' :
-                          item.statut === 'image_faite' ? 'bg-blue-100 text-blue-600' :
-                                                          'bg-green-100 text-green-600'
-                        }`}>{STATUT_LABELS[item.statut]}</span>
-                        <span className="text-xs text-gray-400">
-                          {new Date(item.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-
-                      {/* Miniatures images */}
-                      {Array.isArray(item.images_urls) && item.images_urls.length > 0 && (
-                        <div className="flex gap-1.5 mt-2 flex-wrap">
-                          {item.images_urls.slice(0, 4).map((url, i) => (
-                            <a key={i} href={url} target="_blank" rel="noopener noreferrer">
-                              <img
-                                src={url}
-                                alt={`img ${i + 1}`}
-                                className="w-10 h-10 rounded-lg object-cover border border-gray-200 hover:opacity-80 transition-opacity"
-                              />
-                            </a>
-                          ))}
-                        </div>
+                    <a href={item.lien_shein} target="_blank" rel="noopener noreferrer"
+                      className="text-sm font-medium text-teal-600 hover:underline block truncate">
+                      {item.lien_shein}
+                    </a>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      {item.taille && (
+                        <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{item.taille}</span>
                       )}
-
-                      {/* Badge admin status */}
-                      <div className="mt-1.5">
-                        {item.admin_status === 'valide' && (
-                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ Validé</span>
-                        )}
-                        {item.admin_status === 'refuse' && (
-                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700">✗ Refusé</span>
-                        )}
-                        {(!item.admin_status || item.admin_status === 'en_attente') && (
-                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">· En attente</span>
-                        )}
-                      </div>
+                      {item.prix_shein != null && (
+                        <span className="text-xs text-gray-600 font-medium">{parseFloat(item.prix_shein).toFixed(2)} €</span>
+                      )}
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                        item.statut === 'en_cours'    ? 'bg-gray-100 text-gray-600' :
+                        item.statut === 'image_faite' ? 'bg-blue-100 text-blue-600' :
+                                                        'bg-green-100 text-green-600'
+                      }`}>{STATUT_LABELS[item.statut]}</span>
+                      <span className="text-xs text-gray-400">
+                        {new Date(item.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                      </span>
                     </div>
-
-                    {/* Boutons valider / refuser */}
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        onClick={() => handleSetAdminStatus(item.id, item.admin_status === 'valide' ? 'en_attente' : 'valide')}
-                        title="Valider"
-                        className={`p-1.5 rounded-lg transition-colors ${
-                          item.admin_status === 'valide'
-                            ? 'bg-green-100 text-green-600'
-                            : 'text-gray-400 hover:bg-green-50 hover:text-green-600'
-                        }`}
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => handleSetAdminStatus(item.id, item.admin_status === 'refuse' ? 'en_attente' : 'refuse')}
-                        title="Refuser"
-                        className={`p-1.5 rounded-lg transition-colors ${
-                          item.admin_status === 'refuse'
-                            ? 'bg-red-100 text-red-500'
-                            : 'text-gray-400 hover:bg-red-50 hover:text-red-500'
-                        }`}
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
+                    {Array.isArray(item.images_urls) && item.images_urls.length > 0 && (
+                      <div className="flex gap-1.5 mt-2 flex-wrap">
+                        {item.images_urls.slice(0, 4).map((url, i) => (
+                          <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                            <img src={url} alt="" className="w-10 h-10 rounded-lg object-cover border border-gray-200 hover:opacity-80" />
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    <div className="mt-1.5">
+                      {item.admin_status === 'valide' && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ Validé</span>}
+                      {item.admin_status === 'refuse' && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700">✗ Refusé</span>}
+                      {(!item.admin_status || item.admin_status === 'en_attente') && <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">· En attente</span>}
                     </div>
                   </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => handleSetAdminStatus(item.id, item.admin_status === 'valide' ? 'en_attente' : 'valide')}
+                      title="Valider"
+                      className={`p-1.5 rounded-lg transition-colors ${item.admin_status === 'valide' ? 'bg-green-100 text-green-600' : 'text-gray-400 hover:bg-green-50 hover:text-green-600'}`}>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </button>
+                    <button onClick={() => handleSetAdminStatus(item.id, item.admin_status === 'refuse' ? 'en_attente' : 'refuse')}
+                      title="Refuser"
+                      className={`p-1.5 rounded-lg transition-colors ${item.admin_status === 'refuse' ? 'bg-red-100 text-red-500' : 'text-gray-400 hover:bg-red-50 hover:text-red-500'}`}>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
-              )
-            })}
-          </div>
-        )}
+              </div>
+            )
+          }
+
+          return (
+            <div className="space-y-4">
+              {orderedAccounts.map(compte => (
+                <div key={compte.id}>
+                  <div className="flex items-center gap-2 mb-2 px-1">
+                    <span className="text-xs font-bold text-gray-700">{compte.pseudo}</span>
+                    <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{grouped[compte.id]?.length ?? 0}</span>
+                  </div>
+                  <div className="space-y-2">{(grouped[compte.id] ?? []).map(renderItem)}</div>
+                </div>
+              ))}
+              {noneItems.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2 px-1">
+                    <span className="text-xs font-bold text-gray-400 italic">Sans compte assigné</span>
+                    <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{noneItems.length}</span>
+                  </div>
+                  <div className="space-y-2">{noneItems.map(renderItem)}</div>
+                </div>
+              )}
+            </div>
+          )
+        })()}
 
         {showModal && (
           <UserManagementModal

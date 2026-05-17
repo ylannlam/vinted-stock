@@ -323,3 +323,8 @@ ALTER TABLE fonds ALTER COLUMN compte_vinted_pseudo DROP NOT NULL;
 -- MIGRATION v14 — categorie devient optionnel dans work_items
 -- ============================================================
 ALTER TABLE work_items ALTER COLUMN categorie DROP NOT NULL;
+
+-- ============================================================
+-- MIGRATION v15 — Compte Vinted par article employé
+-- ============================================================
+ALTER TABLE work_items ADD COLUMN IF NOT EXISTS compte_vinted_id UUID REFERENCES vinted_accounts(id) ON DELETE SET NULL;

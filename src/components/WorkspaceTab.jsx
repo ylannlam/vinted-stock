@@ -98,7 +98,7 @@ function DraftImagesCell({ files, onChange }) {
 }
 
 // ─── GhostRow ──────────────────────────────────────────────────────────────────
-function GhostRow({ draft, setDraft, fondsFiltrés, onSave, saving }) {
+function GhostRow({ draft, setDraft, fondsFiltrés, assignedAccounts, onSave, saving }) {
   return (
     <tr className="border-t border-dashed border-gray-300 bg-teal-50/20">
       <td className="px-3 py-1.5">
@@ -120,6 +120,16 @@ function GhostRow({ draft, setDraft, fondsFiltrés, onSave, saving }) {
         >
           <option value="">—</option>
           {fondsFiltrés.map(f => <option key={f.id} value={f.id}>{f.nom}</option>)}
+        </select>
+      </td>
+      <td className="px-3 py-1.5">
+        <select
+          value={draft.compte_vinted_id}
+          onChange={e => setDraft(d => ({ ...d, compte_vinted_id: e.target.value }))}
+          className="w-full bg-transparent text-xs focus:outline-none text-gray-500"
+        >
+          <option value="">—</option>
+          {assignedAccounts.map(a => <option key={a.id} value={a.id}>{a.pseudo}</option>)}
         </select>
       </td>
       <td className="px-3 py-1.5">
@@ -167,7 +177,7 @@ function GhostRow({ draft, setDraft, fondsFiltrés, onSave, saving }) {
 }
 
 // ─── ItemRow ───────────────────────────────────────────────────────────────────
-function ItemRow({ item, idx, fondsFiltrés, fondById, saveField, savingMap, onOpenImages, onDelete }) {
+function ItemRow({ item, idx, fondsFiltrés, fondById, assignedAccounts, saveField, savingMap, onOpenImages, onDelete }) {
   const [editingLien, setEditingLien] = useState(false)
   const [lienDraft, setLienDraft]     = useState(item.lien_shein ?? '')
   const lienInputRef = useRef(null)
@@ -258,6 +268,18 @@ function ItemRow({ item, idx, fondsFiltrés, fondById, saveField, savingMap, onO
             {fondsFiltrés.map(f => <option key={f.id} value={f.id}>{f.nom}</option>)}
           </select>
         </div>
+      </td>
+
+      {/* Compte Vinted */}
+      <td className="px-3 py-1.5 w-36">
+        <select
+          value={item.compte_vinted_id ?? ''}
+          onChange={e => saveField(item.id, 'compte_vinted_id', e.target.value)}
+          className="w-full bg-transparent text-xs focus:outline-none text-gray-700"
+        >
+          <option value="">—</option>
+          {assignedAccounts.map(a => <option key={a.id} value={a.id}>{a.pseudo}</option>)}
+        </select>
       </td>
 
       {/* Taille */}
@@ -352,12 +374,13 @@ export default function WorkspaceTab({ profile }) {
   const userId = profile.id
   const note   = profile.note_admin ?? null
 
-  const [items, setItems]               = useState([])
-  const [tasks, setTasks]               = useState([])
-  const [fondComptes, setFondComptes]   = useState([])
+  const [items, setItems]                   = useState([])
+  const [tasks, setTasks]                   = useState([])
+  const [fondComptes, setFondComptes]       = useState([])
   const [vintedAccounts, setVintedAccounts] = useState([])
-  const [fondsFiltrés, setFondsFiltrés] = useState([])
-  const [loading, setLoading]           = useState(false)
+  const [assignedAccounts, setAssignedAccounts] = useState([]) // comptes assignés à cet employé
+  const [fondsFiltrés, setFondsFiltrés]     = useState([])
+  const [loading, setLoading]               = useState(false)
   const [noteDismissed, setNoteDismissed] = useState(
     () => note ? sessionStorage.getItem('note_dismissed') === note : true
   )
@@ -370,7 +393,7 @@ export default function WorkspaceTab({ profile }) {
 
   // Ghost row draft
   const [draft, setDraft] = useState({
-    lien_shein: '', fond_id: '', taille: '', prix_shein: '', statut: 'en_cours', files: []
+    lien_shein: '', fond_id: '', compte_vinted_id: '', taille: '', prix_shein: '', statut: 'en_cours', files: []
   })
   const [draftSaving, setDraftSaving] = useState(false)
 
@@ -397,16 +420,19 @@ export default function WorkspaceTab({ profile }) {
     if (tasksData) setTasks(tasksData)
     if (fcData)    setFondComptes(fcData)
     if (vaData)    setVintedAccounts(vaData)
-    if (fondsData) {
-      const assignedIds = new Set(employeComptesData?.map(ec => ec.compte_vinted_id) ?? [])
-      setFondsFiltrés(
-        assignedIds.size > 0
-          ? fondsData.filter(fond => {
-              const fondCIds = fcData?.filter(fc => fc.fond_id === fond.id).map(fc => fc.compte_vinted_id) ?? []
-              return fondCIds.some(cId => assignedIds.has(cId))
-            })
-          : []
-      )
+    if (vaData && employeComptesData) {
+      const assignedIds = new Set(employeComptesData.map(ec => ec.compte_vinted_id))
+      setAssignedAccounts(vaData.filter(v => assignedIds.has(v.id)))
+      if (fondsData) {
+        setFondsFiltrés(
+          assignedIds.size > 0
+            ? fondsData.filter(fond => {
+                const fondCIds = fcData?.filter(fc => fc.fond_id === fond.id).map(fc => fc.compte_vinted_id) ?? []
+                return fondCIds.some(cId => assignedIds.has(cId))
+              })
+            : []
+        )
+      }
     }
     setLoading(false)
   }
@@ -447,20 +473,21 @@ export default function WorkspaceTab({ profile }) {
       const { data, error } = await supabase
         .from('work_items')
         .insert({
-          employe_id:  userId,
-          lien_shein:  draft.lien_shein.trim(),
-          fond_id:     draft.fond_id || null,
-          taille:      draft.taille || null,
-          prix_shein:  draft.prix_shein ? parseFloat(draft.prix_shein) : null,
-          statut:      draft.statut,
-          images_urls: uploadedUrls,
-          categorie:   null,
+          employe_id:        userId,
+          lien_shein:        draft.lien_shein.trim(),
+          fond_id:           draft.fond_id || null,
+          compte_vinted_id:  draft.compte_vinted_id || null,
+          taille:            draft.taille || null,
+          prix_shein:        draft.prix_shein ? parseFloat(draft.prix_shein) : null,
+          statut:            draft.statut,
+          images_urls:       uploadedUrls,
+          categorie:         null,
         })
         .select()
         .single()
       if (!error && data) {
         setItems(prev => [data, ...prev])
-        setDraft({ lien_shein: '', fond_id: '', taille: '', prix_shein: '', statut: 'en_cours', files: [] })
+        setDraft({ lien_shein: '', fond_id: '', compte_vinted_id: '', taille: '', prix_shein: '', statut: 'en_cours', files: [] })
       }
     } finally {
       setDraftSaving(false)
@@ -635,11 +662,12 @@ export default function WorkspaceTab({ profile }) {
               <Spinner className="w-4 h-4" /> Chargement…
             </div>
           ) : (
-            <table className="w-full text-xs border-collapse" style={{ minWidth: '900px' }}>
+            <table className="w-full text-xs border-collapse" style={{ minWidth: '1060px' }}>
               <thead className="bg-gray-50 sticky top-0 z-10 border-b-2 border-gray-200">
                 <tr>
                   <th className="px-3 py-2 text-left font-semibold text-gray-500 w-56">Lien Shein</th>
-                  <th className="px-3 py-2 text-left font-semibold text-gray-500 w-44">Fond</th>
+                  <th className="px-3 py-2 text-left font-semibold text-gray-500 w-40">Fond</th>
+                  <th className="px-3 py-2 text-left font-semibold text-gray-500 w-36">Compte Vinted</th>
                   <th className="px-3 py-2 text-left font-semibold text-gray-500 w-16">Taille</th>
                   <th className="px-3 py-2 text-left font-semibold text-gray-500 w-20">Prix</th>
                   <th className="px-3 py-2 text-left font-semibold text-gray-500 w-20">Images</th>
@@ -650,23 +678,61 @@ export default function WorkspaceTab({ profile }) {
                 </tr>
               </thead>
               <tbody>
-                {items.map((item, idx) => (
-                  <ItemRow
-                    key={item.id}
-                    item={item}
-                    idx={idx}
-                    fondsFiltrés={fondsFiltrés}
-                    fondById={fondById}
-                    saveField={saveField}
-                    savingMap={savingMap}
-                    onOpenImages={setImagesModal}
-                    onDelete={setDeleteConfirm}
-                  />
-                ))}
+                {(() => {
+                  // Grouper les items par compte_vinted_id
+                  const grouped = {}
+                  assignedAccounts.forEach(a => { grouped[a.id] = [] })
+                  grouped['__none__'] = []
+                  items.forEach(item => {
+                    const key = item.compte_vinted_id && grouped[item.compte_vinted_id] !== undefined
+                      ? item.compte_vinted_id : '__none__'
+                    grouped[key].push(item)
+                  })
+
+                  const rowProps = { fondsFiltrés, fondById, assignedAccounts, saveField, savingMap, onOpenImages: setImagesModal, onDelete: setDeleteConfirm }
+
+                  const sections = []
+                  assignedAccounts.forEach(compte => {
+                    const compteItems = grouped[compte.id] ?? []
+                    sections.push(
+                      <tr key={`hdr-${compte.id}`} className="bg-gray-100 border-t-2 border-gray-200">
+                        <td colSpan={10} className="px-4 py-1">
+                          <span className="text-xs font-bold text-gray-700">{compte.pseudo}</span>
+                          <span className="ml-2 text-[10px] bg-gray-300/60 text-gray-600 px-1.5 py-0.5 rounded-full">{compteItems.length}</span>
+                        </td>
+                      </tr>,
+                      ...compteItems.map((item, idx) => (
+                        <ItemRow key={item.id} item={item} idx={idx} {...rowProps} />
+                      ))
+                    )
+                  })
+                  const noneItems = grouped['__none__'] ?? []
+                  if (noneItems.length > 0) {
+                    sections.push(
+                      <tr key="hdr-none" className="bg-gray-100 border-t-2 border-gray-200">
+                        <td colSpan={10} className="px-4 py-1">
+                          <span className="text-xs font-bold text-gray-400 italic">Sans compte</span>
+                          <span className="ml-2 text-[10px] bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded-full">{noneItems.length}</span>
+                        </td>
+                      </tr>,
+                      ...noneItems.map((item, idx) => (
+                        <ItemRow key={item.id} item={item} idx={idx} {...rowProps} />
+                      ))
+                    )
+                  }
+                  // Si aucun compte assigné, afficher flat
+                  if (assignedAccounts.length === 0) {
+                    sections.push(...items.map((item, idx) => (
+                      <ItemRow key={item.id} item={item} idx={idx} {...rowProps} />
+                    )))
+                  }
+                  return sections
+                })()}
                 <GhostRow
                   draft={draft}
                   setDraft={setDraft}
                   fondsFiltrés={fondsFiltrés}
+                  assignedAccounts={assignedAccounts}
                   onSave={saveDraft}
                   saving={draftSaving}
                 />

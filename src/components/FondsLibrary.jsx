@@ -34,6 +34,11 @@ export default function FondsLibrary() {
   const [adding, setAdding]         = useState(false)
   const [addError, setAddError]     = useState('')
 
+  // Édition des comptes d'un fond
+  const [editFond, setEditFond]     = useState(null)
+  const [editIds, setEditIds]       = useState([])
+  const [editSaving, setEditSaving] = useState(false)
+
   // Suppression
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [deleting, setDeleting]     = useState(false)
@@ -51,6 +56,27 @@ export default function FondsLibrary() {
     if (fc) setFondComptes(fc)
     if (c)  setComptes(c)
     setLoading(false)
+  }
+
+  async function handleSaveEditAccounts() {
+    if (!editFond) return
+    setEditSaving(true)
+    try {
+      await supabase.from('fond_comptes').delete().eq('fond_id', editFond.id)
+      if (editIds.length > 0) {
+        await supabase.from('fond_comptes').insert(
+          editIds.map(cId => ({ fond_id: editFond.id, compte_vinted_id: cId }))
+        )
+      }
+      setFondComptes(prev => [
+        ...prev.filter(fc => fc.fond_id !== editFond.id),
+        ...editIds.map(cId => ({ fond_id: editFond.id, compte_vinted_id: cId }))
+      ])
+      setEditFond(null)
+    } catch (err) {
+      alert('Erreur : ' + err.message)
+    }
+    setEditSaving(false)
   }
 
   function getComptesForFond(fondId) {
@@ -239,21 +265,71 @@ export default function FondsLibrary() {
                 </div>
                 <div className="p-3">
                   <div className="text-sm font-semibold text-gray-900 truncate">{fond.nom}</div>
-                  {fondAccounts.length > 0 ? (
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {fondAccounts.map(c => (
-                        <span key={c.id} className="text-[10px] bg-teal-50 text-teal-700 px-1.5 py-0.5 rounded-full font-medium">
-                          {c.pseudo}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-xs text-gray-400 mt-0.5 italic">Aucun compte associé</div>
-                  )}
+                  <div className="flex items-start justify-between gap-1 mt-1">
+                    {fondAccounts.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {fondAccounts.map(c => (
+                          <span key={c.id} className="text-[10px] bg-teal-50 text-teal-700 px-1.5 py-0.5 rounded-full font-medium">
+                            {c.pseudo}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-gray-400 italic">Aucun compte</div>
+                    )}
+                    <button
+                      onClick={() => { setEditFond(fond); setEditIds(fondAccounts.map(c => c.id)) }}
+                      className="text-gray-300 hover:text-teal-500 transition-colors shrink-0 ml-1"
+                      title="Modifier les comptes"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Modal édition des comptes d'un fond */}
+      {editFond && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
+            <h3 className="font-bold text-gray-900 mb-1">Comptes de « {editFond.nom} »</h3>
+            <p className="text-xs text-gray-400 mb-4">Coche les comptes Vinted liés à ce fond.</p>
+            <div className="space-y-2 mb-5 max-h-60 overflow-y-auto">
+              {comptes.map(c => (
+                <label key={c.id} className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editIds.includes(c.id)}
+                    onChange={() => setEditIds(prev =>
+                      prev.includes(c.id) ? prev.filter(x => x !== c.id) : [...prev, c.id]
+                    )}
+                    className="w-4 h-4 accent-teal-500 rounded"
+                  />
+                  <span className="text-sm text-gray-800">{c.pseudo}</span>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ml-auto ${
+                    c.statut === 'actif' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
+                  }`}>{c.statut}</span>
+                </label>
+              ))}
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setEditFond(null)} disabled={editSaving}
+                className="flex-1 border border-gray-200 rounded-xl py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+                Annuler
+              </button>
+              <button onClick={handleSaveEditAccounts} disabled={editSaving}
+                className="flex-1 bg-teal-500 text-white rounded-xl py-2 text-sm font-semibold hover:bg-teal-600 disabled:opacity-50">
+                {editSaving ? 'Enregistrement...' : 'Enregistrer'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
