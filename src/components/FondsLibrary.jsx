@@ -169,24 +169,33 @@ export default function FondsLibrary() {
             className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"
           />
 
-          {/* Comptes associés — checkboxes */}
-          {comptes.length > 0 && (
-            <div className="border border-gray-200 rounded-xl p-3">
-              <div className="text-xs font-semibold text-gray-600 mb-2">Comptes Vinted associés</div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {comptes.map(c => (
-                  <label key={c.id} className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(c.id)}
-                      onChange={() => toggleId(c.id)}
-                      className="w-4 h-4 accent-teal-500 rounded"
-                    />
-                    <span className="text-sm text-gray-700 truncate">{c.pseudo}</span>
-                  </label>
-                ))}
+          {/* Comptes associés — uniquement ceux sans fond */}
+          {(() => {
+            const usedIds = new Set(fondComptes.map(fc => fc.compte_vinted_id))
+            const available = comptes.filter(c => !usedIds.has(c.id))
+            return available.length > 0 ? (
+              <div className="border border-gray-200 rounded-xl p-3">
+                <div className="text-xs font-semibold text-gray-600 mb-2">Comptes Vinted associés</div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {available.map(c => (
+                    <label key={c.id} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(c.id)}
+                        onChange={() => toggleId(c.id)}
+                        className="w-4 h-4 accent-teal-500 rounded"
+                      />
+                      <span className="text-sm text-gray-700 truncate">{c.pseudo}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="border border-gray-200 rounded-xl p-3 text-xs text-gray-400 italic text-center">
+                Tous les comptes sont déjà associés à un fond.
+              </div>
+            )
+          })()}
           )}
 
           <div className="flex items-center gap-3">
@@ -302,7 +311,13 @@ export default function FondsLibrary() {
             <h3 className="font-bold text-gray-900 mb-1">Comptes de « {editFond.nom} »</h3>
             <p className="text-xs text-gray-400 mb-4">Coche les comptes Vinted liés à ce fond.</p>
             <div className="space-y-2 mb-5 max-h-60 overflow-y-auto">
-              {comptes.map(c => (
+              {comptes.filter(c => {
+                // Comptes déjà sur ce fond (toujours visibles)
+                if (editIds.includes(c.id)) return true
+                // Comptes libres (pas sur un autre fond)
+                const usedByOther = fondComptes.some(fc => fc.compte_vinted_id === c.id && fc.fond_id !== editFond.id)
+                return !usedByOther
+              }).map(c => (
                 <label key={c.id} className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"
