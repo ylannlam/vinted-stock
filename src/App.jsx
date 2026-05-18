@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
 import { CATEGORIES, TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE, TAB_EMPLOYEES, TAB_FONDS } from './constants'
 import Login from './Login'
@@ -19,6 +19,7 @@ export default function App() {
   const [user, setUser] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
   const [profile, setProfile] = useState(null)
+  const profileFetchedForRef = useRef(null) // évite les double-fetches
   const [profileLoading, setProfileLoading] = useState(false)
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('activeTab') ?? CATEGORIES[0])
   const [items, setItems] = useState([])
@@ -52,9 +53,13 @@ export default function App() {
 
   useEffect(() => {
     if (user) {
-      // Ne re-fetch le profil que si on n'en a pas encore ou si c'est un utilisateur différent
-      if (!profile || profile.id !== user.id) fetchProfile()
+      // Ne fetch le profil qu'une seule fois par utilisateur
+      if (profileFetchedForRef.current !== user.id) {
+        profileFetchedForRef.current = user.id
+        fetchProfile()
+      }
     } else {
+      profileFetchedForRef.current = null
       setProfile(null)
       setItems([])
     }
@@ -246,7 +251,9 @@ export default function App() {
   }
 
   // --- Loading state ---
-  if (authLoading || profileLoading) {
+  // N'affiche le chargement que si on n'a pas encore de profil (premier chargement uniquement)
+  // Si le profil existe déjà, on reste sur l'interface même pendant un re-fetch silencieux
+  if (authLoading || (profileLoading && !profile)) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="flex items-center gap-3 text-gray-400">
