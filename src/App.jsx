@@ -39,15 +39,25 @@ export default function App() {
       setUser(session?.user ?? null)
       setAuthLoading(false)
     })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
-      setUser(session?.user ?? null)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        setUser(null)
+      } else if (session?.user) {
+        // Évite un re-render si c'est le même utilisateur (ex: TOKEN_REFRESHED)
+        setUser(prev => prev?.id === session.user.id ? prev : session.user)
+      }
     })
     return () => subscription.unsubscribe()
   }, [])
 
   useEffect(() => {
-    if (user) fetchProfile()
-    else { setProfile(null); setItems([]) }
+    if (user) {
+      // Ne re-fetch le profil que si on n'en a pas encore ou si c'est un utilisateur différent
+      if (!profile || profile.id !== user.id) fetchProfile()
+    } else {
+      setProfile(null)
+      setItems([])
+    }
   }, [user])
 
   async function fetchProfile() {
