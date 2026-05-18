@@ -13,6 +13,7 @@ export default function EditItemModal({ item, categories, onClose, onUpdated }) 
     item.status === 'vendu'      ? 'vendu'      : 'en_stock'
   )
   const [sheinUrl, setSheinUrl] = useState(item.shein_url ?? '')
+  const [emplacement, setEmplacement] = useState(item.emplacement ?? '')
   const [photo, setPhoto] = useState(null)
   const [preview, setPreview] = useState(item.photo_url)
   const [quantities, setQuantities] = useState(initQty)
@@ -70,7 +71,7 @@ export default function EditItemModal({ item, categories, onClose, onUpdated }) 
       // Mise à jour de l'article existant
       const { data: updatedItem, error: updateErr } = await supabase
         .from('items')
-        .update({ category, size, status, photo_url: photoUrl, shein_url: sheinUrl.trim() || null })
+        .update({ category, size, status, photo_url: photoUrl, shein_url: sheinUrl.trim() || null, emplacement: emplacement.trim() || null })
         .eq('id', item.id)
         .select()
         .single()
@@ -235,6 +236,21 @@ export default function EditItemModal({ item, categories, onClose, onUpdated }) 
                 À recevoir
               </button>
             </div>
+          </div>
+
+          {/* Emplacement */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Emplacement <span className="text-gray-400 font-normal">(optionnel, ex : A1-1)</span>
+            </label>
+            <input
+              type="text"
+              value={emplacement}
+              onChange={e => setEmplacement(e.target.value)}
+              placeholder="ex: A1-1, B3-2…"
+              maxLength={20}
+              className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+            />
           </div>
 
           {/* Lien Shein */}

@@ -1,22 +1,55 @@
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
 
-export default function FilterBar({ categories, sizes, onSizesChange, selectedCategories, onCategoriesChange, total }) {
+export default function FilterBar({ sizes, onSizesChange, searchQuery, onSearchChange, sortByEmplacement, onSortToggle, total }) {
   function toggleSize(s) {
     onSizesChange(prev =>
       prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]
     )
   }
 
-  function toggleCategory(cat) {
-    onCategoriesChange(prev =>
-      prev.includes(cat) ? prev.filter(x => x !== cat) : [...prev, cat]
-    )
-  }
-
-  const hasFilters = sizes.length > 0 || selectedCategories.length > 0
+  const hasFilters = sizes.length > 0 || searchQuery
 
   return (
     <div className="bg-white border-b border-gray-100 px-3 py-2.5 space-y-2">
+      {/* Barre de recherche */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 105 11a6 6 0 0012 0z" />
+          </svg>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => onSearchChange(e.target.value)}
+            placeholder="Rechercher par emplacement, catégorie…"
+            className="w-full pl-7 pr-3 py-1.5 text-xs border border-gray-200 rounded-full focus:outline-none focus:border-teal-400 bg-gray-50"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => onSearchChange('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+        <button
+          onClick={onSortToggle}
+          className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-full border transition-colors flex-shrink-0 ${
+            sortByEmplacement
+              ? 'bg-teal-500 text-white border-teal-500'
+              : 'bg-white text-gray-600 border-gray-200 hover:border-teal-300'
+          }`}
+        >
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0zM15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          Emplacement
+        </button>
+      </div>
+
       {/* Tailles */}
       <div className="flex items-center gap-1.5 flex-wrap">
         <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide w-12 flex-shrink-0">Taille</span>
@@ -35,24 +68,6 @@ export default function FilterBar({ categories, sizes, onSizesChange, selectedCa
         ))}
       </div>
 
-      {/* Catégories */}
-      <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide pb-0.5">
-        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide w-12 flex-shrink-0">Cat.</span>
-        {categories.map(cat => (
-          <button
-            key={cat}
-            onClick={() => toggleCategory(cat)}
-            className={`text-xs font-semibold px-2.5 py-1 rounded-full border whitespace-nowrap transition-colors flex-shrink-0 ${
-              selectedCategories.includes(cat)
-                ? 'bg-teal-500 text-white border-teal-500'
-                : 'bg-white text-gray-600 border-gray-200 hover:border-teal-300'
-            }`}
-          >
-            {cat}
-          </button>
-        ))}
-      </div>
-
       {/* Résumé + reset */}
       <div className="flex items-center justify-between">
         <span className="text-xs text-gray-400">
@@ -60,7 +75,7 @@ export default function FilterBar({ categories, sizes, onSizesChange, selectedCa
         </span>
         {hasFilters && (
           <button
-            onClick={() => { onSizesChange([]); onCategoriesChange([]) }}
+            onClick={() => { onSizesChange([]); onSearchChange('') }}
             className="text-xs text-teal-600 font-medium hover:text-teal-800 transition-colors"
           >
             Effacer les filtres

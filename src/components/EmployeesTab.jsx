@@ -7,15 +7,13 @@ import TaskAssignModal from './TaskAssignModal'
 const STATUT_DOT = { en_cours: 'bg-gray-400', image_faite: 'bg-blue-400', importe_dotb: 'bg-green-500' }
 
 // ─── ArticleCard (copie locale, auto-suffisant) ────────────────────────────────
-function ArticleCard({ item, fond, onEdit, onDelete, onOpenImages, adminActions }) {
+function ArticleCard({ item, fond, onEdit, onDelete, onOpenImages }) {
   const firstImage = Array.isArray(item.images_urls) && item.images_urls.length > 0 ? item.images_urls[0] : null
   const imageCount = Array.isArray(item.images_urls) ? item.images_urls.length : 0
-
   const STATUT_LABELS_LOCAL = { en_cours: 'En cours', image_faite: 'Images faites', importe_dotb: 'Posté sur Vinted' }
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden group relative">
-      {/* Zone image */}
       <div className="relative">
         {firstImage ? (
           <img src={firstImage} alt="" className="w-full h-40 object-cover" />
@@ -26,81 +24,31 @@ function ArticleCard({ item, fond, onEdit, onDelete, onOpenImages, adminActions 
             </svg>
           </div>
         )}
-        {/* Badge images */}
         <button onClick={() => onOpenImages(item)}
           className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white text-[10px] font-medium px-2 py-0.5 rounded-full transition-colors">
           {imageCount > 0 ? `${imageCount} 🖼` : '+ images'}
         </button>
       </div>
-
-      {/* Corps */}
       <div className="p-3 space-y-1.5">
-        {/* Fond */}
         {fond && (
           <div className="flex items-center gap-1.5">
             <img src={fond.image_url} alt={fond.nom} className="w-5 h-5 rounded object-cover shrink-0" />
             <span className="text-[10px] text-gray-500 truncate">{fond.nom}</span>
           </div>
         )}
-
-        {/* Lien Shein */}
         <a href={item.lien_shein} target="_blank" rel="noopener noreferrer"
-          title={item.lien_shein}
-          className="text-xs text-teal-600 hover:underline block truncate">
+          title={item.lien_shein} className="text-xs text-teal-600 hover:underline block truncate">
           {item.lien_shein ? item.lien_shein.replace(/^https?:\/\//, '').slice(0, 40) : '—'}
         </a>
-
-        {/* Taille + Prix */}
         <div className="flex items-center gap-2">
           {item.taille && <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{item.taille}</span>}
           {item.prix_shein != null && <span className="text-xs font-medium text-gray-700">{parseFloat(item.prix_shein).toFixed(2)} €</span>}
         </div>
-
-        {/* Statut */}
         <div className="flex items-center gap-1.5">
           <span className={`w-2 h-2 rounded-full shrink-0 ${STATUT_DOT[item.statut] ?? 'bg-gray-400'}`} />
           <span className="text-[10px] text-gray-600">{STATUT_LABELS_LOCAL[item.statut] ?? item.statut}</span>
         </div>
-
-        {/* Validation */}
-        {item.admin_status === 'valide' && <span className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ Validé</span>}
-        {item.admin_status === 'refuse' && <span className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700">✗ Refusé</span>}
-        {(!item.admin_status || item.admin_status === 'en_attente') && <span className="inline-block text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">· En attente</span>}
-
-        {/* Boutons admin valider/refuser */}
-        {adminActions && (
-          <div className="flex gap-1.5 pt-1 border-t border-gray-100 mt-1">
-            <button
-              onClick={() => adminActions.onValidate(item.id, item.admin_status === 'valide' ? 'en_attente' : 'valide')}
-              className={`flex-1 text-[10px] font-semibold py-1 rounded-lg transition-colors ${item.admin_status === 'valide' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500 hover:bg-green-50 hover:text-green-700'}`}>
-              ✓ Valider
-            </button>
-            <button
-              onClick={() => adminActions.onRefuse(item.id, item.admin_status === 'refuse' ? 'en_attente' : 'refuse')}
-              className={`flex-1 text-[10px] font-semibold py-1 rounded-lg transition-colors ${item.admin_status === 'refuse' ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-600'}`}>
-              ✗ Refuser
-            </button>
-          </div>
-        )}
       </div>
-
-      {/* Overlay edit/delete au survol — caché si adminActions présent */}
-      {!adminActions && (
-        <div className="absolute top-2 left-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={() => onEdit(item)}
-            className="w-7 h-7 bg-white rounded-lg shadow-sm flex items-center justify-center text-gray-500 hover:text-teal-600 transition-colors">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-          </button>
-          <button onClick={() => onDelete(item.id)}
-            className="w-7 h-7 bg-white rounded-lg shadow-sm flex items-center justify-center text-gray-400 hover:text-red-500 transition-colors">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          </button>
-        </div>
-      )}
     </div>
   )
 }
@@ -220,11 +168,9 @@ export default function EmployeesTab() {
     const list = workItems.filter(i => i.employe_id === userId)
     const todayStr = new Date().toISOString().slice(0, 10)
     return {
-      today:     list.filter(i => i.created_at.slice(0, 10) === todayStr).length,
-      week:      list.filter(i => i.created_at >= startOfWeek()).length,
-      validated: list.filter(i => i.admin_status === 'valide').length,
-      refused:   list.filter(i => i.admin_status === 'refuse').length,
-      all:       list,
+      today: list.filter(i => i.created_at.slice(0, 10) === todayStr).length,
+      week:  list.filter(i => i.created_at >= startOfWeek()).length,
+      all:   list,
     }
   }
 
@@ -256,12 +202,6 @@ export default function EmployeesTab() {
     if (selected?.id === updated.id) setSelected(prev => ({ ...prev, ...updated }))
     setShowModal(false)
     setEditUser(null)
-  }
-
-  async function handleSetAdminStatus(itemId, status) {
-    const { data, error } = await supabase
-      .from('work_items').update({ admin_status: status }).eq('id', itemId).select().single()
-    if (!error && data) setWorkItems(prev => prev.map(i => i.id === data.id ? data : i))
   }
 
   async function handleSaveNote(userId) {
@@ -328,12 +268,10 @@ export default function EmployeesTab() {
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-4 gap-2 mt-4">
+          <div className="grid grid-cols-2 gap-2 mt-4">
             {[
-              { v: stats.today,     l: "Aujourd'hui", c: 'text-teal-600' },
-              { v: stats.week,      l: 'Cette semaine', c: 'text-teal-600' },
-              { v: stats.validated, l: 'Validés',   c: 'text-green-600' },
-              { v: stats.refused,   l: 'Refusés',   c: 'text-red-500' },
+              { v: stats.today, l: "Aujourd'hui", c: 'text-teal-600' },
+              { v: stats.week,  l: 'Cette semaine', c: 'text-teal-600' },
             ].map(s => (
               <div key={s.l} className="bg-gray-50 rounded-xl p-2 text-center">
                 <div className={`text-lg font-bold ${s.c}`}>{s.v}</div>
@@ -515,10 +453,6 @@ export default function EmployeesTab() {
                       onEdit={() => {}}
                       onDelete={() => {}}
                       onOpenImages={() => {}}
-                      adminActions={{
-                        onValidate: (id, status) => handleSetAdminStatus(id, status),
-                        onRefuse: (id, status) => handleSetAdminStatus(id, status),
-                      }}
                     />
                   ))}
                 </div>
@@ -605,8 +539,6 @@ export default function EmployeesTab() {
                       <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                         <span className="text-xs text-gray-500">Aujourd'hui : <b className="text-gray-700">{stats.today}</b></span>
                         <span className="text-xs text-gray-500">Semaine : <b className="text-gray-700">{stats.week}</b></span>
-                        <span className="text-xs text-green-600 font-semibold">{stats.validated} ✓</span>
-                        {stats.refused > 0 && <span className="text-xs text-red-500 font-semibold">{stats.refused} ✗</span>}
                       </div>
                     )}
                     {isEmploye && (

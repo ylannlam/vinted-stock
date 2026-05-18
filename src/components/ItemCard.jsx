@@ -1,10 +1,11 @@
 import { useState, useRef } from 'react'
 
-export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onMarkUnsent, onDelete, onUpdateCategory, onBordereauDrop, onEdit, onMarkReceived, onToggleReception }) {
+export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onMarkUnsent, onDelete, onUpdateCategory, onUpdateEmplacement, onBordereauDrop, onEdit, onMarkReceived, onToggleReception }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmSent, setConfirmSent] = useState(false)
   const [confirmReceived, setConfirmReceived] = useState(false)
   const [editingCategory, setEditingCategory] = useState(false)
+  const [editingEmplacement, setEditingEmplacement] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
   const pdfInputRef = useRef(null)
@@ -149,7 +150,7 @@ export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onM
       <div className="px-2 py-1.5">
 
         {/* Catégorie + édition inline */}
-        <div className="flex items-center gap-0.5 mb-1 min-w-0">
+        <div className="flex items-center gap-0.5 mb-0.5 min-w-0">
           {editingCategory ? (
             <select
               autoFocus
@@ -178,6 +179,40 @@ export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onM
             </>
           )}
         </div>
+
+        {/* Emplacement + édition inline */}
+        {(isStock || item.emplacement) && (
+          <div className="mb-1 min-w-0">
+            {editingEmplacement ? (
+              <input
+                autoFocus
+                type="text"
+                defaultValue={item.emplacement ?? ''}
+                onBlur={e => { onUpdateEmplacement(item.id, e.target.value.trim() || null); setEditingEmplacement(false) }}
+                onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingEmplacement(false) }}
+                placeholder="ex: A1-1"
+                maxLength={20}
+                className="text-[10px] text-gray-700 font-medium bg-white border border-teal-400 rounded px-1 py-0.5 focus:outline-none w-full"
+              />
+            ) : item.emplacement ? (
+              <button
+                onClick={() => isStock && setEditingEmplacement(true)}
+                className={`flex items-center gap-0.5 max-w-full ${isStock ? 'cursor-pointer' : 'cursor-default'}`}
+              >
+                <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded-full leading-tight truncate max-w-full">
+                  📍 {item.emplacement}
+                </span>
+              </button>
+            ) : (
+              <button
+                onClick={() => setEditingEmplacement(true)}
+                className="text-[10px] text-gray-300 hover:text-teal-400 transition-colors leading-tight"
+              >
+                Pas d'emplacement
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Badge + toggle "À récupérer" — visible uniquement sur À envoyer */}
         {isPending && (

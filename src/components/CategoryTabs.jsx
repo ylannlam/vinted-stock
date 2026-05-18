@@ -47,30 +47,13 @@ export default function CategoryTabs({ categories, active, onChange, items, user
       <div className="overflow-x-auto scrollbar-hide">
         <div className="flex min-w-max px-2">
 
-          {/* Onglet Tout */}
+          {/* Onglet Stock */}
           <button onClick={() => onChange(TAB_TOUT)} className={tabClass(active === TAB_TOUT)}>
-            Tout
+            Stock
             <span className={badgeClass(active === TAB_TOUT)}>
               {items.filter(i => i.status === 'en_stock').length}
             </span>
           </button>
-
-          {/* Séparateur */}
-          <div className="flex items-center px-1">
-            <div className="w-px h-5 bg-gray-200" />
-          </div>
-
-          {/* Onglets catégories */}
-          {categories.map(cat => {
-            const count = items.filter(i => i.category === cat && i.status === 'en_stock').length
-            const isActive = active === cat
-            return (
-              <button key={cat} onClick={() => onChange(cat)} className={tabClass(isActive)}>
-                {cat}
-                {count > 0 && <span className={badgeClass(isActive)}>{count}</span>}
-              </button>
-            )
-          })}
 
           {/* Séparateur */}
           <div className="flex items-center px-1">

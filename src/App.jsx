@@ -21,11 +21,16 @@ export default function App() {
   const [profile, setProfile] = useState(null)
   const profileFetchedForRef = useRef(null) // évite les double-fetches
   const [profileLoading, setProfileLoading] = useState(false)
-  const [activeTab, setActiveTab] = useState(() => localStorage.getItem('activeTab') ?? CATEGORIES[0])
+  const [activeTab, setActiveTab] = useState(() => {
+    const saved = localStorage.getItem('activeTab')
+    const validTabs = [TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE, TAB_EMPLOYEES, TAB_FONDS]
+    return validTabs.includes(saved) ? saved : TAB_TOUT
+  })
   const [items, setItems] = useState([])
   const [itemsLoading, setItemsLoading] = useState(false)
   const [filterSizes, setFilterSizes] = useState([])
-  const [filterCategories, setFilterCategories] = useState([])
+  const [filterSearch, setFilterSearch] = useState('')
+  const [sortByEmplacement, setSortByEmplacement] = useState(false)
   const [showLotModal, setShowLotModal] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [editItem, setEditItem] = useState(null)
@@ -107,7 +112,7 @@ export default function App() {
 
   function handleItemAdded(newItems) {
     setItems(prev => [...newItems, ...prev])
-    setActiveTab(newItems[0].category)
+    setActiveTab(newItems[0].status === 'a_recevoir' ? TAB_A_RECEVOIR : TAB_TOUT)
     setShowAddModal(false)
   }
 
@@ -119,7 +124,7 @@ export default function App() {
   async function handleMarkSent(item) {
     const { data, error } = await supabase
       .from('items')
-      .update({ status: 'envoye', sent_at: new Date().toISOString() })
+      .update({ status: 'envoye', sent_at: new Date().toISOString(), emplacement: null })
       .eq('id', item.id)
       .select()
       .single()
@@ -155,7 +160,7 @@ export default function App() {
     if (error) { alert('Erreur : ' + error.message); return }
     if (data) {
       setItems(prev => prev.map(i => i.id === data.id ? data : i))
-      setActiveTab(data.category)
+      setActiveTab(TAB_TOUT)
     }
   }
 
@@ -202,7 +207,7 @@ export default function App() {
     try {
       const { data, error } = await supabase
         .from('items')
-        .update({ status: 'envoye', sent_at: new Date().toISOString() })
+        .update({ status: 'envoye', sent_at: new Date().toISOString(), emplacement: null })
         .in('id', ids).select()
       if (error) throw error
       if (data) {
@@ -238,6 +243,16 @@ export default function App() {
     const { data, error } = await supabase
       .from('items')
       .update({ category: newCategory })
+      .eq('id', itemId)
+      .select()
+      .single()
+    if (!error && data) setItems(prev => prev.map(i => i.id === data.id ? data : i))
+  }
+
+  async function handleUpdateEmplacement(itemId, newEmplacement) {
+    const { data, error } = await supabase
+      .from('items')
+      .update({ emplacement: newEmplacement || null })
       .eq('id', itemId)
       .select()
       .single()
@@ -323,12 +338,22 @@ export default function App() {
       return vendus.filter(i => i.bordereau_url && lotBordereaux.has(i.bordereau_url)).sort((a, b) => new Date(b.sold_at ?? b.created_at) - new Date(a.sold_at ?? a.created_at))
     }
     if (activeTab === TAB_ENVOYES)       return items.filter(i => i.status === 'envoye')
-    const base = activeTab === TAB_TOUT
-      ? items.filter(i => i.status === 'en_stock')
-      : items.filter(i => i.category === activeTab && i.status === 'en_stock')
-    return base
+    const base = items.filter(i => i.status === 'en_stock')
+    const searched = base
       .filter(i => filterSizes.length === 0 || filterSizes.includes(i.size))
-      .filter(i => filterCategories.length === 0 || filterCategories.includes(i.category))
+      .filter(i => {
+        if (!filterSearch) return true
+        const q = filterSearch.toLowerCase()
+        return (i.emplacement ?? '').toLowerCase().includes(q) ||
+               (i.category ?? '').toLowerCase().includes(q) ||
+               (i.size ?? '').toLowerCase().includes(q)
+      })
+    if (!sortByEmplacement) return searched
+    return [...searched].sort((a, b) => {
+      const ea = a.emplacement ?? '￿'
+      const eb = b.emplacement ?? '￿'
+      return ea.localeCompare(eb, undefined, { numeric: true })
+    })
   })()
 
   return (
@@ -346,7 +371,7 @@ export default function App() {
       {activeTab === TAB_COMPTES_VINTED && <VintedAccountsTab />}
       {activeTab === TAB_FONDS && <FondsLibrary />}
 
-      {activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_EMPLOYEES && activeTab !== TAB_FONDS && (activeTab === TAB_TOUT || CATEGORIES.includes(activeTab)) && (
+      {activeTab === TAB_TOUT && (
         <div className="flex items-center justify-end px-3 py-1.5 bg-white border-b border-gray-100">
           <button
             onClick={() => setShowLotModal(true)}
@@ -363,11 +388,12 @@ export default function App() {
 
       {activeTab === TAB_TOUT && (
         <FilterBar
-          categories={CATEGORIES}
           sizes={filterSizes}
           onSizesChange={setFilterSizes}
-          selectedCategories={filterCategories}
-          onCategoriesChange={setFilterCategories}
+          searchQuery={filterSearch}
+          onSearchChange={setFilterSearch}
+          sortByEmplacement={sortByEmplacement}
+          onSortToggle={() => setSortByEmplacement(v => !v)}
           total={filteredItems.length}
         />
       )}
@@ -383,6 +409,7 @@ export default function App() {
           onMarkReceived={handleMarkReceived}
           onDelete={handleDelete}
           onUpdateCategory={handleUpdateCategory}
+          onUpdateEmplacement={handleUpdateEmplacement}
           onBordereauDrop={handleBordereauDrop}
           onEdit={setEditItem}
           onToggleReception={handleToggleReception}

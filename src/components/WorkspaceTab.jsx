@@ -13,7 +13,7 @@ function startOfWeek() {
 }
 
 // ─── ArticleCard ───────────────────────────────────────────────────────────────
-function ArticleCard({ item, fond, onEdit, onDelete, onOpenImages, adminActions }) {
+function ArticleCard({ item, fond, onEdit, onDelete, onOpenImages }) {
   const firstImage = Array.isArray(item.images_urls) && item.images_urls.length > 0 ? item.images_urls[0] : null
   const imageCount = Array.isArray(item.images_urls) ? item.images_urls.length : 0
 
@@ -30,7 +30,6 @@ function ArticleCard({ item, fond, onEdit, onDelete, onOpenImages, adminActions 
             </svg>
           </div>
         )}
-        {/* Badge images */}
         <button onClick={() => onOpenImages(item)}
           className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white text-[10px] font-medium px-2 py-0.5 rounded-full transition-colors">
           {imageCount > 0 ? `${imageCount} 🖼` : '+ images'}
@@ -39,72 +38,42 @@ function ArticleCard({ item, fond, onEdit, onDelete, onOpenImages, adminActions 
 
       {/* Corps */}
       <div className="p-3 space-y-1.5">
-        {/* Fond */}
         {fond && (
           <div className="flex items-center gap-1.5">
             <img src={fond.image_url} alt={fond.nom} className="w-5 h-5 rounded object-cover shrink-0" />
             <span className="text-[10px] text-gray-500 truncate">{fond.nom}</span>
           </div>
         )}
-
-        {/* Lien Shein */}
         <a href={item.lien_shein} target="_blank" rel="noopener noreferrer"
           title={item.lien_shein}
           className="text-xs text-teal-600 hover:underline block truncate">
           {item.lien_shein ? item.lien_shein.replace(/^https?:\/\//, '').slice(0, 40) : '—'}
         </a>
-
-        {/* Taille + Prix */}
         <div className="flex items-center gap-2">
           {item.taille && <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{item.taille}</span>}
           {item.prix_shein != null && <span className="text-xs font-medium text-gray-700">{parseFloat(item.prix_shein).toFixed(2)} €</span>}
         </div>
-
-        {/* Statut */}
         <div className="flex items-center gap-1.5">
           <span className={`w-2 h-2 rounded-full shrink-0 ${STATUT_DOT[item.statut] ?? 'bg-gray-400'}`} />
           <span className="text-[10px] text-gray-600">{STATUT_LABELS[item.statut] ?? item.statut}</span>
         </div>
-
-        {/* Validation */}
-        {item.admin_status === 'valide' && <span className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ Validé</span>}
-        {item.admin_status === 'refuse' && <span className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700">✗ Refusé</span>}
-        {(!item.admin_status || item.admin_status === 'en_attente') && <span className="inline-block text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">· En attente</span>}
-
-        {/* Boutons admin valider/refuser */}
-        {adminActions && (
-          <div className="flex gap-1.5 pt-1 border-t border-gray-100 mt-1">
-            <button
-              onClick={() => adminActions.onValidate(item.id, item.admin_status === 'valide' ? 'en_attente' : 'valide')}
-              className={`flex-1 text-[10px] font-semibold py-1 rounded-lg transition-colors ${item.admin_status === 'valide' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500 hover:bg-green-50 hover:text-green-700'}`}>
-              ✓ Valider
-            </button>
-            <button
-              onClick={() => adminActions.onRefuse(item.id, item.admin_status === 'refuse' ? 'en_attente' : 'refuse')}
-              className={`flex-1 text-[10px] font-semibold py-1 rounded-lg transition-colors ${item.admin_status === 'refuse' ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-600'}`}>
-              ✗ Refuser
-            </button>
-          </div>
-        )}
       </div>
 
-      {/* Overlay edit/delete au survol (employé) — caché si adminActions présent */}
-      {!adminActions && (
-        <div className="absolute top-2 left-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={() => onEdit(item)}
-            className="w-7 h-7 bg-white rounded-lg shadow-sm flex items-center justify-center text-gray-500 hover:text-teal-600 transition-colors">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-          </button>
-          <button onClick={() => onDelete(item.id)}
-            className="w-7 h-7 bg-white rounded-lg shadow-sm flex items-center justify-center text-gray-400 hover:text-red-500 transition-colors">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          </button>
-        </div>
-      )}
+      {/* Overlay edit/delete au survol */}
+      <div className="absolute top-2 left-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button onClick={() => onEdit(item)}
+          className="w-7 h-7 bg-white rounded-lg shadow-sm flex items-center justify-center text-gray-500 hover:text-teal-600 transition-colors">
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+        </button>
+        <button onClick={() => onDelete(item.id)}
+          className="w-7 h-7 bg-white rounded-lg shadow-sm flex items-center justify-center text-gray-400 hover:text-red-500 transition-colors">
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+      </div>
     </div>
   )
 }
@@ -518,11 +487,9 @@ export default function WorkspaceTab({ profile }) {
   }
 
   // Stats
-  const todayStr    = new Date().toISOString().slice(0, 10)
-  const todayCount  = items.filter(i => i.created_at.slice(0, 10) === todayStr).length
-  const weekCount   = items.filter(i => i.created_at >= startOfWeek()).length
-  const validCount  = items.filter(i => i.admin_status === 'valide').length
-  const refuseCount = items.filter(i => i.admin_status === 'refuse').length
+  const todayStr   = new Date().toISOString().slice(0, 10)
+  const todayCount = items.filter(i => i.created_at.slice(0, 10) === todayStr).length
+  const weekCount  = items.filter(i => i.created_at >= startOfWeek()).length
   const activeTasks = tasks.filter(t => t.statut !== 'termine')
 
   // Items de l'onglet actif
@@ -556,8 +523,6 @@ export default function WorkspaceTab({ profile }) {
       <div className="px-4 py-1.5 bg-white border-b border-gray-100 shrink-0 text-xs text-gray-400">
         Aujourd'hui&nbsp;:&nbsp;<span className="font-medium text-gray-600">{todayCount}</span>
         &nbsp;·&nbsp;Cette semaine&nbsp;:&nbsp;<span className="font-medium text-gray-600">{weekCount}</span>
-        &nbsp;·&nbsp;✓&nbsp;<span className="font-medium text-green-600">{validCount}</span>
-        &nbsp;·&nbsp;✗&nbsp;<span className="font-medium text-red-500">{refuseCount}</span>
       </div>
 
       {/* Barre d'onglets par compte */}
