@@ -3,6 +3,108 @@ import { supabase } from '../lib/supabase'
 import UserManagementModal from './UserManagementModal'
 import TaskAssignModal from './TaskAssignModal'
 
+// ─── Constantes locales ────────────────────────────────────────────────────────
+const STATUT_DOT = { en_cours: 'bg-gray-400', image_faite: 'bg-blue-400', importe_dotb: 'bg-green-500' }
+
+// ─── ArticleCard (copie locale, auto-suffisant) ────────────────────────────────
+function ArticleCard({ item, fond, onEdit, onDelete, onOpenImages, adminActions }) {
+  const firstImage = Array.isArray(item.images_urls) && item.images_urls.length > 0 ? item.images_urls[0] : null
+  const imageCount = Array.isArray(item.images_urls) ? item.images_urls.length : 0
+
+  const STATUT_LABELS_LOCAL = { en_cours: 'En cours', image_faite: 'Images faites', importe_dotb: 'Posté sur Vinted' }
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden group relative">
+      {/* Zone image */}
+      <div className="relative">
+        {firstImage ? (
+          <img src={firstImage} alt="" className="w-full h-40 object-cover" />
+        ) : (
+          <div className="w-full h-40 bg-gray-100 flex items-center justify-center">
+            <svg className="w-10 h-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </div>
+        )}
+        {/* Badge images */}
+        <button onClick={() => onOpenImages(item)}
+          className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white text-[10px] font-medium px-2 py-0.5 rounded-full transition-colors">
+          {imageCount > 0 ? `${imageCount} 🖼` : '+ images'}
+        </button>
+      </div>
+
+      {/* Corps */}
+      <div className="p-3 space-y-1.5">
+        {/* Fond */}
+        {fond && (
+          <div className="flex items-center gap-1.5">
+            <img src={fond.image_url} alt={fond.nom} className="w-5 h-5 rounded object-cover shrink-0" />
+            <span className="text-[10px] text-gray-500 truncate">{fond.nom}</span>
+          </div>
+        )}
+
+        {/* Lien Shein */}
+        <a href={item.lien_shein} target="_blank" rel="noopener noreferrer"
+          title={item.lien_shein}
+          className="text-xs text-teal-600 hover:underline block truncate">
+          {item.lien_shein ? item.lien_shein.replace(/^https?:\/\//, '').slice(0, 40) : '—'}
+        </a>
+
+        {/* Taille + Prix */}
+        <div className="flex items-center gap-2">
+          {item.taille && <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{item.taille}</span>}
+          {item.prix_shein != null && <span className="text-xs font-medium text-gray-700">{parseFloat(item.prix_shein).toFixed(2)} €</span>}
+        </div>
+
+        {/* Statut */}
+        <div className="flex items-center gap-1.5">
+          <span className={`w-2 h-2 rounded-full shrink-0 ${STATUT_DOT[item.statut] ?? 'bg-gray-400'}`} />
+          <span className="text-[10px] text-gray-600">{STATUT_LABELS_LOCAL[item.statut] ?? item.statut}</span>
+        </div>
+
+        {/* Validation */}
+        {item.admin_status === 'valide' && <span className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ Validé</span>}
+        {item.admin_status === 'refuse' && <span className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700">✗ Refusé</span>}
+        {(!item.admin_status || item.admin_status === 'en_attente') && <span className="inline-block text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">· En attente</span>}
+
+        {/* Boutons admin valider/refuser */}
+        {adminActions && (
+          <div className="flex gap-1.5 pt-1 border-t border-gray-100 mt-1">
+            <button
+              onClick={() => adminActions.onValidate(item.id, item.admin_status === 'valide' ? 'en_attente' : 'valide')}
+              className={`flex-1 text-[10px] font-semibold py-1 rounded-lg transition-colors ${item.admin_status === 'valide' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500 hover:bg-green-50 hover:text-green-700'}`}>
+              ✓ Valider
+            </button>
+            <button
+              onClick={() => adminActions.onRefuse(item.id, item.admin_status === 'refuse' ? 'en_attente' : 'refuse')}
+              className={`flex-1 text-[10px] font-semibold py-1 rounded-lg transition-colors ${item.admin_status === 'refuse' ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-600'}`}>
+              ✗ Refuser
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Overlay edit/delete au survol — caché si adminActions présent */}
+      {!adminActions && (
+        <div className="absolute top-2 left-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={() => onEdit(item)}
+            className="w-7 h-7 bg-white rounded-lg shadow-sm flex items-center justify-center text-gray-500 hover:text-teal-600 transition-colors">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          </button>
+          <button onClick={() => onDelete(item.id)}
+            className="w-7 h-7 bg-white rounded-lg shadow-sm flex items-center justify-center text-gray-400 hover:text-red-500 transition-colors">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 const ROLE_CONFIG = {
   employe: { label: 'Employé', color: 'text-purple-600 bg-purple-100' },
   stock:   { label: 'Stock',   color: 'text-orange-600 bg-orange-100' },
@@ -53,8 +155,21 @@ export default function EmployeesTab() {
   const [noteInputs, setNoteInputs]       = useState({})
   const [savingNote, setSavingNote]       = useState({})
   const [showTaskModal, setShowTaskModal] = useState(false)
+  const [adminTabActive, setAdminTabActive] = useState('__none__')
 
   useEffect(() => { fetchData() }, [])
+
+  // Réinitialiser l'onglet actif quand on change d'employé sélectionné
+  useEffect(() => {
+    if (!selected) return
+    const allItems = workItems.filter(i => i.employe_id === selected.id)
+    const usedAccountIds = [...new Set(allItems.map(i => i.compte_vinted_id).filter(Boolean))]
+    if (usedAccountIds.length > 0) {
+      setAdminTabActive(usedAccountIds[0])
+    } else {
+      setAdminTabActive('__none__')
+    }
+  }, [selected?.id])
 
   async function fetchData() {
     setLoading(true)
@@ -344,7 +459,7 @@ export default function EmployeesTab() {
           </div>
         )}
 
-        {/* Section Articles soumis — groupés par compte Vinted */}
+        {/* Section Articles soumis — onglets par compte + grille de cartes */}
         <div className="flex items-center gap-2 mb-3">
           <h3 className="text-sm font-bold text-gray-900">Articles soumis</h3>
           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{stats.all.length}</span>
@@ -353,104 +468,64 @@ export default function EmployeesTab() {
         {stats.all.length === 0 ? (
           <p className="text-sm text-gray-400 italic">Aucun article soumis.</p>
         ) : (() => {
-          // Grouper par compte_vinted_id
-          const grouped = {}
-          stats.all.forEach(item => {
-            const key = item.compte_vinted_id ?? '__none__'
-            if (!grouped[key]) grouped[key] = []
-            grouped[key].push(item)
-          })
           const usedAccountIds = [...new Set(stats.all.map(i => i.compte_vinted_id).filter(Boolean))]
-          const orderedAccounts = vintedAccounts.filter(v => usedAccountIds.includes(v.id))
-          const noneItems = grouped['__none__'] ?? []
+          const usedAccounts = vintedAccounts.filter(v => usedAccountIds.includes(v.id))
+          const noneCount = stats.all.filter(i => !i.compte_vinted_id).length
 
-          const renderItem = (item) => {
-            const fond = fonds.find(f => f.id === item.fond_id)
-            return (
-              <div key={item.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
-                <div className="flex items-start gap-3">
-                  {fond && (
-                    <img src={fond.image_url} alt={fond.nom}
-                      className="w-12 h-12 rounded-xl object-cover border border-gray-200 shrink-0" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    {fond && (
-                      <div className="text-xs text-gray-500 mb-0.5 font-medium">{fond.nom}</div>
-                    )}
-                    <a href={item.lien_shein} target="_blank" rel="noopener noreferrer"
-                      className="text-sm font-medium text-teal-600 hover:underline block truncate">
-                      {item.lien_shein}
-                    </a>
-                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      {item.taille && (
-                        <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{item.taille}</span>
-                      )}
-                      {item.prix_shein != null && (
-                        <span className="text-xs text-gray-600 font-medium">{parseFloat(item.prix_shein).toFixed(2)} €</span>
-                      )}
-                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                        item.statut === 'en_cours'    ? 'bg-gray-100 text-gray-600' :
-                        item.statut === 'image_faite' ? 'bg-blue-100 text-blue-600' :
-                                                        'bg-green-100 text-green-600'
-                      }`}>{STATUT_LABELS[item.statut]}</span>
-                      <span className="text-xs text-gray-400">
-                        {new Date(item.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                    {Array.isArray(item.images_urls) && item.images_urls.length > 0 && (
-                      <div className="flex gap-1.5 mt-2 flex-wrap">
-                        {item.images_urls.slice(0, 4).map((url, i) => (
-                          <a key={i} href={url} target="_blank" rel="noopener noreferrer">
-                            <img src={url} alt="" className="w-10 h-10 rounded-lg object-cover border border-gray-200 hover:opacity-80" />
-                          </a>
-                        ))}
-                      </div>
-                    )}
-                    <div className="mt-1.5">
-                      {item.admin_status === 'valide' && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ Validé</span>}
-                      {item.admin_status === 'refuse' && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700">✗ Refusé</span>}
-                      {(!item.admin_status || item.admin_status === 'en_attente') && <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">· En attente</span>}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => handleSetAdminStatus(item.id, item.admin_status === 'valide' ? 'en_attente' : 'valide')}
-                      title="Valider"
-                      className={`p-1.5 rounded-lg transition-colors ${item.admin_status === 'valide' ? 'bg-green-100 text-green-600' : 'text-gray-400 hover:bg-green-50 hover:text-green-600'}`}>
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </button>
-                    <button onClick={() => handleSetAdminStatus(item.id, item.admin_status === 'refuse' ? 'en_attente' : 'refuse')}
-                      title="Refuser"
-                      className={`p-1.5 rounded-lg transition-colors ${item.admin_status === 'refuse' ? 'bg-red-100 text-red-500' : 'text-gray-400 hover:bg-red-50 hover:text-red-500'}`}>
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
+          const adminTabItems = adminTabActive === '__none__'
+            ? stats.all.filter(i => !i.compte_vinted_id)
+            : stats.all.filter(i => i.compte_vinted_id === adminTabActive)
+
+          return (
+            <div>
+              {/* Onglets par compte */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-4">
+                <div className="border-b border-gray-100 px-4 overflow-x-auto">
+                  <div className="flex gap-0 min-w-max">
+                    {usedAccounts.map(compte => {
+                      const count = stats.all.filter(i => i.compte_vinted_id === compte.id).length
+                      const isActive = adminTabActive === compte.id
+                      return (
+                        <button key={compte.id} onClick={() => setAdminTabActive(compte.id)}
+                          className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${isActive ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
+                          {compte.pseudo}
+                          <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${isActive ? 'bg-teal-100 text-teal-600' : 'bg-gray-100 text-gray-500'}`}>{count}</span>
+                        </button>
+                      )
+                    })}
+                    {noneCount > 0 && (() => {
+                      const isActive = adminTabActive === '__none__'
+                      return (
+                        <button onClick={() => setAdminTabActive('__none__')}
+                          className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${isActive ? 'border-gray-500 text-gray-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+                          Sans compte
+                          <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${isActive ? 'bg-gray-200 text-gray-600' : 'bg-gray-100 text-gray-400'}`}>{noneCount}</span>
+                        </button>
+                      )
+                    })()}
                   </div>
                 </div>
               </div>
-            )
-          }
 
-          return (
-            <div className="space-y-4">
-              {orderedAccounts.map(compte => (
-                <div key={compte.id}>
-                  <div className="flex items-center gap-2 mb-2 px-1">
-                    <span className="text-xs font-bold text-gray-700">{compte.pseudo}</span>
-                    <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{grouped[compte.id]?.length ?? 0}</span>
-                  </div>
-                  <div className="space-y-2">{(grouped[compte.id] ?? []).map(renderItem)}</div>
-                </div>
-              ))}
-              {noneItems.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-2 px-1">
-                    <span className="text-xs font-bold text-gray-400 italic">Sans compte assigné</span>
-                    <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{noneItems.length}</span>
-                  </div>
-                  <div className="space-y-2">{noneItems.map(renderItem)}</div>
+              {/* Grille cartes */}
+              {adminTabItems.length === 0 ? (
+                <p className="text-sm text-gray-400 italic text-center py-8">Aucun article pour cet onglet.</p>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {adminTabItems.map(item => (
+                    <ArticleCard
+                      key={item.id}
+                      item={item}
+                      fond={fonds.find(f => f.id === item.fond_id)}
+                      onEdit={() => {}}
+                      onDelete={() => {}}
+                      onOpenImages={() => {}}
+                      adminActions={{
+                        onValidate: (id, status) => handleSetAdminStatus(id, status),
+                        onRefuse: (id, status) => handleSetAdminStatus(id, status),
+                      }}
+                    />
+                  ))}
                 </div>
               )}
             </div>
