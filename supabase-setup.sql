@@ -328,3 +328,16 @@ ALTER TABLE work_items ALTER COLUMN categorie DROP NOT NULL;
 -- MIGRATION v15 — Compte Vinted par article employé
 -- ============================================================
 ALTER TABLE work_items ADD COLUMN IF NOT EXISTS compte_vinted_id UUID REFERENCES vinted_accounts(id) ON DELETE SET NULL;
+
+-- ============================================================
+-- MIGRATION v16 — Employés peuvent lire leurs comptes Vinted assignés
+-- ============================================================
+DROP POLICY IF EXISTS "vinted_accounts_employee_read" ON vinted_accounts;
+CREATE POLICY "vinted_accounts_employee_read" ON vinted_accounts
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM employe_comptes
+      WHERE employe_comptes.compte_vinted_id = vinted_accounts.id
+        AND employe_comptes.employe_id = auth.uid()
+    )
+  );

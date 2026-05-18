@@ -159,17 +159,13 @@ export default function EmployeesTab() {
 
   useEffect(() => { fetchData() }, [])
 
-  // Réinitialiser l'onglet actif quand on change d'employé sélectionné
+  // Réinitialiser l'onglet actif quand on change d'employé — basé sur les comptes assignés
   useEffect(() => {
     if (!selected) return
-    const allItems = workItems.filter(i => i.employe_id === selected.id)
-    const usedAccountIds = [...new Set(allItems.map(i => i.compte_vinted_id).filter(Boolean))]
-    if (usedAccountIds.length > 0) {
-      setAdminTabActive(usedAccountIds[0])
-    } else {
-      setAdminTabActive('__none__')
-    }
-  }, [selected?.id])
+    const assignedIds = employeComptes.filter(ec => ec.employe_id === selected.id).map(ec => ec.compte_vinted_id)
+    const firstAccount = vintedAccounts.find(v => assignedIds.includes(v.id))
+    setAdminTabActive(firstAccount?.id ?? '__none__')
+  }, [selected?.id, employeComptes.length, vintedAccounts.length])
 
   async function fetchData() {
     setLoading(true)
@@ -465,11 +461,10 @@ export default function EmployeesTab() {
           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{stats.all.length}</span>
         </div>
 
-        {stats.all.length === 0 ? (
-          <p className="text-sm text-gray-400 italic">Aucun article soumis.</p>
-        ) : (() => {
-          const usedAccountIds = [...new Set(stats.all.map(i => i.compte_vinted_id).filter(Boolean))]
-          const usedAccounts = vintedAccounts.filter(v => usedAccountIds.includes(v.id))
+        {(() => {
+          // Onglets = comptes assignés à cet employé (pas seulement ceux avec des articles)
+          const assignedIds = employeComptes.filter(ec => ec.employe_id === selected.id).map(ec => ec.compte_vinted_id)
+          const orderedAccounts = vintedAccounts.filter(v => assignedIds.includes(v.id))
           const noneCount = stats.all.filter(i => !i.compte_vinted_id).length
 
           const adminTabItems = adminTabActive === '__none__'
@@ -482,7 +477,7 @@ export default function EmployeesTab() {
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-4">
                 <div className="border-b border-gray-100 px-4 overflow-x-auto">
                   <div className="flex gap-0 min-w-max">
-                    {usedAccounts.map(compte => {
+                    {orderedAccounts.map(compte => {
                       const count = stats.all.filter(i => i.compte_vinted_id === compte.id).length
                       const isActive = adminTabActive === compte.id
                       return (
