@@ -16,6 +16,7 @@ import EmployeesTab from './components/EmployeesTab'
 import FondsLibrary from './components/FondsLibrary'
 import AddCommandeModal from './components/AddCommandeModal'
 import CommandeCard from './components/CommandeCard'
+import CommandeDetailView from './components/CommandeDetailView'
 import ReceptionModal from './components/ReceptionModal'
 
 export default function App() {
@@ -36,6 +37,7 @@ export default function App() {
   const [sortByEmplacement, setSortByEmplacement] = useState(false)
   const [commandes, setCommandes] = useState([])
   const [commandeSearch, setCommandeSearch] = useState('')
+  const [selectedCommandeId, setSelectedCommandeId] = useState(null)
   const [showAddCommandeModal, setShowAddCommandeModal] = useState(false)
   const [receptionCommande, setReceptionCommande] = useState(null)
   const [showLotModal, setShowLotModal] = useState(false)
@@ -118,11 +120,20 @@ export default function App() {
     if (data) setCommandes(data)
   }
 
-  function handleCreateCommande(commande, newItems) {
+  function handleCreateCommande(commande) {
     setCommandes(prev => [commande, ...prev])
-    setItems(prev => [...newItems, ...prev])
     setShowAddCommandeModal(false)
     setActiveTab(TAB_A_RECEVOIR)
+    setSelectedCommandeId(commande.id)
+  }
+
+  function handleArticleAdded(newItem) {
+    setItems(prev => [newItem, ...prev])
+  }
+
+  async function handleDeleteCommandeArticle(itemId) {
+    const { error } = await supabase.from('items').delete().eq('id', itemId)
+    if (!error) setItems(prev => prev.filter(i => i.id !== itemId))
   }
 
   async function handleReceptionCommande(commande, emplacements) {
@@ -147,6 +158,7 @@ export default function App() {
       setItems(prev => prev.map(i => updatedItems.find(u => u.id === i.id) ?? i))
       setCommandes(prev => prev.filter(c => c.id !== commande.id))
       setReceptionCommande(null)
+      setSelectedCommandeId(null)
       setActiveTab(TAB_TOUT)
     } catch (err) {
       alert('Erreur : ' + err.message)
@@ -161,6 +173,7 @@ export default function App() {
       if (cmdErr) throw cmdErr
       setCommandes(prev => prev.filter(c => c.id !== commandeId))
       setItems(prev => prev.filter(i => i.commande_id !== commandeId))
+      setSelectedCommandeId(null)
     } catch (err) {
       alert('Erreur : ' + err.message)
     }
@@ -481,6 +494,23 @@ export default function App() {
       )}
 
       {activeTab === TAB_A_RECEVOIR && (() => {
+        const selectedCommande = selectedCommandeId ? commandes.find(c => c.id === selectedCommandeId) : null
+        const selectedCommandeItems = selectedCommandeId ? items.filter(i => i.commande_id === selectedCommandeId) : []
+
+        if (selectedCommande) {
+          return (
+            <CommandeDetailView
+              commande={selectedCommande}
+              items={selectedCommandeItems}
+              onBack={() => setSelectedCommandeId(null)}
+              onArticleAdded={handleArticleAdded}
+              onDeleteArticle={handleDeleteCommandeArticle}
+              onReception={(c, i) => setReceptionCommande({ commande: c, items: i })}
+              onDelete={handleDeleteCommande}
+            />
+          )
+        }
+
         const filteredCommandes = commandeSearch
           ? commandes.filter(c => c.tracking_number.toLowerCase().includes(commandeSearch.toLowerCase()))
           : commandes
@@ -517,9 +547,7 @@ export default function App() {
                 <p className="text-gray-500 font-medium">
                   {commandeSearch ? 'Aucune commande trouvée' : 'Aucune commande en attente'}
                 </p>
-                {!commandeSearch && (
-                  <p className="text-gray-400 text-sm mt-1">Appuyez sur + pour créer une commande</p>
-                )}
+                {!commandeSearch && <p className="text-gray-400 text-sm mt-1">Appuyez sur + pour créer une commande</p>}
               </div>
             ) : (
               <div className="p-3 pb-28 space-y-3">
@@ -528,6 +556,7 @@ export default function App() {
                     key={cmd.id}
                     commande={cmd}
                     items={items.filter(i => i.commande_id === cmd.id)}
+                    onSelect={c => setSelectedCommandeId(c.id)}
                     onReception={(c, i) => setReceptionCommande({ commande: c, items: i })}
                     onDelete={handleDeleteCommande}
                   />

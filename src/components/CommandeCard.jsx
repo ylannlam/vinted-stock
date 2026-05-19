@@ -1,12 +1,12 @@
 import { useState } from 'react'
 
-export default function CommandeCard({ commande, items, onReception, onDelete }) {
+export default function CommandeCard({ commande, items, onSelect, onReception, onDelete }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   return (
     <div className="bg-white rounded-xl border border-purple-100 shadow-sm overflow-hidden">
       <div className="px-4 py-3 flex items-center justify-between gap-3">
-        <div className="min-w-0 flex-1">
+        <button onClick={() => onSelect(commande)} className="min-w-0 flex-1 text-left hover:opacity-70 transition-opacity">
           <div className="flex items-center gap-2 mb-0.5">
             <span className="text-[10px] font-semibold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full uppercase tracking-wide">
               En attente
@@ -16,7 +16,7 @@ export default function CommandeCard({ commande, items, onReception, onDelete })
             </span>
           </div>
           <p className="text-sm font-semibold text-gray-900 truncate font-mono">{commande.tracking_number}</p>
-        </div>
+        </button>
 
         <div className="flex items-center gap-2 flex-shrink-0">
           {confirmDelete ? (

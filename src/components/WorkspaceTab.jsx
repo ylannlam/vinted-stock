@@ -368,6 +368,8 @@ export default function WorkspaceTab({ profile }) {
   const note   = profile.note_admin ?? null
 
   const [items, setItems]                   = useState([])
+  const [stockItems, setStockItems]         = useState([])
+  const [stockSearch, setStockSearch]       = useState('')
   const [tasks, setTasks]                   = useState([])
   const [fondsFiltrés, setFondsFiltrés]     = useState([])
   const [fondComptes, setFondComptes]       = useState([])
@@ -401,6 +403,7 @@ export default function WorkspaceTab({ profile }) {
       { data: employeComptesData },
       { data: fcData },
       { data: vaData },
+      { data: stockData },
     ] = await Promise.all([
       supabase.from('work_items').select('*').eq('employe_id', userId).order('created_at', { ascending: false }),
       supabase.from('tasks').select('*').eq('employe_id', userId).order('created_at', { ascending: false }),
@@ -408,11 +411,13 @@ export default function WorkspaceTab({ profile }) {
       supabase.from('employe_comptes').select('compte_vinted_id').eq('employe_id', userId),
       supabase.from('fond_comptes').select('*'),
       supabase.from('vinted_accounts').select('id, pseudo'),
+      supabase.from('items').select('id, photo_url, size, shein_url, emplacement').eq('status', 'en_stock').order('created_at', { ascending: false }),
     ])
     if (itemsData) setItems(itemsData)
     if (tasksData) setTasks(tasksData)
     if (fcData)    setFondComptes(fcData)
     if (vaData)    setVintedAccounts(vaData)
+    if (stockData) setStockItems(stockData)
     if (vaData && employeComptesData) {
       const assignedIds = new Set(employeComptesData.map(ec => ec.compte_vinted_id))
       setAssignedAccounts(vaData.filter(v => assignedIds.has(v.id)))
@@ -551,14 +556,91 @@ export default function WorkspaceTab({ profile }) {
               </button>
             )
           })()}
+          {/* Onglet Stock visuel */}
+          <button onClick={() => setActiveTab('__stock__')}
+            className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${activeTab === '__stock__' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+            📦 Stock
+            <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${activeTab === '__stock__' ? 'bg-teal-100 text-teal-600' : 'bg-gray-100 text-gray-400'}`}>{stockItems.length}</span>
+          </button>
         </div>
       </div>
 
       {/* Contenu principal */}
       <div className="flex-1 px-4 py-4 max-w-6xl mx-auto w-full">
 
-        {/* Section tâches */}
-        {activeTasks.length > 0 && (
+        {/* Onglet Stock visuel */}
+        {activeTab === '__stock__' && (() => {
+          const q = stockSearch.toLowerCase()
+          const filtered = stockSearch
+            ? stockItems.filter(i =>
+                (i.size ?? '').toLowerCase().includes(q) ||
+                (i.shein_url ?? '').toLowerCase().includes(q)
+              )
+            : stockItems
+          return (
+            <div>
+              <div className="mb-4 relative">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 105 11a6 6 0 0012 0z" />
+                </svg>
+                <input
+                  type="text"
+                  value={stockSearch}
+                  onChange={e => setStockSearch(e.target.value)}
+                  placeholder="Rechercher par taille ou lien Shein…"
+                  className="w-full pl-8 pr-8 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-teal-400 bg-white"
+                />
+                {stockSearch && (
+                  <button onClick={() => setStockSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+              {filtered.length === 0 ? (
+                <div className="text-center py-16 text-gray-400">
+                  <p className="font-medium">{stockSearch ? 'Aucun résultat' : 'Aucun article en stock'}</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+                  {filtered.map(item => (
+                    <div key={item.id} className="bg-white rounded-xl overflow-hidden border border-gray-100 shadow-sm">
+                      <div className="aspect-square relative bg-gray-100">
+                        {item.photo_url
+                          ? <img src={item.photo_url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                          : <div className="w-full h-full flex items-center justify-center">
+                              <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                            </div>
+                        }
+                        <span className="absolute top-1.5 right-1.5 text-[9px] font-bold bg-white/90 px-1.5 py-0.5 rounded-full text-gray-700 leading-none shadow-sm">
+                          {item.size}
+                        </span>
+                      </div>
+                      <div className="px-2 py-1.5">
+                        {item.shein_url
+                          ? <a href={item.shein_url} target="_blank" rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-[10px] text-pink-400 hover:text-pink-600 transition-colors">
+                              <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                              </svg>
+                              <span className="truncate">Shein</span>
+                            </a>
+                          : <span className="text-[10px] text-gray-300">—</span>
+                        }
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })()}
+
+        {/* Section tâches + work items (masqué sur l'onglet stock) */}
+        {activeTab !== '__stock__' && activeTasks.length > 0 && (
           <div className="mb-4 bg-orange-50 rounded-2xl border border-orange-100 overflow-hidden">
             <button
               onClick={() => setTasksCollapsed(c => !c)}
@@ -600,67 +682,70 @@ export default function WorkspaceTab({ profile }) {
           </div>
         )}
 
-        {/* En-tête zone + actions */}
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h2 className="text-base font-bold text-gray-900">
-              {activeTab === '__none__' ? 'Sans compte' : assignedAccounts.find(a => a.id === activeTab)?.pseudo ?? ''}
-            </h2>
-            <p className="text-xs text-gray-400 mt-0.5">{tabItems.length} article{tabItems.length !== 1 ? 's' : ''}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setShowFondsModal(true)}
-              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 border border-gray-200 bg-white rounded-xl px-3 py-1.5 transition-colors">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              Mes fonds
-            </button>
-            <button onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-1.5 text-sm font-semibold text-white bg-teal-500 hover:bg-teal-600 rounded-xl px-4 py-1.5 transition-colors">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-              </svg>
-              Nouvel article
-            </button>
-          </div>
-        </div>
-
-        {/* Grille de cartes */}
-        {loading ? (
-          <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
-            <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-            Chargement…
-          </div>
-        ) : tabItems.length === 0 ? (
-          <div className="text-center py-16">
-            <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
+        {/* En-tête zone + actions + grille work items */}
+        {activeTab !== '__stock__' && (
+          <>
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h2 className="text-base font-bold text-gray-900">
+                  {activeTab === '__none__' ? 'Sans compte' : assignedAccounts.find(a => a.id === activeTab)?.pseudo ?? ''}
+                </h2>
+                <p className="text-xs text-gray-400 mt-0.5">{tabItems.length} article{tabItems.length !== 1 ? 's' : ''}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setShowFondsModal(true)}
+                  className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 border border-gray-200 bg-white rounded-xl px-3 py-1.5 transition-colors">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  Mes fonds
+                </button>
+                <button onClick={() => setShowAddModal(true)}
+                  className="flex items-center gap-1.5 text-sm font-semibold text-white bg-teal-500 hover:bg-teal-600 rounded-xl px-4 py-1.5 transition-colors">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Nouvel article
+                </button>
+              </div>
             </div>
-            <p className="text-sm text-gray-400 mb-4">Aucun article pour ce compte.</p>
-            <button onClick={() => setShowAddModal(true)}
-              className="text-sm font-semibold text-white bg-teal-500 hover:bg-teal-600 rounded-xl px-4 py-2 transition-colors">
-              + Ajouter un article
-            </button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-            {tabItems.map(item => (
-              <ArticleCard
-                key={item.id}
-                item={item}
-                fond={fondById[item.fond_id]}
-                onEdit={setEditItem}
-                onDelete={setDeleteConfirm}
-                onOpenImages={setImagesModal}
-              />
-            ))}
-          </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
+                <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Chargement…
+              </div>
+            ) : tabItems.length === 0 ? (
+              <div className="text-center py-16">
+                <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <p className="text-sm text-gray-400 mb-4">Aucun article pour ce compte.</p>
+                <button onClick={() => setShowAddModal(true)}
+                  className="text-sm font-semibold text-white bg-teal-500 hover:bg-teal-600 rounded-xl px-4 py-2 transition-colors">
+                  + Ajouter un article
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                {tabItems.map(item => (
+                  <ArticleCard
+                    key={item.id}
+                    item={item}
+                    fond={fondById[item.fond_id]}
+                    onEdit={setEditItem}
+                    onDelete={setDeleteConfirm}
+                    onOpenImages={setImagesModal}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 
