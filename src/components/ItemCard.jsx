@@ -1,9 +1,10 @@
 import { useState, useRef } from 'react'
 
-export default function ItemCard({ item, onMarkSold, onMarkSent, onMarkUnsent, onDelete, onUpdateEmplacement, onBordereauDrop, onPhotoDrop, onEdit, onMarkReceived, onToggleReception }) {
+export default function ItemCard({ item, onMarkSold, onMarkSent, onMarkUnsent, onRemettreEnVente, onDelete, onUpdateEmplacement, onBordereauDrop, onPhotoDrop, onEdit, onMarkReceived, onToggleReception }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmSent, setConfirmSent] = useState(false)
   const [confirmReceived, setConfirmReceived] = useState(false)
+  const [confirmRemettreEnVente, setConfirmRemettreEnVente] = useState(false)
   const [editingEmplacement, setEditingEmplacement] = useState(false)
   const [dragType, setDragType] = useState(null) // 'image' | 'pdf' | null
   const [uploading, setUploading] = useState(false)
@@ -265,15 +266,26 @@ export default function ItemCard({ item, onMarkSold, onMarkSent, onMarkUnsent, o
           )}
 
           {isSent && (
-            <button
-              onClick={() => onMarkUnsent(item)}
-              className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-200 text-gray-500 hover:bg-orange-100 hover:text-orange-500 transition-colors flex-shrink-0"
-              aria-label="Remettre en À envoyer"
-            >
-              <svg className="w-3 h-3 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-              </svg>
-            </button>
+            <>
+              <button
+                onClick={() => onMarkUnsent(item)}
+                className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-200 text-gray-500 hover:bg-orange-100 hover:text-orange-500 transition-colors flex-shrink-0"
+                aria-label="Remettre en À envoyer"
+              >
+                <svg className="w-3 h-3 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setConfirmRemettreEnVente(true)}
+                className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-200 text-gray-500 hover:bg-teal-100 hover:text-teal-600 transition-colors flex-shrink-0"
+                aria-label="Remettre en stock"
+              >
+                <svg className="w-3 h-3 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+              </button>
+            </>
           )}
 
           {(isPending || isSent) && (
@@ -331,6 +343,29 @@ export default function ItemCard({ item, onMarkSold, onMarkSent, onMarkUnsent, o
             <button
               onClick={() => setConfirmSent(false)}
               className="bg-blue-500 text-white text-[10px] font-semibold px-2.5 py-1 rounded-full border border-blue-400"
+            >
+              Non
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Overlay remettre en vente */}
+      {confirmRemettreEnVente && (
+        <div className="absolute inset-0 z-10 bg-teal-600/95 flex flex-col items-center justify-center rounded-xl p-2 gap-2">
+          <p className="text-white text-[10px] font-bold text-center leading-tight">
+            Colis refusé ?{'\n'}Remettre en stock avec un nouvel emplacement ?
+          </p>
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => { setConfirmRemettreEnVente(false); onRemettreEnVente(item) }}
+              className="bg-white text-teal-600 text-[10px] font-bold px-2.5 py-1 rounded-full"
+            >
+              Oui
+            </button>
+            <button
+              onClick={() => setConfirmRemettreEnVente(false)}
+              className="bg-teal-500 text-white text-[10px] font-semibold px-2.5 py-1 rounded-full border border-teal-400"
             >
               Non
             </button>

@@ -15,6 +15,7 @@ import WorkspaceTab from './components/WorkspaceTab'
 import EmployeesTab from './components/EmployeesTab'
 import FondsLibrary from './components/FondsLibrary'
 import EmplacementsView from './components/EmplacementsView'
+import { getCapacities, getOccupied, firstFreeSlot } from './lib/emplacements'
 import AddCommandeModal from './components/AddCommandeModal'
 import CommandeCard from './components/CommandeCard'
 import CommandeDetailView from './components/CommandeDetailView'
@@ -217,6 +218,22 @@ export default function App() {
   async function handleDelete(itemId) {
     const { error } = await supabase.from('items').delete().eq('id', itemId)
     if (!error) setItems(prev => prev.filter(i => i.id !== itemId))
+  }
+
+  async function handleRemettreEnVente(item) {
+    const nonSent = items.filter(i => i.id !== item.id && i.status !== 'envoye')
+    const emplacement = firstFreeSlot(getCapacities(nonSent), getOccupied(nonSent)) || null
+    const { data, error } = await supabase
+      .from('items')
+      .update({ status: 'en_stock', bordereau_url: null, sold_at: null, sent_at: null, emplacement })
+      .eq('id', item.id)
+      .select()
+      .single()
+    if (error) { alert('Erreur : ' + error.message); return }
+    if (data) {
+      setItems(prev => prev.map(i => i.id === data.id ? data : i))
+      setActiveTab(TAB_TOUT)
+    }
   }
 
   async function handleMarkUnsent(item) {
@@ -576,6 +593,7 @@ export default function App() {
           onMarkSold={setSoldItem}
           onMarkSent={handleMarkSent}
           onMarkUnsent={handleMarkUnsent}
+          onRemettreEnVente={handleRemettreEnVente}
           onMarkReceived={handleMarkReceived}
           onDelete={handleDelete}
           onUpdateEmplacement={handleUpdateEmplacement}

@@ -2,9 +2,7 @@ const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
 
 export default function FilterBar({ sizes, onSizesChange, searchQuery, onSearchChange, sortByEmplacement, onSortToggle, onShowEmplacements, total }) {
   function toggleSize(s) {
-    onSizesChange(prev =>
-      prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]
-    )
+    onSizesChange(prev => prev.includes(s) ? [] : [s])
   }
 
   const hasFilters = sizes.length > 0 || searchQuery
