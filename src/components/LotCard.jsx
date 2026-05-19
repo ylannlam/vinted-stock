@@ -106,7 +106,6 @@ export default function LotCard({ items, lotIndex, onMarkSent, onDeleteLot }) {
                 : <div className="w-full aspect-square bg-gray-100" />
               }
               <div className="px-1.5 py-1">
-                <p className="text-[10px] text-gray-400 truncate">{item.category}</p>
                 <p className="text-[10px] font-bold text-gray-700">{item.size}</p>
               </div>
             </div>

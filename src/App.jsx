@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
-import { CATEGORIES, TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE, TAB_EMPLOYEES, TAB_FONDS } from './constants'
+import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE, TAB_EMPLOYEES, TAB_FONDS } from './constants'
 import Login from './Login'
 import Header from './components/Header'
 import CategoryTabs from './components/CategoryTabs'
@@ -303,16 +303,6 @@ export default function App() {
     if (!error && data) setItems(prev => prev.map(i => i.id === data.id ? data : i))
   }
 
-  async function handleUpdateCategory(itemId, newCategory) {
-    const { data, error } = await supabase
-      .from('items')
-      .update({ category: newCategory })
-      .eq('id', itemId)
-      .select()
-      .single()
-    if (!error && data) setItems(prev => prev.map(i => i.id === data.id ? data : i))
-  }
-
   async function handlePhotoDrop(itemId, file) {
     try {
       const ext = file.name.split('.').pop().toLowerCase()
@@ -452,7 +442,6 @@ export default function App() {
     <div className="min-h-screen bg-gray-50">
       <Header onLogout={handleLogout} profile={profile} />
       <CategoryTabs
-        categories={CATEGORIES}
         active={activeTab}
         onChange={setActiveTab}
         items={items}
@@ -552,14 +541,12 @@ export default function App() {
       {activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_EMPLOYEES && activeTab !== TAB_FONDS && activeTab !== TAB_A_RECEVOIR && (
         <Gallery
           items={filteredItems}
-          categories={CATEGORIES}
           loading={itemsLoading}
           onMarkSold={setSoldItem}
           onMarkSent={handleMarkSent}
           onMarkUnsent={handleMarkUnsent}
           onMarkReceived={handleMarkReceived}
           onDelete={handleDelete}
-          onUpdateCategory={handleUpdateCategory}
           onUpdateEmplacement={handleUpdateEmplacement}
           onBordereauDrop={handleBordereauDrop}
           onPhotoDrop={handlePhotoDrop}
@@ -615,8 +602,6 @@ export default function App() {
 
       {showAddModal && (
         <AddItemModal
-          categories={CATEGORIES}
-          defaultCategory={isSpecialTab ? CATEGORIES[0] : activeTab}
           defaultStatus='en_stock'
           onClose={() => setShowAddModal(false)}
           onAdded={handleItemAdded}
@@ -626,7 +611,6 @@ export default function App() {
       {editItem && (
         <EditItemModal
           item={editItem}
-          categories={CATEGORIES}
           takenEmplacements={new Set(
             items
               .filter(i => i.id !== editItem.id && i.status !== 'envoye' && i.emplacement)

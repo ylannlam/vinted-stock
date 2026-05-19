@@ -85,8 +85,7 @@ export default function LotModal({ items, onClose, onCreateLot }) {
                 : <div className="w-12 h-12 rounded-xl bg-gray-100 flex-shrink-0" />
               }
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-gray-800 truncate">{item.category}</p>
-                <p className="text-xs text-gray-400">Taille {item.size}</p>
+                <p className="text-xs text-gray-500">Taille {item.size}</p>
               </div>
             </button>
           ))}

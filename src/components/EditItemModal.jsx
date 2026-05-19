@@ -4,8 +4,7 @@ import { supabase } from '../lib/supabase'
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
 const initQty = () => Object.fromEntries(SIZES.map(s => [s, 0]))
 
-export default function EditItemModal({ item, categories, takenEmplacements, onClose, onUpdated }) {
-  const [category, setCategory] = useState(item.category)
+export default function EditItemModal({ item, takenEmplacements, onClose, onUpdated }) {
   const [size, setSize] = useState(item.size)
   const isPending = item.status === 'vendu'
   const [status, setStatus] = useState(
@@ -77,7 +76,7 @@ export default function EditItemModal({ item, categories, takenEmplacements, onC
       // Mise à jour de l'article existant
       const { data: updatedItem, error: updateErr } = await supabase
         .from('items')
-        .update({ category, size, status, photo_url: photoUrl, shein_url: sheinUrl.trim() || null, emplacement: emplacement.trim() || null })
+        .update({ size, status, photo_url: photoUrl, shein_url: sheinUrl.trim() || null, emplacement: emplacement.trim() || null })
         .eq('id', item.id)
         .select()
         .single()
@@ -88,7 +87,6 @@ export default function EditItemModal({ item, categories, takenEmplacements, onC
       if (extraTotal > 0) {
         const rows = SIZES.flatMap(s =>
           Array.from({ length: quantities[s] }, () => ({
-            category,
             size: s,
             photo_url: photoUrl,
             status: 'en_stock',
@@ -164,20 +162,6 @@ export default function EditItemModal({ item, categories, takenEmplacements, onC
               )}
             </div>
             <input ref={inputRef} type="file" accept="image/*" onChange={e => applyFile(e.target.files[0])} className="hidden" />
-          </div>
-
-          {/* Catégorie */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Catégorie</label>
-            <select
-              value={category}
-              onChange={e => setCategory(e.target.value)}
-              className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white"
-            >
-              {categories.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
           </div>
 
           {/* Taille de cet article */}

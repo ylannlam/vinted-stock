@@ -1,6 +1,6 @@
 import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_EMPLOYEES, TAB_FONDS } from '../constants'
 
-export default function CategoryTabs({ categories, active, onChange, items, commandes, userRole }) {
+export default function CategoryTabs({ active, onChange, items, commandes, userRole }) {
   const isAdmin = userRole === 'admin'
   const isStock = userRole === 'stock'
   const isEmploye = userRole === 'employe'

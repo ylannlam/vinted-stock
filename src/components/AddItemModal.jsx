@@ -4,8 +4,7 @@ import { supabase } from '../lib/supabase'
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
 const initQty = () => Object.fromEntries(SIZES.map(s => [s, 0]))
 
-export default function AddItemModal({ categories, defaultCategory, defaultStatus = 'en_stock', onClose, onAdded }) {
-  const [category, setCategory] = useState(defaultCategory ?? categories[0])
+export default function AddItemModal({ defaultStatus = 'en_stock', onClose, onAdded }) {
   const [quantities, setQuantities] = useState(initQty)
   const [status, setStatus] = useState(defaultStatus)
   const [sheinUrl, setSheinUrl] = useState('')
@@ -62,7 +61,7 @@ export default function AddItemModal({ categories, defaultCategory, defaultStatu
       }
       const rows = SIZES.flatMap(size =>
         Array.from({ length: quantities[size] }, () => ({
-          category, size, photo_url: photoUrl, status, shein_url: sheinUrl.trim() || null,
+          size, photo_url: photoUrl, status, shein_url: sheinUrl.trim() || null,
         }))
       )
       const { data, error: insertErr } = await supabase.from('items').insert(rows).select()
@@ -128,15 +127,6 @@ export default function AddItemModal({ categories, defaultCategory, defaultStatu
               )}
             </div>
             <input ref={inputRef} type="file" accept="image/*" onChange={e => applyFile(e.target.files[0])} className="hidden" />
-          </div>
-
-          {/* Catégorie */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Catégorie</label>
-            <select value={category} onChange={e => setCategory(e.target.value)}
-              className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white">
-              {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-            </select>
           </div>
 
           {/* Quantités par taille */}

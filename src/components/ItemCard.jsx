@@ -1,10 +1,9 @@
 import { useState, useRef } from 'react'
 
-export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onMarkUnsent, onDelete, onUpdateCategory, onUpdateEmplacement, onBordereauDrop, onPhotoDrop, onEdit, onMarkReceived, onToggleReception }) {
+export default function ItemCard({ item, onMarkSold, onMarkSent, onMarkUnsent, onDelete, onUpdateEmplacement, onBordereauDrop, onPhotoDrop, onEdit, onMarkReceived, onToggleReception }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmSent, setConfirmSent] = useState(false)
   const [confirmReceived, setConfirmReceived] = useState(false)
-  const [editingCategory, setEditingCategory] = useState(false)
   const [editingEmplacement, setEditingEmplacement] = useState(false)
   const [dragType, setDragType] = useState(null) // 'image' | 'pdf' | null
   const [uploading, setUploading] = useState(false)
@@ -156,37 +155,6 @@ export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onM
 
       {/* Infos bas de carte */}
       <div className="px-2 py-1.5">
-
-        {/* Catégorie + édition inline */}
-        <div className="flex items-center gap-0.5 mb-0.5 min-w-0">
-          {editingCategory ? (
-            <select
-              autoFocus
-              value={item.category}
-              onChange={e => { onUpdateCategory(item.id, e.target.value); setEditingCategory(false) }}
-              onBlur={() => setEditingCategory(false)}
-              className="text-[10px] text-gray-700 font-medium bg-white border border-teal-400 rounded px-1 py-0.5 focus:outline-none w-full"
-            >
-              {categories.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
-          ) : (
-            <>
-              <p className="text-[10px] text-gray-400 truncate flex-1 leading-tight">{item.category}</p>
-              <button
-                onClick={() => setEditingCategory(true)}
-                className="flex-shrink-0 text-gray-200 hover:text-teal-400 transition-colors"
-                aria-label="Modifier la catégorie"
-              >
-                <svg className="w-2.5 h-2.5 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M15.232 5.232l3.536 3.536M9 13l6.5-6.5a2 2 0 012.828 2.828L11.828 15.828A2 2 0 0110.414 16.5H8v-2.414a2 2 0 01.586-1.414z" />
-                </svg>
-              </button>
-            </>
-          )}
-        </div>
 
         {/* Emplacement + édition inline */}
         {(isStock || item.emplacement) && (

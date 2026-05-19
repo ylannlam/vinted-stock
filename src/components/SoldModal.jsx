@@ -73,7 +73,6 @@ export default function SoldModal({ item, onClose, onSold }) {
               className="w-16 h-16 object-cover rounded-xl flex-shrink-0"
             />
             <div className="min-w-0">
-              <p className="font-medium text-gray-900 text-sm truncate">{item.category}</p>
               <p className="text-gray-500 text-sm">Taille {item.size}</p>
             </div>
           </div>
