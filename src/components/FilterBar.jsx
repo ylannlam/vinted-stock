@@ -21,7 +21,7 @@ export default function FilterBar({ sizes, onSizesChange, searchQuery, onSearchC
             type="text"
             value={searchQuery}
             onChange={e => onSearchChange(e.target.value)}
-            placeholder="Rechercher par emplacement, catégorie…"
+            placeholder="Emplacement (ex : A1, B3…) ou taille"
             className="w-full pl-7 pr-3 py-1.5 text-xs border border-gray-200 rounded-full focus:outline-none focus:border-teal-400 bg-gray-50"
           />
           {searchQuery && (

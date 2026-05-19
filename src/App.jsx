@@ -442,7 +442,6 @@ export default function App() {
         if (!filterSearch) return true
         const q = filterSearch.toLowerCase()
         return (i.emplacement ?? '').toLowerCase().includes(q) ||
-               (i.category ?? '').toLowerCase().includes(q) ||
                (i.size ?? '').toLowerCase().includes(q)
       })
     if (!sortByEmplacement) return searched
