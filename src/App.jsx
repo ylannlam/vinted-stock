@@ -314,6 +314,18 @@ export default function App() {
   }
 
   async function handleUpdateEmplacement(itemId, newEmplacement) {
+    if (newEmplacement) {
+      const conflict = items.find(i =>
+        i.id !== itemId &&
+        i.status !== 'envoye' &&
+        i.emplacement &&
+        i.emplacement.trim().toLowerCase() === newEmplacement.trim().toLowerCase()
+      )
+      if (conflict) {
+        alert(`L'emplacement "${newEmplacement}" est déjà occupé.`)
+        return
+      }
+    }
     const { data, error } = await supabase
       .from('items')
       .update({ emplacement: newEmplacement || null })
@@ -578,7 +590,7 @@ export default function App() {
         <ReceptionModal
           commande={receptionCommande.commande}
           items={receptionCommande.items}
-          stockItems={items.filter(i => i.status === 'en_stock')}
+          stockItems={items.filter(i => i.status !== 'envoye')}
           onClose={() => setReceptionCommande(null)}
           onReceived={handleReceptionCommande}
         />
@@ -598,6 +610,11 @@ export default function App() {
         <EditItemModal
           item={editItem}
           categories={CATEGORIES}
+          takenEmplacements={new Set(
+            items
+              .filter(i => i.id !== editItem.id && i.status !== 'envoye' && i.emplacement)
+              .map(i => i.emplacement.trim().toLowerCase())
+          )}
           onClose={() => setEditItem(null)}
           onUpdated={handleItemUpdated}
         />

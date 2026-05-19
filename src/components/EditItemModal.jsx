@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
 const initQty = () => Object.fromEntries(SIZES.map(s => [s, 0]))
 
-export default function EditItemModal({ item, categories, onClose, onUpdated }) {
+export default function EditItemModal({ item, categories, takenEmplacements, onClose, onUpdated }) {
   const [category, setCategory] = useState(item.category)
   const [size, setSize] = useState(item.size)
   const isPending = item.status === 'vendu'
@@ -57,6 +57,12 @@ export default function EditItemModal({ item, categories, onClose, onUpdated }) 
     setError('')
 
     try {
+      if (emplacement.trim() && takenEmplacements?.has(emplacement.trim().toLowerCase())) {
+        setError(`L'emplacement "${emplacement.trim()}" est déjà occupé par un autre article.`)
+        setSaving(false)
+        return
+      }
+
       let photoUrl = item.photo_url
 
       if (photo) {
