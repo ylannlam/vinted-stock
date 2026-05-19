@@ -1,6 +1,6 @@
 import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_EMPLOYEES, TAB_FONDS } from '../constants'
 
-export default function CategoryTabs({ categories, active, onChange, items, userRole }) {
+export default function CategoryTabs({ categories, active, onChange, items, commandes, userRole }) {
   const isAdmin = userRole === 'admin'
   const isStock = userRole === 'stock'
   const isEmploye = userRole === 'employe'
@@ -8,7 +8,7 @@ export default function CategoryTabs({ categories, active, onChange, items, user
   // employes don't see any of these tabs
   if (isEmploye) return null
 
-  const aRecevoirCount = items.filter(i => i.status === 'a_recevoir').length
+  const aRecevoirCount = commandes ? commandes.length : items.filter(i => i.status === 'a_recevoir').length
   const lotBordereaux = new Set(
     Object.entries(items.filter(i => i.status === 'vendu' && i.bordereau_url)
       .reduce((acc, i) => { acc[i.bordereau_url] = (acc[i.bordereau_url] || 0) + 1; return acc }, {}))

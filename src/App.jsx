@@ -14,6 +14,9 @@ import VintedAccountsTab from './components/VintedAccountsTab'
 import WorkspaceTab from './components/WorkspaceTab'
 import EmployeesTab from './components/EmployeesTab'
 import FondsLibrary from './components/FondsLibrary'
+import AddCommandeModal from './components/AddCommandeModal'
+import CommandeCard from './components/CommandeCard'
+import ReceptionModal from './components/ReceptionModal'
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -31,6 +34,10 @@ export default function App() {
   const [filterSizes, setFilterSizes] = useState([])
   const [filterSearch, setFilterSearch] = useState('')
   const [sortByEmplacement, setSortByEmplacement] = useState(false)
+  const [commandes, setCommandes] = useState([])
+  const [commandeSearch, setCommandeSearch] = useState('')
+  const [showAddCommandeModal, setShowAddCommandeModal] = useState(false)
+  const [receptionCommande, setReceptionCommande] = useState(null)
   const [showLotModal, setShowLotModal] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [editItem, setEditItem] = useState(null)
@@ -85,8 +92,8 @@ export default function App() {
     const role = profile?.role
     if (role === 'stock' || role === 'admin') {
       fetchItems()
+      fetchCommandes()
     }
-    // Set default tab for employe
     if (role === 'employe') {
       setActiveTab(TAB_WORKSPACE)
     }
@@ -100,6 +107,63 @@ export default function App() {
       .order('created_at', { ascending: false })
     if (!error && data) setItems(data)
     setItemsLoading(false)
+  }
+
+  async function fetchCommandes() {
+    const { data } = await supabase
+      .from('commandes')
+      .select('*')
+      .eq('status', 'en_attente')
+      .order('created_at', { ascending: false })
+    if (data) setCommandes(data)
+  }
+
+  function handleCreateCommande(commande, newItems) {
+    setCommandes(prev => [commande, ...prev])
+    setItems(prev => [...newItems, ...prev])
+    setShowAddCommandeModal(false)
+    setActiveTab(TAB_A_RECEVOIR)
+  }
+
+  async function handleReceptionCommande(commande, emplacements) {
+    try {
+      const results = await Promise.all(
+        Object.entries(emplacements).map(([id, emp]) =>
+          supabase.from('items')
+            .update({ status: 'en_stock', emplacement: emp.trim() })
+            .eq('id', id)
+            .select()
+            .single()
+        )
+      )
+      const failed = results.find(r => r.error)
+      if (failed) throw new Error(failed.error.message)
+
+      const { error: cmdErr } = await supabase
+        .from('commandes').update({ status: 'recue' }).eq('id', commande.id)
+      if (cmdErr) throw cmdErr
+
+      const updatedItems = results.map(r => r.data).filter(Boolean)
+      setItems(prev => prev.map(i => updatedItems.find(u => u.id === i.id) ?? i))
+      setCommandes(prev => prev.filter(c => c.id !== commande.id))
+      setReceptionCommande(null)
+      setActiveTab(TAB_TOUT)
+    } catch (err) {
+      alert('Erreur : ' + err.message)
+    }
+  }
+
+  async function handleDeleteCommande(commandeId) {
+    try {
+      const { error: itemsErr } = await supabase.from('items').delete().eq('commande_id', commandeId)
+      if (itemsErr) throw itemsErr
+      const { error: cmdErr } = await supabase.from('commandes').delete().eq('id', commandeId)
+      if (cmdErr) throw cmdErr
+      setCommandes(prev => prev.filter(c => c.id !== commandeId))
+      setItems(prev => prev.filter(i => i.commande_id !== commandeId))
+    } catch (err) {
+      alert('Erreur : ' + err.message)
+    }
   }
 
   function handleItemUpdated(updatedItem, newItems = []) {
@@ -364,6 +428,7 @@ export default function App() {
         active={activeTab}
         onChange={setActiveTab}
         items={items}
+        commandes={commandes}
         userRole={userRole}
       />
 
@@ -398,7 +463,65 @@ export default function App() {
         />
       )}
 
-      {activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_EMPLOYEES && activeTab !== TAB_FONDS && (
+      {activeTab === TAB_A_RECEVOIR && (() => {
+        const filteredCommandes = commandeSearch
+          ? commandes.filter(c => c.tracking_number.toLowerCase().includes(commandeSearch.toLowerCase()))
+          : commandes
+        return (
+          <div>
+            <div className="bg-white border-b border-gray-100 px-3 py-2.5">
+              <div className="relative">
+                <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 105 11a6 6 0 0012 0z" />
+                </svg>
+                <input
+                  type="text"
+                  value={commandeSearch}
+                  onChange={e => setCommandeSearch(e.target.value)}
+                  placeholder="Rechercher par n° de suivi…"
+                  className="w-full pl-7 pr-7 py-1.5 text-xs border border-gray-200 rounded-full focus:outline-none focus:border-purple-400 bg-gray-50"
+                />
+                {commandeSearch && (
+                  <button onClick={() => setCommandeSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </div>
+            {filteredCommandes.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-24 text-center px-4">
+                <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
+                  <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                  </svg>
+                </div>
+                <p className="text-gray-500 font-medium">
+                  {commandeSearch ? 'Aucune commande trouvée' : 'Aucune commande en attente'}
+                </p>
+                {!commandeSearch && (
+                  <p className="text-gray-400 text-sm mt-1">Appuyez sur + pour créer une commande</p>
+                )}
+              </div>
+            ) : (
+              <div className="p-3 pb-28 space-y-3">
+                {filteredCommandes.map(cmd => (
+                  <CommandeCard
+                    key={cmd.id}
+                    commande={cmd}
+                    items={items.filter(i => i.commande_id === cmd.id)}
+                    onReception={(c, i) => setReceptionCommande({ commande: c, items: i })}
+                    onDelete={handleDeleteCommande}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
+      {activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_EMPLOYEES && activeTab !== TAB_FONDS && activeTab !== TAB_A_RECEVOIR && (
         <Gallery
           items={filteredItems}
           categories={CATEGORIES}
@@ -422,13 +545,13 @@ export default function App() {
 
       {activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_EMPLOYEES && activeTab !== TAB_FONDS && activeTab !== TAB_A_ENVOYER && activeTab !== TAB_A_ENVOYER_LOT && activeTab !== TAB_ENVOYES && (
         <button
-          onClick={() => setShowAddModal(true)}
+          onClick={() => activeTab === TAB_A_RECEVOIR ? setShowAddCommandeModal(true) : setShowAddModal(true)}
           className={`fixed bottom-6 right-5 w-14 h-14 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-105 z-40 ${
             activeTab === TAB_A_RECEVOIR
               ? 'bg-purple-500 hover:bg-purple-600 active:bg-purple-700'
               : 'bg-teal-500 hover:bg-teal-600 active:bg-teal-700'
           }`}
-          aria-label="Ajouter un article"
+          aria-label={activeTab === TAB_A_RECEVOIR ? 'Nouvelle commande' : 'Ajouter un article'}
         >
           <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
@@ -444,11 +567,28 @@ export default function App() {
         />
       )}
 
+      {showAddCommandeModal && (
+        <AddCommandeModal
+          onClose={() => setShowAddCommandeModal(false)}
+          onCreated={handleCreateCommande}
+        />
+      )}
+
+      {receptionCommande && (
+        <ReceptionModal
+          commande={receptionCommande.commande}
+          items={receptionCommande.items}
+          stockItems={items.filter(i => i.status === 'en_stock')}
+          onClose={() => setReceptionCommande(null)}
+          onReceived={handleReceptionCommande}
+        />
+      )}
+
       {showAddModal && (
         <AddItemModal
           categories={CATEGORIES}
           defaultCategory={isSpecialTab ? CATEGORIES[0] : activeTab}
-          defaultStatus={activeTab === TAB_A_RECEVOIR ? 'a_recevoir' : 'en_stock'}
+          defaultStatus='en_stock'
           onClose={() => setShowAddModal(false)}
           onAdded={handleItemAdded}
         />
