@@ -313,6 +313,22 @@ export default function App() {
     if (!error && data) setItems(prev => prev.map(i => i.id === data.id ? data : i))
   }
 
+  async function handlePhotoDrop(itemId, file) {
+    try {
+      const ext = file.name.split('.').pop().toLowerCase()
+      const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+      const { error: uploadErr } = await supabase.storage.from('photos').upload(fileName, file)
+      if (uploadErr) throw uploadErr
+      const { data: { publicUrl } } = supabase.storage.from('photos').getPublicUrl(fileName)
+      const { data, error: updateErr } = await supabase
+        .from('items').update({ photo_url: publicUrl }).eq('id', itemId).select().single()
+      if (updateErr) throw updateErr
+      setItems(prev => prev.map(i => i.id === data.id ? data : i))
+    } catch (err) {
+      console.error('Photo drop failed:', err.message)
+    }
+  }
+
   async function handleUpdateEmplacement(itemId, newEmplacement) {
     if (newEmplacement) {
       const conflict = items.find(i =>
@@ -546,6 +562,7 @@ export default function App() {
           onUpdateCategory={handleUpdateCategory}
           onUpdateEmplacement={handleUpdateEmplacement}
           onBordereauDrop={handleBordereauDrop}
+          onPhotoDrop={handlePhotoDrop}
           onEdit={setEditItem}
           onToggleReception={handleToggleReception}
           onLotMarkSent={handleLotMarkSent}

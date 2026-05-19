@@ -10,6 +10,7 @@ export default function AddCommandeModal({ onClose, onCreated }) {
   const [articles, setArticles] = useState([newArticle()])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [draggingId, setDraggingId] = useState(null)
   const fileRefs = useRef({})
 
   function addArticle() {
@@ -107,7 +108,18 @@ export default function AddCommandeModal({ onClose, onCreated }) {
 
             <div className="space-y-2.5">
               {articles.map(art => (
-                <div key={art._id} className="flex gap-3 p-3 rounded-xl border border-gray-200 bg-gray-50 items-center">
+                <div
+                key={art._id}
+                onDragEnter={e => { e.preventDefault(); if ([...e.dataTransfer.items].some(i => i.type.startsWith('image/'))) setDraggingId(art._id) }}
+                onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDraggingId(null) }}
+                onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
+                onDrop={e => { e.preventDefault(); setDraggingId(null); setPhoto(art._id, e.dataTransfer.files[0]) }}
+                className={`flex gap-3 p-3 rounded-xl border items-center transition-all ${
+                  draggingId === art._id
+                    ? 'border-teal-400 bg-teal-50 scale-[1.01]'
+                    : 'border-gray-200 bg-gray-50'
+                }`}
+              >
                   <div
                     onClick={() => fileRefs.current[art._id]?.click()}
                     className="w-16 h-16 rounded-xl overflow-hidden border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer flex-shrink-0 hover:border-purple-400 transition-colors bg-white"

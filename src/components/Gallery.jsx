@@ -1,7 +1,7 @@
 import ItemCard from './ItemCard'
 import LotCard from './LotCard'
 
-export default function Gallery({ items, categories, loading, onMarkSold, onMarkSent, onMarkUnsent, onMarkReceived, onDelete, onUpdateCategory, onUpdateEmplacement, onBordereauDrop, onEdit, onToggleReception, onLotMarkSent, onDeleteLot, isLotTab, showAddHint }) {
+export default function Gallery({ items, categories, loading, onMarkSold, onMarkSent, onMarkUnsent, onMarkReceived, onDelete, onUpdateCategory, onUpdateEmplacement, onBordereauDrop, onPhotoDrop, onEdit, onToggleReception, onLotMarkSent, onDeleteLot, isLotTab, showAddHint }) {
   if (loading) {
     return (
       <div className="p-2 grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
@@ -76,6 +76,7 @@ export default function Gallery({ items, categories, loading, onMarkSold, onMark
           onUpdateCategory={onUpdateCategory}
           onUpdateEmplacement={onUpdateEmplacement}
           onBordereauDrop={onBordereauDrop}
+          onPhotoDrop={onPhotoDrop}
           onEdit={onEdit}
           onToggleReception={onToggleReception}
         />

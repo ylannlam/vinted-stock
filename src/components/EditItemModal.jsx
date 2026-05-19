@@ -22,6 +22,7 @@ export default function EditItemModal({ item, categories, takenEmplacements, onC
   const [isDragging, setIsDragging] = useState(false)
   const inputRef = useRef(null)
   const dropZoneRef = useRef(null)
+  const modalRef = useRef(null)
 
   const extraTotal = Object.values(quantities).reduce((a, b) => a + b, 0)
 
@@ -35,18 +36,17 @@ export default function EditItemModal({ item, categories, takenEmplacements, onC
     setPreview(URL.createObjectURL(file))
   }
 
-  function handleDragEnter(e) { e.preventDefault(); e.stopPropagation(); setIsDragging(true) }
+  function handleDragEnter(e) {
+    e.preventDefault()
+    if ([...e.dataTransfer.items].some(i => i.type.startsWith('image/'))) setIsDragging(true)
+  }
   function handleDragLeave(e) {
-    e.preventDefault(); e.stopPropagation()
-    if (!dropZoneRef.current?.contains(e.relatedTarget)) setIsDragging(false)
+    e.preventDefault()
+    if (!modalRef.current?.contains(e.relatedTarget)) setIsDragging(false)
   }
-  function handleDragOver(e) {
-    e.preventDefault(); e.stopPropagation()
-    e.dataTransfer.dropEffect = 'copy'
-    if (!isDragging) setIsDragging(true)
-  }
+  function handleDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }
   function handleDrop(e) {
-    e.preventDefault(); e.stopPropagation()
+    e.preventDefault()
     setIsDragging(false)
     applyFile(e.dataTransfer.files[0])
   }
@@ -112,7 +112,22 @@ export default function EditItemModal({ item, categories, takenEmplacements, onC
       className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50"
       onClick={e => e.target === e.currentTarget && onClose()}
     >
-      <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md max-h-[92vh] overflow-y-auto">
+      <div
+        ref={modalRef}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md max-h-[92vh] overflow-y-auto relative"
+      >
+        {isDragging && (
+          <div className="absolute inset-0 z-30 bg-teal-500/10 border-2 border-teal-400 border-dashed rounded-t-3xl sm:rounded-2xl flex flex-col items-center justify-center pointer-events-none">
+            <svg className="w-14 h-14 text-teal-500 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            <span className="text-teal-700 font-bold text-base">Déposer la photo ici</span>
+          </div>
+        )}
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="font-semibold text-gray-900 text-base">Modifier l'article</h2>
@@ -135,32 +150,17 @@ export default function EditItemModal({ item, categories, takenEmplacements, onC
             <div
               ref={dropZoneRef}
               onClick={() => inputRef.current?.click()}
-              onDragEnter={handleDragEnter}
-              onDragLeave={handleDragLeave}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              className={`relative w-full h-44 rounded-xl overflow-hidden cursor-pointer border-2 border-dashed transition-all ${
-                isDragging ? 'border-teal-500 bg-teal-50 scale-[1.01]' : 'border-gray-200 hover:border-teal-400'
-              }`}
+              className="relative w-full h-44 rounded-xl overflow-hidden cursor-pointer border-2 border-dashed border-gray-200 hover:border-teal-400 transition-all"
             >
               <img
                 src={preview}
                 alt="Aperçu"
-                className={`absolute inset-0 w-full h-full object-cover pointer-events-none transition-opacity ${isDragging ? 'opacity-30' : 'opacity-100'}`}
+                className="absolute inset-0 w-full h-full object-cover pointer-events-none"
               />
               {photo && (
                 <span className="absolute bottom-2 right-2 bg-teal-500 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full pointer-events-none">
                   Nouvelle photo
                 </span>
-              )}
-              {isDragging && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none">
-                  <svg className="w-10 h-10 text-teal-500 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                  </svg>
-                  <span className="text-sm font-bold text-teal-600">Relâcher</span>
-                </div>
               )}
             </div>
             <input ref={inputRef} type="file" accept="image/*" onChange={e => applyFile(e.target.files[0])} className="hidden" />

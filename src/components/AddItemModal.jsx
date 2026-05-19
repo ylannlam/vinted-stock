@@ -15,7 +15,7 @@ export default function AddItemModal({ categories, defaultCategory, defaultStatu
   const [error, setError] = useState('')
   const [isDragging, setIsDragging] = useState(false)
   const inputRef = useRef(null)
-  const dropZoneRef = useRef(null)
+  const modalRef = useRef(null)
 
   const total = Object.values(quantities).reduce((a, b) => a + b, 0)
 
@@ -29,23 +29,17 @@ export default function AddItemModal({ categories, defaultCategory, defaultStatu
     setPreview(URL.createObjectURL(file))
   }
 
-  function handlePhotoChange(e) { applyFile(e.target.files[0]) }
-
   function handleDragEnter(e) {
-    e.preventDefault(); e.stopPropagation()
-    setIsDragging(true)
+    e.preventDefault()
+    if ([...e.dataTransfer.items].some(i => i.type.startsWith('image/'))) setIsDragging(true)
   }
   function handleDragLeave(e) {
-    e.preventDefault(); e.stopPropagation()
-    if (!dropZoneRef.current?.contains(e.relatedTarget)) setIsDragging(false)
+    e.preventDefault()
+    if (!modalRef.current?.contains(e.relatedTarget)) setIsDragging(false)
   }
-  function handleDragOver(e) {
-    e.preventDefault(); e.stopPropagation()
-    e.dataTransfer.dropEffect = 'copy'
-    if (!isDragging) setIsDragging(true)
-  }
+  function handleDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }
   function handleDrop(e) {
-    e.preventDefault(); e.stopPropagation()
+    e.preventDefault()
     setIsDragging(false)
     applyFile(e.dataTransfer.files[0])
   }
@@ -54,13 +48,10 @@ export default function AddItemModal({ categories, defaultCategory, defaultStatu
     e.preventDefault()
     if (!photo && status === 'en_stock') { setError('Veuillez sélectionner une photo'); return }
     if (total === 0) { setError('Ajoutez au moins une taille'); return }
-
     setUploading(true)
     setError('')
-
     try {
       let photoUrl = null
-
       if (photo) {
         const ext = photo.name.split('.').pop().toLowerCase()
         const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
@@ -69,20 +60,13 @@ export default function AddItemModal({ categories, defaultCategory, defaultStatu
         const { data: { publicUrl } } = supabase.storage.from('photos').getPublicUrl(fileName)
         photoUrl = publicUrl
       }
-
       const rows = SIZES.flatMap(size =>
         Array.from({ length: quantities[size] }, () => ({
-          category,
-          size,
-          photo_url: photoUrl,
-          status,
-          shein_url: sheinUrl.trim() || null,
+          category, size, photo_url: photoUrl, status, shein_url: sheinUrl.trim() || null,
         }))
       )
-
       const { data, error: insertErr } = await supabase.from('items').insert(rows).select()
       if (insertErr) throw insertErr
-
       onAdded(data)
     } catch (err) {
       setError(err.message)
@@ -95,14 +79,27 @@ export default function AddItemModal({ categories, defaultCategory, defaultStatu
       className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50"
       onClick={e => e.target === e.currentTarget && onClose()}
     >
-      <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md max-h-[92vh] overflow-y-auto">
-        {/* Header */}
+      <div
+        ref={modalRef}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md max-h-[92vh] overflow-y-auto relative"
+      >
+        {isDragging && (
+          <div className="absolute inset-0 z-30 bg-teal-500/10 border-2 border-teal-400 border-dashed rounded-t-3xl sm:rounded-2xl flex flex-col items-center justify-center pointer-events-none">
+            <svg className="w-14 h-14 text-teal-500 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            <span className="text-teal-700 font-bold text-base">Déposer la photo ici</span>
+          </div>
+        )}
+
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="font-semibold text-gray-900 text-base">Ajouter des articles</h2>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition-colors"
-          >
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition-colors">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -114,59 +111,31 @@ export default function AddItemModal({ categories, defaultCategory, defaultStatu
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Photo de l'article</label>
             <div
-              ref={dropZoneRef}
               onClick={() => inputRef.current?.click()}
-              onDragEnter={handleDragEnter}
-              onDragLeave={handleDragLeave}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
               className={`relative w-full h-52 rounded-xl overflow-hidden cursor-pointer border-2 border-dashed transition-all ${
-                isDragging
-                  ? 'border-teal-500 bg-teal-50 scale-[1.01]'
-                  : preview
-                    ? 'border-transparent hover:border-gray-300'
-                    : 'border-gray-200 bg-gray-50 hover:border-teal-400 hover:bg-teal-50/40'
+                preview ? 'border-transparent hover:border-gray-300' : 'border-gray-200 bg-gray-50 hover:border-teal-400 hover:bg-teal-50/40'
               }`}
             >
-              {preview && (
-                <img src={preview} alt="Aperçu"
-                  className={`absolute inset-0 w-full h-full object-cover pointer-events-none transition-opacity ${isDragging ? 'opacity-30' : 'opacity-100'}`}
-                />
-              )}
-              {!preview && !isDragging && (
+              {preview && <img src={preview} alt="Aperçu" className="absolute inset-0 w-full h-full object-cover pointer-events-none" />}
+              {!preview && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400 pointer-events-none select-none">
                   <svg className="w-10 h-10 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                       d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
-                  <span className="text-sm font-medium">Glisser une photo ici</span>
-                  <span className="text-xs mt-1 text-gray-300">ou cliquer pour choisir</span>
-                </div>
-              )}
-              {isDragging && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none">
-                  <svg className="w-12 h-12 text-teal-500 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                  </svg>
-                  <span className="text-sm font-bold text-teal-600">Relâcher pour ajouter</span>
+                  <span className="text-sm font-medium">Glisser une photo ici ou cliquer</span>
                 </div>
               )}
             </div>
-            <input ref={inputRef} type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
+            <input ref={inputRef} type="file" accept="image/*" onChange={e => applyFile(e.target.files[0])} className="hidden" />
           </div>
 
           {/* Catégorie */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Catégorie</label>
-            <select
-              value={category}
-              onChange={e => setCategory(e.target.value)}
-              className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white"
-            >
-              {categories.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
+            <select value={category} onChange={e => setCategory(e.target.value)}
+              className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white">
+              {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
             </select>
           </div>
 
@@ -174,42 +143,23 @@ export default function AddItemModal({ categories, defaultCategory, defaultStatu
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium text-gray-700">Tailles &amp; quantités</label>
-              {total > 0 && (
-                <span className="text-xs font-semibold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full">
-                  {total} article{total > 1 ? 's' : ''}
-                </span>
-              )}
+              {total > 0 && <span className="text-xs font-semibold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full">{total} article{total > 1 ? 's' : ''}</span>}
             </div>
             <div className="grid grid-cols-3 gap-2">
               {SIZES.map(size => (
                 <div key={size} className={`flex items-center justify-between gap-1 rounded-xl border-2 px-2 py-1.5 transition-colors ${
                   quantities[size] > 0 ? 'border-teal-400 bg-teal-50' : 'border-gray-200 bg-white'
                 }`}>
-                  <span className={`text-sm font-bold w-7 text-center ${quantities[size] > 0 ? 'text-teal-700' : 'text-gray-500'}`}>
-                    {size}
-                  </span>
+                  <span className={`text-sm font-bold w-7 text-center ${quantities[size] > 0 ? 'text-teal-700' : 'text-gray-500'}`}>{size}</span>
                   <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setQty(size, -1)}
-                      disabled={quantities[size] === 0}
-                      className="w-5 h-5 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 disabled:opacity-20 transition-colors"
-                    >
-                      <svg className="w-3 h-3 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M20 12H4" />
-                      </svg>
+                    <button type="button" onClick={() => setQty(size, -1)} disabled={quantities[size] === 0}
+                      className="w-5 h-5 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 disabled:opacity-20 transition-colors">
+                      <svg className="w-3 h-3 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M20 12H4" /></svg>
                     </button>
-                    <span className={`text-sm font-semibold w-4 text-center tabular-nums ${quantities[size] > 0 ? 'text-teal-700' : 'text-gray-300'}`}>
-                      {quantities[size]}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setQty(size, +1)}
-                      className="w-5 h-5 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-                    >
-                      <svg className="w-3 h-3 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-                      </svg>
+                    <span className={`text-sm font-semibold w-4 text-center tabular-nums ${quantities[size] > 0 ? 'text-teal-700' : 'text-gray-300'}`}>{quantities[size]}</span>
+                    <button type="button" onClick={() => setQty(size, +1)}
+                      className="w-5 h-5 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
+                      <svg className="w-3 h-3 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
                     </button>
                   </div>
                 </div>
@@ -221,26 +171,12 @@ export default function AddItemModal({ categories, defaultCategory, defaultStatu
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Statut</label>
             <div className="flex rounded-xl border-2 border-gray-200 overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setStatus('en_stock')}
-                className={`flex-1 py-2 text-sm font-semibold transition-colors ${
-                  status === 'en_stock'
-                    ? 'bg-teal-500 text-white'
-                    : 'bg-white text-gray-500 hover:bg-gray-50'
-                }`}
-              >
+              <button type="button" onClick={() => setStatus('en_stock')}
+                className={`flex-1 py-2 text-sm font-semibold transition-colors ${status === 'en_stock' ? 'bg-teal-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
                 En stock
               </button>
-              <button
-                type="button"
-                onClick={() => setStatus('a_recevoir')}
-                className={`flex-1 py-2 text-sm font-semibold transition-colors ${
-                  status === 'a_recevoir'
-                    ? 'bg-purple-500 text-white'
-                    : 'bg-white text-gray-500 hover:bg-gray-50'
-                }`}
-              >
+              <button type="button" onClick={() => setStatus('a_recevoir')}
+                className={`flex-1 py-2 text-sm font-semibold transition-colors ${status === 'a_recevoir' ? 'bg-purple-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
                 À recevoir
               </button>
             </div>
@@ -248,38 +184,20 @@ export default function AddItemModal({ categories, defaultCategory, defaultStatu
 
           {/* Lien Shein */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Lien Shein <span className="text-gray-400 font-normal">(optionnel)</span>
-            </label>
-            <input
-              type="url"
-              value={sheinUrl}
-              onChange={e => setSheinUrl(e.target.value)}
-              placeholder="https://www.shein.com/..."
-              className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-            />
+            <label className="block text-sm font-medium text-gray-700 mb-2">Lien Shein <span className="text-gray-400 font-normal">(optionnel)</span></label>
+            <input type="url" value={sheinUrl} onChange={e => setSheinUrl(e.target.value)} placeholder="https://www.shein.com/..."
+              className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" />
           </div>
 
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-2.5">
-              {error}
-            </div>
-          )}
+          {error && <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-2.5">{error}</div>}
 
-          {/* Boutons */}
           <div className="flex gap-3 pt-1 pb-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 border-2 border-gray-200 text-gray-700 rounded-xl py-3 text-sm font-semibold hover:bg-gray-50 transition-colors"
-            >
+            <button type="button" onClick={onClose}
+              className="flex-1 border-2 border-gray-200 text-gray-700 rounded-xl py-3 text-sm font-semibold hover:bg-gray-50 transition-colors">
               Annuler
             </button>
-            <button
-              type="submit"
-              disabled={uploading}
-              className="flex-1 bg-teal-500 text-white rounded-xl py-3 text-sm font-semibold hover:bg-teal-600 active:bg-teal-700 disabled:opacity-50 transition-colors"
-            >
+            <button type="submit" disabled={uploading}
+              className="flex-1 bg-teal-500 text-white rounded-xl py-3 text-sm font-semibold hover:bg-teal-600 active:bg-teal-700 disabled:opacity-50 transition-colors">
               {uploading ? (
                 <span className="flex items-center justify-center gap-2">
                   <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">

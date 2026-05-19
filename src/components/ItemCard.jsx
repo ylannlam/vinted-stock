@@ -1,12 +1,12 @@
 import { useState, useRef } from 'react'
 
-export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onMarkUnsent, onDelete, onUpdateCategory, onUpdateEmplacement, onBordereauDrop, onEdit, onMarkReceived, onToggleReception }) {
+export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onMarkUnsent, onDelete, onUpdateCategory, onUpdateEmplacement, onBordereauDrop, onPhotoDrop, onEdit, onMarkReceived, onToggleReception }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmSent, setConfirmSent] = useState(false)
   const [confirmReceived, setConfirmReceived] = useState(false)
   const [editingCategory, setEditingCategory] = useState(false)
   const [editingEmplacement, setEditingEmplacement] = useState(false)
-  const [isDragOver, setIsDragOver] = useState(false)
+  const [dragType, setDragType] = useState(null) // 'image' | 'pdf' | null
   const [uploading, setUploading] = useState(false)
   const pdfInputRef = useRef(null)
 
@@ -26,30 +26,37 @@ export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onM
   const canDropBordereau = isPending || isSent
 
   function handleDragEnter(e) {
-    if (!canDropBordereau) return
     e.preventDefault()
-    setIsDragOver(true)
+    const type = e.dataTransfer.items[0]?.type ?? ''
+    if (type.startsWith('image/')) setDragType('image')
+    else if (type === 'application/pdf' && canDropBordereau) setDragType('pdf')
   }
 
   function handleDragOver(e) {
-    if (!canDropBordereau) return
+    if (!dragType && !canDropBordereau) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'copy'
   }
 
   function handleDragLeave(e) {
-    if (!e.currentTarget.contains(e.relatedTarget)) setIsDragOver(false)
+    if (!e.currentTarget.contains(e.relatedTarget)) setDragType(null)
   }
 
   async function handleDrop(e) {
     e.preventDefault()
-    setIsDragOver(false)
-    if (!canDropBordereau) return
+    const type = dragType
+    setDragType(null)
     const file = e.dataTransfer.files[0]
-    if (!file || file.type !== 'application/pdf') return
-    setUploading(true)
-    await onBordereauDrop(item.id, file)
-    setUploading(false)
+    if (!file) return
+    if (file.type.startsWith('image/') && onPhotoDrop) {
+      setUploading(true)
+      await onPhotoDrop(item.id, file)
+      setUploading(false)
+    } else if (file.type === 'application/pdf' && canDropBordereau) {
+      setUploading(true)
+      await onBordereauDrop(item.id, file)
+      setUploading(false)
+    }
   }
 
   return (
@@ -59,7 +66,8 @@ export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onM
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`bg-white rounded-xl overflow-hidden shadow-sm border transition-all relative ${
-        isDragOver  ? 'border-blue-400 scale-[1.02] shadow-md' :
+        dragType === 'image' ? 'border-teal-400 scale-[1.02] shadow-md' :
+        dragType === 'pdf'   ? 'border-blue-400 scale-[1.02] shadow-md' :
         isOrdered   ? 'border-purple-200' :
         isPending   ? 'border-orange-200' :
         isSent      ? 'border-blue-100'   :
@@ -385,14 +393,22 @@ export default function ItemCard({ item, categories, onMarkSold, onMarkSent, onM
         </div>
       )}
 
-      {/* Overlay drag PDF */}
-      {isDragOver && (
+      {dragType === 'pdf' && (
         <div className="absolute inset-0 bg-blue-500/90 flex flex-col items-center justify-center rounded-xl pointer-events-none">
           <svg className="w-8 h-8 text-white mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
               d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
           </svg>
           <span className="text-white text-[10px] font-bold">Déposer le bordereau</span>
+        </div>
+      )}
+      {dragType === 'image' && (
+        <div className="absolute inset-0 bg-teal-500/90 flex flex-col items-center justify-center rounded-xl pointer-events-none">
+          <svg className="w-8 h-8 text-white mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          <span className="text-white text-[10px] font-bold">Changer la photo</span>
         </div>
       )}
 
