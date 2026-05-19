@@ -14,6 +14,7 @@ import VintedAccountsTab from './components/VintedAccountsTab'
 import WorkspaceTab from './components/WorkspaceTab'
 import EmployeesTab from './components/EmployeesTab'
 import FondsLibrary from './components/FondsLibrary'
+import EmplacementsView from './components/EmplacementsView'
 import AddCommandeModal from './components/AddCommandeModal'
 import CommandeCard from './components/CommandeCard'
 import CommandeDetailView from './components/CommandeDetailView'
@@ -40,6 +41,7 @@ export default function App() {
   const [selectedCommandeId, setSelectedCommandeId] = useState(null)
   const [showAddCommandeModal, setShowAddCommandeModal] = useState(false)
   const [receptionCommande, setReceptionCommande] = useState(null)
+  const [showEmplacements, setShowEmplacements] = useState(false)
   const [showLotModal, setShowLotModal] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [editItem, setEditItem] = useState(null)
@@ -489,6 +491,7 @@ export default function App() {
           onSearchChange={setFilterSearch}
           sortByEmplacement={sortByEmplacement}
           onSortToggle={() => setSortByEmplacement(v => !v)}
+          onShowEmplacements={() => setShowEmplacements(true)}
           total={filteredItems.length}
         />
       )}
@@ -609,6 +612,13 @@ export default function App() {
           items={items.filter(i => i.status === 'en_stock')}
           onClose={() => setShowLotModal(false)}
           onCreateLot={handleCreateLot}
+        />
+      )}
+
+      {showEmplacements && (
+        <EmplacementsView
+          items={items.filter(i => i.status !== 'envoye')}
+          onClose={() => setShowEmplacements(false)}
         />
       )}
 

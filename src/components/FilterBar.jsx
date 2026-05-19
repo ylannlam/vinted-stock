@@ -1,6 +1,6 @@
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
 
-export default function FilterBar({ sizes, onSizesChange, searchQuery, onSearchChange, sortByEmplacement, onSortToggle, total }) {
+export default function FilterBar({ sizes, onSizesChange, searchQuery, onSearchChange, sortByEmplacement, onSortToggle, onShowEmplacements, total }) {
   function toggleSize(s) {
     onSizesChange(prev =>
       prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]
@@ -46,7 +46,16 @@ export default function FilterBar({ sizes, onSizesChange, searchQuery, onSearchC
           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0zM15 11a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
-          Emplacement
+          Trier
+        </button>
+        <button
+          onClick={onShowEmplacements}
+          className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-full border border-gray-200 bg-white text-gray-600 hover:border-teal-300 transition-colors flex-shrink-0"
+        >
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+          </svg>
+          Plan
         </button>
       </div>
 

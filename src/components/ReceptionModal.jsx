@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
+import { computeSuggestions } from '../lib/emplacements'
 
 export default function ReceptionModal({ commande, items, stockItems, onClose, onReceived }) {
-  const [emplacements, setEmplacements] = useState(() =>
-    Object.fromEntries(items.map(i => [i.id, '']))
-  )
+  const suggestions = useMemo(() => computeSuggestions(items, stockItems), [])
+  const [emplacements, setEmplacements] = useState(() => suggestions)
   const [saving, setSaving] = useState(false)
 
   const occupiedEmplacements = new Set(
@@ -53,7 +53,12 @@ export default function ReceptionModal({ commande, items, stockItems, onClose, o
         </div>
 
         <div className="px-5 py-4 space-y-4">
-          <p className="text-sm text-gray-500">Attribue un emplacement physique à chaque article pour le ranger en stock.</p>
+          <div className="flex items-start gap-2 bg-teal-50 border border-teal-100 rounded-xl px-3 py-2.5">
+            <svg className="w-4 h-4 text-teal-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            <p className="text-xs text-teal-700">Emplacements suggérés automatiquement — modifie si besoin.</p>
+          </div>
 
           <div className="space-y-2">
             {items.map(item => {
@@ -87,18 +92,27 @@ export default function ReceptionModal({ commande, items, stockItems, onClose, o
                         <span className="text-[10px] text-red-500 font-semibold truncate">⚠ Emplacement {conflict}</span>
                       )}
                     </div>
-                    <input
-                      type="text"
-                      value={val}
-                      onChange={e => setEmplacements(prev => ({ ...prev, [item.id]: e.target.value }))}
-                      placeholder="Emplacement (ex : A1-1)"
-                      maxLength={20}
-                      className={`w-full text-sm px-3 py-1.5 rounded-lg border focus:outline-none focus:ring-2 transition-colors bg-white ${
-                        conflict
-                          ? 'border-red-300 focus:ring-red-300'
-                          : 'border-gray-200 focus:ring-teal-400'
-                      }`}
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={val}
+                        onChange={e => setEmplacements(prev => ({ ...prev, [item.id]: e.target.value }))}
+                        placeholder="ex : A1"
+                        maxLength={10}
+                        className={`w-full text-sm px-3 py-1.5 rounded-lg border focus:outline-none focus:ring-2 transition-colors bg-white ${
+                          conflict
+                            ? 'border-red-300 focus:ring-red-300'
+                            : val.trim() && val === suggestions[item.id]
+                              ? 'border-teal-300 focus:ring-teal-400'
+                              : 'border-gray-200 focus:ring-teal-400'
+                        }`}
+                      />
+                      {val && val === suggestions[item.id] && !conflict && (
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-semibold text-teal-500 bg-teal-50 px-1.5 py-0.5 rounded-full pointer-events-none">
+                          💡 auto
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               )
