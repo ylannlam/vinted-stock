@@ -1,10 +1,11 @@
 import { useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { nextFreeSlots } from '../lib/emplacements'
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
 const initQty = () => Object.fromEntries(SIZES.map(s => [s, 0]))
 
-export default function AddItemModal({ defaultStatus = 'en_stock', onClose, onAdded }) {
+export default function AddItemModal({ defaultStatus = 'en_stock', items = [], onClose, onAdded }) {
   const [quantities, setQuantities] = useState(initQty)
   const [status, setStatus] = useState(defaultStatus)
   const [sheinUrl, setSheinUrl] = useState('')
@@ -64,6 +65,10 @@ export default function AddItemModal({ defaultStatus = 'en_stock', onClose, onAd
           size, photo_url: photoUrl, status, shein_url: sheinUrl.trim() || null,
         }))
       )
+      if (status === 'en_stock') {
+        const slots = nextFreeSlots(rows.length, items)
+        rows.forEach((row, i) => { row.emplacement = slots[i] || null })
+      }
       const { data, error: insertErr } = await supabase.from('items').insert(rows).select()
       if (insertErr) throw insertErr
       onAdded(data)

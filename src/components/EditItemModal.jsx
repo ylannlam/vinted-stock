@@ -1,10 +1,11 @@
 import { useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { nextFreeSlots } from '../lib/emplacements'
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
 const initQty = () => Object.fromEntries(SIZES.map(s => [s, 0]))
 
-export default function EditItemModal({ item, takenEmplacements, onClose, onUpdated }) {
+export default function EditItemModal({ item, items = [], takenEmplacements, onClose, onUpdated }) {
   const [size, setSize] = useState(item.size)
   const isPending = item.status === 'vendu'
   const [status, setStatus] = useState(
@@ -93,6 +94,12 @@ export default function EditItemModal({ item, takenEmplacements, onClose, onUpda
             shein_url: sheinUrl.trim() || null,
           }))
         )
+        const taken = [
+          ...items.filter(i => i.id !== item.id),
+          { ...item, emplacement: emplacement.trim() || null },
+        ]
+        const slots = nextFreeSlots(rows.length, taken)
+        rows.forEach((row, i) => { row.emplacement = slots[i] || null })
         const { data: inserted, error: insertErr } = await supabase.from('items').insert(rows).select()
         if (insertErr) throw insertErr
         newItems = inserted

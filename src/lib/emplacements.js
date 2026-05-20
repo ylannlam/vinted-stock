@@ -94,3 +94,19 @@ export function computeSuggestions(items, stockItems) {
     return [item.id, slot]
   }))
 }
+
+// Renvoie n emplacements libres distincts (dans l'ordre), à partir du stock existant.
+export function nextFreeSlots(count, existingItems) {
+  const stockItems = (existingItems || []).filter(i => i.status !== 'envoye')
+  const caps = getCapacities(stockItems)
+  const occupied = getOccupied(stockItems)
+  const assigned = new Set()
+  const slots = []
+  for (let i = 0; i < count; i++) {
+    const slot = firstFreeSlot(caps, occupied, assigned)
+    if (!slot) { slots.push(null); continue }
+    assigned.add(slot)
+    slots.push(slot)
+  }
+  return slots
+}

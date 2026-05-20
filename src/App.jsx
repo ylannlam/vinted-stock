@@ -253,9 +253,11 @@ export default function App() {
   }
 
   async function handleRemettreEnStock(item) {
+    const others = items.filter(i => i.id !== item.id)
+    const emplacement = item.emplacement || firstFreeSlot(getCapacities(others), getOccupied(others)) || null
     const { data, error } = await supabase
       .from('items')
-      .update({ status: 'en_stock', bordereau_url: null, sold_at: null })
+      .update({ status: 'en_stock', bordereau_url: null, sold_at: null, emplacement })
       .eq('id', item.id)
       .select()
       .single()
@@ -290,9 +292,11 @@ export default function App() {
   }
 
   async function handleMarkReceived(item) {
+    const others = items.filter(i => i.id !== item.id)
+    const emplacement = item.emplacement || firstFreeSlot(getCapacities(others), getOccupied(others)) || null
     const { data, error } = await supabase
       .from('items')
-      .update({ status: 'en_stock' })
+      .update({ status: 'en_stock', emplacement })
       .eq('id', item.id)
       .select()
       .single()
@@ -723,6 +727,7 @@ export default function App() {
       {showAddModal && (
         <AddItemModal
           defaultStatus='en_stock'
+          items={items}
           onClose={() => setShowAddModal(false)}
           onAdded={handleItemAdded}
         />
@@ -731,6 +736,7 @@ export default function App() {
       {editItem && (
         <EditItemModal
           item={editItem}
+          items={items}
           takenEmplacements={new Set(
             items
               .filter(i => i.id !== editItem.id && i.status !== 'envoye' && i.emplacement)
