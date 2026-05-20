@@ -7,9 +7,7 @@ const ROLE_OPTIONS = [
 ]
 
 function generateEmail(pseudo) {
-  const slug = pseudo.toLowerCase().replace(/[^a-z0-9]/g, '') || 'user'
-  const rand = Math.random().toString(36).slice(2, 6)
-  return `${slug}_${rand}@vinted-stock.app`
+  return `${pseudo.toLowerCase().trim().replace(/[^a-z0-9_-]/g, '_')}@vinted-stock.app`
 }
 
 function generatePassword() {
@@ -67,7 +65,7 @@ export default function UserManagementModal({ user, onClose, onSaved }) {
   }
 
   function handleCopy() {
-    const text = `Identifiants de connexion :\nEmail : ${createdCredentials.email}\nMot de passe : ${createdCredentials.password}`
+    const text = `Connexion :\nPseudo : ${pseudo}\nMot de passe : ${createdCredentials.password}`
     navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
   }
 
@@ -89,8 +87,8 @@ export default function UserManagementModal({ user, onClose, onSaved }) {
 
           <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 space-y-3">
             <div>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Email</p>
-              <p className="text-sm font-mono text-gray-800 break-all">{createdCredentials.email}</p>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Pseudo</p>
+              <p className="text-sm font-semibold text-gray-800">{pseudo}</p>
             </div>
             <div>
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Mot de passe</p>
