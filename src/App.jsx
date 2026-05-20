@@ -6,7 +6,6 @@ import Header from './components/Header'
 import CategoryTabs from './components/CategoryTabs'
 import Gallery from './components/Gallery'
 import FilterBar from './components/FilterBar'
-import LotModal from './components/LotModal'
 import AddItemModal from './components/AddItemModal'
 import EditItemModal from './components/EditItemModal'
 import SoldModal from './components/SoldModal'
@@ -659,13 +658,6 @@ export default function App() {
         </button>
       )}
 
-      {showLotModal && (
-        <LotModal
-          items={items.filter(i => i.status === 'en_stock')}
-          onClose={() => setShowLotModal(false)}
-          onCreateLot={handleCreateLot}
-        />
-      )}
 
       {/* Barre flottante sélection lot */}
       {activeTab === TAB_TOUT && lotSelected.size > 0 && (
