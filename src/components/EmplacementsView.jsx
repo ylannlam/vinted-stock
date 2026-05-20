@@ -1,17 +1,52 @@
-import { CARTONS, getCapacities } from '../lib/emplacements'
+import { useState } from 'react'
+import { getCapacities, getCustomCapacities, saveCustomCapacity, removeCustomCapacity } from '../lib/emplacements'
 
 export default function EmplacementsView({ items, onClose }) {
+  const [customCaps, setCustomCaps] = useState(() => getCustomCapacities())
+  const [showForm, setShowForm] = useState(false)
+  const [newLetter, setNewLetter] = useState('')
+  const [newCapacity, setNewCapacity] = useState('')
+  const [formError, setFormError] = useState('')
+
   const caps = getCapacities(items)
+  const sortedLetters = Object.keys(caps).sort()
+
+  const dbCaps = (() => {
+    const c = {}
+    for (const item of (items || [])) {
+      const m = (item.emplacement || '').trim().toUpperCase().match(/^([A-Z])(\d+)$/)
+      if (!m) continue
+      c[m[1]] = Math.max(c[m[1]] || 0, parseInt(m[2]))
+    }
+    c['J'] = Math.max(c['J'] || 0, 16)
+    return c
+  })()
 
   const occupiedMap = Object.fromEntries(
-    (items || [])
-      .filter(i => i.emplacement)
-      .map(i => [i.emplacement.trim().toUpperCase(), i])
+    (items || []).filter(i => i.emplacement).map(i => [i.emplacement.trim().toUpperCase(), i])
   )
 
   const totalSlots = Object.values(caps).reduce((a, b) => a + b, 0)
   const occupiedCount = Object.keys(occupiedMap).length
-  const freeCount = totalSlots - occupiedCount
+
+  function handleAdd(e) {
+    e.preventDefault()
+    setFormError('')
+    const letter = newLetter.trim().toUpperCase()
+    const cap = parseInt(newCapacity)
+    if (!letter.match(/^[A-Z]$/)) { setFormError('Une seule lettre A-Z'); return }
+    if (!cap || cap < 1 || cap > 99) { setFormError('Entre 1 et 99 cases'); return }
+    saveCustomCapacity(letter, cap)
+    setCustomCaps(getCustomCapacities())
+    setNewLetter('')
+    setNewCapacity('')
+    setShowForm(false)
+  }
+
+  function handleRemove(letter) {
+    removeCustomCapacity(letter)
+    setCustomCaps(getCustomCapacities())
+  }
 
   return (
     <div
@@ -22,7 +57,7 @@ export default function EmplacementsView({ items, onClose }) {
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
           <div>
-            <h2 className="font-semibold text-gray-900">Vue des emplacements</h2>
+            <h2 className="font-semibold text-gray-900">Plan des emplacements</h2>
             <div className="flex items-center gap-3 mt-0.5">
               <span className="flex items-center gap-1 text-xs text-red-500">
                 <span className="w-2.5 h-2.5 rounded-sm bg-red-400 inline-block" />
@@ -30,15 +65,12 @@ export default function EmplacementsView({ items, onClose }) {
               </span>
               <span className="flex items-center gap-1 text-xs text-emerald-600">
                 <span className="w-2.5 h-2.5 rounded-sm bg-emerald-200 border border-emerald-300 inline-block" />
-                {freeCount} libres
+                {totalSlots - occupiedCount} libres
               </span>
               <span className="text-xs text-gray-400">{totalSlots} total</span>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition-colors"
-          >
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition-colors">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -47,9 +79,9 @@ export default function EmplacementsView({ items, onClose }) {
 
         {/* Corps */}
         <div className="overflow-y-auto px-5 py-4 space-y-5 flex-1">
-          {CARTONS.map(letter => {
+          {sortedLetters.map(letter => {
             const cap = caps[letter] || 0
-            if (cap === 0) return null
+            const isCustomOnly = !dbCaps[letter]
             const occupiedInCarton = Array.from({ length: cap }, (_, i) => `${letter}${i + 1}`)
               .filter(s => occupiedMap[s]).length
             const pct = Math.round((occupiedInCarton / cap) * 100)
@@ -61,45 +93,45 @@ export default function EmplacementsView({ items, onClose }) {
                     Carton {letter}
                   </span>
                   <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-teal-400 rounded-full transition-all"
-                      style={{ width: `${pct}%` }}
-                    />
+                    <div className="h-full bg-teal-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
                   </div>
-                  <span className="text-xs text-gray-400 w-14 text-right flex-shrink-0">
+                  <span className="text-xs text-gray-400 w-12 text-right flex-shrink-0">
                     {occupiedInCarton}/{cap}
                   </span>
+                  {isCustomOnly && (
+                    <button
+                      onClick={() => handleRemove(letter)}
+                      className="flex-shrink-0 text-gray-300 hover:text-red-400 transition-colors"
+                      title="Supprimer ce carton"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex flex-wrap gap-1.5">
                   {Array.from({ length: cap }, (_, i) => i + 1).map(n => {
                     const slot = `${letter}${n}`
                     const item = occupiedMap[slot]
-
                     return (
                       <div
                         key={slot}
-                        title={item
-                          ? `${slot} · T.${item.size}${item.shein_url ? ' · Shein disponible' : ''}`
-                          : `${slot} · Libre`
-                        }
+                        title={item ? `${slot} · T.${item.size}` : `${slot} · Libre`}
                         style={item?.photo_url ? {
                           backgroundImage: `url(${item.photo_url})`,
                           backgroundSize: 'cover',
                           backgroundPosition: 'center',
                         } : undefined}
                         className={`w-10 h-10 rounded-lg flex items-center justify-center text-[9px] font-bold relative overflow-hidden cursor-default select-none transition-transform hover:scale-110 ${
-                          item
-                            ? 'text-white shadow-sm'
-                            : 'bg-emerald-100 text-emerald-600 border border-emerald-200 hover:bg-emerald-200'
+                          item ? 'text-white shadow-sm' : 'bg-emerald-100 text-emerald-600 border border-emerald-200 hover:bg-emerald-200'
                         }`}
                       >
                         {item ? (
                           <>
                             {item.photo_url && <div className="absolute inset-0 bg-black/40" />}
-                            <span className="relative z-10 leading-tight text-center">
-                              {item.size}
-                            </span>
+                            <span className="relative z-10">{item.size}</span>
                           </>
                         ) : (
                           <span className="text-[10px]">{n}</span>
@@ -112,11 +144,62 @@ export default function EmplacementsView({ items, onClose }) {
             )
           })}
 
-          {Object.keys(caps).length === 0 && (
-            <div className="text-center py-12 text-gray-400">
-              <p className="font-medium">Aucun emplacement détecté</p>
-              <p className="text-sm mt-1">Assignez des emplacements aux articles pour les voir apparaître ici.</p>
+          {sortedLetters.length === 0 && !showForm && (
+            <div className="text-center py-8 text-gray-400">
+              <p className="font-medium">Aucun carton détecté</p>
+              <p className="text-sm mt-1">Ajoutez un carton ci-dessous pour commencer.</p>
             </div>
+          )}
+
+          {/* Formulaire ajout carton */}
+          {showForm ? (
+            <form onSubmit={handleAdd} className="bg-gray-50 rounded-xl border border-gray-200 p-4 space-y-3">
+              <p className="text-sm font-semibold text-gray-700">Nouveau carton</p>
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="block text-xs text-gray-500 mb-1">Lettre</label>
+                  <input
+                    type="text"
+                    value={newLetter}
+                    onChange={e => setNewLetter(e.target.value.slice(-1))}
+                    placeholder="K"
+                    maxLength={1}
+                    autoFocus
+                    className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-teal-500 text-center"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs text-gray-500 mb-1">Nombre de cases</label>
+                  <input
+                    type="number"
+                    value={newCapacity}
+                    onChange={e => setNewCapacity(e.target.value)}
+                    placeholder="16"
+                    min={1}
+                    max={99}
+                    className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+              </div>
+              {formError && <p className="text-xs text-red-500">{formError}</p>}
+              <div className="flex gap-2">
+                <button type="button" onClick={() => { setShowForm(false); setFormError('') }}
+                  className="flex-1 border border-gray-200 rounded-xl py-2 text-sm text-gray-600 hover:bg-gray-100 transition-colors">
+                  Annuler
+                </button>
+                <button type="submit"
+                  className="flex-1 bg-teal-500 text-white rounded-xl py-2 text-sm font-semibold hover:bg-teal-600 transition-colors">
+                  Ajouter
+                </button>
+              </div>
+            </form>
+          ) : (
+            <button
+              onClick={() => setShowForm(true)}
+              className="w-full py-2.5 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-500 hover:border-teal-300 hover:text-teal-500 transition-colors font-medium"
+            >
+              + Ajouter un carton
+            </button>
           )}
         </div>
       </div>

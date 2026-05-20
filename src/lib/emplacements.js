@@ -1,20 +1,40 @@
-export const CARTONS = ['A','B','C','D','E','F','G','H','I','J']
+const STORAGE_KEY = 'vinted_cartons'
 
-// Détecte la capacité de chaque carton depuis les emplacements en base
-// Cartons A-I : max case observée ; carton J : toujours 16
+export function getCustomCapacities() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') }
+  catch { return {} }
+}
+
+export function saveCustomCapacity(letter, capacity) {
+  const caps = getCustomCapacities()
+  caps[letter.toUpperCase()] = capacity
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(caps))
+}
+
+export function removeCustomCapacity(letter) {
+  const caps = getCustomCapacities()
+  delete caps[letter.toUpperCase()]
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(caps))
+}
+
+// Capacités depuis la base + cartons personnalisés (localStorage)
+// Carton J : toujours au moins 16 ; autres : max observé
 export function getCapacities(items) {
   const caps = {}
   for (const item of (items || [])) {
-    const m = (item.emplacement || '').trim().toUpperCase().match(/^([A-J])(\d+)$/)
+    const m = (item.emplacement || '').trim().toUpperCase().match(/^([A-Z])(\d+)$/)
     if (!m) continue
     const [, letter, num] = m
     caps[letter] = Math.max(caps[letter] || 0, parseInt(num))
   }
   caps['J'] = Math.max(caps['J'] || 0, 16)
+  const custom = getCustomCapacities()
+  for (const [letter, cap] of Object.entries(custom)) {
+    caps[letter] = Math.max(caps[letter] || 0, cap)
+  }
   return caps
 }
 
-// Set des emplacements occupés (majuscules)
 export function getOccupied(items) {
   return new Set(
     (items || [])
@@ -23,13 +43,13 @@ export function getOccupied(items) {
   )
 }
 
-// Premier emplacement libre dans les cartons dans l'ordre A→J, 1→cap
+// Premier emplacement libre dans l'ordre alphabétique des cartons connus
 export function firstFreeSlot(caps, occupied, alsoExclude = new Set()) {
   const all = new Set([
     ...occupied,
     ...[...alsoExclude].map(s => s.toUpperCase()),
   ])
-  for (const letter of CARTONS) {
+  for (const letter of Object.keys(caps).sort()) {
     const cap = caps[letter] || 0
     for (let n = 1; n <= cap; n++) {
       const slot = `${letter}${n}`
@@ -39,7 +59,6 @@ export function firstFreeSlot(caps, occupied, alsoExclude = new Set()) {
   return ''
 }
 
-// Calcule une suggestion par article, en évitant les conflits entre eux
 export function computeSuggestions(items, stockItems) {
   const caps = getCapacities(stockItems)
   const occupied = getOccupied(stockItems)
