@@ -8,7 +8,31 @@ export default function ItemCard({ item, onMarkSold, onMarkSent, onMarkUnsent, o
   const [editingEmplacement, setEditingEmplacement] = useState(false)
   const [dragType, setDragType] = useState(null) // 'image' | 'pdf' | null
   const [uploading, setUploading] = useState(false)
+  const [printing, setPrinting] = useState(false)
   const pdfInputRef = useRef(null)
+
+  async function handlePrint() {
+    if (!item.bordereau_url) return
+    setPrinting(true)
+    try {
+      const res = await fetch(item.bordereau_url)
+      if (!res.ok) throw new Error()
+      const blob = await res.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      const iframe = document.createElement('iframe')
+      iframe.style.cssText = 'position:fixed;top:-1px;left:-1px;width:0;height:0;overflow:hidden;border:0;opacity:0;'
+      document.body.appendChild(iframe)
+      iframe.onload = () => {
+        try { iframe.contentWindow.print() } catch { window.open(item.bordereau_url, '_blank') }
+        setTimeout(() => { document.body.removeChild(iframe); URL.revokeObjectURL(blobUrl) }, 1000)
+        setPrinting(false)
+      }
+      iframe.src = blobUrl
+    } catch {
+      window.open(item.bordereau_url, '_blank')
+      setPrinting(false)
+    }
+  }
 
   async function handlePdfInput(e) {
     const file = e.target.files[0]
@@ -278,19 +302,25 @@ export default function ItemCard({ item, onMarkSold, onMarkSent, onMarkUnsent, o
           {(isPending || isSent) && (
             <>
               {item.bordereau_url && (
-                <a
-                  href={item.bordereau_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-0.5 text-[10px] font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-1.5 py-0.5 rounded-full transition-colors flex-shrink-0"
-                  aria-label="Télécharger bordereau"
+                <button
+                  onClick={handlePrint}
+                  disabled={printing}
+                  className="flex items-center gap-0.5 text-[10px] font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-1.5 py-0.5 rounded-full transition-colors flex-shrink-0 disabled:opacity-50"
+                  aria-label="Imprimer le bordereau"
                 >
-                  <svg className="w-2.5 h-2.5 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  PDF
-                </a>
+                  {printing ? (
+                    <svg className="w-2.5 h-2.5 animate-spin pointer-events-none" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                  ) : (
+                    <svg className="w-2.5 h-2.5 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                    </svg>
+                  )}
+                  {printing ? '…' : 'Impr.'}
+                </button>
               )}
               <button
                 onClick={() => pdfInputRef.current?.click()}
