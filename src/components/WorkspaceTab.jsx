@@ -524,11 +524,6 @@ export default function WorkspaceTab({ profile }) {
         </div>
       )}
 
-      {/* Stats bar */}
-      <div className="px-4 py-1.5 bg-white border-b border-gray-100 shrink-0 text-xs text-gray-400">
-        Aujourd'hui&nbsp;:&nbsp;<span className="font-medium text-gray-600">{todayCount}</span>
-        &nbsp;·&nbsp;Cette semaine&nbsp;:&nbsp;<span className="font-medium text-gray-600">{weekCount}</span>
-      </div>
 
       {/* Barre d'onglets par compte */}
       <div className="bg-white border-b border-gray-200 px-4 overflow-x-auto shrink-0">
@@ -540,7 +535,6 @@ export default function WorkspaceTab({ profile }) {
               <button key={compte.id} onClick={() => setActiveTab(compte.id)}
                 className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${isActive ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
                 {compte.pseudo}
-                <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${isActive ? 'bg-teal-100 text-teal-600' : 'bg-gray-100 text-gray-500'}`}>{count}</span>
               </button>
             )
           })}
@@ -552,7 +546,6 @@ export default function WorkspaceTab({ profile }) {
               <button onClick={() => setActiveTab('__none__')}
                 className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${isActive ? 'border-gray-500 text-gray-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
                 Sans compte
-                <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${isActive ? 'bg-gray-200 text-gray-600' : 'bg-gray-100 text-gray-400'}`}>{count}</span>
               </button>
             )
           })()}
@@ -560,7 +553,6 @@ export default function WorkspaceTab({ profile }) {
           <button onClick={() => setActiveTab('__stock__')}
             className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${activeTab === '__stock__' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
             📦 Stock
-            <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${activeTab === '__stock__' ? 'bg-teal-100 text-teal-600' : 'bg-gray-100 text-gray-400'}`}>{stockItems.length}</span>
           </button>
         </div>
       </div>
@@ -690,7 +682,6 @@ export default function WorkspaceTab({ profile }) {
                 <h2 className="text-base font-bold text-gray-900">
                   {activeTab === '__none__' ? 'Sans compte' : assignedAccounts.find(a => a.id === activeTab)?.pseudo ?? ''}
                 </h2>
-                <p className="text-xs text-gray-400 mt-0.5">{tabItems.length} article{tabItems.length !== 1 ? 's' : ''}</p>
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => setShowFondsModal(true)}
