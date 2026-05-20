@@ -134,6 +134,37 @@ export default function App() {
     setItems(prev => [newItem, ...prev])
   }
 
+  async function handleReceptionnerArticle(commandeId, itemId, emplacement) {
+    if (emplacement) {
+      const conflict = items.find(i =>
+        i.id !== itemId && i.status !== 'envoye' && i.emplacement &&
+        i.emplacement.trim().toLowerCase() === emplacement.toLowerCase()
+      )
+      if (conflict) { alert(`L'emplacement "${emplacement}" est déjà occupé.`); return }
+    }
+    try {
+      const { data, error } = await supabase
+        .from('items')
+        .update({ status: 'en_stock', emplacement: emplacement || null })
+        .eq('id', itemId)
+        .select()
+        .single()
+      if (error) throw error
+      setItems(prev => prev.map(i => i.id === data.id ? data : i))
+      const remaining = items.filter(i =>
+        i.commande_id === commandeId && i.id !== itemId && i.status === 'a_recevoir'
+      )
+      if (remaining.length === 0) {
+        await supabase.from('commandes').update({ status: 'recue' }).eq('id', commandeId)
+        setCommandes(prev => prev.filter(c => c.id !== commandeId))
+        setSelectedCommandeId(null)
+        setActiveTab(TAB_TOUT)
+      }
+    } catch (err) {
+      alert('Erreur : ' + err.message)
+    }
+  }
+
   async function handleDeleteCommandeArticle(itemId) {
     const { error } = await supabase.from('items').delete().eq('id', itemId)
     if (!error) setItems(prev => prev.filter(i => i.id !== itemId))
@@ -521,9 +552,11 @@ export default function App() {
             <CommandeDetailView
               commande={selectedCommande}
               items={selectedCommandeItems}
+              stockItems={items.filter(i => i.status !== 'envoye')}
               onBack={() => setSelectedCommandeId(null)}
               onArticleAdded={handleArticleAdded}
               onDeleteArticle={handleDeleteCommandeArticle}
+              onReceiveArticle={handleReceptionnerArticle}
               onReception={(c, i) => setReceptionCommande({ commande: c, items: i })}
               onDelete={handleDeleteCommande}
             />

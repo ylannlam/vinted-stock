@@ -1,9 +1,10 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
+import { getCapacities, getOccupied, firstFreeSlot } from '../lib/emplacements'
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
 
-function ArticleThumb({ item, onDelete }) {
+function ArticleThumb({ item, onDelete, onReceive }) {
   const [confirm, setConfirm] = useState(false)
   return (
     <div className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 bg-gray-100">
@@ -27,14 +28,25 @@ function ArticleThumb({ item, onDelete }) {
           </div>
         </div>
       ) : (
-        <button
-          onClick={() => setConfirm(true)}
-          className="absolute top-1 right-1 w-5 h-5 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-white transition-colors shadow-sm"
-        >
-          <svg className="w-2.5 h-2.5 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        <>
+          <button
+            onClick={() => onReceive()}
+            className="absolute top-1 left-1 w-5 h-5 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-gray-400 hover:text-teal-500 hover:bg-white transition-colors shadow-sm"
+            title="Réceptionner cet article"
+          >
+            <svg className="w-2.5 h-2.5 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+            </svg>
+          </button>
+          <button
+            onClick={() => setConfirm(true)}
+            className="absolute top-1 right-1 w-5 h-5 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-white transition-colors shadow-sm"
+          >
+            <svg className="w-2.5 h-2.5 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </>
       )}
     </div>
   )
@@ -188,8 +200,87 @@ function AddArticleModal({ commandeId, onClose, onAdded }) {
   )
 }
 
-export default function CommandeDetailView({ commande, items, onBack, onArticleAdded, onDeleteArticle, onReception, onDelete }) {
+function ReceiveArticleModal({ item, stockItems, onClose, onConfirm }) {
+  const suggestion = useMemo(() => {
+    return firstFreeSlot(getCapacities(stockItems), getOccupied(stockItems))
+  }, [])
+  const [emplacement, setEmplacement] = useState(suggestion)
+  const [saving, setSaving] = useState(false)
+
+  const occupied = new Set(stockItems.filter(i => i.emplacement).map(i => i.emplacement.trim().toUpperCase()))
+  const conflict = emplacement.trim() && occupied.has(emplacement.trim().toUpperCase())
+
+  async function handleConfirm() {
+    setSaving(true)
+    await onConfirm(item.id, emplacement.trim() || null)
+    setSaving(false)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50"
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-sm">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            {item.photo_url
+              ? <img src={item.photo_url} alt="" className="w-10 h-10 rounded-lg object-cover border border-gray-200 flex-shrink-0" />
+              : <div className="w-10 h-10 rounded-lg bg-gray-100 flex-shrink-0" />
+            }
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Réceptionner l'article</p>
+              <p className="text-xs text-gray-400">Taille {item.size}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition-colors">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Emplacement</label>
+            <div className="relative">
+              <input
+                type="text"
+                value={emplacement}
+                onChange={e => setEmplacement(e.target.value)}
+                placeholder="ex : A1"
+                maxLength={10}
+                autoFocus
+                className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 transition-colors ${
+                  conflict ? 'border-red-300 focus:ring-red-300' : 'border-gray-300 focus:ring-teal-500'
+                }`}
+              />
+              {emplacement && emplacement === suggestion && !conflict && (
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-semibold text-teal-500 bg-teal-50 px-1.5 py-0.5 rounded-full pointer-events-none">
+                  💡 auto
+                </span>
+              )}
+            </div>
+            {conflict && <p className="text-xs text-red-500 mt-1">⚠ Emplacement déjà occupé</p>}
+          </div>
+          <div className="flex gap-3 pb-2">
+            <button type="button" onClick={onClose}
+              className="flex-1 border-2 border-gray-200 text-gray-700 rounded-xl py-3 text-sm font-semibold hover:bg-gray-50 transition-colors">
+              Annuler
+            </button>
+            <button
+              onClick={handleConfirm}
+              disabled={saving || !!conflict}
+              className="flex-1 bg-teal-500 text-white rounded-xl py-3 text-sm font-semibold hover:bg-teal-600 disabled:opacity-40 transition-colors">
+              {saving ? 'Rangement…' : 'Mettre en stock'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function CommandeDetailView({ commande, items, stockItems, onBack, onArticleAdded, onDeleteArticle, onReceiveArticle, onReception, onDelete }) {
   const [showAddArticle, setShowAddArticle] = useState(false)
+  const [receivingArticle, setReceivingArticle] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   return (
@@ -221,6 +312,7 @@ export default function CommandeDetailView({ commande, items, onBack, onArticleA
             key={item.id}
             item={item}
             onDelete={() => onDeleteArticle(item.id)}
+            onReceive={() => setReceivingArticle(item)}
           />
         ))}
         <button
@@ -275,6 +367,18 @@ export default function CommandeDetailView({ commande, items, onBack, onArticleA
           commandeId={commande.id}
           onClose={() => setShowAddArticle(false)}
           onAdded={item => { onArticleAdded(item); setShowAddArticle(false) }}
+        />
+      )}
+
+      {receivingArticle && (
+        <ReceiveArticleModal
+          item={receivingArticle}
+          stockItems={stockItems}
+          onClose={() => setReceivingArticle(null)}
+          onConfirm={async (itemId, emplacement) => {
+            await onReceiveArticle(commande.id, itemId, emplacement)
+            setReceivingArticle(null)
+          }}
         />
       )}
     </div>
