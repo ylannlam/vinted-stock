@@ -36,6 +36,7 @@ export default function App() {
   const [itemsLoading, setItemsLoading] = useState(false)
   const [filterSizes, setFilterSizes] = useState([])
   const [filterSearch, setFilterSearch] = useState('')
+  const [filterShein, setFilterShein] = useState('') // '' | 'with' | 'without'
   const [sortByEmplacement, setSortByEmplacement] = useState(false)
   const [commandes, setCommandes] = useState([])
   const [commandeSearch, setCommandeSearch] = useState('')
@@ -503,6 +504,11 @@ export default function App() {
     const searched = base
       .filter(i => filterSizes.length === 0 || filterSizes.includes(i.size))
       .filter(i => {
+        if (filterShein === 'with') return !!(i.shein_url && i.shein_url.trim())
+        if (filterShein === 'without') return !(i.shein_url && i.shein_url.trim())
+        return true
+      })
+      .filter(i => {
         if (!filterSearch) return true
         const q = filterSearch.toLowerCase()
         return (i.emplacement ?? '').toLowerCase().includes(q) ||
@@ -538,6 +544,8 @@ export default function App() {
           onSizesChange={setFilterSizes}
           searchQuery={filterSearch}
           onSearchChange={setFilterSearch}
+          sheinFilter={filterShein}
+          onSheinFilterChange={setFilterShein}
           sortByEmplacement={sortByEmplacement}
           onSortToggle={() => setSortByEmplacement(v => !v)}
           onShowEmplacements={() => setShowEmplacements(true)}

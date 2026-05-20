@@ -1,11 +1,14 @@
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
 
-export default function FilterBar({ sizes, onSizesChange, searchQuery, onSearchChange, sortByEmplacement, onSortToggle, onShowEmplacements, total }) {
+export default function FilterBar({ sizes, onSizesChange, searchQuery, onSearchChange, sheinFilter, onSheinFilterChange, sortByEmplacement, onSortToggle, onShowEmplacements, total }) {
   function toggleSize(s) {
     onSizesChange(prev => prev.includes(s) ? [] : [s])
   }
+  function toggleShein(v) {
+    onSheinFilterChange(sheinFilter === v ? '' : v)
+  }
 
-  const hasFilters = sizes.length > 0 || searchQuery
+  const hasFilters = sizes.length > 0 || searchQuery || sheinFilter
 
   return (
     <div className="bg-white border-b border-gray-100 px-3 py-2.5 space-y-2">
@@ -75,6 +78,31 @@ export default function FilterBar({ sizes, onSizesChange, searchQuery, onSearchC
         ))}
       </div>
 
+      {/* Filtre Shein */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide w-12 flex-shrink-0">Shein</span>
+        <button
+          onClick={() => toggleShein('with')}
+          className={`text-xs font-semibold px-2.5 py-1 rounded-full border transition-colors ${
+            sheinFilter === 'with'
+              ? 'bg-teal-500 text-white border-teal-500'
+              : 'bg-white text-gray-600 border-gray-200 hover:border-teal-300'
+          }`}
+        >
+          Avec lien
+        </button>
+        <button
+          onClick={() => toggleShein('without')}
+          className={`text-xs font-semibold px-2.5 py-1 rounded-full border transition-colors ${
+            sheinFilter === 'without'
+              ? 'bg-teal-500 text-white border-teal-500'
+              : 'bg-white text-gray-600 border-gray-200 hover:border-teal-300'
+          }`}
+        >
+          Sans lien
+        </button>
+      </div>
+
       {/* Résumé + reset */}
       <div className="flex items-center justify-between">
         <span className="text-xs text-gray-400">
@@ -82,7 +110,7 @@ export default function FilterBar({ sizes, onSizesChange, searchQuery, onSearchC
         </span>
         {hasFilters && (
           <button
-            onClick={() => { onSizesChange([]); onSearchChange('') }}
+            onClick={() => { onSizesChange([]); onSearchChange(''); onSheinFilterChange('') }}
             className="text-xs text-teal-600 font-medium hover:text-teal-800 transition-colors"
           >
             Effacer les filtres
