@@ -17,6 +17,31 @@ export function removeCustomCapacity(letter) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(caps))
 }
 
+const DELETED_KEY = 'vinted_cartons_deleted'
+
+export function getDeletedCartons() {
+  try { return JSON.parse(localStorage.getItem(DELETED_KEY) || '[]') }
+  catch { return [] }
+}
+
+export function softDeleteCarton(letter, capacity) {
+  const l = letter.toUpperCase()
+  const deleted = getDeletedCartons().filter(d => d.letter !== l)
+  deleted.unshift({ letter: l, capacity, deletedAt: new Date().toISOString() })
+  localStorage.setItem(DELETED_KEY, JSON.stringify(deleted))
+  removeCustomCapacity(l)
+}
+
+export function restoreCarton(letter) {
+  const l = letter.toUpperCase()
+  const deleted = getDeletedCartons()
+  const entry = deleted.find(d => d.letter === l)
+  if (entry) {
+    saveCustomCapacity(l, entry.capacity)
+    localStorage.setItem(DELETED_KEY, JSON.stringify(deleted.filter(d => d.letter !== l)))
+  }
+}
+
 // Capacités depuis la base + cartons personnalisés (localStorage)
 // Carton J : toujours au moins 16 ; autres : max observé
 export function getCapacities(items) {

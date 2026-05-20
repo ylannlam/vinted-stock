@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { getCapacities, getCustomCapacities, saveCustomCapacity, removeCustomCapacity } from '../lib/emplacements'
+import { getCapacities, getCustomCapacities, softDeleteCarton, restoreCarton, getDeletedCartons } from '../lib/emplacements'
 
 export default function EmplacementsView({ items, onClose }) {
   const [customCaps, setCustomCaps] = useState(() => getCustomCapacities())
+  const [deletedCartons, setDeletedCartons] = useState(() => getDeletedCartons())
   const [showForm, setShowForm] = useState(false)
   const [newLetter, setNewLetter] = useState('')
   const [newCapacity, setNewCapacity] = useState('')
@@ -43,9 +44,16 @@ export default function EmplacementsView({ items, onClose }) {
     setShowForm(false)
   }
 
-  function handleRemove(letter) {
-    removeCustomCapacity(letter)
+  function handleRemove(letter, capacity) {
+    softDeleteCarton(letter, capacity)
     setCustomCaps(getCustomCapacities())
+    setDeletedCartons(getDeletedCartons())
+  }
+
+  function handleRestore(letter) {
+    restoreCarton(letter)
+    setCustomCaps(getCustomCapacities())
+    setDeletedCartons(getDeletedCartons())
   }
 
   return (
@@ -100,7 +108,7 @@ export default function EmplacementsView({ items, onClose }) {
                   </span>
                   {isCustomOnly && (
                     <button
-                      onClick={() => handleRemove(letter)}
+                      onClick={() => handleRemove(letter, caps[letter])}
                       className="flex-shrink-0 text-gray-300 hover:text-red-400 transition-colors"
                       title="Supprimer ce carton"
                     >
@@ -148,6 +156,44 @@ export default function EmplacementsView({ items, onClose }) {
             <div className="text-center py-8 text-gray-400">
               <p className="font-medium">Aucun carton détecté</p>
               <p className="text-sm mt-1">Ajoutez un carton ci-dessous pour commencer.</p>
+            </div>
+          )}
+
+          {/* Cartons supprimés — restauration */}
+          {deletedCartons.length > 0 && (
+            <div className="border border-dashed border-gray-200 rounded-xl p-4 space-y-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Cartons supprimés</p>
+              {deletedCartons.map(({ letter, capacity }) => {
+                const surviving = (items || []).filter(i => {
+                  if (!i.emplacement) return false
+                  const m = i.emplacement.trim().toUpperCase().match(/^([A-Z])(\d+)$/)
+                  return m && m[1] === letter
+                })
+                return (
+                  <div key={letter} className="flex items-center gap-3 py-1">
+                    <span className="text-sm font-bold text-gray-500 w-8">
+                      {letter}
+                    </span>
+                    <span className="text-xs text-gray-400 flex-1">
+                      {capacity} cases
+                      {surviving.length > 0 && (
+                        <span className="ml-2 text-orange-500 font-semibold">
+                          · {surviving.length} article{surviving.length > 1 ? 's' : ''} non envoyé{surviving.length > 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </span>
+                    <button
+                      onClick={() => handleRestore(letter)}
+                      className="flex items-center gap-1 text-xs font-semibold text-teal-600 bg-teal-50 hover:bg-teal-100 px-2.5 py-1 rounded-full transition-colors flex-shrink-0"
+                    >
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Restaurer
+                    </button>
+                  </div>
+                )
+              })}
             </div>
           )}
 
