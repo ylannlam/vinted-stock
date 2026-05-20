@@ -15,6 +15,7 @@ import WorkspaceTab from './components/WorkspaceTab'
 import EmployeesTab from './components/EmployeesTab'
 import FondsLibrary from './components/FondsLibrary'
 import EmplacementsView from './components/EmplacementsView'
+import LotPdfModal from './components/LotPdfModal'
 import { getCapacities, getOccupied, firstFreeSlot } from './lib/emplacements'
 import AddCommandeModal from './components/AddCommandeModal'
 import CommandeCard from './components/CommandeCard'
@@ -43,7 +44,8 @@ export default function App() {
   const [showAddCommandeModal, setShowAddCommandeModal] = useState(false)
   const [receptionCommande, setReceptionCommande] = useState(null)
   const [showEmplacements, setShowEmplacements] = useState(false)
-  const [showLotModal, setShowLotModal] = useState(false)
+  const [lotSelected, setLotSelected] = useState(new Set())
+  const [showLotPdfModal, setShowLotPdfModal] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [editItem, setEditItem] = useState(null)
   const [soldItem, setSoldItem] = useState(null)
@@ -526,20 +528,6 @@ export default function App() {
       {activeTab === TAB_COMPTES_VINTED && <VintedAccountsTab />}
       {activeTab === TAB_FONDS && <FondsLibrary />}
 
-      {activeTab === TAB_TOUT && (
-        <div className="flex items-center justify-end px-3 py-1.5 bg-white border-b border-gray-100">
-          <button
-            onClick={() => setShowLotModal(true)}
-            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full bg-green-50 text-green-600 hover:bg-green-100 transition-colors"
-          >
-            <svg className="w-3.5 h-3.5 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-            </svg>
-            Faire un lot
-          </button>
-        </div>
-      )}
 
       {activeTab === TAB_TOUT && (
         <FilterBar
@@ -634,6 +622,8 @@ export default function App() {
         <Gallery
           items={filteredItems}
           loading={itemsLoading}
+          lotSelected={activeTab === TAB_TOUT ? lotSelected : null}
+          onToggleLot={id => setLotSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })}
           onMarkSold={setSoldItem}
           onMarkSent={handleMarkSent}
           onMarkUnsent={handleMarkUnsent}
@@ -677,10 +667,47 @@ export default function App() {
         />
       )}
 
+      {/* Barre flottante sélection lot */}
+      {activeTab === TAB_TOUT && lotSelected.size > 0 && (
+        <div className="fixed bottom-6 left-4 right-4 z-40">
+          <div className="bg-teal-600 rounded-2xl px-4 py-3 flex items-center justify-between shadow-xl">
+            <span className="text-white text-sm font-semibold">
+              {lotSelected.size} article{lotSelected.size > 1 ? 's' : ''} sélectionné{lotSelected.size > 1 ? 's' : ''}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setLotSelected(new Set())}
+                className="text-white/70 text-sm hover:text-white transition-colors px-2 py-1"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => setShowLotPdfModal(true)}
+                className="bg-white text-teal-700 text-sm font-semibold px-3 py-1.5 rounded-xl hover:bg-teal-50 transition-colors"
+              >
+                Créer le lot →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showEmplacements && (
         <EmplacementsView
           items={items.filter(i => i.status !== 'envoye')}
           onClose={() => setShowEmplacements(false)}
+        />
+      )}
+
+      {showLotPdfModal && (
+        <LotPdfModal
+          count={lotSelected.size}
+          onClose={() => setShowLotPdfModal(false)}
+          onConfirm={async file => {
+            await handleCreateLot([...lotSelected], file)
+            setLotSelected(new Set())
+            setShowLotPdfModal(false)
+          }}
         />
       )}
 

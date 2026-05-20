@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 
-export default function ItemCard({ item, onMarkSold, onMarkSent, onMarkUnsent, onRemettreEnVente, onRemettreEnStock, onDelete, onUpdateEmplacement, onBordereauDrop, onPhotoDrop, onEdit, onMarkReceived, onToggleReception }) {
+export default function ItemCard({ item, isLotSelected, onToggleLot, onMarkSold, onMarkSent, onMarkUnsent, onRemettreEnVente, onRemettreEnStock, onDelete, onUpdateEmplacement, onBordereauDrop, onPhotoDrop, onEdit, onMarkReceived, onToggleReception }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmSent, setConfirmSent] = useState(false)
   const [confirmReceived, setConfirmReceived] = useState(false)
@@ -91,6 +91,7 @@ export default function ItemCard({ item, onMarkSold, onMarkSent, onMarkUnsent, o
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`bg-white rounded-xl overflow-hidden shadow-sm border transition-all relative ${
+        isLotSelected ? 'border-teal-400 ring-2 ring-teal-200 shadow-md' :
         dragType === 'image' ? 'border-teal-400 scale-[1.02] shadow-md' :
         dragType === 'pdf'   ? 'border-blue-400 scale-[1.02] shadow-md' :
         isOrdered   ? 'border-purple-200' :
@@ -164,6 +165,25 @@ export default function ItemCard({ item, onMarkSold, onMarkSent, onMarkUnsent, o
               {item.size}
             </span>
           </div>
+        )}
+
+        {/* Cercle sélection lot — bas gauche (stock uniquement) */}
+        {isStock && onToggleLot && (
+          <button
+            onClick={e => { e.stopPropagation(); onToggleLot(item.id) }}
+            className={`absolute bottom-1.5 left-1.5 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all shadow-sm ${
+              isLotSelected
+                ? 'bg-teal-500 border-teal-500'
+                : 'bg-white/80 backdrop-blur-sm border-gray-300 hover:border-teal-400'
+            }`}
+            aria-label="Sélectionner pour lot"
+          >
+            {isLotSelected && (
+              <svg className="w-3 h-3 text-white pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+          </button>
         )}
 
         {/* Bouton édition — bas droite */}
