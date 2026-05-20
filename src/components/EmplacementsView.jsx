@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { getCapacities, getCustomCapacities, softDeleteCarton, restoreCarton, getDeletedCartons } from '../lib/emplacements'
+import { getCapacities, getCustomCapacities, saveCustomCapacity, softDeleteCarton, restoreCarton, getDeletedCartons } from '../lib/emplacements'
 
 export default function EmplacementsView({ items, onClose }) {
   const [customCaps, setCustomCaps] = useState(() => getCustomCapacities())
