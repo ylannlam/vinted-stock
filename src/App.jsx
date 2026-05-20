@@ -547,7 +547,7 @@ export default function App() {
 
       {activeTab === TAB_A_RECEVOIR && (() => {
         const selectedCommande = selectedCommandeId ? commandes.find(c => c.id === selectedCommandeId) : null
-        const selectedCommandeItems = selectedCommandeId ? items.filter(i => i.commande_id === selectedCommandeId) : []
+        const selectedCommandeItems = selectedCommandeId ? items.filter(i => i.commande_id === selectedCommandeId && i.status === 'a_recevoir') : []
 
         if (selectedCommande) {
           return (
@@ -609,7 +609,7 @@ export default function App() {
                   <CommandeCard
                     key={cmd.id}
                     commande={cmd}
-                    items={items.filter(i => i.commande_id === cmd.id)}
+                    items={items.filter(i => i.commande_id === cmd.id && i.status === 'a_recevoir')}
                     onSelect={c => setSelectedCommandeId(c.id)}
                     onReception={(c, i) => setReceptionCommande({ commande: c, items: i })}
                     onDelete={handleDeleteCommande}
