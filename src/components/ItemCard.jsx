@@ -191,19 +191,6 @@ export default function ItemCard({ item, onMarkSold, onMarkSent, onMarkUnsent, o
           </div>
         )}
 
-        {/* Badge + toggle "À récupérer" — visible uniquement sur À envoyer */}
-        {isPending && (
-          <button
-            onClick={() => onToggleReception(item.id, !item.reception_needed)}
-            className={`w-full mb-1 text-[10px] font-semibold px-2 py-0.5 rounded-full text-center transition-colors ${
-              item.reception_needed
-                ? 'bg-purple-500 text-white'
-                : 'bg-gray-100 text-gray-400 hover:bg-purple-100 hover:text-purple-500'
-            }`}
-          >
-            {item.reception_needed ? '📦 À récupérer en stock' : '+ À récupérer ?'}
-          </button>
-        )}
 
         <div className="flex items-center justify-between gap-1">
           {/* Taille + lien Shein */}
