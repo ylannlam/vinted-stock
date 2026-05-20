@@ -20,17 +20,16 @@ export default function ItemCard({ item, isLotSelected, onToggleLot, onMarkSold,
       if (!res.ok) throw new Error()
       const blob = await res.blob()
       const blobUrl = URL.createObjectURL(blob)
-      const iframe = document.createElement('iframe')
-      iframe.style.cssText = 'position:fixed;top:-1px;left:-1px;width:0;height:0;overflow:hidden;border:0;opacity:0;'
-      document.body.appendChild(iframe)
-      iframe.onload = () => {
-        try { iframe.contentWindow.print() } catch { window.open(item.bordereau_url, '_blank') }
-        setTimeout(() => { document.body.removeChild(iframe); URL.revokeObjectURL(blobUrl) }, 1000)
-        setPrinting(false)
+      const w = window.open(blobUrl, '_blank')
+      if (!w) {
+        window.open(item.bordereau_url, '_blank')
+      } else {
+        w.onload = () => { try { w.print() } catch {} }
       }
-      iframe.src = blobUrl
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
     } catch {
       window.open(item.bordereau_url, '_blank')
+    } finally {
       setPrinting(false)
     }
   }
