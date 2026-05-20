@@ -175,6 +175,8 @@ export default function EmployeesTab() {
   }
 
   async function handleDelete(userId) {
+    const target = profiles.find(p => p.id === userId)
+    if (target?.role === 'admin') { setDeleteError('Impossible de supprimer un compte admin.'); return }
     setDeleting(true)
     setDeleteError('')
     try {
@@ -557,7 +559,9 @@ export default function EmployeesTab() {
                     </button>
                     <button
                       onClick={() => { setDeleteConfirm(profile.id); setDeleteError('') }}
-                      className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+                      disabled={profile.role === 'admin'}
+                      className={`p-1.5 transition-colors ${profile.role === 'admin' ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-red-500'}`}
+                      title={profile.role === 'admin' ? 'Impossible de supprimer un compte admin' : 'Supprimer'}
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
