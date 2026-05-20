@@ -251,6 +251,17 @@ export default function App() {
     if (!error) setItems(prev => prev.filter(i => i.id !== itemId))
   }
 
+  async function handleRemettreEnStock(item) {
+    const { data, error } = await supabase
+      .from('items')
+      .update({ status: 'en_stock', bordereau_url: null, sold_at: null })
+      .eq('id', item.id)
+      .select()
+      .single()
+    if (error) { alert('Erreur : ' + error.message); return }
+    if (data) setItems(prev => prev.map(i => i.id === data.id ? data : i))
+  }
+
   async function handleRemettreEnVente(item) {
     const nonSent = items.filter(i => i.id !== item.id && i.status !== 'envoye')
     const emplacement = firstFreeSlot(getCapacities(nonSent), getOccupied(nonSent)) || null
@@ -627,6 +638,7 @@ export default function App() {
           onMarkSent={handleMarkSent}
           onMarkUnsent={handleMarkUnsent}
           onRemettreEnVente={handleRemettreEnVente}
+          onRemettreEnStock={handleRemettreEnStock}
           onMarkReceived={handleMarkReceived}
           onDelete={handleDelete}
           onUpdateEmplacement={handleUpdateEmplacement}
