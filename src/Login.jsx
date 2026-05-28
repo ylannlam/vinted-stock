@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from './lib/supabase'
+import { recordLogin } from './lib/loginLog'
 
 function pseudoToEmail(pseudo) {
   return `${pseudo.toLowerCase().trim().replace(/[^a-z0-9_-]/g, '_')}@vinted-stock.app`
@@ -15,11 +16,12 @@ export default function Login() {
     e.preventDefault()
     setLoading(true)
     setError('')
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email: pseudoToEmail(pseudo),
       password,
     })
     if (error) setError('Pseudo ou mot de passe incorrect.')
+    else if (data?.user) recordLogin(data.user.id)
     setLoading(false)
   }
 

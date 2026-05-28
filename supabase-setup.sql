@@ -341,3 +341,35 @@ CREATE POLICY "vinted_accounts_employee_read" ON vinted_accounts
         AND employe_comptes.employe_id = auth.uid()
     )
   );
+
+-- ============================================================
+-- MIGRATION v17 — Journal des connexions
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.login_logs (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID        REFERENCES profiles(id) ON DELETE SET NULL,
+  pseudo      TEXT,
+  email       TEXT,
+  role        TEXT,
+  ip_address  TEXT,
+  ville       TEXT,
+  pays        TEXT,
+  appareil    TEXT,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS login_logs_created_at_idx ON public.login_logs (created_at DESC);
+CREATE INDEX IF NOT EXISTS login_logs_user_id_idx    ON public.login_logs (user_id);
+
+ALTER TABLE public.login_logs ENABLE ROW LEVEL SECURITY;
+
+-- Seul l'admin peut lire le journal
+DROP POLICY IF EXISTS "login_logs_admin_read" ON public.login_logs;
+CREATE POLICY "login_logs_admin_read" ON public.login_logs
+  FOR SELECT USING (get_my_role() = 'admin');
+
+-- Tout utilisateur authentifié peut enregistrer sa propre connexion
+DROP POLICY IF EXISTS "login_logs_self_insert" ON public.login_logs;
+CREATE POLICY "login_logs_self_insert" ON public.login_logs
+  FOR INSERT TO authenticated
+  WITH CHECK (auth.uid() = user_id);
