@@ -129,7 +129,7 @@ export default function App() {
   function handleCreateCommande(commande) {
     setCommandes(prev => [commande, ...prev])
     setShowAddCommandeModal(false)
-    setActiveTab(TAB_A_RECEVOIR)
+    setActiveTab(prev => prev === TAB_TOUT ? prev : TAB_A_RECEVOIR)
     setSelectedCommandeId(commande.id)
   }
 
@@ -226,7 +226,7 @@ export default function App() {
 
   function handleItemAdded(newItems) {
     setItems(prev => [...newItems, ...prev])
-    setActiveTab(newItems[0].status === 'a_recevoir' ? TAB_A_RECEVOIR : TAB_TOUT)
+    setActiveTab(prev => prev === TAB_TOUT ? prev : (newItems[0].status === 'a_recevoir' ? TAB_A_RECEVOIR : TAB_TOUT))
     setShowAddModal(false)
   }
 
@@ -245,7 +245,7 @@ export default function App() {
     if (error) { alert('Erreur : ' + error.message); return }
     if (data) {
       setItems(prev => prev.map(i => i.id === data.id ? data : i))
-      setActiveTab(TAB_ENVOYES)
+      setActiveTab(prev => prev === TAB_TOUT ? prev : TAB_ENVOYES)
     }
   }
 
@@ -279,7 +279,7 @@ export default function App() {
     if (error) { alert('Erreur : ' + error.message); return }
     if (data) {
       setItems(prev => prev.map(i => i.id === data.id ? data : i))
-      setActiveTab(TAB_TOUT)
+      setActiveTab(prev => prev === TAB_TOUT ? prev : TAB_TOUT)
     }
   }
 
@@ -305,7 +305,7 @@ export default function App() {
     if (error) { alert('Erreur : ' + error.message); return }
     if (data) {
       setItems(prev => prev.map(i => i.id === data.id ? data : i))
-      setActiveTab(TAB_TOUT)
+      setActiveTab(prev => prev === TAB_TOUT ? prev : TAB_TOUT)
     }
   }
 
@@ -341,7 +341,7 @@ export default function App() {
       if (error) throw error
       if (data) {
         setItems(prev => prev.map(i => data.find(d => d.id === i.id) ?? i))
-        setActiveTab(TAB_A_ENVOYER_LOT)
+        setActiveTab(prev => prev === TAB_TOUT ? prev : TAB_A_ENVOYER_LOT)
       }
     } catch (err) {
       alert('Erreur : ' + err.message)
@@ -357,7 +357,7 @@ export default function App() {
       if (error) throw error
       if (data) {
         setItems(prev => prev.map(i => data.find(d => d.id === i.id) ?? i))
-        setActiveTab(TAB_ENVOYES)
+        setActiveTab(prev => prev === TAB_TOUT ? prev : TAB_ENVOYES)
       }
     } catch (err) {
       alert('Erreur : ' + err.message)
