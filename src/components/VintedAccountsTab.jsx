@@ -58,9 +58,29 @@ export default function VintedAccountsTab() {
       supabase.from('vinted_accounts').select('*').order('created_at', { ascending: false }),
       supabase.from('proxies').select('*').order('created_at', { ascending: false }),
     ])
-    if (aData) setAccounts(aData)
+    if (aData) setAccounts(await autoUnban(aData))
     if (pData) setProxies(pData)
     setLoading(false)
+  }
+
+  async function autoUnban(list) {
+    const now = new Date()
+    const expired = list.filter(a =>
+      a.statut === 'banni_temp' && a.deban_at && new Date(a.deban_at) <= now
+    )
+    if (expired.length === 0) return list
+    const ids = expired.map(a => a.id)
+    const { data, error } = await supabase
+      .from('vinted_accounts')
+      .update({ statut: 'actif', deban_at: null })
+      .in('id', ids)
+      .select()
+    if (error || !data) {
+      console.warn('auto-unban failed:', error?.message)
+      return list
+    }
+    const updated = new Map(data.map(d => [d.id, d]))
+    return list.map(a => updated.get(a.id) ?? a)
   }
 
   const proxiesById = useMemo(() => {
