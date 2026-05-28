@@ -188,7 +188,7 @@ export default function AccountFormModal({ account, proxies = [], onClose, onSav
                     onChange={e => set('proxy_id', e.target.value)}
                     className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-teal-400 bg-white"
                   >
-                    <option value="">— Aucun —</option>
+                    <option value="">Sans proxy (téléphone)</option>
                     {proxies.map(p => (
                       <option key={p.id} value={p.id}>
                         {p.adresse}:{p.port} — {p.username}{p.nom ? ` (${p.nom})` : ''}

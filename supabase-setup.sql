@@ -399,3 +399,8 @@ ALTER TABLE public.vinted_accounts
   ADD COLUMN IF NOT EXISTS proxy_id UUID REFERENCES public.proxies(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS vinted_accounts_proxy_id_idx ON public.vinted_accounts (proxy_id);
+
+-- ============================================================
+-- MIGRATION v19 — proxy_id nullable (création compte sans proxy)
+-- ============================================================
+ALTER TABLE public.vinted_accounts ALTER COLUMN proxy_id DROP NOT NULL;

@@ -47,6 +47,7 @@ export default function VintedAccountsTab() {
   const [showProxyModal, setShowProxyModal] = useState(false)
   const [deleteId, setDeleteId] = useState(null)
   const [expanded, setExpanded] = useState(null)
+  const [quickAssignFor, setQuickAssignFor] = useState(null)
 
   useEffect(() => { fetchAll() }, [])
 
@@ -105,6 +106,20 @@ export default function VintedAccountsTab() {
     if (expanded === id) setExpanded(null)
   }
 
+  async function handleAssignProxy(accountId, proxyId) {
+    const { data, error } = await supabase
+      .from('vinted_accounts')
+      .update({ proxy_id: proxyId || null })
+      .eq('id', accountId)
+      .select()
+      .single()
+    if (error) { alert('Erreur : ' + error.message); return }
+    if (data) setAccounts(prev => prev.map(a => a.id === data.id ? data : a))
+    setQuickAssignFor(null)
+  }
+
+  const sansProxyCount = accounts.filter(a => !a.proxy_id).length
+
   const ORDER = { actif: 0, banni_temp: 1, suspendu: 2, banni_def: 3 }
   const displayed = accounts
     .filter(a => !filterStatut || a.statut === filterStatut)
@@ -117,6 +132,22 @@ export default function VintedAccountsTab() {
 
   return (
     <div className="pb-28">
+
+      {sansProxyCount > 0 && (
+        <button
+          onClick={() => setFilterProxy(filterProxy === '__none__' ? null : '__none__')}
+          className={`w-full px-4 py-2 text-xs font-semibold border-b transition-colors flex items-center justify-center gap-2 ${
+            filterProxy === '__none__'
+              ? 'bg-orange-500 text-white border-orange-600'
+              : 'bg-orange-50 text-orange-700 border-orange-100 hover:bg-orange-100'
+          }`}
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          {sansProxyCount} compte{sansProxyCount > 1 ? 's' : ''} sans proxy {filterProxy === '__none__' ? '· cliquer pour tout afficher' : '· cliquer pour filtrer'}
+        </button>
+      )}
 
       {/* Header + filtres */}
       <div className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 overflow-x-auto scrollbar-hide">
@@ -207,12 +238,16 @@ export default function VintedAccountsTab() {
                 {account.email && (
                   <p className="text-xs text-gray-400 truncate mt-0.5">{account.email}</p>
                 )}
-                {account.proxy_id && proxiesById.get(account.proxy_id) && (
+                {account.proxy_id && proxiesById.get(account.proxy_id) ? (
                   <p className="text-[10px] text-blue-600 font-medium truncate mt-0.5 flex items-center gap-1">
                     <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064" />
                     </svg>
                     {proxiesById.get(account.proxy_id).nom || `${proxiesById.get(account.proxy_id).adresse}:${proxiesById.get(account.proxy_id).port}`}
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-orange-600 font-bold truncate mt-0.5 flex items-center gap-1">
+                    📱 Sans proxy (téléphone)
                   </p>
                 )}
               </div>
@@ -253,6 +288,41 @@ export default function VintedAccountsTab() {
                 {account.notes && (
                   <div className="mt-2 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
                     <p className="text-xs text-yellow-700">{account.notes}</p>
+                  </div>
+                )}
+                {!account.proxy_id && (
+                  <div className="mt-2">
+                    {quickAssignFor === account.id ? (
+                      <div className="flex gap-2 items-center bg-orange-50 border border-orange-200 rounded-xl px-2.5 py-2">
+                        <select
+                          autoFocus
+                          defaultValue=""
+                          onChange={e => e.target.value && handleAssignProxy(account.id, e.target.value)}
+                          className="flex-1 text-xs border border-orange-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-teal-400"
+                        >
+                          <option value="" disabled>Choisir un proxy…</option>
+                          {proxies.map(p => (
+                            <option key={p.id} value={p.id}>
+                              {p.adresse}:{p.port} — {p.username}{p.nom ? ` (${p.nom})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => setQuickAssignFor(null)}
+                          className="text-xs font-semibold text-gray-500 px-2 py-1.5 rounded-lg hover:bg-gray-100"
+                        >
+                          Annuler
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setQuickAssignFor(account.id)}
+                        disabled={proxies.length === 0}
+                        className="w-full py-2 text-xs font-semibold bg-orange-100 text-orange-700 rounded-xl hover:bg-orange-200 transition-colors disabled:opacity-50"
+                      >
+                        {proxies.length === 0 ? 'Crée un proxy d\'abord' : '🔗 Assigner un proxy'}
+                      </button>
+                    )}
                   </div>
                 )}
                 <div className="flex gap-2 pt-1">
