@@ -373,3 +373,29 @@ DROP POLICY IF EXISTS "login_logs_self_insert" ON public.login_logs;
 CREATE POLICY "login_logs_self_insert" ON public.login_logs
   FOR INSERT TO authenticated
   WITH CHECK (auth.uid() = user_id);
+
+-- ============================================================
+-- MIGRATION v18 — Proxies ISP + lien vinted_accounts
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.proxies (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  nom          TEXT,
+  adresse      TEXT        NOT NULL,
+  port         INTEGER     NOT NULL,
+  username     TEXT        NOT NULL,
+  password     TEXT        NOT NULL,
+  fournisseur  TEXT,
+  notes        TEXT,
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.proxies ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "proxies_admin" ON public.proxies;
+CREATE POLICY "proxies_admin" ON public.proxies
+  FOR ALL USING (get_my_role() = 'admin');
+
+ALTER TABLE public.vinted_accounts
+  ADD COLUMN IF NOT EXISTS proxy_id UUID REFERENCES public.proxies(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS vinted_accounts_proxy_id_idx ON public.vinted_accounts (proxy_id);

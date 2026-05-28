@@ -12,10 +12,11 @@ const EMPTY = {
   statut: 'actif',
   deban_at: '',
   notes: '',
+  proxy_id: '',
 }
 
-export default function AccountFormModal({ account, onClose, onSave }) {
-  const [form, setForm] = useState(account ? { ...account } : { ...EMPTY })
+export default function AccountFormModal({ account, proxies = [], onClose, onSave, onCreateProxy }) {
+  const [form, setForm] = useState(account ? { ...account, proxy_id: account.proxy_id ?? '' } : { ...EMPTY })
   const [saving, setSaving] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showDetails, setShowDetails] = useState(!!account)
@@ -178,6 +179,30 @@ export default function AccountFormModal({ account, onClose, onSave }) {
                     className="w-full border border-orange-200 bg-orange-50 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-orange-400" />
                 </div>
               )}
+
+              <div>
+                <label className="text-xs font-semibold text-gray-500 mb-1 block">Proxy</label>
+                <div className="flex gap-2">
+                  <select
+                    value={form.proxy_id ?? ''}
+                    onChange={e => set('proxy_id', e.target.value)}
+                    className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-teal-400 bg-white"
+                  >
+                    <option value="">— Aucun —</option>
+                    {proxies.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.adresse}:{p.port} — {p.username}{p.nom ? ` (${p.nom})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {onCreateProxy && (
+                    <button type="button" onClick={onCreateProxy}
+                      className="px-3 py-2.5 text-xs font-semibold border border-dashed border-teal-300 text-teal-600 rounded-xl hover:bg-teal-50 transition-colors whitespace-nowrap">
+                      + Nouveau
+                    </button>
+                  )}
+                </div>
+              </div>
 
               <div>
                 <label className="text-xs font-semibold text-gray-500 mb-1 block">Notes</label>

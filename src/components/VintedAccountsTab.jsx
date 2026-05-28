@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import AccountFormModal from './AccountFormModal'
+import ProxyFormModal from './ProxyFormModal'
 
 const STATUTS = [
   { value: 'actif',      label: 'Actif',       bg: 'bg-green-100 text-green-700' },
@@ -38,22 +39,44 @@ function DebanCountdown({ deban_at }) {
 
 export default function VintedAccountsTab() {
   const [accounts, setAccounts] = useState([])
+  const [proxies, setProxies] = useState([])
   const [loading, setLoading] = useState(true)
   const [filterStatut, setFilterStatut] = useState(null)
+  const [filterProxy, setFilterProxy] = useState(null)
   const [editAccount, setEditAccount] = useState(undefined)
+  const [showProxyModal, setShowProxyModal] = useState(false)
   const [deleteId, setDeleteId] = useState(null)
   const [expanded, setExpanded] = useState(null)
 
-  useEffect(() => { fetchAccounts() }, [])
+  useEffect(() => { fetchAll() }, [])
 
-  async function fetchAccounts() {
+  async function fetchAll() {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('vinted_accounts')
-      .select('*')
-      .order('created_at', { ascending: false })
-    if (!error && data) setAccounts(data)
+    const [{ data: aData }, { data: pData }] = await Promise.all([
+      supabase.from('vinted_accounts').select('*').order('created_at', { ascending: false }),
+      supabase.from('proxies').select('*').order('created_at', { ascending: false }),
+    ])
+    if (aData) setAccounts(aData)
+    if (pData) setProxies(pData)
     setLoading(false)
+  }
+
+  const proxiesById = useMemo(() => {
+    const m = new Map()
+    for (const p of proxies) m.set(p.id, p)
+    return m
+  }, [proxies])
+
+  async function handleSaveProxy(form) {
+    const { id, created_at, ...raw } = form
+    const fields = Object.fromEntries(
+      Object.entries(raw).map(([k, v]) => [k, v === '' ? null : v])
+    )
+    const { data, error } = await supabase
+      .from('proxies').insert(fields).select().single()
+    if (error) { alert('Erreur : ' + error.message); return }
+    if (data) setProxies(prev => [data, ...prev])
+    setShowProxyModal(false)
   }
 
   async function handleSave(form) {
@@ -83,7 +106,13 @@ export default function VintedAccountsTab() {
   }
 
   const ORDER = { actif: 0, banni_temp: 1, suspendu: 2, banni_def: 3 }
-  const displayed = (filterStatut ? accounts.filter(a => a.statut === filterStatut) : accounts)
+  const displayed = accounts
+    .filter(a => !filterStatut || a.statut === filterStatut)
+    .filter(a => {
+      if (filterProxy === null) return true
+      if (filterProxy === '__none__') return !a.proxy_id
+      return a.proxy_id === filterProxy
+    })
     .sort((a, b) => (ORDER[a.statut] ?? 9) - (ORDER[b.statut] ?? 9))
 
   return (
@@ -114,6 +143,25 @@ export default function VintedAccountsTab() {
           )
         })}
       </div>
+
+      {proxies.length > 0 && (
+        <div className="bg-white border-b border-gray-100 px-4 py-2 flex items-center gap-2 overflow-x-auto scrollbar-hide">
+          <span className="text-[10px] uppercase font-semibold text-gray-400 shrink-0">Proxy</span>
+          <select
+            value={filterProxy ?? ''}
+            onChange={e => setFilterProxy(e.target.value === '' ? null : e.target.value)}
+            className="text-xs border border-gray-200 rounded-full px-3 py-1 bg-gray-50 focus:outline-none focus:border-teal-400"
+          >
+            <option value="">Tous</option>
+            <option value="__none__">— Sans proxy —</option>
+            {proxies.map(p => (
+              <option key={p.id} value={p.id}>
+                {p.nom || `${p.adresse}:${p.port}`} ({accounts.filter(a => a.proxy_id === p.id).length})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Liste */}
       <div className="px-3 pt-3 space-y-2">
@@ -158,6 +206,14 @@ export default function VintedAccountsTab() {
                 </div>
                 {account.email && (
                   <p className="text-xs text-gray-400 truncate mt-0.5">{account.email}</p>
+                )}
+                {account.proxy_id && proxiesById.get(account.proxy_id) && (
+                  <p className="text-[10px] text-blue-600 font-medium truncate mt-0.5 flex items-center gap-1">
+                    <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064" />
+                    </svg>
+                    {proxiesById.get(account.proxy_id).nom || `${proxiesById.get(account.proxy_id).adresse}:${proxiesById.get(account.proxy_id).port}`}
+                  </p>
                 )}
               </div>
               <svg
@@ -245,8 +301,18 @@ export default function VintedAccountsTab() {
       {editAccount !== undefined && (
         <AccountFormModal
           account={editAccount}
+          proxies={proxies}
           onClose={() => setEditAccount(undefined)}
           onSave={handleSave}
+          onCreateProxy={() => setShowProxyModal(true)}
+        />
+      )}
+
+      {showProxyModal && (
+        <ProxyFormModal
+          proxy={null}
+          onClose={() => setShowProxyModal(false)}
+          onSave={handleSaveProxy}
         />
       )}
     </div>
