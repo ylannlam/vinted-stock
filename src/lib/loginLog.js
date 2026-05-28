@@ -20,22 +20,40 @@ function parseUserAgent(ua) {
   return `${browser} sur ${os}`
 }
 
-async function fetchGeo() {
+async function fetchWithTimeout(url, ms = 3000) {
+  const ctrl = new AbortController()
+  const t = setTimeout(() => ctrl.abort(), ms)
   try {
-    const ctrl = new AbortController()
-    const timeout = setTimeout(() => ctrl.abort(), 3000)
-    const res = await fetch('https://ipapi.co/json/', { signal: ctrl.signal })
-    clearTimeout(timeout)
-    if (!res.ok) return {}
-    const data = await res.json()
-    return {
-      ip:    data.ip   ?? null,
-      ville: data.city ?? null,
-      pays:  data.country_name ?? data.country ?? null,
-    }
+    const res = await fetch(url, { signal: ctrl.signal })
+    if (!res.ok) return null
+    return await res.json()
   } catch {
-    return {}
+    return null
+  } finally {
+    clearTimeout(t)
   }
+}
+
+async function fetchGeo() {
+  const a = await fetchWithTimeout('https://ipapi.co/json/')
+  if (a && (a.ip || a.city || a.country_name)) {
+    return {
+      ip:    a.ip           ?? null,
+      ville: a.city         ?? null,
+      pays:  a.country_name ?? a.country ?? null,
+    }
+  }
+  const b = await fetchWithTimeout('https://ip-api.com/json')
+  if (b && (b.query || b.city || b.country)) {
+    return {
+      ip:    b.query   ?? null,
+      ville: b.city    ?? null,
+      pays:  b.country ?? null,
+    }
+  }
+  const c = await fetchWithTimeout('https://api.ipify.org?format=json')
+  if (c?.ip) return { ip: c.ip, ville: null, pays: null }
+  return {}
 }
 
 export async function recordLogin(userId) {
