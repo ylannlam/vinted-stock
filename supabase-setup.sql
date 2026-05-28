@@ -404,3 +404,10 @@ CREATE INDEX IF NOT EXISTS vinted_accounts_proxy_id_idx ON public.vinted_account
 -- MIGRATION v19 — proxy_id nullable (création compte sans proxy)
 -- ============================================================
 ALTER TABLE public.vinted_accounts ALTER COLUMN proxy_id DROP NOT NULL;
+
+-- ============================================================
+-- MIGRATION v20 — Statut "en_preparation" (1re annonce postée, en attente de vérif)
+-- ============================================================
+ALTER TABLE public.vinted_accounts DROP CONSTRAINT IF EXISTS vinted_accounts_statut_check;
+ALTER TABLE public.vinted_accounts ADD CONSTRAINT vinted_accounts_statut_check
+  CHECK (statut IN ('en_preparation', 'actif', 'banni_temp', 'banni_def', 'suspendu'));

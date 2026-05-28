@@ -76,6 +76,19 @@ export default function AccountFormModal({ account, proxies = [], onClose, onSav
             </div>
           </div>
 
+          {/* Quick toggle "En préparation" — toujours visible */}
+          <button
+            type="button"
+            onClick={() => set('statut', form.statut === 'en_preparation' ? 'actif' : 'en_preparation')}
+            className={`w-full py-2 rounded-xl text-xs font-semibold border transition-colors ${
+              form.statut === 'en_preparation'
+                ? 'bg-purple-500 text-white border-purple-500'
+                : 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100'
+            }`}
+          >
+            {form.statut === 'en_preparation' ? '✓ En préparation (1re annonce postée, pas encore sur proxy)' : 'Marquer en préparation'}
+          </button>
+
           {/* Accordéon détails */}
           {!showDetails && !account && (
             <button
@@ -158,10 +171,11 @@ export default function AccountFormModal({ account, proxies = [], onClose, onSav
                 <label className="text-xs font-semibold text-gray-500 mb-1 block">Statut</label>
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    { value: 'actif',      label: 'Actif',       color: 'bg-green-50 text-green-700 border-green-200',   active: 'bg-green-500 text-white border-green-500' },
-                    { value: 'banni_temp', label: 'Banni temp.', color: 'bg-orange-50 text-orange-700 border-orange-200', active: 'bg-orange-500 text-white border-orange-500' },
-                    { value: 'banni_def',  label: 'Banni déf.',  color: 'bg-red-50 text-red-700 border-red-200',         active: 'bg-red-500 text-white border-red-500' },
-                    { value: 'suspendu',   label: 'Suspendu',    color: 'bg-gray-50 text-gray-600 border-gray-200',      active: 'bg-gray-500 text-white border-gray-500' },
+                    { value: 'en_preparation', label: 'En préparation', color: 'bg-purple-50 text-purple-700 border-purple-200', active: 'bg-purple-500 text-white border-purple-500' },
+                    { value: 'actif',          label: 'Actif',          color: 'bg-green-50 text-green-700 border-green-200',    active: 'bg-green-500 text-white border-green-500' },
+                    { value: 'banni_temp',     label: 'Banni temp.',    color: 'bg-orange-50 text-orange-700 border-orange-200', active: 'bg-orange-500 text-white border-orange-500' },
+                    { value: 'banni_def',      label: 'Banni déf.',     color: 'bg-red-50 text-red-700 border-red-200',          active: 'bg-red-500 text-white border-red-500' },
+                    { value: 'suspendu',       label: 'Suspendu',       color: 'bg-gray-50 text-gray-600 border-gray-200',       active: 'bg-gray-500 text-white border-gray-500' },
                   ].map(s => (
                     <button key={s.value} type="button" onClick={() => set('statut', s.value)}
                       className={`py-2 rounded-xl text-sm font-medium border transition-colors ${form.statut === s.value ? s.active : s.color}`}>
@@ -169,6 +183,11 @@ export default function AccountFormModal({ account, proxies = [], onClose, onSav
                     </button>
                   ))}
                 </div>
+                {form.statut === 'en_preparation' && (
+                  <p className="text-[11px] text-purple-600 mt-1.5 leading-snug">
+                    1re annonce postée — en attente de vérification, pas encore sur proxy.
+                  </p>
+                )}
               </div>
 
               {form.statut === 'banni_temp' && (

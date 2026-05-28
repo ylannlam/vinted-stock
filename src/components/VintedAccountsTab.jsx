@@ -4,10 +4,11 @@ import AccountFormModal from './AccountFormModal'
 import ProxyFormModal from './ProxyFormModal'
 
 const STATUTS = [
-  { value: 'actif',      label: 'Actif',       bg: 'bg-green-100 text-green-700' },
-  { value: 'banni_temp', label: 'Banni temp.', bg: 'bg-orange-100 text-orange-700' },
-  { value: 'banni_def',  label: 'Banni déf.',  bg: 'bg-red-100 text-red-700' },
-  { value: 'suspendu',   label: 'Suspendu',    bg: 'bg-gray-100 text-gray-600' },
+  { value: 'en_preparation', label: 'En prépa.',   bg: 'bg-purple-100 text-purple-700' },
+  { value: 'actif',          label: 'Actif',       bg: 'bg-green-100 text-green-700' },
+  { value: 'banni_temp',     label: 'Banni temp.', bg: 'bg-orange-100 text-orange-700' },
+  { value: 'banni_def',      label: 'Banni déf.',  bg: 'bg-red-100 text-red-700' },
+  { value: 'suspendu',       label: 'Suspendu',    bg: 'bg-gray-100 text-gray-600' },
 ]
 
 const METHODE_COLORS = {
@@ -120,7 +121,7 @@ export default function VintedAccountsTab() {
 
   const sansProxyCount = accounts.filter(a => !a.proxy_id).length
 
-  const ORDER = { actif: 0, banni_temp: 1, suspendu: 2, banni_def: 3 }
+  const ORDER = { en_preparation: 0, actif: 1, banni_temp: 2, suspendu: 3, banni_def: 4 }
   const displayed = accounts
     .filter(a => !filterStatut || a.statut === filterStatut)
     .filter(a => {
