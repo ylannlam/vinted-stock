@@ -141,7 +141,10 @@ export default function VintedAccountsTab() {
 
   const sansProxyCount = accounts.filter(a => !a.proxy_id).length
 
-  const ORDER = { en_preparation: 0, actif: 1, banni_temp: 2, suspendu: 3, banni_def: 4 }
+  const numOrInf = a => {
+    const n = parseInt(a.ads_power_num, 10)
+    return Number.isNaN(n) ? Infinity : n
+  }
   const displayed = accounts
     .filter(a => !filterStatut || a.statut === filterStatut)
     .filter(a => {
@@ -149,7 +152,7 @@ export default function VintedAccountsTab() {
       if (filterProxy === '__none__') return !a.proxy_id
       return a.proxy_id === filterProxy
     })
-    .sort((a, b) => (ORDER[a.statut] ?? 9) - (ORDER[b.statut] ?? 9))
+    .sort((a, b) => numOrInf(a) - numOrInf(b))
 
   return (
     <div className="pb-28">
