@@ -32,6 +32,105 @@ function CopyMini({ value }) {
   )
 }
 
+// Formats de copie « tout-en-un »
+const FORMATS = [
+  { key: 'adspower', label: 'AdsPower',      hint: 'host:port:user:pass' },
+  { key: 'curl',     label: 'Proxy URL',     hint: 'user:pass@host:port' },
+  { key: 'url',      label: 'URL complète',  hint: 'http://user:pass@host:port' },
+]
+
+function joinNonEmpty(parts, sep) {
+  return parts.filter(v => v !== null && v !== undefined && v !== '').join(sep)
+}
+
+function formatProxy(p, fmt) {
+  const auth = joinNonEmpty([p.username, p.password], ':')
+  const hostPort = `${p.adresse}:${p.port}`
+  switch (fmt) {
+    case 'url':  // http://user:pass@host:port
+      return `http://${auth ? `${auth}@` : ''}${hostPort}`
+    case 'curl': // user:pass@host:port
+      return `${auth ? `${auth}@` : ''}${hostPort}`
+    case 'adspower': // host:port:user:pass (les ":" des champs vides sont omis)
+    default:
+      return joinNonEmpty([p.adresse, p.port, p.username, p.password], ':')
+  }
+}
+
+// Bouton « Copier tout » + menu déroulant des formats
+function CopyAllButton({ proxy }) {
+  const [copied, setCopied] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [fmt, setFmt] = useState('adspower')
+
+  async function copy(formatKey) {
+    const key = formatKey || fmt
+    try {
+      await navigator.clipboard.writeText(formatProxy(proxy, key))
+      setFmt(key)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1400)
+    } catch {}
+    setMenuOpen(false)
+  }
+
+  return (
+    <div className="relative flex items-center shrink-0">
+      <button
+        onClick={() => copy()}
+        title={`Copier au format ${FORMATS.find(f => f.key === fmt).label} (${FORMATS.find(f => f.key === fmt).hint})`}
+        className={`flex items-center gap-1 text-[11px] font-semibold pl-2 pr-1.5 py-1 rounded-l-lg border-r transition-colors ${
+          copied ? 'bg-green-100 text-green-700 border-green-200' : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
+        }`}
+      >
+        {copied ? (
+          <>
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+            Copié !
+          </>
+        ) : (
+          <>
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h4a2 2 0 002-2M8 5a2 2 0 012-2h4a2 2 0 012 2m0 0h2a2 2 0 012 2v3" /></svg>
+            Copier tout
+          </>
+        )}
+      </button>
+      <button
+        onClick={() => setMenuOpen(o => !o)}
+        title="Choisir le format"
+        className={`flex items-center px-1 py-1 rounded-r-lg transition-colors ${
+          copied ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+        }`}
+      >
+        <svg className={`w-3 h-3 transition-transform ${menuOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {menuOpen && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-xl shadow-lg py-1 w-60">
+            {FORMATS.map(f => (
+              <button
+                key={f.key}
+                onClick={() => copy(f.key)}
+                className="w-full text-left px-3 py-1.5 hover:bg-gray-50 transition-colors"
+              >
+                <div className="text-xs font-semibold text-gray-800 flex items-center gap-1.5">
+                  {f.label}
+                  {fmt === f.key && <span className="w-1.5 h-1.5 rounded-full bg-teal-500" />}
+                </div>
+                <div className="text-[10px] text-gray-400 font-mono truncate">{formatProxy(proxy, f.key)}</div>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function ProxiesTab() {
   const [proxies, setProxies] = useState([])
   const [accounts, setAccounts] = useState([])
@@ -191,6 +290,7 @@ export default function ProxiesTab() {
 
                 {/* Compteur (déplie/replie) + actions */}
                 <div className="flex items-center gap-1 shrink-0 order-2 sm:order-3 ml-auto sm:ml-0">
+                  <CopyAllButton proxy={p} />
                   <button
                     onClick={() => toggleExpand(p.id)}
                     title={isOpen ? 'Replier les comptes' : 'Voir les comptes'}

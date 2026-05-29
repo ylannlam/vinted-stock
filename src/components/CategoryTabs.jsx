@@ -116,6 +116,9 @@ export default function CategoryTabs({ active, onChange, items, commandes, userR
               >
                 🔐 Comptes
               </button>
+              <button onClick={() => onChange(TAB_PROXIES)} className={tabClass(active === TAB_PROXIES, 'teal')}>
+                🌐 Proxies
+              </button>
               <button
                 onClick={() => onChange(TAB_EMPLOYEES)}
                 className={tabClass(active === TAB_EMPLOYEES, 'teal')}
@@ -127,9 +130,6 @@ export default function CategoryTabs({ active, onChange, items, commandes, userR
               </button>
               <button onClick={() => onChange(TAB_CONNEXIONS)} className={tabClass(active === TAB_CONNEXIONS, 'teal')}>
                 📜 Connexions
-              </button>
-              <button onClick={() => onChange(TAB_PROXIES)} className={tabClass(active === TAB_PROXIES, 'teal')}>
-                🌐 Proxies
               </button>
             </>
           )}
