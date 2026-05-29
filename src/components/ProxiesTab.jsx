@@ -33,12 +33,17 @@ function CopyButton({ value }) {
   )
 }
 
-function Field({ label, value, mono, children }) {
+function Field({ label, value, mono, mask, children }) {
   return (
     <div className="flex items-center gap-2 bg-gray-50 border border-gray-100 rounded-lg px-2.5 py-1.5">
       <div className="min-w-0 flex-1">
         <div className="text-[9px] uppercase tracking-wide text-gray-400 font-semibold">{label}</div>
-        <div className={`text-xs text-gray-800 truncate ${mono ? 'font-mono' : ''}`}>{value ?? '—'}</div>
+        <div
+          className={`text-xs text-gray-800 truncate ${mono ? 'font-mono' : ''}`}
+          style={mask ? { WebkitTextSecurity: 'disc', textSecurity: 'disc' } : undefined}
+        >
+          {value ?? '—'}
+        </div>
       </div>
       {children}
     </div>
@@ -52,6 +57,7 @@ export default function ProxiesTab() {
   const [edit, setEdit] = useState(undefined) // undefined = closed, null = new, obj = edit
   const [deleteId, setDeleteId] = useState(null)
   const [revealed, setRevealed] = useState(new Set())
+  const [assignFor, setAssignFor] = useState(null) // proxy_id when inline picker open
 
   useEffect(() => { fetchAll() }, [])
 
@@ -100,6 +106,18 @@ export default function ProxiesTab() {
     if (error) { alert('Erreur : ' + error.message); return }
     setProxies(prev => prev.filter(p => p.id !== id))
     setDeleteId(null)
+  }
+
+  async function handleAssignAccount(accountId, proxyId) {
+    const { data, error } = await supabase
+      .from('vinted_accounts')
+      .update({ proxy_id: proxyId })
+      .eq('id', accountId)
+      .select('id, pseudo, proxy_id')
+      .single()
+    if (error) { alert('Erreur : ' + error.message); return }
+    if (data) setAccounts(prev => prev.map(a => a.id === data.id ? { ...a, ...data } : a))
+    setAssignFor(null)
   }
 
   function toggleReveal(id) {
@@ -158,8 +176,9 @@ export default function ProxiesTab() {
                 </Field>
                 <Field
                   label="Password"
-                  value={isOpen ? p.password : '•'.repeat(Math.min(p.password?.length ?? 8, 12))}
+                  value={p.password}
                   mono
+                  mask={!isOpen}
                 >
                   <button
                     type="button"
@@ -175,18 +194,57 @@ export default function ProxiesTab() {
                 </Field>
               </div>
 
-              {linked.length > 0 && (
-                <div className="px-4 pb-3">
-                  <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-1">Comptes liés</div>
-                  <div className="flex flex-wrap gap-1.5">
+              <div className="px-4 pb-3">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">Comptes liés</div>
+                  {assignFor !== p.id && (
+                    <button
+                      onClick={() => setAssignFor(p.id)}
+                      className="text-[10px] font-semibold text-teal-600 hover:text-teal-700"
+                    >
+                      + Assigner un compte
+                    </button>
+                  )}
+                </div>
+                {linked.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-1.5">
                     {linked.map(a => (
                       <span key={a.id} className="text-[11px] bg-teal-50 text-teal-700 border border-teal-100 px-2 py-0.5 rounded-full">
                         {a.pseudo}
                       </span>
                     ))}
                   </div>
-                </div>
-              )}
+                )}
+                {linked.length === 0 && assignFor !== p.id && (
+                  <div className="text-[11px] text-gray-400 italic">Aucun compte assigné</div>
+                )}
+                {assignFor === p.id && (
+                  <div className="flex gap-2 items-center bg-teal-50 border border-teal-200 rounded-lg px-2 py-1.5 mt-1">
+                    <select
+                      autoFocus
+                      defaultValue=""
+                      onChange={e => e.target.value && handleAssignAccount(e.target.value, p.id)}
+                      className="flex-1 text-xs border border-teal-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-teal-400"
+                    >
+                      <option value="" disabled>Choisir un compte…</option>
+                      {accounts
+                        .filter(a => a.proxy_id !== p.id)
+                        .sort((a, b) => (a.pseudo ?? '').localeCompare(b.pseudo ?? ''))
+                        .map(a => (
+                          <option key={a.id} value={a.id}>
+                            {a.pseudo}{!a.proxy_id ? ' · sans proxy' : ' · changer de proxy'}
+                          </option>
+                        ))}
+                    </select>
+                    <button
+                      onClick={() => setAssignFor(null)}
+                      className="text-xs font-semibold text-gray-500 px-2 py-1.5 rounded-lg hover:bg-gray-100"
+                    >
+                      Annuler
+                    </button>
+                  </div>
+                )}
+              </div>
 
               {p.notes && (
                 <div className="px-4 pb-3">
