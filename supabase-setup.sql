@@ -411,3 +411,18 @@ ALTER TABLE public.vinted_accounts ALTER COLUMN proxy_id DROP NOT NULL;
 ALTER TABLE public.vinted_accounts DROP CONSTRAINT IF EXISTS vinted_accounts_statut_check;
 ALTER TABLE public.vinted_accounts ADD CONSTRAINT vinted_accounts_statut_check
   CHECK (statut IN ('en_preparation', 'actif', 'banni_temp', 'banni_def', 'suspendu'));
+
+-- ============================================================
+-- MIGRATION v21 — Flag "is_ready" (cycle de vie de création d'un compte)
+-- Phase = combinaison proxy_id + is_ready :
+--   proxy_id IS NULL                       -> "Sur téléphone"  (en création)
+--   proxy_id NOT NULL AND is_ready = false -> "En vérification" (sur proxy, pas prêt)
+--   proxy_id NOT NULL AND is_ready = true  -> "Prêt à utiliser"
+-- Indépendant du statut (un compte "Prêt" peut être banni).
+-- ============================================================
+ALTER TABLE public.vinted_accounts ADD COLUMN IF NOT EXISTS is_ready BOOLEAN DEFAULT false;
+
+-- Comptes existants déjà sur proxy = déjà en service -> considérés prêts.
+UPDATE public.vinted_accounts
+SET is_ready = true
+WHERE proxy_id IS NOT NULL AND is_ready IS DISTINCT FROM true;

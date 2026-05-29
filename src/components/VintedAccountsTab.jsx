@@ -17,9 +17,31 @@ const METHODE_COLORS = {
   email:  'bg-teal-100 text-teal-700',
 }
 
+// Cycle de vie de création (indépendant du statut actif/banni)
+const PHASES = [
+  { key: 'phone', label: 'Sur téléphone',   bg: 'bg-gray-100 text-gray-600',     dot: 'bg-gray-400',   active: 'bg-gray-700 text-white' },
+  { key: 'verif', label: 'En vérification', bg: 'bg-orange-100 text-orange-700', dot: 'bg-orange-400', active: 'bg-orange-500 text-white' },
+  { key: 'ready', label: 'Prêt à utiliser', bg: 'bg-green-100 text-green-700',   dot: 'bg-green-500',  active: 'bg-green-600 text-white' },
+]
+
+function getPhase(a) {
+  if (!a.proxy_id) return 'phone'
+  return a.is_ready ? 'ready' : 'verif'
+}
+
 function StatutBadge({ statut }) {
   const s = STATUTS.find(x => x.value === statut) ?? STATUTS[0]
   return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${s.bg}`}>{s.label}</span>
+}
+
+function PhaseBadge({ account }) {
+  const p = PHASES.find(x => x.key === getPhase(account)) ?? PHASES[0]
+  return (
+    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${p.bg}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${p.dot}`} />
+      {p.label}
+    </span>
+  )
 }
 
 function DebanCountdown({ deban_at }) {
@@ -43,6 +65,7 @@ export default function VintedAccountsTab() {
   const [proxies, setProxies] = useState([])
   const [loading, setLoading] = useState(true)
   const [filterStatut, setFilterStatut] = useState(null)
+  const [filterPhase, setFilterPhase] = useState(null)
   const [filterProxy, setFilterProxy] = useState(null)
   const [editAccount, setEditAccount] = useState(undefined)
   const [showProxyModal, setShowProxyModal] = useState(false)
@@ -139,7 +162,20 @@ export default function VintedAccountsTab() {
     setQuickAssignFor(null)
   }
 
+  async function handleSetReady(accountId, ready) {
+    const { data, error } = await supabase
+      .from('vinted_accounts')
+      .update({ is_ready: ready })
+      .eq('id', accountId)
+      .select()
+      .single()
+    if (error) { alert('Erreur : ' + error.message); return }
+    if (data) setAccounts(prev => prev.map(a => a.id === data.id ? data : a))
+  }
+
   const sansProxyCount = accounts.filter(a => !a.proxy_id).length
+  const phaseCounts = { phone: 0, verif: 0, ready: 0 }
+  for (const a of accounts) phaseCounts[getPhase(a)]++
 
   const numOrInf = a => {
     const n = parseInt(a.ads_power_num, 10)
@@ -147,6 +183,7 @@ export default function VintedAccountsTab() {
   }
   const displayed = accounts
     .filter(a => !filterStatut || a.statut === filterStatut)
+    .filter(a => !filterPhase || getPhase(a) === filterPhase)
     .filter(a => {
       if (filterProxy === null) return true
       if (filterProxy === '__none__') return !a.proxy_id
@@ -156,6 +193,31 @@ export default function VintedAccountsTab() {
 
   return (
     <div className="pb-28">
+
+      {/* Tableau de bord du cycle de création */}
+      <div className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-100 px-4 py-2 text-[11px] font-medium flex items-center gap-2 whitespace-nowrap overflow-x-auto scrollbar-hide">
+        <span className="text-gray-600"><b className="text-gray-900">{phaseCounts.phone}</b> sur téléphone</span>
+        <span className="text-gray-300">·</span>
+        <span className="text-orange-600"><b>{phaseCounts.verif}</b> en vérification</span>
+        <span className="text-gray-300">·</span>
+        <span className="text-green-600"><b>{phaseCounts.ready}</b> prêts</span>
+      </div>
+
+      {/* Filtres rapides par phase */}
+      <div className="bg-white border-b border-gray-100 px-4 py-2.5 flex items-center gap-2 overflow-x-auto scrollbar-hide">
+        {PHASES.map(p => (
+          <button
+            key={p.key}
+            onClick={() => setFilterPhase(filterPhase === p.key ? null : p.key)}
+            className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full whitespace-nowrap flex-shrink-0 transition-colors ${
+              filterPhase === p.key ? p.active : `${p.bg} hover:opacity-80`
+            }`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${filterPhase === p.key ? 'bg-white' : p.dot}`} />
+            {p.label} ({phaseCounts[p.key]})
+          </button>
+        ))}
+      </div>
 
       {sansProxyCount > 0 && (
         <button
@@ -249,6 +311,7 @@ export default function VintedAccountsTab() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="font-semibold text-gray-900 text-sm">{account.pseudo}</p>
+                  <PhaseBadge account={account} />
                   <StatutBadge statut={account.statut} />
                   {account.statut === 'banni_temp' && account.deban_at && (
                     <DebanCountdown deban_at={account.deban_at} />
@@ -345,6 +408,25 @@ export default function VintedAccountsTab() {
                         className="w-full py-2 text-xs font-semibold bg-orange-100 text-orange-700 rounded-xl hover:bg-orange-200 transition-colors disabled:opacity-50"
                       >
                         {proxies.length === 0 ? 'Crée un proxy d\'abord' : '🔗 Assigner un proxy'}
+                      </button>
+                    )}
+                  </div>
+                )}
+                {account.proxy_id && (
+                  <div className="mt-2">
+                    {account.is_ready ? (
+                      <button
+                        onClick={() => handleSetReady(account.id, false)}
+                        className="w-full py-2 text-xs font-semibold bg-orange-100 text-orange-700 rounded-xl hover:bg-orange-200 transition-colors"
+                      >
+                        ↩ Marquer comme pas prêt (repasser en vérification)
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleSetReady(account.id, true)}
+                        className="w-full py-2 text-xs font-semibold bg-green-100 text-green-700 rounded-xl hover:bg-green-200 transition-colors"
+                      >
+                        ✓ Marquer comme prêt à utiliser
                       </button>
                     )}
                   </div>
