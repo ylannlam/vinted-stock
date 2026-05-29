@@ -34,6 +34,37 @@ function StatutBadge({ statut }) {
   return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${s.bg}`}>{s.label}</span>
 }
 
+// Petite icône de copie discrète (stoppe le clic pour ne pas déplier la carte)
+function CopyMini({ value, title = 'Copier' }) {
+  const [copied, setCopied] = useState(false)
+  if (value === null || value === undefined || value === '') return null
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={async (e) => {
+        e.stopPropagation()
+        try {
+          await navigator.clipboard.writeText(String(value))
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1200)
+        } catch {}
+      }}
+      className={`shrink-0 transition-colors ${copied ? 'text-green-600' : 'text-gray-300 hover:text-gray-600'}`}
+    >
+      {copied ? (
+        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+        </svg>
+      ) : (
+        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h4a2 2 0 002-2M8 5a2 2 0 012-2h4a2 2 0 012 2m0 0h2a2 2 0 012 2v3" />
+        </svg>
+      )}
+    </button>
+  )
+}
+
 function PhaseBadge({ account }) {
   const p = PHASES.find(x => x.key === getPhase(account)) ?? PHASES[0]
   return (
@@ -323,7 +354,10 @@ export default function VintedAccountsTab() {
                   )}
                 </div>
                 {account.email && (
-                  <p className="text-xs text-gray-400 truncate mt-0.5">{account.email}</p>
+                  <p className="text-xs text-gray-400 truncate mt-0.5 flex items-center gap-1">
+                    <span className="truncate">{account.email}</span>
+                    <CopyMini value={account.email} title="Copier l'adresse mail" />
+                  </p>
                 )}
                 {account.proxy_id && proxiesById.get(account.proxy_id) ? (
                   <p className="text-[10px] text-blue-600 font-medium truncate mt-0.5 flex items-center gap-1">
