@@ -59,7 +59,7 @@ export default function ProxyFormModal({ proxy, onClose, onSave }) {
           </div>
 
           <div className="flex flex-wrap gap-1.5">
-            {['Decodo', 'IPRoyale', 'BrightData'].map(f => (
+            {['Decodo', 'IPRoyale'].map(f => (
               <button key={f} type="button" onClick={() => set('fournisseur', f)}
                 className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-colors ${
                   form.fournisseur === f
