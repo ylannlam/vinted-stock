@@ -5,10 +5,30 @@ export default function SoldModal({ item, onClose, onSold }) {
   const [pdf, setPdf] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
+  const [dragOver, setDragOver] = useState(false)
 
   function handlePdfChange(e) {
     const file = e.target.files[0]
     if (file) setPdf(file)
+  }
+
+  function handleDragEnter(e) {
+    e.preventDefault()
+    setDragOver(true)
+  }
+  function handleDragOver(e) {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+  }
+  function handleDragLeave(e) {
+    if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(false)
+  }
+  function handleDrop(e) {
+    e.preventDefault()
+    setDragOver(false)
+    const file = e.dataTransfer.files[0]
+    if (file && file.type === 'application/pdf') setPdf(file)
+    else if (file) setError('Le fichier doit être un PDF')
   }
 
   async function handleSubmit(e) {
@@ -82,20 +102,30 @@ export default function SoldModal({ item, onClose, onSold }) {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Bordereau d'expédition (PDF)
             </label>
-            <label className={`block cursor-pointer w-full border-2 border-dashed rounded-xl px-4 py-4 text-center text-sm transition-colors ${
-              pdf
-                ? 'border-green-400 bg-green-50 text-green-700'
-                : 'border-gray-200 text-gray-400 hover:border-teal-400 hover:bg-teal-50/50'
-            }`}>
+            <label
+              onDragEnter={handleDragEnter}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              className={`block cursor-pointer w-full border-2 border-dashed rounded-xl px-4 py-4 text-center text-sm transition-colors ${
+                pdf
+                  ? 'border-green-400 bg-green-50 text-green-700'
+                  : dragOver
+                    ? 'border-teal-500 bg-teal-50 text-teal-700'
+                    : 'border-gray-200 text-gray-400 hover:border-teal-400 hover:bg-teal-50/50'
+              }`}
+            >
               <div className="flex flex-col items-center gap-2">
-                <svg className={`w-8 h-8 ${pdf ? 'text-green-500' : 'text-gray-300'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className={`w-8 h-8 ${pdf ? 'text-green-500' : dragOver ? 'text-teal-500' : 'text-gray-300'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                     d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                 </svg>
                 {pdf ? (
                   <span className="font-medium">{pdf.name}</span>
+                ) : dragOver ? (
+                  <span className="font-medium">Lâche le PDF ici</span>
                 ) : (
-                  <span>Appuyer pour choisir le bordereau PDF</span>
+                  <span>Glisse le PDF ou clique pour choisir</span>
                 )}
               </div>
               <input
