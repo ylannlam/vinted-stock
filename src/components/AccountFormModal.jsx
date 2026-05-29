@@ -210,7 +210,7 @@ export default function AccountFormModal({ account, proxies = [], onClose, onSav
                     <option value="">Sans proxy (téléphone)</option>
                     {proxies.map(p => (
                       <option key={p.id} value={p.id}>
-                        {p.adresse}:{p.port} — {p.username}{p.nom ? ` (${p.nom})` : ''}
+                        {p.nom ? `${p.nom} — ${p.adresse}:${p.port}` : `${p.adresse}:${p.port} — ${p.username}`}
                       </option>
                     ))}
                   </select>

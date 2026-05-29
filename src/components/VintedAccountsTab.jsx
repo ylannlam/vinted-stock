@@ -324,7 +324,7 @@ export default function VintedAccountsTab() {
                           <option value="" disabled>Choisir un proxy…</option>
                           {proxies.map(p => (
                             <option key={p.id} value={p.id}>
-                              {p.adresse}:{p.port} — {p.username}{p.nom ? ` (${p.nom})` : ''}
+                              {p.nom ? `${p.nom} — ${p.adresse}:${p.port}` : `${p.adresse}:${p.port} — ${p.username}`}
                             </option>
                           ))}
                         </select>
