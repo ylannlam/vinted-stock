@@ -1,34 +1,34 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
 export default function SoldModal({ item, onClose, onSold }) {
   const [pdf, setPdf] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
-  const [dragOver, setDragOver] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
+  const inputRef = useRef(null)
+  const modalRef = useRef(null)
 
-  function handlePdfChange(e) {
-    const file = e.target.files[0]
-    if (file) setPdf(file)
+  function applyFile(file) {
+    if (!file) return
+    if (file.type !== 'application/pdf') { setError('Le fichier doit être un PDF'); return }
+    setError('')
+    setPdf(file)
   }
 
   function handleDragEnter(e) {
     e.preventDefault()
-    setDragOver(true)
-  }
-  function handleDragOver(e) {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'copy'
+    if ([...e.dataTransfer.items].some(i => i.type === 'application/pdf')) setIsDragging(true)
   }
   function handleDragLeave(e) {
-    if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(false)
+    e.preventDefault()
+    if (!modalRef.current?.contains(e.relatedTarget)) setIsDragging(false)
   }
+  function handleDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }
   function handleDrop(e) {
     e.preventDefault()
-    setDragOver(false)
-    const file = e.dataTransfer.files[0]
-    if (file && file.type === 'application/pdf') setPdf(file)
-    else if (file) setError('Le fichier doit être un PDF')
+    setIsDragging(false)
+    applyFile(e.dataTransfer.files[0])
   }
 
   async function handleSubmit(e) {
@@ -70,7 +70,26 @@ export default function SoldModal({ item, onClose, onSold }) {
       className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50"
       onClick={e => e.target === e.currentTarget && onClose()}
     >
-      <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md">
+      <div
+        ref={modalRef}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        className={`bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md relative transition-all ${
+          isDragging ? 'ring-2 ring-teal-400' : ''
+        }`}
+      >
+        {isDragging && (
+          <div className="absolute inset-0 z-30 bg-teal-500/10 border-2 border-teal-400 border-dashed rounded-t-3xl sm:rounded-2xl flex flex-col items-center justify-center pointer-events-none">
+            <svg className="w-12 h-12 text-teal-500 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+            <span className="text-teal-700 font-bold">Déposer le bordereau</span>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="font-semibold text-gray-900 text-base">Marquer comme vendu</h2>
@@ -102,39 +121,34 @@ export default function SoldModal({ item, onClose, onSold }) {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Bordereau d'expédition (PDF)
             </label>
-            <label
-              onDragEnter={handleDragEnter}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              className={`block cursor-pointer w-full border-2 border-dashed rounded-xl px-4 py-4 text-center text-sm transition-colors ${
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className={`block w-full border-2 border-dashed rounded-xl px-4 py-4 text-center text-sm transition-colors ${
                 pdf
                   ? 'border-green-400 bg-green-50 text-green-700'
-                  : dragOver
-                    ? 'border-teal-500 bg-teal-50 text-teal-700'
-                    : 'border-gray-200 text-gray-400 hover:border-teal-400 hover:bg-teal-50/50'
+                  : 'border-gray-200 text-gray-400 hover:border-teal-400 hover:bg-teal-50/50'
               }`}
             >
               <div className="flex flex-col items-center gap-2">
-                <svg className={`w-8 h-8 ${pdf ? 'text-green-500' : dragOver ? 'text-teal-500' : 'text-gray-300'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className={`w-8 h-8 ${pdf ? 'text-green-500' : 'text-gray-300'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                     d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                 </svg>
                 {pdf ? (
                   <span className="font-medium">{pdf.name}</span>
-                ) : dragOver ? (
-                  <span className="font-medium">Lâche le PDF ici</span>
                 ) : (
-                  <span>Glisse le PDF ou clique pour choisir</span>
+                  <span>Glisse le PDF sur le modal ou clique pour choisir</span>
                 )}
               </div>
-              <input
-                type="file"
-                accept="application/pdf"
-                onChange={handlePdfChange}
-                className="hidden"
-              />
-            </label>
+            </button>
+            <input
+              ref={inputRef}
+              type="file"
+              accept="application/pdf"
+              onChange={e => { applyFile(e.target.files[0]); e.target.value = '' }}
+              className="hidden"
+            />
           </div>
 
           {error && (
