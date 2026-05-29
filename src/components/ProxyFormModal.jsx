@@ -53,9 +53,22 @@ export default function ProxyFormModal({ proxy, onClose, onSave }) {
             <div>
               <label className="text-xs font-semibold text-gray-500 mb-1 block">Fournisseur</label>
               <input value={form.fournisseur ?? ''} onChange={e => set('fournisseur', e.target.value)}
-                placeholder="Decodo"
+                placeholder="Decodo / IPRoyale…"
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-teal-400" />
             </div>
+          </div>
+
+          <div className="flex flex-wrap gap-1.5">
+            {['Decodo', 'IPRoyale', 'BrightData'].map(f => (
+              <button key={f} type="button" onClick={() => set('fournisseur', f)}
+                className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-colors ${
+                  form.fournisseur === f
+                    ? 'bg-teal-500 text-white border-teal-500'
+                    : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                }`}>
+                {f}
+              </button>
+            ))}
           </div>
 
           <div className="grid grid-cols-3 gap-3">
