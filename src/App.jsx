@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
 import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE, TAB_EMPLOYEES, TAB_FONDS, TAB_CONNEXIONS, TAB_PROXIES } from './constants'
 import Login from './Login'
+import { recordLogin } from './lib/loginLog'
 import Header from './components/Header'
 import CategoryTabs from './components/CategoryTabs'
 import Gallery from './components/Gallery'
@@ -65,6 +66,14 @@ export default function App() {
       if (event === 'SIGNED_OUT') {
         setUser(null)
       } else if (session?.user) {
+        // Journalise chaque connexion : login explicite (SIGNED_IN) ET ouverture
+        // de l'app avec une session active (INITIAL_SESSION). Aucune déduplication
+        // par IP/utilisateur : chaque connexion = une nouvelle entrée.
+        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+          // Différé (setTimeout 0) pour ne pas bloquer le verrou interne de
+          // supabase-auth pendant ce callback.
+          setTimeout(() => recordLogin(session.user.id), 0)
+        }
         // Évite un re-render si c'est le même utilisateur (ex: TOKEN_REFRESHED)
         setUser(prev => prev?.id === session.user.id ? prev : session.user)
       }

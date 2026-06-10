@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { supabase } from './lib/supabase'
-import { recordLogin } from './lib/loginLog'
 import Logo from './components/Logo'
 
 function pseudoToEmail(pseudo) {
@@ -17,12 +16,13 @@ export default function Login() {
     e.preventDefault()
     setLoading(true)
     setError('')
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { error } = await supabase.auth.signInWithPassword({
       email: pseudoToEmail(pseudo),
       password,
     })
     if (error) setError('Pseudo ou mot de passe incorrect.')
-    else if (data?.user) recordLogin(data.user.id)
+    // L'enregistrement de la connexion (avec géoloc) est géré de façon
+    // centralisée dans App.jsx via onAuthStateChange (événement SIGNED_IN).
     setLoading(false)
   }
 

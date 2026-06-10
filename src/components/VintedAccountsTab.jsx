@@ -24,9 +24,16 @@ const PHASES = [
   { key: 'ready', label: 'Prêt à utiliser', bg: 'bg-green-100 text-green-700',   dot: 'bg-green-500',  active: 'bg-green-600 text-white' },
 ]
 
+// Statuts hors pipeline de création (banni / suspendu)
+const STATUTS_INACTIFS = ['banni_temp', 'banni_def', 'suspendu']
+
 function getPhase(a) {
+  // "Prêt" persiste même si le compte est banni par la suite
+  if (a.proxy_id && a.is_ready) return 'ready'
+  // Un compte banni/suspendu pas encore prêt n'est pas "en vérification"
+  if (STATUTS_INACTIFS.includes(a.statut)) return null
   if (!a.proxy_id) return 'phone'
-  return a.is_ready ? 'ready' : 'verif'
+  return 'verif'
 }
 
 function StatutBadge({ statut }) {
@@ -66,7 +73,9 @@ function CopyMini({ value, title = 'Copier' }) {
 }
 
 function PhaseBadge({ account }) {
-  const p = PHASES.find(x => x.key === getPhase(account)) ?? PHASES[0]
+  const key = getPhase(account)
+  if (!key) return null
+  const p = PHASES.find(x => x.key === key) ?? PHASES[0]
   return (
     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${p.bg}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${p.dot}`} />
@@ -206,7 +215,10 @@ export default function VintedAccountsTab() {
 
   const sansProxyCount = accounts.filter(a => !a.proxy_id).length
   const phaseCounts = { phone: 0, verif: 0, ready: 0 }
-  for (const a of accounts) phaseCounts[getPhase(a)]++
+  for (const a of accounts) {
+    const ph = getPhase(a)
+    if (ph) phaseCounts[ph]++
+  }
 
   const numOrInf = a => {
     const n = parseInt(a.ads_power_num, 10)
