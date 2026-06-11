@@ -3,6 +3,7 @@ import { supabase } from './lib/supabase'
 import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE, TAB_EMPLOYEES, TAB_FONDS, TAB_CONNEXIONS, TAB_PROXIES } from './constants'
 import Login from './Login'
 import { recordLogin } from './lib/loginLog'
+import { usePersistedState } from './lib/usePersistedState'
 import Header from './components/Header'
 import CategoryTabs from './components/CategoryTabs'
 import Gallery from './components/Gallery'
@@ -37,16 +38,18 @@ export default function App() {
   })
   const [items, setItems] = useState([])
   const [itemsLoading, setItemsLoading] = useState(false)
-  const [filterSizes, setFilterSizes] = useState([])
-  const [filterSearch, setFilterSearch] = useState('')
-  const [filterShein, setFilterShein] = useState('') // '' | 'with' | 'without'
-  const [sortByEmplacement, setSortByEmplacement] = useState(false)
+  // Filtres / recherche / tri : persistés entre les rechargements
+  const [filterSizes, setFilterSizes] = usePersistedState('filterSizes', [])
+  const [filterSearch, setFilterSearch] = usePersistedState('filterSearch', '')
+  const [filterShein, setFilterShein] = usePersistedState('filterShein', '') // '' | 'with' | 'without'
+  const [sortByEmplacement, setSortByEmplacement] = usePersistedState('sortByEmplacement', false)
   const [commandes, setCommandes] = useState([])
-  const [commandeSearch, setCommandeSearch] = useState('')
-  const [selectedCommandeId, setSelectedCommandeId] = useState(null)
+  const [commandeSearch, setCommandeSearch] = usePersistedState('commandeSearch', '')
+  // Vue en cours : commande ouverte / vue emplacements, persistées aussi
+  const [selectedCommandeId, setSelectedCommandeId] = usePersistedState('selectedCommandeId', null)
   const [showAddCommandeModal, setShowAddCommandeModal] = useState(false)
   const [receptionCommande, setReceptionCommande] = useState(null)
-  const [showEmplacements, setShowEmplacements] = useState(false)
+  const [showEmplacements, setShowEmplacements] = usePersistedState('showEmplacements', false)
   const [lotSelected, setLotSelected] = useState(new Set())
   const [showLotPdfModal, setShowLotPdfModal] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
