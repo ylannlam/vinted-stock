@@ -1,3 +1,5 @@
+import SalesTab from './components/SalesTab'
+import { TAB_SALES } from './constants'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
 import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE, TAB_EMPLOYEES, TAB_FONDS, TAB_CONNEXIONS, TAB_PROXIES } from './constants'
@@ -33,8 +35,8 @@ export default function App() {
   const [profileLoading, setProfileLoading] = useState(false)
   const [activeTab, setActiveTab] = useState(() => {
     const saved = localStorage.getItem('activeTab')
-    const validTabs = [TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE, TAB_EMPLOYEES, TAB_FONDS, TAB_CONNEXIONS, TAB_PROXIES]
-    return validTabs.includes(saved) ? saved : TAB_TOUT
+    const validTabs = [TAB_SALES, TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE, TAB_EMPLOYEES, TAB_FONDS, TAB_CONNEXIONS, TAB_PROXIES]
+    return validTabs.includes(saved) ? saved : TAB_SALES
   })
   const [items, setItems] = useState([])
   const [itemsLoading, setItemsLoading] = useState(false)
@@ -547,6 +549,7 @@ export default function App() {
         userRole={userRole}
       />
 
+      {activeTab === TAB_SALES && <SalesTab isAdmin={isAdmin} />}
       {activeTab === TAB_EMPLOYEES && <EmployeesTab />}
       {activeTab === TAB_COMPTES_VINTED && <VintedAccountsTab />}
       {activeTab === TAB_FONDS && <FondsLibrary />}
@@ -645,7 +648,7 @@ export default function App() {
         )
       })()}
 
-      {activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_EMPLOYEES && activeTab !== TAB_FONDS && activeTab !== TAB_A_RECEVOIR && activeTab !== TAB_CONNEXIONS && activeTab !== TAB_PROXIES && (
+      {activeTab !== TAB_SALES && activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_EMPLOYEES && activeTab !== TAB_FONDS && activeTab !== TAB_A_RECEVOIR && activeTab !== TAB_CONNEXIONS && activeTab !== TAB_PROXIES && (
         <Gallery
           items={filteredItems}
           loading={itemsLoading}
@@ -670,7 +673,7 @@ export default function App() {
         />
       )}
 
-      {activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_EMPLOYEES && activeTab !== TAB_FONDS && activeTab !== TAB_A_ENVOYER && activeTab !== TAB_A_ENVOYER_LOT && activeTab !== TAB_ENVOYES && activeTab !== TAB_CONNEXIONS && activeTab !== TAB_PROXIES && (
+      {activeTab !== TAB_SALES && activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_EMPLOYEES && activeTab !== TAB_FONDS && activeTab !== TAB_A_ENVOYER && activeTab !== TAB_A_ENVOYER_LOT && activeTab !== TAB_ENVOYES && activeTab !== TAB_CONNEXIONS && activeTab !== TAB_PROXIES && (
         <button
           onClick={() => activeTab === TAB_A_RECEVOIR ? setShowAddCommandeModal(true) : setShowAddModal(true)}
           className={`fixed bottom-6 right-5 w-14 h-14 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-105 z-40 ${
