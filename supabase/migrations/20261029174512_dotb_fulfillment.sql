@@ -73,10 +73,12 @@ create function public.save_sales_line(p_id text, p_version timestamptz, p_edit 
 returns void language plpgsql security invoker set search_path = '' as $$
 declare l public.sales_lines; o public.sales_orders; target text; current_sku text; supplier text;
 begin
+  -- Lock the parent first, as imports do; serialize changes within a bundle.
+  select * into o from public.sales_orders where id=(select order_id from public.sales_lines where id=p_id) for update;
+  if not found then raise exception 'line_not_found'; end if;
   select * into l from public.sales_lines where id=p_id for update;
   if not found then raise exception 'line_not_found'; end if;
   if l.updated_at <> p_version then raise exception 'stale_version'; end if;
-  select * into o from public.sales_orders where id=l.order_id for share;
   if p_stage is not null then
     if not l.source_active or o.status is null or o.status in ('cancelled','returning','suspended','shipped','ready_for_pickup','delivered','completed') then raise exception 'order_blocked'; end if;
     target := case l.stage when 'to_order' then 'ordered' when 'ordered' then 'in_transit' when 'in_transit' then 'received' when 'received' then 'prepared' when 'prepared' then 'shipped' end;

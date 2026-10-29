@@ -24,6 +24,7 @@ export default async function handler(req, res) {
       const offset = Number(req.query?.offset || 0)
       if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1000000) throw new AppError('Page invalide.')
       const { data: state, error: stateError } = await db.from('dotb_sync_state').select('cursor,last_completed_at,processed').eq('id',true).single()
+      if (stateError && !['42P01','PGRST205'].includes(stateError.code)) throw stateError
       if (stateError) return res.json({ setup_required: true, connected: !!process.env.DOTB_API_TOKEN, lines: [], catalog: [], count: 0 })
       const { data, error, count } = await db.from('sales_lines')
         .select('*,order:sales_orders!inner(*)', { count: 'exact' }).eq('source_active', true)
