@@ -1,3 +1,4 @@
+import { TAB_SALES } from '../constants'
 import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_EMPLOYEES, TAB_FONDS, TAB_CONNEXIONS, TAB_PROXIES } from '../constants'
 
 export default function CategoryTabs({ active, onChange, items, commandes, userRole }) {
@@ -47,6 +48,7 @@ export default function CategoryTabs({ active, onChange, items, commandes, userR
       <div className="overflow-x-auto scrollbar-hide">
         <div className="flex min-w-max px-2">
 
+          <button onClick={() => onChange(TAB_SALES)} className={tabClass(active === TAB_SALES)}>Ventes & achats</button>
           {/* Onglet Stock */}
           <button onClick={() => onChange(TAB_TOUT)} className={tabClass(active === TAB_TOUT)}>
             Stock

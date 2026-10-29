@@ -1,12 +1,10 @@
-import { createClient } from '@supabase/supabase-js'
+import { authorize } from '../server/auth.js'
 
 export default async function handler(req, res) {
   if (req.method !== 'DELETE') return res.status(405).end()
-  const supabase = createClient(
-    process.env.VITE_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
+  const auth = await authorize(req, res)
+  if (!auth) return
+  const supabase = auth.db
   const { userId } = req.body
   if (!userId) return res.status(400).json({ error: 'userId manquant' })
   const { error } = await supabase.auth.admin.deleteUser(userId)

@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '../lib/api'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import UserManagementModal from './UserManagementModal'
@@ -180,7 +181,7 @@ export default function EmployeesTab() {
     setDeleting(true)
     setDeleteError('')
     try {
-      const res = await fetch('/api/delete-user', {
+      const res = await authenticatedFetch('/api/delete-user', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId }),

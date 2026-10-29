@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '../lib/api'
 import { useState } from 'react'
 
 const ROLE_OPTIONS = [
@@ -35,7 +36,7 @@ export default function UserManagementModal({ user, onClose, onSaved }) {
       if (isEdit) {
         const body = { userId: user.id, pseudo, role, email }
         if (password) body.password = password
-        const res = await fetch('/api/update-user', {
+        const res = await authenticatedFetch('/api/update-user', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
@@ -48,7 +49,7 @@ export default function UserManagementModal({ user, onClose, onSaved }) {
       } else {
         const autoEmail    = generateEmail(pseudo)
         const autoPassword = generatePassword()
-        const res = await fetch('/api/create-user', {
+        const res = await authenticatedFetch('/api/create-user', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: autoEmail, password: autoPassword, pseudo, role }),

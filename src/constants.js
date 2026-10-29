@@ -10,3 +10,5 @@ export const TAB_EMPLOYEES        = '__employees__'
 export const TAB_FONDS            = '__fonds__'
 export const TAB_CONNEXIONS       = '__connexions__'
 export const TAB_PROXIES          = '__proxies__'
+
+export const TAB_SALES = '__sales__'
