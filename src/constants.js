@@ -13,4 +13,4 @@ export const TAB_PROXIES          = '__proxies__'
 
 export const TAB_SALES = '__sales__'
 
-export const TAB_DROP = '__drop_tracker__'
+export const TAB_BUDGET = '__drop_tracker__'

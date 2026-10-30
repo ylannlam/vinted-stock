@@ -1,3 +1,4 @@
+import { CREATION_STAGES, localDateInput } from '../lib/accountTracking'
 import { useState } from 'react'
 
 const EMPTY = {
@@ -13,6 +14,9 @@ const EMPTY = {
   deban_at: '',
   notes: '',
   proxy_id: '',
+  creation_stage: 'post1',
+  creation_next_at: '',
+  browser: '',
 }
 
 export default function AccountFormModal({ account, proxies = [], onClose, onSave, onCreateProxy }) {
@@ -29,7 +33,7 @@ export default function AccountFormModal({ account, proxies = [], onClose, onSav
     e.preventDefault()
     if (!form.pseudo.trim()) return
     setSaving(true)
-    await onSave(form)
+    await onSave({...form, is_ready: form.creation_stage ? form.creation_stage === 'ready' : form.is_ready || false})
     setSaving(false)
   }
 
@@ -86,8 +90,24 @@ export default function AccountFormModal({ account, proxies = [], onClose, onSav
                 : 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100'
             }`}
           >
-            {form.statut === 'en_preparation' ? '✓ En préparation (1re annonce postée, pas encore sur proxy)' : 'Marquer en préparation'}
+            {form.statut === 'en_preparation' ? '✓ En préparation' : 'Marquer en préparation'}
           </button>
+
+          <section className="border border-gray-200 rounded-xl p-3 space-y-3">
+            <h3 className="text-xs font-semibold text-gray-600">Suivi de création</h3>
+            <label className="block text-xs text-gray-500">Étape
+              <select aria-label="Étape de création" className="w-full mt-1 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white" value={form.creation_stage || ''} onChange={e=>setForm(prev=>({...prev,creation_stage:e.target.value,creation_next_at:['post1','post2','wait'].includes(e.target.value)?new Date(Date.now()+86400000).toISOString():null}))}>
+                <option value="">Sans suivi d’annonces</option>{CREATION_STAGES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            </label>
+            {['post1','post2','wait'].includes(form.creation_stage)&&<label className="block text-xs text-gray-500">Prochaine échéance
+              <input aria-label="Prochaine échéance" type="datetime-local" className="w-full mt-1 border border-gray-200 rounded-lg px-3 py-2 text-sm" value={localDateInput(form.creation_next_at)} onChange={e=>set('creation_next_at',e.target.value?new Date(e.target.value).toISOString():null)}/>
+            </label>}
+            <div className="grid grid-cols-2 gap-3">
+              <label className="text-xs text-gray-500">Navigateur<input aria-label="Navigateur" className="w-full mt-1 border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="Chrome, Safari…" value={form.browser || ''} onChange={e=>set('browser',e.target.value)}/></label>
+              <label className="text-xs text-gray-500">Compte créé le<input aria-label="Compte créé le" type="datetime-local" className="w-full mt-1 border border-gray-200 rounded-lg px-3 py-2 text-sm" value={localDateInput(form.created_at)} onChange={e=>set('created_at',e.target.value?new Date(e.target.value).toISOString():null)}/></label>
+            </div>
+          </section>
 
           {/* Accordéon détails */}
           {!showDetails && !account && (
@@ -185,7 +205,7 @@ export default function AccountFormModal({ account, proxies = [], onClose, onSav
                 </div>
                 {form.statut === 'en_preparation' && (
                   <p className="text-[11px] text-purple-600 mt-1.5 leading-snug">
-                    1re annonce postée — en attente de vérification, pas encore sur proxy.
+                    Compte en cours de préparation. Le suivi des annonces est renseigné ci-dessus.
                   </p>
                 )}
               </div>

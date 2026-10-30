@@ -1,6 +1,9 @@
-import DropTrackerTab from './components/DropTrackerTab'
+import VintedAccountsTab from './components/VintedAccountsTab'
+import CategoryTabs from './components/CategoryTabs'
+import { TAB_SALES, TAB_BUDGET, TAB_COMPTES_VINTED } from './constants'
+import BudgetTab from './components/BudgetTab'
 import { validateTracker } from '../server/drop-tracker'
-import React from 'react'
+import React, {useState} from 'react'
 import { createRoot } from 'react-dom/client'
 import SalesTab from './components/SalesTab'
 import { validateEdit } from '../server/dotb'
@@ -36,4 +39,17 @@ async function trackerRequest(url, options) {
   }
   return {ok:true,json:async()=>structuredClone(tracker)}
 }
-createRoot(document.getElementById('root')).render(<div className="min-h-screen bg-gray-50"><div className="bg-amber-100 text-amber-900 px-4 py-2 text-sm font-medium">DÉMO · Données fictives · Aucun achat ni aucune modification de tes comptes · Réinitialisée à chaque rechargement</div>{location.hash === '#suivi' ? <DropTrackerTab request={trackerRequest}/> : <SalesTab isAdmin request={request}/>}</div>)
+const demoAccounts = [
+  {id:'account1',pseudo:'Compte démo',email:'demo@example.com',telephone:'',browser:'Chrome',statut:'en_preparation',creation_stage:'post1',creation_next_at:new Date(Date.now()+86400000).toISOString(),created_at:new Date().toISOString(),proxy_id:null,is_ready:false},
+  {id:'account2',pseudo:'Compte prêt',email:'',statut:'actif',creation_stage:'ready',is_ready:true,proxy_id:null,created_at:new Date().toISOString()},
+]
+const demoClient={from(table){
+  let patch=null;const filters=[];
+  const result=()=>{const list=(table==='vinted_accounts'?demoAccounts:[]).filter(a=>filters.every(([k,v])=>a[k]===v));if(patch)list.forEach(a=>Object.assign(a,patch));return {data:structuredClone(list),error:null}}
+  const q={select(){return q},order(){return q},eq(k,v){filters.push([k,v]);return q},update(p){patch=p;return q},then(resolve){return Promise.resolve(result()).then(resolve)},async maybeSingle(){const r=result();return {data:r.data[0]||null,error:null}}};return q
+}}
+function PreviewApp(){
+ const [tab,setTab]=useState(location.hash==='#suivi'?TAB_BUDGET:location.hash==='#comptes'?TAB_COMPTES_VINTED:TAB_SALES)
+ return <div className="min-h-screen bg-gray-50"><div className="bg-amber-100 text-amber-900 px-4 py-2 text-sm font-medium">DÉMO · Données fictives · Réinitialisée à chaque rechargement</div><header className="bg-white px-4 py-3 font-bold text-teal-700">Stock Vinted</header><CategoryTabs active={tab} onChange={setTab} items={[]} commandes={[]} userRole="admin"/>{tab===TAB_BUDGET?<BudgetTab request={trackerRequest}/>:tab===TAB_COMPTES_VINTED?<VintedAccountsTab client={demoClient}/>:<SalesTab isAdmin request={request}/>}</div>
+}
+createRoot(document.getElementById('root')).render(<PreviewApp/>)

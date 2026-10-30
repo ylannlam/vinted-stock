@@ -1,3 +1,4 @@
+import { CREATION_STAGES, accountDeadline, nextCreationStep } from '../lib/accountTracking'
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import AccountFormModal from './AccountFormModal'
@@ -19,7 +20,7 @@ const METHODE_COLORS = {
 
 // Cycle de vie de création (indépendant du statut actif/banni)
 const PHASES = [
-  { key: 'phone', label: 'Sur téléphone',   bg: 'bg-gray-100 text-gray-600',     dot: 'bg-gray-400',   active: 'bg-gray-700 text-white' },
+  { key: 'phone', label: 'À préparer',   bg: 'bg-gray-100 text-gray-600',     dot: 'bg-gray-400',   active: 'bg-gray-700 text-white' },
   { key: 'verif', label: 'En vérification', bg: 'bg-orange-100 text-orange-700', dot: 'bg-orange-400', active: 'bg-orange-500 text-white' },
   { key: 'ready', label: 'Prêt à utiliser', bg: 'bg-green-100 text-green-700',   dot: 'bg-green-500',  active: 'bg-green-600 text-white' },
 ]
@@ -28,6 +29,10 @@ const PHASES = [
 const STATUTS_INACTIFS = ['banni_temp', 'banni_def', 'suspendu']
 
 function getPhase(a) {
+  if (a.creation_stage === 'ready') return 'ready'
+  if (STATUTS_INACTIFS.includes(a.statut) || a.creation_stage === 'blocked') return null
+  if (a.creation_stage === 'wait') return 'verif'
+  if (['post1','post2'].includes(a.creation_stage)) return 'phone'
   // "Prêt" persiste même si le compte est banni par la suite
   if (a.proxy_id && a.is_ready) return 'ready'
   // Un compte banni/suspendu pas encore prêt n'est pas "en vérification"
@@ -100,7 +105,12 @@ function DebanCountdown({ deban_at }) {
   )
 }
 
-export default function VintedAccountsTab() {
+export default function VintedAccountsTab({client = supabase}) {
+  const [trackingFilter, setTrackingFilter] = useState('all')
+  const [trackingBusy, setTrackingBusy] = useState(null)
+  const [trackingError, setTrackingError] = useState('')
+  const [now, setNow] = useState(Date.now())
+  useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),30000);return()=>clearInterval(timer)},[])
   const [accounts, setAccounts] = useState([])
   const [proxies, setProxies] = useState([])
   const [loading, setLoading] = useState(true)
@@ -118,8 +128,8 @@ export default function VintedAccountsTab() {
   async function fetchAll() {
     setLoading(true)
     const [{ data: aData }, { data: pData }] = await Promise.all([
-      supabase.from('vinted_accounts').select('*').order('created_at', { ascending: false }),
-      supabase.from('proxies').select('*').order('created_at', { ascending: false }),
+      client.from('vinted_accounts').select('*').order('created_at', { ascending: false }),
+      client.from('proxies').select('*').order('created_at', { ascending: false }),
     ])
     if (aData) setAccounts(await autoUnban(aData))
     if (pData) setProxies(pData)
@@ -133,7 +143,7 @@ export default function VintedAccountsTab() {
     )
     if (expired.length === 0) return list
     const ids = expired.map(a => a.id)
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from('vinted_accounts')
       .update({ statut: 'actif', deban_at: null })
       .in('id', ids)
@@ -157,7 +167,7 @@ export default function VintedAccountsTab() {
     const fields = Object.fromEntries(
       Object.entries(raw).map(([k, v]) => [k, v === '' ? null : v])
     )
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from('proxies').insert(fields).select().single()
     if (error) { alert('Erreur : ' + error.message); return }
     if (data) setProxies(prev => [data, ...prev])
@@ -170,12 +180,12 @@ export default function VintedAccountsTab() {
       Object.entries(raw).map(([k, v]) => [k, v === '' ? null : v])
     )
     if (id) {
-      const { data, error } = await supabase
+      const { data, error } = await client
         .from('vinted_accounts').update(fields).eq('id', id).select().single()
       if (error) { alert('Erreur : ' + error.message); return }
       if (data) setAccounts(prev => prev.map(a => a.id === data.id ? data : a))
     } else {
-      const { data, error } = await supabase
+      const { data, error } = await client
         .from('vinted_accounts').insert(fields).select().single()
       if (error) { alert('Erreur : ' + error.message); return }
       if (data) setAccounts(prev => [data, ...prev])
@@ -184,14 +194,14 @@ export default function VintedAccountsTab() {
   }
 
   async function handleDelete(id) {
-    const { error } = await supabase.from('vinted_accounts').delete().eq('id', id)
+    const { error } = await client.from('vinted_accounts').delete().eq('id', id)
     if (!error) setAccounts(prev => prev.filter(a => a.id !== id))
     setDeleteId(null)
     if (expanded === id) setExpanded(null)
   }
 
   async function handleAssignProxy(accountId, proxyId) {
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from('vinted_accounts')
       .update({ proxy_id: proxyId || null })
       .eq('id', accountId)
@@ -203,14 +213,26 @@ export default function VintedAccountsTab() {
   }
 
   async function handleSetReady(accountId, ready) {
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from('vinted_accounts')
-      .update({ is_ready: ready })
+      .update({ is_ready: ready, creation_stage: ready ? 'ready' : 'wait', creation_next_at: ready ? null : new Date(Date.now()+86400000).toISOString() })
       .eq('id', accountId)
       .select()
       .single()
     if (error) { alert('Erreur : ' + error.message); return }
     if (data) setAccounts(prev => prev.map(a => a.id === data.id ? data : a))
+  }
+
+  async function advanceCreation(account) {
+    const patch=nextCreationStep(account)
+    if(!patch)return
+    setTrackingBusy(account.id);setTrackingError('')
+    try {
+      const {data,error}=await client.from('vinted_accounts').update(patch).eq('id',account.id).eq('creation_stage',account.creation_stage).select().maybeSingle()
+      if(error)throw error
+      if(!data)throw Error('Ce compte a été modifié. Actualisez la liste avant de recommencer.')
+      setAccounts(prev=>prev.map(a=>a.id===data.id?data:a))
+    }catch(e){setTrackingError(e.message)}finally{setTrackingBusy(null)}
   }
 
   const sansProxyCount = accounts.filter(a => !a.proxy_id).length
@@ -225,6 +247,7 @@ export default function VintedAccountsTab() {
     return Number.isNaN(n) ? Infinity : n
   }
   const displayed = accounts
+    .filter(a=>trackingFilter==='all'||a.creation_stage===trackingFilter)
     .filter(a => !filterStatut || a.statut === filterStatut)
     .filter(a => !filterPhase || getPhase(a) === filterPhase)
     .filter(a => {
@@ -239,7 +262,7 @@ export default function VintedAccountsTab() {
 
       {/* Tableau de bord du cycle de création */}
       <div className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-100 px-4 py-2 text-[11px] font-medium flex items-center gap-2 whitespace-nowrap overflow-x-auto scrollbar-hide">
-        <span className="text-gray-600"><b className="text-gray-900">{phaseCounts.phone}</b> sur téléphone</span>
+        <span className="text-gray-600"><b className="text-gray-900">{phaseCounts.phone}</b> à préparer</span>
         <span className="text-gray-300">·</span>
         <span className="text-orange-600"><b>{phaseCounts.verif}</b> en vérification</span>
         <span className="text-gray-300">·</span>
@@ -323,6 +346,12 @@ export default function VintedAccountsTab() {
         </div>
       )}
 
+      <div className="bg-white border-b border-gray-100 px-4 py-2 flex flex-wrap items-center gap-2">
+        <span className="text-[10px] uppercase text-gray-400 font-semibold">Annonces</span>
+        {[{value:'all',label:'Toutes les étapes'},...CREATION_STAGES].map(s=><button key={s.value} onClick={()=>setTrackingFilter(s.value)} className={`text-xs px-3 py-1.5 rounded-full ${trackingFilter===s.value?'bg-teal-100 text-teal-700 font-semibold':'bg-gray-50 text-gray-500'}`}>{s.label}{s.value!=='all'&&` (${accounts.filter(a=>a.creation_stage===s.value).length})`}</button>)}
+        <button className="ml-auto text-xs text-teal-600" onClick={fetchAll}>Actualiser</button>
+      </div>
+      {trackingError&&<p role="alert" className="m-3 bg-red-50 text-red-700 p-3 rounded-lg text-sm">{trackingError}</p>}
       {/* Liste */}
       <div className="px-3 pt-3 space-y-2">
         {loading && (
@@ -392,10 +421,17 @@ export default function VintedAccountsTab() {
               </svg>
             </div>
 
+            {account.creation_stage && <div className="px-4 pb-3 flex flex-wrap items-center gap-2 text-xs">
+              <span className="rounded-md bg-teal-50 text-teal-700 px-2 py-1">{CREATION_STAGES.find(s=>s.value===account.creation_stage)?.label}</span>
+              {accountDeadline(account,now)&&<span className={new Date(account.creation_next_at).getTime()<=now?'text-orange-600':'text-gray-500'}>⏱ {accountDeadline(account,now)}</span>}
+              {nextCreationStep(account)&&<button disabled={trackingBusy===account.id} onClick={()=>advanceCreation(account)} className="ml-auto rounded-lg bg-teal-500 text-white px-3 py-1.5 font-semibold disabled:opacity-50">{trackingBusy===account.id?'Enregistrement…':{post1:'1re annonce postée',post2:'2e annonce postée',wait:'Confirmer prêt'}[account.creation_stage]}</button>}
+            </div>}
             {/* Détails expandés */}
             {expanded === account.id && (
               <div className="border-t border-gray-100 px-4 py-3 space-y-2 bg-gray-50">
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                  {account.browser && <Info label="Navigateur" value={account.browser} />}
+                  {account.creation_next_at && <Info label="Échéance de création" value={new Date(account.creation_next_at).toLocaleString('fr-FR')} />}
                   {account.ads_power_num && (
                     <Info label="N° AdsPower" value={`#${account.ads_power_num}`} mono />
                   )}
