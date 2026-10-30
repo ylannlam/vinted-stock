@@ -19,7 +19,7 @@ const EMPTY = {
   browser: '',
 }
 
-export default function AccountFormModal({ account, proxies = [], onClose, onSave, onCreateProxy }) {
+export default function AccountFormModal({ account, proxies = [], onClose, onSave, onCreateProxy, error }) {
   const [form, setForm] = useState(account ? { ...account, proxy_id: account.proxy_id ?? '' } : { ...EMPTY })
   const [saving, setSaving] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
@@ -55,6 +55,7 @@ export default function AccountFormModal({ account, proxies = [], onClose, onSav
         </div>
 
         <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+          {error && <p role="alert" className="bg-red-50 text-red-700 p-3 rounded-lg text-sm">{error}</p>}
 
           {/* Pseudo — toujours visible */}
           <div className="grid grid-cols-3 gap-3">

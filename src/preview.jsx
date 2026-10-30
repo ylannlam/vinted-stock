@@ -42,11 +42,15 @@ async function trackerRequest(url, options) {
 const demoAccounts = [
   {id:'account1',pseudo:'Compte démo',email:'demo@example.com',telephone:'',browser:'Chrome',statut:'en_preparation',creation_stage:'post1',creation_next_at:new Date(Date.now()+86400000).toISOString(),created_at:new Date().toISOString(),proxy_id:null,is_ready:false},
   {id:'account2',pseudo:'Compte prêt',email:'',statut:'actif',creation_stage:'ready',is_ready:true,proxy_id:null,created_at:new Date().toISOString()},
+  {id:'account3',pseudo:'Atelier démo',email:'atelier@example.com',ads_power_num:12,browser:'AdsPower',statut:'en_preparation',creation_stage:'post2',creation_next_at:new Date(Date.now()-3600000).toISOString(),proxy_id:'proxy1'},
+  {id:'account4',pseudo:'Vestiaire démo',email:'vestiaire@example.com',ads_power_num:24,browser:'AdsPower',statut:'actif',creation_stage:'wait',creation_next_at:new Date(Date.now()+3600000*8).toISOString(),proxy_id:'proxy1'},
+  {id:'account5',pseudo:'Compte suspendu',email:'suspendu@example.com',statut:'suspendu',creation_stage:'ready',is_ready:true},
 ]
+const demoProxies=[{id:'proxy1',nom:'Proxy Paris · démo',adresse:'proxy.example',port:10001}]
 const demoClient={from(table){
-  let patch=null;const filters=[];
-  const result=()=>{const list=(table==='vinted_accounts'?demoAccounts:[]).filter(a=>filters.every(([k,v])=>a[k]===v));if(patch)list.forEach(a=>Object.assign(a,patch));return {data:structuredClone(list),error:null}}
-  const q={select(){return q},order(){return q},eq(k,v){filters.push([k,v]);return q},update(p){patch=p;return q},then(resolve){return Promise.resolve(result()).then(resolve)},async maybeSingle(){const r=result();return {data:r.data[0]||null,error:null}}};return q
+  let patch=null,insert=null,remove=false;const filters=[];
+  const result=()=>{const source=table==='vinted_accounts'?demoAccounts:demoProxies;if(insert){const row={id:crypto.randomUUID(),created_at:new Date().toISOString(),...insert};source.push(row);return {data:[structuredClone(row)],error:null}}const list=source.filter(a=>filters.every(fn=>fn(a)));if(patch)list.forEach(a=>Object.assign(a,patch));if(remove)list.forEach(a=>source.splice(source.indexOf(a),1));return {data:structuredClone(list),error:null}}
+  const q={select(){return q},order(){return q},eq(k,v){filters.push(a=>a[k]===v);return q},in(k,values){filters.push(a=>values.includes(a[k]));return q},update(p){patch=p;return q},insert(p){insert=p;return q},delete(){remove=true;return q},then(resolve){return Promise.resolve(result()).then(resolve)},async maybeSingle(){const r=result();return {data:r.data[0]||null,error:null}},single(){return q.maybeSingle()}};return q
 }}
 function PreviewApp(){
  const [tab,setTab]=useState(location.hash==='#suivi'?TAB_BUDGET:location.hash==='#comptes'?TAB_COMPTES_VINTED:TAB_SALES)

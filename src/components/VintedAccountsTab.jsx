@@ -1,587 +1,129 @@
-import { CREATION_STAGES, accountDeadline, nextCreationStep } from '../lib/accountTracking'
-import { useState, useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { accountDeadline, nextCreationStep } from '../lib/accountTracking'
+import { ACCOUNT_VIEWS, accountGroup, isAccountDue, nextAccountAction, selectAccounts } from '../lib/accountOverview'
 import AccountFormModal from './AccountFormModal'
 import ProxyFormModal from './ProxyFormModal'
+import AccountDetails, { CopyValue } from './AccountDetails'
 
-const STATUTS = [
-  { value: 'en_preparation', label: 'En prépa.',   bg: 'bg-purple-100 text-purple-700' },
-  { value: 'actif',          label: 'Actif',       bg: 'bg-green-100 text-green-700' },
-  { value: 'banni_temp',     label: 'Banni temp.', bg: 'bg-orange-100 text-orange-700' },
-  { value: 'banni_def',      label: 'Banni déf.',  bg: 'bg-red-100 text-red-700' },
-  { value: 'suspendu',       label: 'Suspendu',    bg: 'bg-gray-100 text-gray-600' },
-]
+const secondary = 'rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50'
+const selectClass = 'border border-gray-200 bg-white rounded-lg px-3 py-2 text-xs text-gray-600 focus:outline-none focus:border-teal-400'
+const tones = {prepare:'bg-blue-50 text-blue-700',waiting:'bg-amber-50 text-amber-700',ready:'bg-teal-50 text-teal-700',blocked:'bg-red-50 text-red-700'}
 
-const METHODE_COLORS = {
-  google: 'bg-blue-100 text-blue-700',
-  apple:  'bg-gray-800 text-white',
-  email:  'bg-teal-100 text-teal-700',
-}
-
-// Cycle de vie de création (indépendant du statut actif/banni)
-const PHASES = [
-  { key: 'phone', label: 'À préparer',   bg: 'bg-gray-100 text-gray-600',     dot: 'bg-gray-400',   active: 'bg-gray-700 text-white' },
-  { key: 'verif', label: 'En vérification', bg: 'bg-orange-100 text-orange-700', dot: 'bg-orange-400', active: 'bg-orange-500 text-white' },
-  { key: 'ready', label: 'Prêt à utiliser', bg: 'bg-green-100 text-green-700',   dot: 'bg-green-500',  active: 'bg-green-600 text-white' },
-]
-
-// Statuts hors pipeline de création (banni / suspendu)
-const STATUTS_INACTIFS = ['banni_temp', 'banni_def', 'suspendu']
-
-function getPhase(a) {
-  if (a.creation_stage === 'ready') return 'ready'
-  if (STATUTS_INACTIFS.includes(a.statut) || a.creation_stage === 'blocked') return null
-  if (a.creation_stage === 'wait') return 'verif'
-  if (['post1','post2'].includes(a.creation_stage)) return 'phone'
-  // "Prêt" persiste même si le compte est banni par la suite
-  if (a.proxy_id && a.is_ready) return 'ready'
-  // Un compte banni/suspendu pas encore prêt n'est pas "en vérification"
-  if (STATUTS_INACTIFS.includes(a.statut)) return null
-  if (!a.proxy_id) return 'phone'
-  return 'verif'
-}
-
-function StatutBadge({ statut }) {
-  const s = STATUTS.find(x => x.value === statut) ?? STATUTS[0]
-  return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${s.bg}`}>{s.label}</span>
-}
-
-// Petite icône de copie discrète (stoppe le clic pour ne pas déplier la carte)
-function CopyMini({ value, title = 'Copier' }) {
-  const [copied, setCopied] = useState(false)
-  if (value === null || value === undefined || value === '') return null
-  return (
-    <button
-      type="button"
-      title={title}
-      onClick={async (e) => {
-        e.stopPropagation()
-        try {
-          await navigator.clipboard.writeText(String(value))
-          setCopied(true)
-          setTimeout(() => setCopied(false), 1200)
-        } catch {}
-      }}
-      className={`shrink-0 transition-colors ${copied ? 'text-green-600' : 'text-gray-300 hover:text-gray-600'}`}
-    >
-      {copied ? (
-        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-        </svg>
-      ) : (
-        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h4a2 2 0 002-2M8 5a2 2 0 012-2h4a2 2 0 012 2m0 0h2a2 2 0 012 2v3" />
-        </svg>
-      )}
-    </button>
-  )
-}
-
-function PhaseBadge({ account }) {
-  const key = getPhase(account)
-  if (!key) return null
-  const p = PHASES.find(x => x.key === key) ?? PHASES[0]
-  return (
-    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${p.bg}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${p.dot}`} />
-      {p.label}
-    </span>
-  )
-}
-
-function DebanCountdown({ deban_at }) {
-  if (!deban_at) return null
-  const now = new Date()
-  const target = new Date(deban_at)
-  const diff = target - now
-  if (diff <= 0) return <span className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">Débanni</span>
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
-  const label = days > 0 ? `${days}j ${hours}h` : `${hours}h`
-  return (
-    <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">
-      ⏱ {label}
-    </span>
-  )
-}
-
-export default function VintedAccountsTab({client = supabase}) {
-  const [trackingFilter, setTrackingFilter] = useState('all')
-  const [trackingBusy, setTrackingBusy] = useState(null)
-  const [trackingError, setTrackingError] = useState('')
-  const [now, setNow] = useState(Date.now())
-  useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),30000);return()=>clearInterval(timer)},[])
-  const [accounts, setAccounts] = useState([])
-  const [proxies, setProxies] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [filterStatut, setFilterStatut] = useState(null)
-  const [filterPhase, setFilterPhase] = useState(null)
-  const [filterProxy, setFilterProxy] = useState(null)
-  const [editAccount, setEditAccount] = useState(undefined)
-  const [showProxyModal, setShowProxyModal] = useState(false)
-  const [deleteId, setDeleteId] = useState(null)
-  const [expanded, setExpanded] = useState(null)
-  const [quickAssignFor, setQuickAssignFor] = useState(null)
-
-  useEffect(() => { fetchAll() }, [])
+export default function VintedAccountsTab({client=supabase}) {
+  const [accounts,setAccounts]=useState([]),[proxies,setProxies]=useState([])
+  const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('')
+  const [view,setView]=useState('all'),[search,setSearch]=useState(''),[proxy,setProxy]=useState('all'),[sort,setSort]=useState('priority'),[dueOnly,setDueOnly]=useState(false)
+  const [selectedId,setSelectedId]=useState(null),[editAccount,setEditAccount]=useState(undefined),[showProxyModal,setShowProxyModal]=useState(false)
+  const [now,setNow]=useState(Date.now())
+  useEffect(()=>{fetchAll();const timer=setInterval(()=>setNow(Date.now()),30000);return()=>clearInterval(timer)},[])
 
   async function fetchAll() {
-    setLoading(true)
-    const [{ data: aData }, { data: pData }] = await Promise.all([
-      client.from('vinted_accounts').select('*').order('created_at', { ascending: false }),
-      client.from('proxies').select('*').order('created_at', { ascending: false }),
-    ])
-    if (aData) setAccounts(await autoUnban(aData))
-    if (pData) setProxies(pData)
-    setLoading(false)
+    setLoading(true);setError('')
+    try {
+      const [a,p]=await Promise.all([client.from('vinted_accounts').select('*').order('created_at',{ascending:false}),client.from('proxies').select('*').order('created_at',{ascending:false})])
+      if(a.error)throw a.error;if(p.error)throw p.error
+      // Preserve the existing automatic release of elapsed temporary bans.
+      let list=a.data
+      const expired=list.filter(x=>x.statut==='banni_temp'&&x.deban_at&&Date.parse(x.deban_at)<=Date.now())
+      if(expired.length){
+        const result=await client.from('vinted_accounts').update({statut:'actif',deban_at:null}).in('id',expired.map(x=>x.id)).select()
+        if(result.error)throw result.error
+        const updated=new Map(result.data.map(x=>[x.id,x]));list=list.map(x=>updated.get(x.id)||x)
+      }
+      setAccounts(list);setProxies(p.data)
+    } catch(e){setError(e.message||'Impossible de charger les comptes.')}finally{setLoading(false)}
   }
-
-  async function autoUnban(list) {
-    const now = new Date()
-    const expired = list.filter(a =>
-      a.statut === 'banni_temp' && a.deban_at && new Date(a.deban_at) <= now
-    )
-    if (expired.length === 0) return list
-    const ids = expired.map(a => a.id)
-    const { data, error } = await client
-      .from('vinted_accounts')
-      .update({ statut: 'actif', deban_at: null })
-      .in('id', ids)
-      .select()
-    if (error || !data) {
-      console.warn('auto-unban failed:', error?.message)
-      return list
-    }
-    const updated = new Map(data.map(d => [d.id, d]))
-    return list.map(a => updated.get(a.id) ?? a)
+  async function mutate(action,message) {
+    if(busy)return false
+    setBusy(true);setError('');setNotice('')
+    try {await action();setNotice(message);setNow(Date.now());return true}
+    catch(e){setError(e.message||'La modification n’a pas été enregistrée.');return false}
+    finally{setBusy(false)}
   }
-
-  const proxiesById = useMemo(() => {
-    const m = new Map()
-    for (const p of proxies) m.set(p.id, p)
-    return m
-  }, [proxies])
-
-  async function handleSaveProxy(form) {
-    const { id, created_at, ...raw } = form
-    const fields = Object.fromEntries(
-      Object.entries(raw).map(([k, v]) => [k, v === '' ? null : v])
-    )
-    const { data, error } = await client
-      .from('proxies').insert(fields).select().single()
-    if (error) { alert('Erreur : ' + error.message); return }
-    if (data) setProxies(prev => [data, ...prev])
-    setShowProxyModal(false)
+  function replaceAccount(account){setAccounts(prev=>prev.map(a=>a.id===account.id?account:a))}
+  async function updateAccount(id,fields){
+    const {data,error}=await client.from('vinted_accounts').update(fields).eq('id',id).select().single()
+    if(error)throw error;replaceAccount(data)
   }
-
-  async function handleSave(form) {
-    const { id, ...raw } = form
-    const fields = Object.fromEntries(
-      Object.entries(raw).map(([k, v]) => [k, v === '' ? null : v])
-    )
-    if (id) {
-      const { data, error } = await client
-        .from('vinted_accounts').update(fields).eq('id', id).select().single()
-      if (error) { alert('Erreur : ' + error.message); return }
-      if (data) setAccounts(prev => prev.map(a => a.id === data.id ? data : a))
-    } else {
-      const { data, error } = await client
-        .from('vinted_accounts').insert(fields).select().single()
-      if (error) { alert('Erreur : ' + error.message); return }
-      if (data) setAccounts(prev => [data, ...prev])
-    }
-    setEditAccount(undefined)
+  async function handleSave(form){
+    const ok=await mutate(async()=>{
+      const {id,...raw}=form
+      const fields=Object.fromEntries(Object.entries(raw).map(([k,v])=>[k,v===''?null:v]))
+      if(id)await updateAccount(id,fields)
+      else {const {data,error}=await client.from('vinted_accounts').insert(fields).select().single();if(error)throw error;setAccounts(prev=>[data,...prev])}
+    },'Compte enregistré.')
+    if(ok)setEditAccount(undefined)
   }
-
-  async function handleDelete(id) {
-    const { error } = await client.from('vinted_accounts').delete().eq('id', id)
-    if (!error) setAccounts(prev => prev.filter(a => a.id !== id))
-    setDeleteId(null)
-    if (expanded === id) setExpanded(null)
+  async function handleSaveProxy(form){
+    const ok=await mutate(async()=>{
+      const {id,created_at,...raw}=form
+      const fields=Object.fromEntries(Object.entries(raw).map(([k,v])=>[k,v===''?null:v]))
+      const {data,error}=await client.from('proxies').insert(fields).select().single();if(error)throw error;setProxies(prev=>[data,...prev])
+    },'Proxy créé.')
+    if(ok)setShowProxyModal(false)
   }
-
-  async function handleAssignProxy(accountId, proxyId) {
-    const { data, error } = await client
-      .from('vinted_accounts')
-      .update({ proxy_id: proxyId || null })
-      .eq('id', accountId)
-      .select()
-      .single()
-    if (error) { alert('Erreur : ' + error.message); return }
-    if (data) setAccounts(prev => prev.map(a => a.id === data.id ? data : a))
-    setQuickAssignFor(null)
-  }
-
-  async function handleSetReady(accountId, ready) {
-    const { data, error } = await client
-      .from('vinted_accounts')
-      .update({ is_ready: ready, creation_stage: ready ? 'ready' : 'wait', creation_next_at: ready ? null : new Date(Date.now()+86400000).toISOString() })
-      .eq('id', accountId)
-      .select()
-      .single()
-    if (error) { alert('Erreur : ' + error.message); return }
-    if (data) setAccounts(prev => prev.map(a => a.id === data.id ? data : a))
-  }
-
-  async function advanceCreation(account) {
+  async function advance(account){
     const patch=nextCreationStep(account)
     if(!patch)return
-    setTrackingBusy(account.id);setTrackingError('');setNow(Date.now())
-    try {
+    await mutate(async()=>{
       const {data,error}=await client.from('vinted_accounts').update(patch).eq('id',account.id).eq('creation_stage',account.creation_stage).select().maybeSingle()
       if(error)throw error
-      if(!data)throw Error('Ce compte a été modifié. Actualisez la liste avant de recommencer.')
-      setAccounts(prev=>prev.map(a=>a.id===data.id?data:a))
-    }catch(e){setTrackingError(e.message)}finally{setTrackingBusy(null)}
+      if(!data)throw Error('Ce compte a changé. Actualisez la liste avant de recommencer.')
+      replaceAccount(data)
+    },`Étape enregistrée pour ${account.pseudo}.`)
   }
-
-  const sansProxyCount = accounts.filter(a => !a.proxy_id).length
-  const phaseCounts = { phone: 0, verif: 0, ready: 0 }
-  for (const a of accounts) {
-    const ph = getPhase(a)
-    if (ph) phaseCounts[ph]++
+  async function remove(id){
+    const ok=await mutate(async()=>{const {error}=await client.from('vinted_accounts').delete().eq('id',id);if(error)throw error;setAccounts(prev=>prev.filter(a=>a.id!==id))},'Compte supprimé.')
+    if(ok)setSelectedId(null)
   }
+  const byProxy=useMemo(()=>new Map(proxies.map(p=>[p.id,p])),[proxies])
+  const counts=Object.fromEntries(ACCOUNT_VIEWS.map(v=>[v.key,v.key==='all'?accounts.length:accounts.filter(a=>accountGroup(a)===v.key).length]))
+  const dueCount=accounts.filter(a=>isAccountDue(a,now)).length
+  const displayed=selectAccounts(accounts,proxies,{view,search,proxy,sort,dueOnly,now})
+  const selected=accounts.find(a=>a.id===selectedId)
+  const filtered=view!=='all'||search||proxy!=='all'||dueOnly
+  function reset(){setView('all');setSearch('');setProxy('all');setDueOnly(false)}
+  function openEdit(account){setSelectedId(null);setError('');setEditAccount(account)}
 
-  const numOrInf = a => {
-    const n = parseInt(a.ads_power_num, 10)
-    return Number.isNaN(n) ? Infinity : n
-  }
-  const displayed = accounts
-    .filter(a=>trackingFilter==='all'||a.creation_stage===trackingFilter)
-    .filter(a => !filterStatut || a.statut === filterStatut)
-    .filter(a => !filterPhase || getPhase(a) === filterPhase)
-    .filter(a => {
-      if (filterProxy === null) return true
-      if (filterProxy === '__none__') return !a.proxy_id
-      return a.proxy_id === filterProxy
-    })
-    .sort((a, b) => numOrInf(a) - numOrInf(b))
-
-  return (
-    <div className="pb-28">
-
-      {/* Tableau de bord du cycle de création */}
-      <div className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-100 px-4 py-2 text-[11px] font-medium flex items-center gap-2 whitespace-nowrap overflow-x-auto scrollbar-hide">
-        <span className="text-gray-600"><b className="text-gray-900">{phaseCounts.phone}</b> à préparer</span>
-        <span className="text-gray-300">·</span>
-        <span className="text-orange-600"><b>{phaseCounts.verif}</b> en vérification</span>
-        <span className="text-gray-300">·</span>
-        <span className="text-green-600"><b>{phaseCounts.ready}</b> prêts</span>
+  return <main className="max-w-screen-2xl mx-auto p-4 space-y-4">
+    <header className="flex flex-wrap justify-between items-center gap-3">
+      <div><div className="flex items-center gap-2"><h1 className="text-xl font-bold text-gray-900">Comptes</h1><span className="text-xs text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">{accounts.length}</span></div><p className="text-sm text-gray-500 mt-1">Tes comptes, leur prochaine étape et leur environnement.</p></div>
+      <div className="flex gap-2"><button disabled={loading||busy} onClick={fetchAll} className={secondary}>Actualiser</button><button disabled={busy} onClick={()=>openEdit(null)} className="px-4 py-2 bg-teal-500 text-white rounded-lg text-sm font-semibold disabled:opacity-50">+ Ajouter un compte</button></div>
+    </header>
+    {error&&<p role="alert" className="border border-red-200 bg-red-50 text-red-700 p-3 rounded-lg text-sm">{error}</p>}
+    {notice&&<p role="status" className="text-xs text-teal-700">{notice}</p>}
+    <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div className="flex flex-wrap justify-between items-center gap-2 border-b border-gray-100 px-3 py-2.5">
+        <nav aria-label="État des comptes" className="flex flex-wrap gap-1">{ACCOUNT_VIEWS.map(v=><button key={v.key} aria-pressed={view===v.key} onClick={()=>setView(v.key)} className={`px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${view===v.key?'bg-teal-50 text-teal-700':'text-gray-500 hover:bg-gray-50'}`}>{v.label}<span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded ${view===v.key?'bg-teal-100':'bg-gray-100 text-gray-400'}`}>{counts[v.key]}</span></button>)}</nav>
+        {(dueCount>0||dueOnly)&&<button aria-pressed={dueOnly} onClick={()=>setDueOnly(!dueOnly)} className={`px-3 py-1.5 rounded-lg text-xs ${dueOnly?'bg-orange-100 text-orange-800 font-semibold':'text-orange-600 hover:bg-orange-50'}`}>{dueCount} échéance{dueCount>1?'s':''} à traiter{dueOnly?' ×':''}</button>}
       </div>
-
-      {/* Filtres rapides par phase */}
-      <div className="bg-white border-b border-gray-100 px-4 py-2.5 flex items-center gap-2 overflow-x-auto scrollbar-hide">
-        {PHASES.map(p => (
-          <button
-            key={p.key}
-            onClick={() => setFilterPhase(filterPhase === p.key ? null : p.key)}
-            className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full whitespace-nowrap flex-shrink-0 transition-colors ${
-              filterPhase === p.key ? p.active : `${p.bg} hover:opacity-80`
-            }`}
-          >
-            <span className={`w-1.5 h-1.5 rounded-full ${filterPhase === p.key ? 'bg-white' : p.dot}`} />
-            {p.label} ({phaseCounts[p.key]})
-          </button>
-        ))}
+      <div className="p-3 flex flex-wrap gap-2 items-center bg-gray-50/50">
+        <label className="relative flex-1 min-w-52"><span className="sr-only">Rechercher un compte</span><svg className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6" strokeWidth="1.6"/><path d="m15 15 5 5" strokeWidth="1.6"/></svg><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Pseudo, email, téléphone, AdsPower ou proxy…" className="w-full border border-gray-200 rounded-lg py-2 pl-9 pr-3 text-sm bg-white focus:outline-none focus:border-teal-400"/></label>
+        <select aria-label="Filtrer par proxy" value={proxy} onChange={e=>setProxy(e.target.value)} className={selectClass}><option value="all">Tous les proxys</option><option value="none">Sans proxy</option><option value="assigned">Avec proxy</option>{proxies.map(p=><option key={p.id} value={p.id}>{p.nom||`${p.adresse}:${p.port}`}</option>)}</select>
+        <select aria-label="Trier les comptes" value={sort} onChange={e=>setSort(e.target.value)} className={selectClass}><option value="priority">Priorité / échéance</option><option value="adspower">N° AdsPower</option><option value="name">Pseudo A → Z</option><option value="newest">Plus récents</option></select>
+        {filtered&&<button onClick={reset} className="text-xs text-gray-500 px-2 py-2 hover:text-teal-600">Effacer les filtres</button>}
       </div>
-
-      {sansProxyCount > 0 && (
-        <button
-          onClick={() => setFilterProxy(filterProxy === '__none__' ? null : '__none__')}
-          className={`w-full px-4 py-2 text-xs font-semibold border-b transition-colors flex items-center justify-center gap-2 ${
-            filterProxy === '__none__'
-              ? 'bg-orange-500 text-white border-orange-600'
-              : 'bg-orange-50 text-orange-700 border-orange-100 hover:bg-orange-100'
-          }`}
-        >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-          {sansProxyCount} compte{sansProxyCount > 1 ? 's' : ''} sans proxy {filterProxy === '__none__' ? '· cliquer pour tout afficher' : '· cliquer pour filtrer'}
-        </button>
-      )}
-
-      {/* Header + filtres */}
-      <div className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 overflow-x-auto scrollbar-hide">
-        <button
-          onClick={() => setFilterStatut(null)}
-          className={`text-xs font-semibold px-3 py-1.5 rounded-full whitespace-nowrap flex-shrink-0 transition-colors ${
-            filterStatut === null ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-          }`}
-        >
-          Tous ({accounts.length})
-        </button>
-        {STATUTS.map(s => {
-          const count = accounts.filter(a => a.statut === s.value).length
-          return (
-            <button
-              key={s.value}
-              onClick={() => setFilterStatut(filterStatut === s.value ? null : s.value)}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-full whitespace-nowrap flex-shrink-0 transition-colors ${
-                filterStatut === s.value ? 'bg-gray-800 text-white' : `${s.bg} hover:opacity-80`
-              }`}
-            >
-              {s.label} {count > 0 && `(${count})`}
-            </button>
-          )
-        })}
-      </div>
-
-      {proxies.length > 0 && (
-        <div className="bg-white border-b border-gray-100 px-4 py-2 flex items-center gap-2 overflow-x-auto scrollbar-hide">
-          <span className="text-[10px] uppercase font-semibold text-gray-400 shrink-0">Proxy</span>
-          <select
-            value={filterProxy ?? ''}
-            onChange={e => setFilterProxy(e.target.value === '' ? null : e.target.value)}
-            className="text-xs border border-gray-200 rounded-full px-3 py-1 bg-gray-50 focus:outline-none focus:border-teal-400"
-          >
-            <option value="">Tous</option>
-            <option value="__none__">— Sans proxy —</option>
-            {proxies.map(p => (
-              <option key={p.id} value={p.id}>
-                {p.nom || `${p.adresse}:${p.port}`} ({accounts.filter(a => a.proxy_id === p.id).length})
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      <div className="bg-white border-b border-gray-100 px-4 py-2 flex flex-wrap items-center gap-2">
-        <span className="text-[10px] uppercase text-gray-400 font-semibold">Annonces</span>
-        {[{value:'all',label:'Toutes les étapes'},...CREATION_STAGES].map(s=><button key={s.value} onClick={()=>setTrackingFilter(s.value)} className={`text-xs px-3 py-1.5 rounded-full ${trackingFilter===s.value?'bg-teal-100 text-teal-700 font-semibold':'bg-gray-50 text-gray-500'}`}>{s.label}{s.value!=='all'&&` (${accounts.filter(a=>a.creation_stage===s.value).length})`}</button>)}
-        <button className="ml-auto text-xs text-teal-600" onClick={fetchAll}>Actualiser</button>
-      </div>
-      {trackingError&&<p role="alert" className="m-3 bg-red-50 text-red-700 p-3 rounded-lg text-sm">{trackingError}</p>}
-      {/* Liste */}
-      <div className="px-3 pt-3 space-y-2">
-        {loading && (
-          <div className="flex justify-center py-10 text-gray-400 text-sm">Chargement...</div>
-        )}
-
-        {!loading && displayed.length === 0 && (
-          <div className="text-center py-10 text-gray-400 text-sm">Aucun compte</div>
-        )}
-
-        {displayed.map(account => (
-          <div key={account.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-
-            {/* Ligne principale */}
-            <div
-              className="flex items-center gap-3 px-4 py-3 cursor-pointer"
-              onClick={() => setExpanded(expanded === account.id ? null : account.id)}
-            >
-              <div className="w-9 h-9 rounded-full bg-teal-100 flex items-center justify-center flex-shrink-0 relative">
-                <span className="text-sm font-bold text-teal-700">
-                  {account.pseudo?.[0]?.toUpperCase() ?? '?'}
-                </span>
-                {account.ads_power_num && (
-                  <span className="absolute -top-1 -right-1 text-[9px] font-bold bg-gray-700 text-white w-4 h-4 rounded-full flex items-center justify-center">
-                    {account.ads_power_num}
-                  </span>
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="font-semibold text-gray-900 text-sm">{account.pseudo}</p>
-                  <PhaseBadge account={account} />
-                  <StatutBadge statut={account.statut} />
-                  {account.statut === 'banni_temp' && account.deban_at && (
-                    <DebanCountdown deban_at={account.deban_at} />
-                  )}
-                  {account.methode_connexion && (
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize ${METHODE_COLORS[account.methode_connexion] ?? 'bg-gray-100 text-gray-600'}`}>
-                      {account.methode_connexion}
-                    </span>
-                  )}
-                </div>
-                {account.email && (
-                  <p className="text-xs text-gray-400 truncate mt-0.5 flex items-center gap-1">
-                    <span className="truncate">{account.email}</span>
-                    <CopyMini value={account.email} title="Copier l'adresse mail" />
-                  </p>
-                )}
-                {account.proxy_id && proxiesById.get(account.proxy_id) ? (
-                  <p className="text-[10px] text-blue-600 font-medium truncate mt-0.5 flex items-center gap-1">
-                    <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064" />
-                    </svg>
-                    {proxiesById.get(account.proxy_id).nom || `${proxiesById.get(account.proxy_id).adresse}:${proxiesById.get(account.proxy_id).port}`}
-                  </p>
-                ) : (
-                  <p className="text-[10px] text-orange-600 font-bold truncate mt-0.5 flex items-center gap-1">
-                    📱 Sans proxy (téléphone)
-                  </p>
-                )}
-              </div>
-              <svg
-                className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${expanded === account.id ? 'rotate-180' : ''}`}
-                fill="none" viewBox="0 0 24 24" stroke="currentColor"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
-
-            {account.creation_stage && <div className="px-4 pb-3 flex flex-wrap items-center gap-2 text-xs">
-              <span className="rounded-md bg-teal-50 text-teal-700 px-2 py-1">{CREATION_STAGES.find(s=>s.value===account.creation_stage)?.label}</span>
-              {accountDeadline(account,now)&&<span className={new Date(account.creation_next_at).getTime()<=now?'text-orange-600':'text-gray-500'}>⏱ {accountDeadline(account,now)}</span>}
-              {nextCreationStep(account)&&<button disabled={trackingBusy===account.id} onClick={()=>advanceCreation(account)} className="ml-auto rounded-lg bg-teal-500 text-white px-3 py-1.5 font-semibold disabled:opacity-50">{trackingBusy===account.id?'Enregistrement…':{post1:'1re annonce postée',post2:'2e annonce postée',wait:'Confirmer prêt'}[account.creation_stage]}</button>}
-            </div>}
-            {/* Détails expandés */}
-            {expanded === account.id && (
-              <div className="border-t border-gray-100 px-4 py-3 space-y-2 bg-gray-50">
-                <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                  {account.browser && <Info label="Navigateur" value={account.browser} />}
-                  {account.creation_next_at && <Info label="Échéance de création" value={new Date(account.creation_next_at).toLocaleString('fr-FR')} />}
-                  {account.ads_power_num && (
-                    <Info label="N° AdsPower" value={`#${account.ads_power_num}`} mono />
-                  )}
-                  {account.deban_at && account.statut === 'banni_temp' && (
-                    <Info label="Débanni le" value={new Date(account.deban_at).toLocaleDateString('fr-FR')} />
-                  )}
-                  {account.password && (
-                    <Info label="Mot de passe" value={account.password} mono />
-                  )}
-                  {account.telephone && (
-                    <Info label="Téléphone" value={account.telephone} mono />
-                  )}
-                  {account.telephone_type && (
-                    <Info label="Type tél." value={account.telephone_type === 'onoff' ? 'OnOff' : 'Autre'} />
-                  )}
-                  {account.telephone_email && (
-                    <Info label="Email OnOff" value={account.telephone_email} />
-                  )}
-                  {account.created_at && (
-                    <Info label="Créé le" value={new Date(account.created_at).toLocaleDateString('fr-FR')} />
-                  )}
-                </div>
-                {account.notes && (
-                  <div className="mt-2 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
-                    <p className="text-xs text-yellow-700">{account.notes}</p>
-                  </div>
-                )}
-                {!account.proxy_id && (
-                  <div className="mt-2">
-                    {quickAssignFor === account.id ? (
-                      <div className="flex gap-2 items-center bg-orange-50 border border-orange-200 rounded-xl px-2.5 py-2">
-                        <select
-                          autoFocus
-                          defaultValue=""
-                          onChange={e => e.target.value && handleAssignProxy(account.id, e.target.value)}
-                          className="flex-1 text-xs border border-orange-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-teal-400"
-                        >
-                          <option value="" disabled>Choisir un proxy…</option>
-                          {proxies.map(p => (
-                            <option key={p.id} value={p.id}>
-                              {p.nom ? `${p.nom} — ${p.adresse}:${p.port}` : `${p.adresse}:${p.port} — ${p.username}`}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={() => setQuickAssignFor(null)}
-                          className="text-xs font-semibold text-gray-500 px-2 py-1.5 rounded-lg hover:bg-gray-100"
-                        >
-                          Annuler
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setQuickAssignFor(account.id)}
-                        disabled={proxies.length === 0}
-                        className="w-full py-2 text-xs font-semibold bg-orange-100 text-orange-700 rounded-xl hover:bg-orange-200 transition-colors disabled:opacity-50"
-                      >
-                        {proxies.length === 0 ? 'Crée un proxy d\'abord' : '🔗 Assigner un proxy'}
-                      </button>
-                    )}
-                  </div>
-                )}
-                {account.proxy_id && (
-                  <div className="mt-2">
-                    {account.is_ready ? (
-                      <button
-                        onClick={() => handleSetReady(account.id, false)}
-                        className="w-full py-2 text-xs font-semibold bg-orange-100 text-orange-700 rounded-xl hover:bg-orange-200 transition-colors"
-                      >
-                        ↩ Marquer comme pas prêt (repasser en vérification)
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => handleSetReady(account.id, true)}
-                        className="w-full py-2 text-xs font-semibold bg-green-100 text-green-700 rounded-xl hover:bg-green-200 transition-colors"
-                      >
-                        ✓ Marquer comme prêt à utiliser
-                      </button>
-                    )}
-                  </div>
-                )}
-                <div className="flex gap-2 pt-1">
-                  <button
-                    onClick={() => setEditAccount(account)}
-                    className="flex-1 py-2 text-xs font-semibold bg-teal-500 text-white rounded-xl hover:bg-teal-600 transition-colors"
-                  >
-                    Modifier
-                  </button>
-                  {deleteId === account.id ? (
-                    <>
-                      <button
-                        onClick={() => handleDelete(account.id)}
-                        className="flex-1 py-2 text-xs font-bold bg-red-500 text-white rounded-xl"
-                      >Supprimer</button>
-                      <button
-                        onClick={() => setDeleteId(null)}
-                        className="flex-1 py-2 text-xs font-semibold bg-gray-200 text-gray-600 rounded-xl"
-                      >Annuler</button>
-                    </>
-                  ) : (
-                    <button
-                      onClick={() => setDeleteId(account.id)}
-                      className="flex-1 py-2 text-xs font-semibold bg-red-100 text-red-600 rounded-xl hover:bg-red-200 transition-colors"
-                    >
-                      Supprimer
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Bouton ajouter */}
-      <button
-        onClick={() => setEditAccount(null)}
-        className="fixed bottom-6 right-5 w-14 h-14 bg-teal-500 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-teal-600 hover:scale-105 transition-all z-40"
-      >
-        <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-        </svg>
-      </button>
-
-      {editAccount !== undefined && (
-        <AccountFormModal
-          account={editAccount}
-          proxies={proxies}
-          onClose={() => setEditAccount(undefined)}
-          onSave={handleSave}
-          onCreateProxy={() => setShowProxyModal(true)}
-        />
-      )}
-
-      {showProxyModal && (
-        <ProxyFormModal
-          proxy={null}
-          onClose={() => setShowProxyModal(false)}
-          onSave={handleSaveProxy}
-        />
-      )}
-    </div>
-  )
-}
-
-function Info({ label, value, mono }) {
-  return (
-    <div>
-      <p className="text-[10px] text-gray-400 font-medium">{label}</p>
-      <p className={`text-xs text-gray-800 break-all ${mono ? 'font-mono' : ''}`}>{value}</p>
-    </div>
-  )
+      <div className="overflow-x-auto"><table className="w-full text-left min-w-[820px]"><thead className="text-[10px] uppercase tracking-wide text-gray-400 border-y border-gray-100"><tr>{['Compte','Prochaine étape','Échéance','Environnement','Action'].map(h=><th className="font-semibold px-4 py-3" key={h}>{h}</th>)}</tr></thead>
+        <tbody>{loading?<tr><td colSpan="5" className="py-16 text-center text-sm text-gray-400">Chargement des comptes…</td></tr>:displayed.map(a=>{
+          const group=accountGroup(a),p=byProxy.get(a.proxy_id),due=isAccountDue(a,now),deadline=accountDeadline(a,now)
+          const action=nextCreationStep(a)
+          return <tr key={a.id} className={`border-b border-gray-100 last:border-0 hover:bg-gray-50/70 ${due?'bg-orange-50/30':''}`}>
+            <td className="px-4 py-3"><div className="flex items-center gap-3"><span className={`w-9 h-9 rounded-lg flex items-center justify-center font-semibold text-xs shrink-0 ${group==='blocked'?'bg-gray-100 text-gray-400':'bg-teal-50 text-teal-700'}`}>{a.ads_power_num?`#${a.ads_power_num}`:a.pseudo?.slice(0,2).toUpperCase()}</span><div className="min-w-0"><button onClick={()=>{setSelectedId(a.id);setError('')}} className="font-semibold text-sm text-gray-900 hover:text-teal-600 text-left" aria-label={`Ouvrir ${a.pseudo}`}>{a.pseudo}</button><div className="text-xs text-gray-400 mt-0.5 flex gap-1.5 items-center"><span className="max-w-52 truncate" title={a.email||''}>{a.email||'Email non renseigné'}</span><CopyValue value={a.email} label={`Copier l’email de ${a.pseudo}`}/></div></div></div></td>
+            <td className="px-4 py-3"><span className={`inline-block px-2 py-1 rounded-md text-[11px] font-medium ${tones[group]}`}>{nextAccountAction(a)}</span>{a.statut==='banni_temp'&&a.deban_at&&<p className="text-[10px] text-gray-400 mt-1">Fin prévue le {new Date(a.deban_at).toLocaleDateString('fr-FR')}</p>}</td>
+            <td className="px-4 py-3"><p className={`text-xs ${due?'text-orange-700 font-semibold':'text-gray-600'}`}>{group==='blocked'||group==='ready'?'—':deadline||'À planifier'}</p>{deadline&&<p className="text-[10px] text-gray-400 mt-1">{new Date(a.creation_next_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</p>}</td>
+            <td className="px-4 py-3"><p className="text-xs text-gray-700">{a.browser|| (a.ads_power_num?'AdsPower':'Navigateur non renseigné')}</p><p className="text-[11px] text-gray-400 mt-1 max-w-40 truncate" title={p?.nom||p?.adresse||''}>{p?(p.nom||p.adresse):a.proxy_id?'Proxy non disponible':'Sans proxy'}</p></td>
+            <td className="px-4 py-3"><div className="flex flex-col items-start gap-1.5">{action&&<button disabled={busy} onClick={()=>advance(a)} className="text-xs font-semibold text-teal-600 hover:text-teal-800 disabled:opacity-40">{{post1:'1re annonce faite',post2:'2e annonce faite',wait:'Confirmer prêt'}[a.creation_stage]} →</button>}<button onClick={()=>{setSelectedId(a.id);setError('')}} className="text-xs text-gray-400 hover:text-gray-800">Voir la fiche</button></div></td>
+          </tr>
+        })}{!loading&&!displayed.length&&<tr><td colSpan="5" className="py-16 text-center"><p className="text-sm text-gray-500">{accounts.length?'Aucun compte ne correspond à ces filtres.':'Ajoute ton premier compte pour commencer.'}</p>{filtered&&<button onClick={reset} className="mt-3 text-xs text-teal-600 font-semibold">Afficher tous les comptes</button>}</td></tr>}</tbody>
+      </table></div>
+      <footer className="px-4 py-3 border-t border-gray-100 flex flex-wrap justify-between gap-2 text-[11px] text-gray-400"><span>{displayed.length} compte{displayed.length>1?'s':''} affiché{displayed.length>1?'s':''} sur {accounts.length}</span><span>Les échéances servent au suivi interne de préparation.</span></footer>
+    </section>
+    {selected&&<AccountDetails key={selected.id} account={selected} proxies={proxies} busy={busy} error={error} now={now} onClose={()=>setSelectedId(null)} onEdit={openEdit} onAdvance={advance} onDelete={remove}
+      onAssign={(id,proxyId)=>mutate(()=>updateAccount(id,{proxy_id:proxyId||null}),'Proxy enregistré.')}
+      onReady={(id,ready)=>mutate(()=>updateAccount(id,{is_ready:ready,creation_stage:ready?'ready':'wait',creation_next_at:ready?null:new Date(Date.now()+86400000).toISOString()}),'Étape enregistrée.')}
+      onCreateProxy={()=>{setSelectedId(null);setShowProxyModal(true)}}/>}
+    {editAccount!==undefined&&<AccountFormModal account={editAccount} proxies={proxies} onClose={()=>setEditAccount(undefined)} onSave={handleSave} onCreateProxy={()=>setShowProxyModal(true)} error={error}/>}
+    {showProxyModal&&<ProxyFormModal proxy={null} onClose={()=>setShowProxyModal(false)} onSave={handleSaveProxy} error={error}/>}
+  </main>
 }

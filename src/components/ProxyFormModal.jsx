@@ -10,7 +10,7 @@ const EMPTY = {
   notes: '',
 }
 
-export default function ProxyFormModal({ proxy, onClose, onSave }) {
+export default function ProxyFormModal({ proxy, onClose, onSave, error }) {
   const [form, setForm] = useState(proxy ? { ...EMPTY, ...proxy, port: proxy.port ?? '' } : { ...EMPTY })
   const [saving, setSaving] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
@@ -43,6 +43,7 @@ export default function ProxyFormModal({ proxy, onClose, onSave }) {
         </div>
 
         <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+          {error && <p role="alert" className="bg-red-50 text-red-700 p-3 rounded-lg text-sm">{error}</p>}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-gray-500 mb-1 block">Nom</label>
