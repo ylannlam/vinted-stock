@@ -1,5 +1,5 @@
 import { TAB_SALES, TAB_BUDGET } from '../constants'
-import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_EMPLOYEES, TAB_FONDS, TAB_CONNEXIONS } from '../constants'
+import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED } from '../constants'
 
 export default function CategoryTabs({ active, onChange, items, commandes, userRole }) {
   const isAdmin = userRole === 'admin'
@@ -107,7 +107,7 @@ export default function CategoryTabs({ active, onChange, items, commandes, userR
             )}
           </button>
 
-          {/* Comptes Vinted + Employés (admin uniquement) */}
+          {/* Comptes Vinted (admin uniquement) */}
           {isAdmin && (
             <>
               <div className="flex items-center px-1">
@@ -118,18 +118,6 @@ export default function CategoryTabs({ active, onChange, items, commandes, userR
                 className={tabClass(active === TAB_COMPTES_VINTED, 'teal')}
               >
                 🔐 Comptes
-              </button>
-              <button
-                onClick={() => onChange(TAB_EMPLOYEES)}
-                className={tabClass(active === TAB_EMPLOYEES, 'teal')}
-              >
-                👥 Employés
-              </button>
-              <button onClick={() => onChange(TAB_FONDS)} className={tabClass(active === TAB_FONDS, 'teal')}>
-                🖼 Fonds
-              </button>
-              <button onClick={() => onChange(TAB_CONNEXIONS)} className={tabClass(active === TAB_CONNEXIONS, 'teal')}>
-                📜 Connexions
               </button>
             </>
           )}
