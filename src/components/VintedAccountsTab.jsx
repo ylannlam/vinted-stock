@@ -226,7 +226,7 @@ export default function VintedAccountsTab({client = supabase}) {
   async function advanceCreation(account) {
     const patch=nextCreationStep(account)
     if(!patch)return
-    setTrackingBusy(account.id);setTrackingError('')
+    setTrackingBusy(account.id);setTrackingError('');setNow(Date.now())
     try {
       const {data,error}=await client.from('vinted_accounts').update(patch).eq('id',account.id).eq('creation_stage',account.creation_stage).select().maybeSingle()
       if(error)throw error

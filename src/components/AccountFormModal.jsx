@@ -33,7 +33,8 @@ export default function AccountFormModal({ account, proxies = [], onClose, onSav
     e.preventDefault()
     if (!form.pseudo.trim()) return
     setSaving(true)
-    await onSave({...form, is_ready: form.creation_stage ? form.creation_stage === 'ready' : form.is_ready || false})
+    await onSave({...form, is_ready: form.creation_stage ? form.creation_stage === 'ready' : form.is_ready || false,
+      statut: form.creation_stage === 'blocked' && !['banni_temp','banni_def','suspendu'].includes(form.statut) ? 'suspendu' : form.creation_stage === 'ready' && form.statut === 'en_preparation' ? 'actif' : form.statut})
     setSaving(false)
   }
 

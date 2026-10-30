@@ -9,7 +9,7 @@ export function accountDeadline(account, now = Date.now()) {
   if (!account.creation_next_at || !['post1','post2','wait'].includes(account.creation_stage)) return null
   const diff = new Date(account.creation_next_at).getTime() - now
   if (diff <= 0) return account.creation_stage === 'wait' ? 'Délai écoulé · à vérifier' : 'Annonce à poster maintenant'
-  const minutes = Math.ceil(diff / 60000)
+  const minutes = Math.max(1, Math.floor(diff / 60000))
   return `${Math.floor(minutes/1440)}j ${Math.floor(minutes%1440/60)}h ${minutes%60}min`
 }
 export function nextCreationStep(account, now = Date.now()) {
