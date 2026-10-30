@@ -16,6 +16,7 @@ export default function VintedAccountsTab({client=supabase}) {
   const [view,setView]=useState('all'),[search,setSearch]=useState(''),[proxy,setProxy]=useState('all'),[sort,setSort]=useState('priority'),[dueOnly,setDueOnly]=useState(false)
   const [selectedId,setSelectedId]=useState(null),[editAccount,setEditAccount]=useState(undefined),[showProxyModal,setShowProxyModal]=useState(false)
   const [now,setNow]=useState(Date.now())
+  const [deleteId,setDeleteId]=useState(null)
   useEffect(()=>{fetchAll();const timer=setInterval(()=>setNow(Date.now()),30000);return()=>clearInterval(timer)},[])
 
   async function fetchAll() {
@@ -75,7 +76,7 @@ export default function VintedAccountsTab({client=supabase}) {
   }
   async function remove(id){
     const ok=await mutate(async()=>{const {error}=await client.from('vinted_accounts').delete().eq('id',id);if(error)throw error;setAccounts(prev=>prev.filter(a=>a.id!==id))},'Compte supprimé.')
-    if(ok)setSelectedId(null)
+    if(ok){setSelectedId(null);setDeleteId(null)}
   }
   const byProxy=useMemo(()=>new Map(proxies.map(p=>[p.id,p])),[proxies])
   const counts=Object.fromEntries(ACCOUNT_VIEWS.map(v=>[v.key,v.key==='all'?accounts.length:accounts.filter(a=>accountGroup(a)===v.key).length]))
@@ -113,7 +114,7 @@ export default function VintedAccountsTab({client=supabase}) {
             <td className="px-4 py-3"><span className={`inline-block px-2 py-1 rounded-md text-[11px] font-medium ${tones[group]}`}>{nextAccountAction(a)}</span>{a.statut==='banni_temp'&&a.deban_at&&<p className="text-[10px] text-gray-400 mt-1">Fin prévue le {new Date(a.deban_at).toLocaleDateString('fr-FR')}</p>}</td>
             <td className="px-4 py-3"><p className={`text-xs ${due?'text-orange-700 font-semibold':'text-gray-600'}`}>{group==='blocked'||group==='ready'?'—':deadline||'À planifier'}</p>{deadline&&<p className="text-[10px] text-gray-400 mt-1">{new Date(a.creation_next_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</p>}</td>
             <td className="px-4 py-3"><p className="text-xs text-gray-700">{a.browser|| (a.ads_power_num?'AdsPower':'Navigateur non renseigné')}</p><p className="text-[11px] text-gray-400 mt-1 max-w-40 truncate" title={p?.nom||p?.adresse||''}>{p?(p.nom||p.adresse):a.proxy_id?'Proxy non disponible':'Sans proxy'}</p></td>
-            <td className="px-4 py-3"><div className="flex flex-col items-start gap-1.5">{action&&<button disabled={busy} onClick={()=>advance(a)} className="text-xs font-semibold text-teal-600 hover:text-teal-800 disabled:opacity-40">{{post1:'1re annonce faite',post2:'2e annonce faite',wait:'Confirmer prêt'}[a.creation_stage]} →</button>}<button onClick={()=>{setSelectedId(a.id);setError('')}} className="text-xs text-gray-400 hover:text-gray-800">Voir la fiche</button></div></td>
+            <td className="px-4 py-3"><div className="flex flex-col items-start gap-1.5">{action&&<button disabled={busy} onClick={()=>advance(a)} className="text-xs font-semibold text-teal-600 hover:text-teal-800 disabled:opacity-40">{{post1:'1re annonce faite',post2:'2e annonce faite',wait:'Confirmer prêt'}[a.creation_stage]} →</button>}<div className="flex flex-wrap items-center gap-3"><button onClick={()=>{setSelectedId(a.id);setError('')}} className="text-xs text-gray-500 hover:text-gray-800">Voir la fiche</button><button disabled={busy} onClick={()=>{setDeleteId(a.id);setError('')}} aria-label={`Supprimer ${a.pseudo}`} className="text-xs text-red-600 hover:text-red-800 disabled:opacity-40">Supprimer</button></div>{deleteId===a.id&&<div role="group" aria-label={`Confirmer la suppression de ${a.pseudo}`} className="bg-red-50 border border-red-200 rounded-lg p-3 max-w-64 text-xs text-red-800"><p>Supprimer définitivement « {a.pseudo} » du suivi ?</p><p className="mt-1 text-red-600">Cela ne ferme pas le compte sur Vinted.</p><div className="flex gap-3 mt-3"><button disabled={busy} onClick={()=>remove(a.id)} className="font-semibold disabled:opacity-40">{busy?'Suppression…':'Confirmer'}</button><button disabled={busy} onClick={()=>setDeleteId(null)} className="disabled:opacity-40">Annuler</button></div></div>}</div></td>
           </tr>
         })}{!loading&&!displayed.length&&<tr><td colSpan="5" className="py-16 text-center"><p className="text-sm text-gray-500">{accounts.length?'Aucun compte ne correspond à ces filtres.':'Ajoute ton premier compte pour commencer.'}</p>{filtered&&<button onClick={reset} className="mt-3 text-xs text-teal-600 font-semibold">Afficher tous les comptes</button>}</td></tr>}</tbody>
       </table></div>
