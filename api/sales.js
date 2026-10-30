@@ -1,3 +1,4 @@
+import { readPage } from '../server/pagination.js'
 import { randomUUID } from 'node:crypto'
 import { authorize } from '../server/auth.js'
 import { AppError, normalizeOrders, readDotbPage, validateEdit } from '../server/dotb.js'
@@ -26,13 +27,11 @@ export default async function handler(req, res) {
       const { data: state, error: stateError } = await db.from('dotb_sync_state').select('cursor,last_completed_at,processed').eq('id',true).single()
       if (stateError && !['42P01','PGRST205'].includes(stateError.code)) throw stateError
       if (stateError) return res.json({ setup_required: true, connected: !!process.env.DOTB_API_TOKEN, lines: [], catalog: [], count: 0 })
-      const { data, error, count } = await db.from('sales_lines')
-        .select('*,order:sales_orders!inner(*)', { count: 'exact' }).eq('source_active', true)
-        .order('id').range(offset, offset + 249)
-      fail(error)
-      // Catalog is paginated separately by the same cursor to avoid Supabase's 1000-row default.
-      const { data: catalog, error: catalogError, count: catalogCount } = await db.from('sales_catalog').select('*',{ count:'exact' }).order('sku').range(offset,offset+249)
-      fail(catalogError)
+      const { data, count } = await readPage(head => db.from('sales_lines')
+        .select('*,order:sales_orders!inner(*)', { count: 'exact', head })
+        .eq('source_active', true).order('id'), offset)
+      const { data: catalog, count: catalogCount } = await readPage(head => db.from('sales_catalog')
+        .select('*', { count: 'exact', head }).order('sku'), offset)
       return res.json({ lines: data, catalog, count, catalog_count: catalogCount, connected: !!process.env.DOTB_API_TOKEN,
         last_sync: state.last_completed_at, resume: !!state.cursor, processed: state.processed })
     }
@@ -73,6 +72,7 @@ export default async function handler(req, res) {
     fail(error)
     return res.json({ saved: true })
   } catch (error) {
+    console.error('sales_request_failed', { method: req.method, code: error.code || 'unknown', status: error.status || 500 })
     const key = Object.keys(errorMessages).find(key => error.message?.includes(key))
     const setup = ['42P01','PGRST202','PGRST205'].includes(error.code)
     return res.status(key ? 409 : setup ? 503 : error.status || 500).json({ error: key ? errorMessages[key] : setup ? 'Le suivi des ventes reste à activer dans la base de données.' : error instanceof AppError ? error.message : 'Impossible de terminer l’opération. Vos données restent conservées.' })
