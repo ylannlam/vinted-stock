@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { accountDeadline, nextCreationStep } from '../lib/accountTracking'
+import { accountDeadline, nextCreationStep, readyWithoutTracking } from '../lib/accountTracking'
 import { ACCOUNT_VIEWS, accountGroup, isAccountDue, nextAccountAction, selectAccounts } from '../lib/accountOverview'
 import AccountFormModal from './AccountFormModal'
 import AccountDetails, { CopyValue } from './AccountDetails'
@@ -65,6 +65,19 @@ export default function VintedAccountsTab({client=supabase}) {
       replaceAccount(data)
     },`Étape enregistrée pour ${account.pseudo}.`)
   }
+  async function markReady(account){
+    const patch=readyWithoutTracking(account)
+    if(!patch)return
+    await mutate(async()=>{
+      let query=client.from('vinted_accounts').update(patch).eq('id',account.id).eq('is_shadowbanned',false)
+      query=account.creation_stage==null?query.is('creation_stage',null):query.eq('creation_stage',account.creation_stage)
+      query=account.statut==null?query.is('statut',null):query.eq('statut',account.statut)
+      const {data,error}=await query.select().maybeSingle()
+      if(error)throw error
+      if(!data)throw Error('Ce compte a changé. Actualisez la liste avant de recommencer.')
+      replaceAccount(data)
+    },`${account.pseudo} est maintenant dans les comptes prêts.`)
+  }
   async function remove(id){
     const ok=await mutate(async()=>{const {error}=await client.from('vinted_accounts').delete().eq('id',id);if(error)throw error;setAccounts(prev=>prev.filter(a=>a.id!==id))},'Compte supprimé.')
     if(ok){setSelectedId(null);setDeleteId(null)}
@@ -109,13 +122,13 @@ export default function VintedAccountsTab({client=supabase}) {
             <td className="px-4 py-3"><span className={`inline-block px-2 py-1 rounded-md text-[11px] font-medium ${tones[group]}`}>{nextAccountAction(a)}</span>{a.statut==='banni_temp'&&a.deban_at&&<p className="text-[10px] text-gray-400 mt-1">Fin prévue le {new Date(a.deban_at).toLocaleDateString('fr-FR')}</p>}</td>
             <td className="px-4 py-3"><p className={`text-xs ${due?'text-orange-700 font-semibold':'text-gray-600'}`}>{group!=='isolation'?'—':deadline||'À planifier'}</p>{deadline&&<p className="text-[10px] text-gray-400 mt-1">{new Date(a.creation_next_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</p>}</td>
             <td className="px-4 py-3"><p className="text-xs text-gray-700">{a.browser|| (a.ads_power_num?'AdsPower':'Navigateur non renseigné')}</p><p className="text-[11px] text-gray-400 mt-1">{group==='isolation'?'Téléphone · isolement':group==='shadowban'?'Ne plus utiliser':''}</p></td>
-            <td className="px-4 py-3"><div className="flex flex-col items-start gap-1.5">{action&&<button disabled={busy} onClick={()=>advance(a)} className="text-xs font-semibold text-teal-600 hover:text-teal-800 disabled:opacity-40">{{post1:'1re annonce faite',post2:'2e annonce faite',wait:'Sortir de l’isolement'}[a.creation_stage]} →</button>}<div className="flex flex-wrap items-center gap-3"><button onClick={()=>{setSelectedId(a.id);setError('')}} className="text-xs text-gray-500 hover:text-gray-800">Voir la fiche</button><button disabled={busy} onClick={()=>{setDeleteId(a.id);setError('')}} aria-label={`Supprimer ${a.pseudo}`} className="text-xs text-red-600 hover:text-red-800 disabled:opacity-40">Supprimer</button></div>{deleteId===a.id&&<div role="group" aria-label={`Confirmer la suppression de ${a.pseudo}`} className="bg-red-50 border border-red-200 rounded-lg p-3 max-w-64 text-xs text-red-800"><p>Supprimer définitivement « {a.pseudo} » du suivi ?</p><p className="mt-1 text-red-600">Cela ne ferme pas le compte sur Vinted.</p><div className="flex gap-3 mt-3"><button disabled={busy} onClick={()=>remove(a.id)} className="font-semibold disabled:opacity-40">{busy?'Suppression…':'Confirmer'}</button><button disabled={busy} onClick={()=>setDeleteId(null)} className="disabled:opacity-40">Annuler</button></div></div>}</div></td>
+            <td className="px-4 py-3"><div className="flex flex-col items-start gap-1.5">{readyWithoutTracking(a)&&<button disabled={busy} onClick={()=>markReady(a)} className="text-xs font-semibold text-teal-600 hover:text-teal-800 disabled:opacity-40">Marquer comme prêt →</button>}{action&&<button disabled={busy} onClick={()=>advance(a)} className="text-xs font-semibold text-teal-600 hover:text-teal-800 disabled:opacity-40">{{post1:'1re annonce faite',post2:'2e annonce faite',wait:'Sortir de l’isolement'}[a.creation_stage]} →</button>}<div className="flex flex-wrap items-center gap-3"><button onClick={()=>{setSelectedId(a.id);setError('')}} className="text-xs text-gray-500 hover:text-gray-800">Voir la fiche</button><button disabled={busy} onClick={()=>{setDeleteId(a.id);setError('')}} aria-label={`Supprimer ${a.pseudo}`} className="text-xs text-red-600 hover:text-red-800 disabled:opacity-40">Supprimer</button></div>{deleteId===a.id&&<div role="group" aria-label={`Confirmer la suppression de ${a.pseudo}`} className="bg-red-50 border border-red-200 rounded-lg p-3 max-w-64 text-xs text-red-800"><p>Supprimer définitivement « {a.pseudo} » du suivi ?</p><p className="mt-1 text-red-600">Cela ne ferme pas le compte sur Vinted.</p><div className="flex gap-3 mt-3"><button disabled={busy} onClick={()=>remove(a.id)} className="font-semibold disabled:opacity-40">{busy?'Suppression…':'Confirmer'}</button><button disabled={busy} onClick={()=>setDeleteId(null)} className="disabled:opacity-40">Annuler</button></div></div>}</div></td>
           </tr>
         })}{!loading&&!displayed.length&&<tr><td colSpan="5" className="py-16 text-center"><p className="text-sm text-gray-500">{accounts.length?'Aucun compte ne correspond à ces filtres.':'Aucun compte dans ce groupe.'}</p>{filtered&&<button onClick={reset} className="mt-3 text-xs text-teal-600 font-semibold">Effacer les filtres</button>}</td></tr>}</tbody>
       </table></div>
       <footer className="px-4 py-3 border-t border-gray-100 flex flex-wrap justify-between gap-2 text-[11px] text-gray-400"><span>{displayed.length} compte{displayed.length>1?'s':''} affiché{displayed.length>1?'s':''} sur {accounts.length}</span><span>Les passages d’étape sont confirmés manuellement.</span></footer>
     </section>
-    {selected&&<AccountDetails key={selected.id} account={selected} busy={busy} error={error} now={now} onClose={()=>setSelectedId(null)} onEdit={openEdit} onAdvance={advance} onDelete={remove}
+    {selected&&<AccountDetails key={selected.id} account={selected} busy={busy} error={error} now={now} onClose={()=>setSelectedId(null)} onEdit={openEdit} onAdvance={advance} onMarkReady={markReady} onDelete={remove}
       onShadowban={()=>archive(selected)} />}
     {editAccount!==undefined&&<AccountFormModal account={editAccount} onClose={()=>setEditAccount(undefined)} onSave={handleSave} error={error}/>}
   </main>

@@ -25,3 +25,8 @@ export function initialCreation(createdAt=Date.now()) {
  const created=new Date(createdAt).toISOString()
  return {created_at:created,creation_stage:'post1',creation_next_at:new Date(Date.parse(created)+7200000).toISOString(),is_ready:false,statut:'en_preparation'}
 }
+
+export function readyWithoutTracking(account) {
+ if(account.creation_stage || account.is_ready || account.is_shadowbanned || ['banni_temp','banni_def','suspendu'].includes(account.statut))return null
+ return {creation_stage:'ready',creation_next_at:null,is_ready:true,statut:'actif'}
+}

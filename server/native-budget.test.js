@@ -1,7 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {budgetTotals,mergeExpenses} from '../src/lib/budget.js'
-import {nextCreationStep,accountDeadline,initialCreation} from '../src/lib/accountTracking.js'
+import {nextCreationStep,accountDeadline,initialCreation,readyWithoutTracking} from '../src/lib/accountTracking.js'
+
+test('legacy accounts can be marked ready without bypassing isolation or blocked states',()=>{
+ const a={creation_stage:null,statut:'en_preparation',is_ready:false}
+ assert.deepEqual(readyWithoutTracking(a),{creation_stage:'ready',creation_next_at:null,is_ready:true,statut:'actif'})
+ for(const patch of [{creation_stage:'post1'},{creation_stage:'post2'},{creation_stage:'wait'},{is_shadowbanned:true},{statut:'banni_temp'},{statut:'banni_def'},{statut:'suspendu'},{is_ready:true}])assert.equal(readyWithoutTracking({...a,...patch}),null)
+})
 test('budget uses cents and handles arbitrary categories',()=>{
  const rows=[{type:'out',cat:'__proto__',amount:0.1},{type:'out',cat:'__proto__',amount:0.2},{type:'in',cat:'Ventes',amount:1}]
  const t=budgetTotals(rows);assert.equal(t.expenses,0.3);assert.equal(t.balance,0.7);assert.equal(t.categories[0].amount,0.3)
