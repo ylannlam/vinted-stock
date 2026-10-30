@@ -1,6 +1,6 @@
+import AccountPreparation from './AccountPreparation'
 import { useEffect, useRef, useState } from 'react'
-import { CREATION_STAGES, accountDeadline, nextCreationStep, readyWithoutTracking } from '../lib/accountTracking'
-import { nextAccountAction } from '../lib/accountOverview'
+import { CREATION_STAGES, accountDeadline } from '../lib/accountTracking'
 
 export function CopyValue({value,label='Copier'}) {
   const [message,setMessage]=useState('')
@@ -19,10 +19,7 @@ export default function AccountDetails({account,busy,error,now,onClose,onEdit,on
       <header className="p-5 border-b border-gray-100 flex justify-between items-start gap-3"><div><p className="text-xs text-gray-400 mb-1">Fiche du compte {account.ads_power_num?`· AdsPower #${account.ads_power_num}`:''}</p><h2 id="account-details-title" className="text-xl font-bold text-gray-900 break-all">{account.pseudo}</h2></div><button autoFocus onClick={onClose} aria-label="Fermer la fiche" className="w-8 h-8 bg-gray-100 rounded-full text-gray-500">×</button></header>
       <div className="flex-1 overflow-y-auto p-5 space-y-6">
         {error&&<p role="alert" className="bg-red-50 text-red-700 rounded-lg p-3 text-sm">{error}</p>}
-        <section className="bg-gray-50 border border-gray-200 rounded-xl p-4"><p className="text-xs text-gray-500">Prochaine étape</p><h3 className="font-semibold text-gray-900 mt-1">{nextAccountAction(account)}</h3>{accountDeadline(account,now)&&<p className="text-xs text-gray-500 mt-2">{accountDeadline(account,now)}</p>}
-          {readyWithoutTracking(account)&&<div className="mt-3"><p className="text-xs text-gray-500 mb-2">Si ce compte est déjà préparé, tu peux le sortir de l’isolement.</p><button disabled={busy} onClick={()=>onMarkReady(account)} className="px-3 py-2 text-xs font-semibold bg-teal-500 text-white rounded-lg disabled:opacity-50">Marquer comme prêt</button></div>}
-          {nextCreationStep(account,now)&&<button disabled={busy} onClick={()=>onAdvance(account)} className="mt-3 px-3 py-2 text-xs font-semibold bg-teal-500 text-white rounded-lg disabled:opacity-50">{{post1:'Confirmer la 1re annonce postée',post2:'Confirmer la 2e annonce postée',wait:'Sortir de l’isolement · compte prêt'}[account.creation_stage]}</button>}
-        </section>
+        <section className="bg-gray-50 border border-gray-200 rounded-xl p-4"><h3 className="font-semibold text-sm text-gray-900 mb-3">Préparation du compte</h3><AccountPreparation account={account} busy={busy} onAdvance={onAdvance} onMarkReady={onMarkReady} onEdit={onEdit}/>{accountDeadline(account,now)&&<p className="text-xs text-gray-500 mt-3">Rappel conseillé : {accountDeadline(account,now)}. Tu peux confirmer dès que l’action est faite.</p>}</section>
         <section><h3 className="font-semibold text-sm text-gray-900 mb-3">Connexion et coordonnées</h3><dl className="grid grid-cols-2 gap-4">
           <div className="col-span-2">{info('Email',account.email,true)}</div>{info('Téléphone',account.telephone,true)}{info('Connexion',account.methode_connexion)}
           {account.telephone_type&&info('Service téléphone',account.telephone_type==='onoff'?'OnOff':account.telephone_type)}{account.telephone_email&&info('Email du service',account.telephone_email,true)}

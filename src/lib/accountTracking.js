@@ -15,7 +15,6 @@ export function accountDeadline(account, now = Date.now()) {
 export function nextCreationStep(account, now = Date.now()) {
   const stage = {post1:'post2', post2:'wait', wait:'ready'}[account.creation_stage]
   if (!stage || account.is_shadowbanned || ['banni_temp','banni_def','suspendu'].includes(account.statut)) return null
-  if (account.creation_next_at && Date.parse(account.creation_next_at)>now) return null
   return {creation_stage:stage, creation_next_at:stage==='ready'?null:new Date(now+86400000).toISOString(),
     is_ready:stage==='ready', ...(stage==='ready' && account.statut==='en_preparation' ? {statut:'actif'} : {})}
 }

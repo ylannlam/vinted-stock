@@ -13,16 +13,16 @@ test('budget uses cents and handles arbitrary categories',()=>{
  const t=budgetTotals(rows);assert.equal(t.expenses,0.3);assert.equal(t.balance,0.7);assert.equal(t.categories[0].amount,0.3)
 })
 
-test('phone isolation lasts through two announcements and cannot advance early',()=>{
+test('phone preparation keeps reminders but accepts manual completion before them',()=>{
  const start=Date.parse('2026-10-30T08:00:00Z')
  let a=initialCreation(start)
  assert.equal(a.creation_next_at,'2026-10-30T10:00:00.000Z')
  assert.equal(a.is_ready,false)
- assert.equal(nextCreationStep(a,start+3600000),null)
+ assert.equal(nextCreationStep(a,start+3600000).creation_stage,'post2')
  a={...a,...nextCreationStep(a,start+7200000)}
  assert.equal(a.creation_stage,'post2')
  assert.equal(a.creation_next_at,'2026-10-31T10:00:00.000Z')
- assert.equal(nextCreationStep(a,start+7200001),null)
+ assert.equal(nextCreationStep(a,start+7200001).creation_stage,'wait')
  a={...a,...nextCreationStep(a,Date.parse(a.creation_next_at))}
  assert.equal(a.creation_stage,'wait')
  assert.equal(a.creation_next_at,'2026-11-01T10:00:00.000Z')
