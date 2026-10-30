@@ -1,4 +1,4 @@
-import { TAB_SALES, TAB_BUDGET } from '../constants'
+import { TAB_SALES, TAB_BUDGET, TAB_CATALOG } from '../constants'
 import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED } from '../constants'
 
 export default function CategoryTabs({ active, onChange, items, commandes, userRole }) {
@@ -49,6 +49,7 @@ export default function CategoryTabs({ active, onChange, items, commandes, userR
         <div className="flex min-w-max px-2">
 
           <button onClick={() => onChange(TAB_SALES)} className={tabClass(active === TAB_SALES)}>Ventes & achats</button>
+          <button onClick={() => onChange(TAB_CATALOG)} className={tabClass(active === TAB_CATALOG)}>Catalogue</button>
           {isAdmin && <button onClick={() => onChange(TAB_BUDGET)} className={tabClass(active === TAB_BUDGET)}>Budget</button>}
           {/* Onglet Stock */}
           <button onClick={() => onChange(TAB_TOUT)} className={tabClass(active === TAB_TOUT)}>

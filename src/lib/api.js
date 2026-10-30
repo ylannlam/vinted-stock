@@ -17,3 +17,12 @@ export async function salesRequest(method = 'GET', body, query = '') {
   if (!response.ok) throw new Error(result.error || 'Le serveur est indisponible. Réessayez.')
   return result
 }
+
+export async function catalogRequest(method = 'GET', body, query = '') {
+  const response = await authenticatedFetch(`/api/catalog${query}`, {
+    method, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  })
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(result.error || 'Le catalogue est indisponible. Réessayez.')
+  return result
+}

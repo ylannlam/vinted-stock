@@ -11,5 +11,6 @@ export const TAB_FONDS            = '__fonds__'
 export const TAB_CONNEXIONS       = '__connexions__'
 
 export const TAB_SALES = '__sales__'
+export const TAB_CATALOG = '__catalog__'
 
 export const TAB_BUDGET = '__drop_tracker__'
