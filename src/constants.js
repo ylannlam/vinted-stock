@@ -12,3 +12,5 @@ export const TAB_CONNEXIONS       = '__connexions__'
 export const TAB_PROXIES          = '__proxies__'
 
 export const TAB_SALES = '__sales__'
+
+export const TAB_DROP = '__drop_tracker__'

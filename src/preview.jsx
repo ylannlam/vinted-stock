@@ -1,3 +1,5 @@
+import DropTrackerTab from './components/DropTrackerTab'
+import { validateTracker } from '../server/drop-tracker'
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import SalesTab from './components/SalesTab'
@@ -25,4 +27,13 @@ async function request(method='GET',body) {
   }
   line.updated_at=new Date().toISOString();return {saved:true}
 }
-createRoot(document.getElementById('root')).render(<div className="min-h-screen bg-gray-50"><div className="bg-amber-100 text-amber-900 px-4 py-2 text-sm font-medium">DÉMO · Données fictives · Aucun achat ni aucune modification de tes comptes · Réinitialisée à chaque rechargement</div><SalesTab isAdmin request={request}/></div>)
+let tracker = {revision:0,payload:{accounts:[{id:'demo1',pseudo:'Compte démo',email:'demo@example.com',phone:'',browser:'Chrome',createdAt:Date.now(),stage:'post1',nextAt:Date.now()+86400000,notes:''}],expenses:[{id:'expense1',date:'2026-10-30',type:'out',cat:'Emballage',label:'Exemple',amount:12}],settings:{budget:100}}}
+async function trackerRequest(url, options) {
+  if(options?.method==='PUT') {
+    const body=JSON.parse(options.body)
+    if(body.revision!==tracker.revision) throw Error('Version périmée')
+    tracker={payload:validateTracker(body.payload),revision:tracker.revision+1}
+  }
+  return {ok:true,json:async()=>structuredClone(tracker)}
+}
+createRoot(document.getElementById('root')).render(<div className="min-h-screen bg-gray-50"><div className="bg-amber-100 text-amber-900 px-4 py-2 text-sm font-medium">DÉMO · Données fictives · Aucun achat ni aucune modification de tes comptes · Réinitialisée à chaque rechargement</div>{location.hash === '#suivi' ? <DropTrackerTab request={trackerRequest}/> : <SalesTab isAdmin request={request}/>}</div>)
