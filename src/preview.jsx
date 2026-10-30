@@ -40,20 +40,21 @@ async function trackerRequest(url, options) {
   return {ok:true,json:async()=>structuredClone(tracker)}
 }
 const demoAccounts = [
-  {id:'account1',pseudo:'Compte démo',email:'demo@example.com',telephone:'',browser:'Chrome',statut:'en_preparation',creation_stage:'post1',creation_next_at:new Date(Date.now()+86400000).toISOString(),created_at:new Date().toISOString(),proxy_id:null,is_ready:false},
+  {id:'account1',pseudo:'Compte démo',email:'demo@example.com',telephone:'',browser:'Chrome · téléphone',statut:'en_preparation',creation_stage:'post1',creation_next_at:new Date(Date.now()+7200000).toISOString(),created_at:new Date().toISOString(),is_ready:false},
   {id:'account2',pseudo:'Compte prêt',email:'',statut:'actif',creation_stage:'ready',is_ready:true,proxy_id:null,created_at:new Date().toISOString()},
-  {id:'account3',pseudo:'Atelier démo',email:'atelier@example.com',ads_power_num:12,browser:'AdsPower',statut:'en_preparation',creation_stage:'post2',creation_next_at:new Date(Date.now()-3600000).toISOString(),proxy_id:'proxy1'},
-  {id:'account4',pseudo:'Vestiaire démo',email:'vestiaire@example.com',ads_power_num:24,browser:'AdsPower',statut:'actif',creation_stage:'wait',creation_next_at:new Date(Date.now()+3600000*8).toISOString(),proxy_id:'proxy1'},
+  {id:'account3',pseudo:'Atelier démo',email:'atelier@example.com',browser:'Safari · téléphone',statut:'en_preparation',creation_stage:'post2',creation_next_at:new Date(Date.now()-3600000).toISOString()},
+  {id:'account4',pseudo:'Vestiaire démo',email:'vestiaire@example.com',browser:'Firefox · téléphone',statut:'en_preparation',creation_stage:'wait',creation_next_at:new Date(Date.now()-3600000*2).toISOString()},
+  {id:'shadow1',pseudo:'Ancien compte',email:'archive@example.com',is_shadowbanned:true,creation_stage:'ready'},
   {id:'account5',pseudo:'Compte suspendu',email:'suspendu@example.com',statut:'suspendu',creation_stage:'ready',is_ready:true},
 ]
-const demoProxies=[{id:'proxy1',nom:'Proxy Paris · démo',adresse:'proxy.example',port:10001}]
 const demoClient={from(table){
   let patch=null,insert=null,remove=false;const filters=[];
-  const result=()=>{const source=table==='vinted_accounts'?demoAccounts:demoProxies;if(insert){const row={id:crypto.randomUUID(),created_at:new Date().toISOString(),...insert};source.push(row);return {data:[structuredClone(row)],error:null}}const list=source.filter(a=>filters.every(fn=>fn(a)));if(patch)list.forEach(a=>Object.assign(a,patch));if(remove)list.forEach(a=>source.splice(source.indexOf(a),1));return {data:structuredClone(list),error:null}}
-  const q={select(){return q},order(){return q},eq(k,v){filters.push(a=>a[k]===v);return q},in(k,values){filters.push(a=>values.includes(a[k]));return q},update(p){patch=p;return q},insert(p){insert=p;return q},delete(){remove=true;return q},then(resolve){return Promise.resolve(result()).then(resolve)},async maybeSingle(){const r=result();return {data:r.data[0]||null,error:null}},single(){return q.maybeSingle()}};return q
+  const result=()=>{const source=table==='vinted_accounts'?demoAccounts:[];if(insert){const row={id:crypto.randomUUID(),created_at:new Date().toISOString(),...insert};source.push(row);return {data:[structuredClone(row)],error:null}}const list=source.filter(a=>filters.every(fn=>fn(a)));if(patch)list.forEach(a=>Object.assign(a,patch));if(remove)list.forEach(a=>source.splice(source.indexOf(a),1));return {data:structuredClone(list),error:null}}
+  const q={select(){return q},order(){return q},eq(k,v){filters.push(a=>(k==='is_shadowbanned'?!!a[k]:a[k])===v);return q},in(k,values){filters.push(a=>values.includes(a[k]));return q},update(p){patch=p;return q},insert(p){insert=p;return q},delete(){remove=true;return q},then(resolve){return Promise.resolve(result()).then(resolve)},async maybeSingle(){const r=result();return {data:r.data[0]||null,error:null}},single(){return q.maybeSingle()}};return q
 }}
 function PreviewApp(){
  const [tab,setTab]=useState(location.hash==='#suivi'?TAB_BUDGET:location.hash==='#comptes'?TAB_COMPTES_VINTED:TAB_SALES)
  return <div className="min-h-screen bg-gray-50"><div className="bg-amber-100 text-amber-900 px-4 py-2 text-sm font-medium">DÉMO · Données fictives · Réinitialisée à chaque rechargement</div><header className="bg-white px-4 py-3 font-bold text-teal-700">Stock Vinted</header><CategoryTabs active={tab} onChange={setTab} items={[]} commandes={[]} userRole="admin"/>{tab===TAB_BUDGET?<BudgetTab request={trackerRequest}/>:tab===TAB_COMPTES_VINTED?<VintedAccountsTab client={demoClient}/>:<SalesTab isAdmin request={request}/>}</div>
 }
 createRoot(document.getElementById('root')).render(<PreviewApp/>)
+

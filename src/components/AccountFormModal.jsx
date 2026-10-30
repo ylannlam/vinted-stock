@@ -1,4 +1,4 @@
-import { CREATION_STAGES, localDateInput } from '../lib/accountTracking'
+import { CREATION_STAGES, localDateInput, initialCreation } from '../lib/accountTracking'
 import { useState } from 'react'
 
 const EMPTY = {
@@ -10,17 +10,16 @@ const EMPTY = {
   telephone: '',
   telephone_type: 'onoff',
   telephone_email: '',
-  statut: 'actif',
+  statut: 'en_preparation',
   deban_at: '',
   notes: '',
-  proxy_id: '',
   creation_stage: 'post1',
   creation_next_at: '',
   browser: '',
 }
 
-export default function AccountFormModal({ account, proxies = [], onClose, onSave, onCreateProxy, error }) {
-  const [form, setForm] = useState(account ? { ...account, proxy_id: account.proxy_id ?? '' } : { ...EMPTY })
+export default function AccountFormModal({ account, onClose, onSave, error }) {
+  const [form, setForm] = useState(account ? { ...EMPTY, ...account } : { ...EMPTY, ...initialCreation(), is_shadowbanned:false })
   const [saving, setSaving] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showDetails, setShowDetails] = useState(!!account)
@@ -33,7 +32,7 @@ export default function AccountFormModal({ account, proxies = [], onClose, onSav
     e.preventDefault()
     if (!form.pseudo.trim()) return
     setSaving(true)
-    await onSave({...form, is_ready: form.creation_stage ? form.creation_stage === 'ready' : form.is_ready || false,
+    await onSave({...form, is_ready: !form.is_shadowbanned && (form.creation_stage ? form.creation_stage === 'ready' : form.is_ready || false),
       statut: form.creation_stage === 'blocked' && !['banni_temp','banni_def','suspendu'].includes(form.statut) ? 'suspendu' : form.creation_stage === 'ready' && form.statut === 'en_preparation' ? 'actif' : form.statut})
     setSaving(false)
   }
@@ -82,23 +81,12 @@ export default function AccountFormModal({ account, proxies = [], onClose, onSav
             </div>
           </div>
 
-          {/* Quick toggle "En préparation" — toujours visible */}
-          <button
-            type="button"
-            onClick={() => set('statut', form.statut === 'en_preparation' ? 'actif' : 'en_preparation')}
-            className={`w-full py-2 rounded-xl text-xs font-semibold border transition-colors ${
-              form.statut === 'en_preparation'
-                ? 'bg-purple-500 text-white border-purple-500'
-                : 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100'
-            }`}
-          >
-            {form.statut === 'en_preparation' ? '✓ En préparation' : 'Marquer en préparation'}
-          </button>
-
           <section className="border border-gray-200 rounded-xl p-3 space-y-3">
-            <h3 className="text-xs font-semibold text-gray-600">Suivi de création</h3>
+            <h3 className="text-xs font-semibold text-gray-600">Création et isolement sur téléphone</h3>
+            <p className="text-xs text-gray-500">Jour 1 : 1re annonce après 2 h. Jour 2 : 2e annonce. Jour 3 : prêt à passer sur proxy.</p>
+            <label className="flex gap-2 items-center text-sm text-gray-700"><input type="checkbox" checked={!!form.is_shadowbanned} onChange={e=>set('is_shadowbanned',e.target.checked)}/>Shadowban · compte abandonné</label>
             <label className="block text-xs text-gray-500">Étape
-              <select aria-label="Étape de création" className="w-full mt-1 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white" value={form.creation_stage || ''} onChange={e=>setForm(prev=>({...prev,creation_stage:e.target.value,creation_next_at:['post1','post2','wait'].includes(e.target.value)?new Date(Date.now()+86400000).toISOString():null}))}>
+              <select aria-label="Étape de création" className="w-full mt-1 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white" value={form.creation_stage || ''} onChange={e=>setForm(prev=>({...prev,creation_stage:e.target.value,creation_next_at:['post1','post2','wait'].includes(e.target.value)?new Date(Date.now()+(e.target.value==='post1'?7200000:86400000)).toISOString():null}))}>
                 <option value="">Sans suivi d’annonces</option>{CREATION_STAGES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
             </label>
@@ -107,7 +95,7 @@ export default function AccountFormModal({ account, proxies = [], onClose, onSav
             </label>}
             <div className="grid grid-cols-2 gap-3">
               <label className="text-xs text-gray-500">Navigateur<input aria-label="Navigateur" className="w-full mt-1 border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="Chrome, Safari…" value={form.browser || ''} onChange={e=>set('browser',e.target.value)}/></label>
-              <label className="text-xs text-gray-500">Compte créé le<input aria-label="Compte créé le" type="datetime-local" className="w-full mt-1 border border-gray-200 rounded-lg px-3 py-2 text-sm" value={localDateInput(form.created_at)} onChange={e=>set('created_at',e.target.value?new Date(e.target.value).toISOString():null)}/></label>
+              <label className="text-xs text-gray-500">Compte créé le<input aria-label="Compte créé le" type="datetime-local" className="w-full mt-1 border border-gray-200 rounded-lg px-3 py-2 text-sm" value={localDateInput(form.created_at)} onChange={e=>{const value=e.target.value?new Date(e.target.value).toISOString():null;setForm(prev=>({...prev,created_at:value,...(prev.creation_stage==='post1'&&value?{creation_next_at:new Date(Date.parse(value)+7200000).toISOString()}:{} )}))}}/></label>
             </div>
           </section>
 
@@ -220,30 +208,6 @@ export default function AccountFormModal({ account, proxies = [], onClose, onSav
                     className="w-full border border-orange-200 bg-orange-50 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-orange-400" />
                 </div>
               )}
-
-              <div>
-                <label className="text-xs font-semibold text-gray-500 mb-1 block">Proxy</label>
-                <div className="flex gap-2">
-                  <select
-                    value={form.proxy_id ?? ''}
-                    onChange={e => set('proxy_id', e.target.value)}
-                    className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-teal-400 bg-white"
-                  >
-                    <option value="">Sans proxy (téléphone)</option>
-                    {proxies.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.nom ? `${p.nom} — ${p.adresse}:${p.port}` : `${p.adresse}:${p.port} — ${p.username}`}
-                      </option>
-                    ))}
-                  </select>
-                  {onCreateProxy && (
-                    <button type="button" onClick={onCreateProxy}
-                      className="px-3 py-2.5 text-xs font-semibold border border-dashed border-teal-300 text-teal-600 rounded-xl hover:bg-teal-50 transition-colors whitespace-nowrap">
-                      + Nouveau
-                    </button>
-                  )}
-                </div>
-              </div>
 
               <div>
                 <label className="text-xs font-semibold text-gray-500 mb-1 block">Notes</label>

@@ -1,5 +1,5 @@
 import { TAB_SALES, TAB_BUDGET } from '../constants'
-import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_EMPLOYEES, TAB_FONDS, TAB_CONNEXIONS, TAB_PROXIES } from '../constants'
+import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_EMPLOYEES, TAB_FONDS, TAB_CONNEXIONS } from '../constants'
 
 export default function CategoryTabs({ active, onChange, items, commandes, userRole }) {
   const isAdmin = userRole === 'admin'
@@ -118,9 +118,6 @@ export default function CategoryTabs({ active, onChange, items, commandes, userR
                 className={tabClass(active === TAB_COMPTES_VINTED, 'teal')}
               >
                 🔐 Comptes
-              </button>
-              <button onClick={() => onChange(TAB_PROXIES)} className={tabClass(active === TAB_PROXIES, 'teal')}>
-                🌐 Proxies
               </button>
               <button
                 onClick={() => onChange(TAB_EMPLOYEES)}

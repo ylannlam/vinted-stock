@@ -3,7 +3,7 @@ import BudgetTab from './components/BudgetTab'
 import { TAB_SALES, TAB_BUDGET } from './constants'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
-import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE, TAB_EMPLOYEES, TAB_FONDS, TAB_CONNEXIONS, TAB_PROXIES } from './constants'
+import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE, TAB_EMPLOYEES, TAB_FONDS, TAB_CONNEXIONS } from './constants'
 import Login from './Login'
 import { recordLogin } from './lib/loginLog'
 import { usePersistedState } from './lib/usePersistedState'
@@ -19,7 +19,6 @@ import WorkspaceTab from './components/WorkspaceTab'
 import EmployeesTab from './components/EmployeesTab'
 import FondsLibrary from './components/FondsLibrary'
 import LoginLogsTab from './components/LoginLogsTab'
-import ProxiesTab from './components/ProxiesTab'
 import EmplacementsView from './components/EmplacementsView'
 import LotPdfModal from './components/LotPdfModal'
 import { getCapacities, getOccupied, firstFreeSlot } from './lib/emplacements'
@@ -36,7 +35,8 @@ export default function App() {
   const [profileLoading, setProfileLoading] = useState(false)
   const [activeTab, setActiveTab] = useState(() => {
     const saved = localStorage.getItem('activeTab')
-    const validTabs = [TAB_BUDGET, TAB_SALES, TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE, TAB_EMPLOYEES, TAB_FONDS, TAB_CONNEXIONS, TAB_PROXIES]
+    const validTabs = [TAB_BUDGET, TAB_SALES, TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE, TAB_EMPLOYEES, TAB_FONDS, TAB_CONNEXIONS]
+    if(saved==='__proxies__')return TAB_COMPTES_VINTED
     return validTabs.includes(saved) ? saved : TAB_SALES
   })
   const [items, setItems] = useState([])
@@ -501,7 +501,7 @@ export default function App() {
   }
 
   // Stock / Admin: full UI
-  const isSpecialTab = activeTab === TAB_TOUT || activeTab === TAB_A_RECEVOIR || activeTab === TAB_A_ENVOYER || activeTab === TAB_A_ENVOYER_LOT || activeTab === TAB_ENVOYES || activeTab === TAB_COMPTES_VINTED || activeTab === TAB_EMPLOYEES || activeTab === TAB_FONDS || activeTab === TAB_CONNEXIONS || activeTab === TAB_PROXIES
+  const isSpecialTab = activeTab === TAB_TOUT || activeTab === TAB_A_RECEVOIR || activeTab === TAB_A_ENVOYER || activeTab === TAB_A_ENVOYER_LOT || activeTab === TAB_ENVOYES || activeTab === TAB_COMPTES_VINTED || activeTab === TAB_EMPLOYEES || activeTab === TAB_FONDS || activeTab === TAB_CONNEXIONS
 
   const filteredItems = (() => {
     if (activeTab === TAB_A_RECEVOIR)    return items.filter(i => i.status === 'a_recevoir')
@@ -556,7 +556,6 @@ export default function App() {
       {activeTab === TAB_COMPTES_VINTED && <VintedAccountsTab />}
       {activeTab === TAB_FONDS && <FondsLibrary />}
       {activeTab === TAB_CONNEXIONS && isAdmin && <LoginLogsTab />}
-      {activeTab === TAB_PROXIES && isAdmin && <ProxiesTab />}
 
 
       {activeTab === TAB_TOUT && (
@@ -650,7 +649,7 @@ export default function App() {
         )
       })()}
 
-      {activeTab !== TAB_BUDGET && activeTab !== TAB_SALES && activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_EMPLOYEES && activeTab !== TAB_FONDS && activeTab !== TAB_A_RECEVOIR && activeTab !== TAB_CONNEXIONS && activeTab !== TAB_PROXIES && (
+      {activeTab !== TAB_BUDGET && activeTab !== TAB_SALES && activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_EMPLOYEES && activeTab !== TAB_FONDS && activeTab !== TAB_A_RECEVOIR && activeTab !== TAB_CONNEXIONS && (
         <Gallery
           items={filteredItems}
           loading={itemsLoading}
@@ -675,7 +674,7 @@ export default function App() {
         />
       )}
 
-      {activeTab !== TAB_BUDGET && activeTab !== TAB_SALES && activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_EMPLOYEES && activeTab !== TAB_FONDS && activeTab !== TAB_A_ENVOYER && activeTab !== TAB_A_ENVOYER_LOT && activeTab !== TAB_ENVOYES && activeTab !== TAB_CONNEXIONS && activeTab !== TAB_PROXIES && (
+      {activeTab !== TAB_BUDGET && activeTab !== TAB_SALES && activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_EMPLOYEES && activeTab !== TAB_FONDS && activeTab !== TAB_A_ENVOYER && activeTab !== TAB_A_ENVOYER_LOT && activeTab !== TAB_ENVOYES && activeTab !== TAB_CONNEXIONS && (
         <button
           onClick={() => activeTab === TAB_A_RECEVOIR ? setShowAddCommandeModal(true) : setShowAddModal(true)}
           className={`fixed bottom-6 right-5 w-14 h-14 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-105 z-40 ${
