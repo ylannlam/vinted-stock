@@ -13,7 +13,8 @@ import SalesTab from './components/SalesTab'
 import { validateEdit } from '../server/dotb'
 import { nextStage, blocked, supplierOf, skuOf } from './lib/fulfillment'
 import './index.css'
-const catalog = []
+const catalog = [{sku:'DEMO-100-M',supplier_url:'https://fr.shein.com/Demo-p-123456.html',price:12.50,currency:'EUR',color:'Beige',observed_at:new Date().toISOString()},
+  {sku:'DEMO-101-M',retrieval_status:'queued'}]
 const lines = ['to_order','ordered','in_transit','received','prepared','shipped'].map((stage,i)=>({
   id:`demo-${i}`,updated_at:new Date().toISOString(),stage,
   source:{title:['Blouse fleurie','Robe côtelée','Chemisier satiné','Gilet court','Jupe plissée','Top manches longues'][i],sku:`DEMO-${100+i}-M`,selling_price:'24.90',supplier_link:'https://fr.shein.com/'},
@@ -21,7 +22,7 @@ const lines = ['to_order','ordered','in_transit','received','prepared','shipped'
   order:{id:`vente-${i}`,account_login:`Compte démo ${i%2+1}`,currency:'EUR',status:'label_sent',deadline:new Date(Date.now()+(i+1)*86400000).toISOString()},
 }))
 async function request(method='GET',body) {
-  if(method==='GET')return {lines:structuredClone(lines).map(l=>({...l,tracking_status:'included'})),catalog:structuredClone(catalog),count:lines.length,connected:true,tracking:{starts_at:'2026-10-29T23:00:00Z',time_zone:'Europe/Paris'}}
+  if(method==='GET')return {lines:structuredClone(lines).map(l=>({...l,tracking_status:'included'})),catalog:structuredClone(catalog),count:lines.length,connected:true,automation:{configured:true,enabled:true,last_received_at:new Date().toISOString()},tracking:{starts_at:'2026-10-29T23:00:00Z',time_zone:'Europe/Paris'}}
   if(method==='POST')return {processed:lines.length,has_more:false}
   const line=lines.find(l=>l.id===body.id)
   if(body.action==='edit') {

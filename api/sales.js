@@ -4,6 +4,7 @@ import { authorize } from '../server/auth.js'
 import { AppError, normalizeOrders, readDotbPage, validateEdit } from '../server/dotb.js'
 import { STAGES } from '../src/lib/fulfillment.js'
 import {readTrackingPeriod} from '../server/tracking.js'
+import {automationStatus,enableSalesAutomation} from '../server/sales-automation.js'
 
 export const config = { maxDuration: 60 }
 const fail = error => { if (error) throw error }
@@ -32,13 +33,14 @@ export default async function handler(req, res) {
       const { data, count } = await readPage(head => db.from('sales_lines_in_period')
         .select('*', { count: 'exact', head })
         .eq('source_active', true).order('id'), offset)
-      const { data: catalog, count: catalogCount } = await readPage(head => db.from('sales_catalog_resolved')
+      const { data: catalog, count: catalogCount } = await readPage(head => db.from('sales_supplier_details')
         .select('*', { count: 'exact', head }).order('sku'), offset)
-      return res.json({ lines: data, catalog, count, tracking, catalog_count: catalogCount, connected: !!process.env.DOTB_API_TOKEN,
+      return res.json({ lines: data, catalog, count, tracking, automation:await automationStatus(db),catalog_count: catalogCount, connected: !!process.env.DOTB_API_TOKEN,
         last_sync: state.last_completed_at, resume: !!state.cursor, processed: state.processed })
     }
     if (req.method === 'POST') {
       if (role !== 'admin') throw new AppError('Seul un administrateur peut importer les ventes.',403)
+      if(req.body?.action==='automation')return res.json(await enableSalesAutomation(db))
       if (!process.env.DOTB_API_TOKEN) throw new AppError('La connexion Dotb reste à activer dans les réglages du serveur.',503)
       const lease = randomUUID(), now = new Date().toISOString()
       const { data: state, error } = await db.from('dotb_sync_state')
@@ -48,8 +50,9 @@ export default async function handler(req, res) {
       if (!state) throw new AppError('Une synchronisation est déjà en cours, ou vient de terminer. Réessayez dans quelques secondes.',409)
       try {
         if (!state.cursor) { const { error: resetError } = await db.from('dotb_sync_state').update({ processed: 0 }).eq('lease',lease); fail(resetError) }
+        const fetchedAt=new Date().toISOString()
         const page = await readDotbPage(state.cursor,fetch,process.env.DOTB_API_TOKEN,tracking.starts_at)
-        const { orders, lines } = normalizeOrders(page.data)
+        const { orders, lines } = normalizeOrders(page.data,fetchedAt)
         const { error: importError } = await db.rpc('import_dotb_page', {
           p_orders: orders, p_lines: lines, p_cursor: page.has_more ? page.next_cursor : null, p_lease: lease,
         })
