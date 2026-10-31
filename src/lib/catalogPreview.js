@@ -8,7 +8,7 @@ const sales=[{sku:'sz-DEMO',currency:'EUR',quantity:8,known_prices:8,revenue:320
 const tracking={starts_at:'2026-10-29T23:00:00Z',time_zone:'Europe/Paris'}
 items[0].tracking_status='included'
 items.push({id:'22222222-2222-4222-8222-222222222222',sku:'sz-DEMO-RECENT',title:'Article à classer · exemple',tracking_status:'unclassified'})
-const devices=[],jobs=[]
+const devices=[],jobs=Array.from({length:4},(_,i)=>({id:crypto.randomUUID(),reference_key:`sku:sz-DEMO-${i+1}`,input:`sz-DEMO-${i+1}`,expected_sku:`sz-DEMO-${i+1}`,status:i%2?'failed':'blocked',message:'Exemple de fiche à relancer.',created_at:new Date(Date.now()-(i+1)*60000).toISOString()}))
 let browserState={version:'0.4.0',connected:false,enabled:false,phase:'idle',message:'Navigateur prêt à être connecté.'}
 export async function collectorBridgePreview(action='status') {
   if(action==='connect')browserState={...browserState,connected:true,device_id:devices.at(-1)?.id}
@@ -22,7 +22,7 @@ export async function collectorPreview(method='GET',body) {
   if(body.action==='pause_device'){devices.find(d=>d.id===body.id).enabled=body.enabled;return {saved:true}}
   if(body.action==='revoke_device'){devices.find(d=>d.id===body.id).revoked_at=new Date().toISOString();return {saved:true}}
   if(body.action==='queue_due')return {queued:0}
-  const refs=body.action==='retry'?[jobs.find(j=>j.id===body.id)]:collectionReferences(body.references)
+  const refs=body.action==='retry'?jobs.filter(j=>(body.ids||[body.id]).includes(j.id)&&['blocked','failed'].includes(j.status)):collectionReferences(body.references)
   let queued=0
   for(const ref of refs)if(!jobs.some(j=>j.reference_key===ref.reference_key&&j.status==='queued')){jobs.unshift({...ref,id:crypto.randomUUID(),status:'queued',created_at:new Date().toISOString()});queued++}
   return {queued}

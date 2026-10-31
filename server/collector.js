@@ -3,6 +3,20 @@ import { createClient } from '@supabase/supabase-js'
 import { AppError, isId } from './dotb.js'
 import { sheinProduct, parsePrice } from '../src/lib/catalog.js'
 
+export async function retryCollections(db,ids) {
+  if(!Array.isArray(ids)||!ids.length||ids.length>100||!ids.every(isId))throw new AppError('Sélectionne entre 1 et 100 articles à relancer.')
+  const unique=[...new Set(ids)]
+  const {data:jobs,error}=await db.from('catalog_collection_jobs').select('id,status,reference_key,input,expected_sku,expected_supplier_id').in('id',unique)
+  if(error)throw error
+  if(jobs.length!==unique.length)throw new AppError('Une demande sélectionnée est introuvable. Actualise la liste.',404)
+  const refs=jobs.filter(j=>['blocked','failed'].includes(j.status)).map(({reference_key,input,expected_sku,expected_supplier_id})=>({reference_key,input,expected_sku,expected_supplier_id}))
+  if(!refs.length)return {queued:0}
+  // One transaction for the whole selection; the existing queue deduplicates active requests.
+  const result=await db.rpc('enqueue_catalog_collection',{p_refs:refs})
+  if(result.error)throw result.error
+  return {queued:result.data}
+}
+
 export const tokenHash = value => createHash('sha256').update(value).digest('hex')
 export function newCollectorToken() {
   const id = randomUUID(), token = `svpc_${id}.${randomBytes(32).toString('base64url')}`

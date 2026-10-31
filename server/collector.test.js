@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import vm from 'node:vm'
-import {newCollectorToken,readCollectorToken,sameToken,validateCollection,resumeOpenCollection} from './collector.js'
+import {newCollectorToken,readCollectorToken,sameToken,validateCollection,resumeOpenCollection,retryCollections} from './collector.js'
 import {collectionReferences,collectorOnline} from '../src/lib/collector.js'
 import {readSheinPage,readSheinSearch} from '../tools/shein-collector/extract.mjs'
 import {allowedPage,apiCall,collect,waitForOpenProduct} from '../tools/shein-collector/collector.mjs'
@@ -9,6 +9,29 @@ import handler from '../api/collector.js'
 const now=Date.parse('2026-10-31T14:00:00Z'),sku='sz25052272411726746',url='https://fr.shein.com/Dress-p-90176146.html'
 const result=()=>({supplier_url:url,supplier_sku:sku,title:'Robe',price:'32.64',price_text:'32,64€',currency:'EUR',color:'Nude',observed_at:new Date(now).toISOString(),photos:['https://img.ltwebstatic.com/product.webp'],sizes:[{size:'M',availability:'available'}]})
 const job={expected_supplier_id:'90176146',expected_sku:sku}
+
+test('bulk retry sends only selected failed jobs once and keeps the whole batch atomic',async()=>{
+  const ids=[1,2,3].map(n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`)
+  const rows=ids.map((id,i)=>({id,status:i===2?'completed':i?'failed':'blocked',reference_key:`sku:sz${i}`,input:`sz${i}`,expected_sku:`sz${i}`,expected_supplier_id:null}))
+  const calls=[]
+  const db={from:()=>({select:()=>({in:async(key,selected)=>{assert.equal(key,'id');assert.deepEqual(selected,ids);return {data:rows}}})}),
+    rpc:async(name,args)=>{calls.push({name,args});return {data:2}}}
+  assert.deepEqual(await retryCollections(db,[...ids,ids[0]]),{queued:2})
+  assert.equal(calls.length,1);assert.equal(calls[0].name,'enqueue_catalog_collection')
+  assert.deepEqual(calls[0].args.p_refs.map(r=>r.expected_sku),['sz0','sz1'])
+  db.rpc=async()=>({error:Error('database unavailable')})
+  await assert.rejects(retryCollections(db,ids),/database unavailable/)
+  db.from=()=>assert.fail('invalid selections must not reach the database')
+  for(const invalid of [[],['invalid'],null,Array(101).fill(ids[0])])await assert.rejects(retryCollections(db,invalid),/Sélectionne/)
+})
+
+test('bulk retry refuses missing jobs and ignores selections already processed',async()=>{
+  const id='00000000-0000-4000-8000-000000000001'
+  let rows=[]
+  const db={from:()=>({select:()=>({in:async()=>({data:rows})})}),rpc:()=>assert.fail('must not enqueue a missing or already processed job')}
+  await assert.rejects(retryCollections(db,[id]),/introuvable/)
+  rows=[{id,status:'running'}];assert.deepEqual(await retryCollections(db,[id]),{queued:0})
+})
 test('references strip tracking, preserve SKU and reject unsafe or excessive inputs',()=>{
   assert.equal(collectionReferences(`${sku}\n${sku}\n${url}?x=1`).length,2)
   assert.equal(collectionReferences(url+'?x=1')[0].input,url)

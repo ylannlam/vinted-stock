@@ -1,6 +1,6 @@
 import { authorize } from '../server/auth.js'
 import { AppError, isId } from '../server/dotb.js'
-import { authorizeCollector, newCollectorToken, validateCollection, resumeOpenCollection } from '../server/collector.js'
+import { authorizeCollector, newCollectorToken, validateCollection, resumeOpenCollection, retryCollections } from '../server/collector.js'
 import { collectionReferences } from '../src/lib/collector.js'
 
 export const config={maxDuration:30}
@@ -76,11 +76,7 @@ export default async function handler(req,res) {
       const {data,error}=await db.rpc('queue_catalog_sources');check(error);return res.json({queued:data})
     }
     if(body.action==='retry') {
-      if(!isId(body.id))throw new AppError('Récupération invalide.')
-      const {data:job,error}=await db.from('catalog_collection_jobs').select('*').eq('id',body.id).maybeSingle();check(error)
-      if(!job)throw new AppError('Récupération introuvable.',404)
-      const r=await db.rpc('enqueue_catalog_collection',{p_refs:[{reference_key:job.reference_key,input:job.input,expected_sku:job.expected_sku,expected_supplier_id:job.expected_supplier_id}]});check(r.error)
-      return res.json({queued:r.data})
+      return res.json(await retryCollections(db,body.ids===undefined?[body.id]:body.ids))
     }
     if(body.action==='create_device') {
       const name=typeof body.name==='string'?body.name.trim():''
