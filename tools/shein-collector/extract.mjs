@@ -2,7 +2,8 @@
 // It reads the displayed SKU/price, not recommendations, internal APIs, cookies or account data.
 export function readSheinPage() {
   const text=document.body?.innerText||''
-  const blocked=/vérifier que vous êtes humain|je suis humain|verify (that )?you are human|security verification/i.test(text)
+  const blocked=/vérifi(?:er|cation).{0,40}(?:humain|sécurité)|je (?:ne )?suis (?:pas )?(?:un robot|humain)|verify (that )?you are human|security verification|not a robot|captcha|accès refusé|access denied/i.test(text+' '+(document.title||'')+' '+location.pathname)
+    || [...document.querySelectorAll('iframe')].some(e=>e.getClientRects().length&&/captcha|challenge|verification/i.test([e.title,e.src].join(' ')))
   if(blocked)return {error:'human_check'}
   const url=new URL(location.href),id=url.pathname.match(/-p-(\d{1,20})\.html$/i)?.[1]
   if(url.protocol!=='https:'||!['fr.shein.com','www.shein.com'].includes(url.hostname)||!id)return {error:'page_unavailable'}
@@ -17,6 +18,7 @@ export function readSheinPage() {
   const colors=document.querySelector('[role="radiogroup"][aria-label="Color options"]')
   const color=colors?.querySelector('[aria-checked="true"]')?.getAttribute('aria-label')||''
   const sizeGroup=document.querySelector('[role="radiogroup"][aria-label="Taille"]')||document.querySelector('[role="radiogroup"][aria-label="Size"]')
+  const selectedSize=sizeGroup?.querySelector?.('[aria-checked="true"]')
   const sizes=[...(sizeGroup?.querySelectorAll('[role="radio"]')||[])].map(e=>({size:e.getAttribute('aria-label')||e.innerText.trim(),availability:e.getAttribute('aria-disabled')==='true'?'unavailable':e.getAttribute('aria-disabled')==='false'?'available':'unknown'}))
   const photos=new Map()
   for(const img of document.querySelectorAll('img')) {
@@ -37,11 +39,11 @@ export function readSheinPage() {
     for(const row of rows.slice(1))details.push({name,value:row.join(' · ').slice(0,1000)})
   }
   return {supplier_url:`https://${url.hostname}${url.pathname}`,supplier_sku:sku,title:title.slice(0,500),price,price_text:priceText,
-    currency:'EUR',color,photos:[...photos.values()].slice(0,15),sizes,description,details:details.slice(0,50),observed_at:new Date().toISOString()}
+    currency:'EUR',color,selected_size:selectedSize?.getAttribute('aria-label')||selectedSize?.innerText||'',photos:[...photos.values()].slice(0,15),sizes,description,details:details.slice(0,50),observed_at:new Date().toISOString()}
 }
 
 export function readSheinSearch() {
-  if(/vérifier que vous êtes humain|je suis humain|verify (that )?you are human|security verification/i.test(document.body?.innerText||''))return {error:'human_check',urls:[]}
+  if(/vérifi(?:er|cation).{0,40}(?:humain|sécurité)|je (?:ne )?suis (?:pas )?(?:un robot|humain)|verify (that )?you are human|security verification|not a robot|captcha|accès refusé|access denied/i.test((document.body?.innerText||'')+' '+(document.title||'')))return {error:'human_check',urls:[]}
   const urls=[]
   for(const link of document.querySelectorAll('a[href]')) {
     try {const u=new URL(link.href);if(u.protocol==='https:'&&['fr.shein.com','www.shein.com'].includes(u.hostname)&&/-p-\d{1,20}\.html$/i.test(u.pathname))urls.push(`${u.origin}${u.pathname}`)}catch{}

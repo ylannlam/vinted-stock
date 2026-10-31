@@ -75,7 +75,7 @@ test('Dotb pagination fails safely on a repeating cursor or malformed response',
   assert.equal((await readDotbItems(null,fake({data:[],has_more:false}),'test')).has_more,false)
 })
 const extractor=vm.runInNewContext(readFileSync(new URL('../extensions/shein/extractor.js',import.meta.url),'utf8')+'\nextractSheinProduct',{URL,Date})
-function doc(products){return {querySelectorAll:()=>[{textContent:JSON.stringify(products)}],querySelector:()=>null}}
+function doc(products){return {querySelectorAll:q=>q==='script[type="application/ld+json"]'?[{textContent:JSON.stringify(products)}]:[],querySelector:()=>null}}
 test('extension ignores recommendations, multiple offers and foreign currency',()=>{
   const product={'@type':'Product',url,name:'Robe',sku:'sz123',offers:{'@type':'Offer',price:'18.08',priceCurrency:'EUR'}}
   assert.equal(extractor(doc(product),url).price,'18.08')
@@ -84,6 +84,16 @@ test('extension ignores recommendations, multiple offers and foreign currency',(
   assert.equal(extractor(doc({...product,offers:{...product.offers,priceCurrency:'USD'}}),url).price,'')
   assert.equal(extractor(doc({...product,url:'https://fr.shein.com/Other-p-99.html'}),url).price,'')
   assert.throws(()=>extractor(doc(product),'https://fr.shein.com/risk/challenge'))
+})
+
+test('extension prefers the displayed SKU and price, preserves selected variant, rejects a challenge',()=>{
+  const attr=value=>({getAttribute:()=>value})
+  const page={body:{innerText:'SKU: sz123'},querySelectorAll:()=>[],querySelector:q=>q==='#productMainPriceId'?attr('32,64€'):
+    q.includes('Color options')?attr('Nude'):q.includes('Taille')?attr('M'):null}
+  const captured=extractor(page,url)
+  assert.equal(captured.price,'32.64');assert.equal(captured.supplier_sku,'sz123');assert.equal(captured.color,'Nude');assert.equal(captured.size,'M')
+  page.body.innerText='Je ne suis pas un robot'
+  assert.throws(()=>extractor(page,url),/vérification/)
 })
 test('catalogue is never readable or writable without authentication',async()=>{
   for(const method of ['GET','POST','PATCH']){

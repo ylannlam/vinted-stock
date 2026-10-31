@@ -1,10 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import vm from 'node:vm'
-import {newCollectorToken,readCollectorToken,sameToken,validateCollection} from './collector.js'
+import {newCollectorToken,readCollectorToken,sameToken,validateCollection,resumeOpenCollection} from './collector.js'
 import {collectionReferences,collectorOnline} from '../src/lib/collector.js'
 import {readSheinPage,readSheinSearch} from '../tools/shein-collector/extract.mjs'
-import {allowedPage,apiCall,collect} from '../tools/shein-collector/collector.mjs'
+import {allowedPage,apiCall,collect,waitForOpenProduct} from '../tools/shein-collector/collector.mjs'
 import handler from '../api/collector.js'
 const now=Date.parse('2026-10-31T14:00:00Z'),sku='sz25052272411726746',url='https://fr.shein.com/Dress-p-90176146.html'
 const result=()=>({supplier_url:url,supplier_sku:sku,title:'Robe',price:'32.64',price_text:'32,64€',currency:'EUR',color:'Nude',observed_at:new Date(now).toISOString(),photos:['https://img.ltwebstatic.com/product.webp'],sizes:[{size:'M',availability:'available'}]})
@@ -66,4 +66,48 @@ test('collector API rejects unsupported methods and prevents device tokens acces
   await handler({method:'DELETE',headers:{}},response);assert.equal(status,405)
   await handler({method:'POST',headers:{authorization:'Bearer svpc_invalid'},body:{action:'create_device'}},response)
   assert.equal(status,403);assert.match(body.error,/PC/)
+})
+
+test('French robot checks and visible challenge frames stop extraction',()=>{
+  for(const phrase of ['Je ne suis pas un robot','Vérification de sécurité','Access denied']) {
+    const context=domFixture();context.document.body.innerText=phrase
+    assert.equal(vm.runInNewContext(`(${readSheinPage.toString()})()`,context).error,'human_check')
+    assert.equal(vm.runInNewContext(`(${readSheinSearch.toString()})()`,context).error,'human_check')
+  }
+  const context=domFixture(),query=context.document.querySelectorAll
+  context.document.querySelectorAll=q=>q==='iframe'?[{title:'Security challenge',src:'https://example.test/challenge',getClientRects:()=>[{}]}]:query(q)
+  assert.equal(vm.runInNewContext(`(${readSheinPage.toString()})()`,context).error,'human_check')
+})
+
+test('navigation timeout preserves a visible human verification instead of changing product',async()=>{
+  let navigations=0
+  const page={goto:async()=>{navigations++;throw Error('Timeout')},evaluate:async()=>({error:'human_check'})}
+  assert.equal((await collect(page,{...job,input:url})).error,'human_check')
+  assert.equal(navigations,1)
+})
+
+test('manual recovery waits for a matching open product without any navigation or clicks',async()=>{
+  const values=[{error:'human_check'},{...result(),supplier_sku:'wrong'},{...result(),supplier_url:'https://fr.shein.com/Other-p-1.html'},result()]
+  let reads=0,prompts=0
+  const page={url:()=>url,evaluate:async()=>values[reads++]}
+  const recovered=await waitForOpenProduct(page,job,async()=>{prompts++;return ''},()=>{})
+  assert.equal(recovered.result.supplier_sku,sku);assert.equal(reads,4);assert.equal(prompts,4)
+  assert.deepEqual(await waitForOpenProduct(page,job,async()=>'Q'),{stop:true})
+  assert.deepEqual(await waitForOpenProduct(page,job,async()=>'P'),{skip:true})
+  assert.equal(reads,4)
+})
+
+test('resume renews only the blocked job owned by this PC, refusing paused or superseded jobs',async()=>{
+  let update,filters=[]
+  const query={update:p=>(update=p,query),eq:(k,v)=>(filters.push([k,v]),query),select:()=>query,maybeSingle:async()=>({data:{id:'job',lease:update.lease}})}
+  const db={from:name=>{assert.equal(name,'catalog_collection_jobs');return query}}
+  const row={id:'job',lease:'old'},device={id:'device',enabled:true}
+  const saved=await resumeOpenCollection(db,device,row)
+  assert.notEqual(saved.lease,'old');assert.equal(update.status,'running')
+  assert.deepEqual(filters,[['id','job'],['collector_id','device'],['lease','old'],['status','blocked']])
+  await assert.rejects(resumeOpenCollection(db,{...device,enabled:false},row),/pause/)
+  query.maybeSingle=async()=>({data:null,error:{code:'23505'}})
+  await assert.rejects(resumeOpenCollection(db,device,row),/relancée/)
+  query.maybeSingle=async()=>({data:null})
+  await assert.rejects(resumeOpenCollection(db,device,row),/relancée/)
 })

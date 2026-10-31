@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Stock Vinted — relevé Shein",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Préparer un relevé depuis une fiche Shein ouverte, puis le vérifier dans votre catalogue Stock Vinted.",
   "permissions": ["activeTab", "scripting"],
   "action": { "default_popup": "popup.html", "default_title": "Relever cet article Shein" }

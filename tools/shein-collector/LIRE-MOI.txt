@@ -1,4 +1,4 @@
-STOCK VINTED — RECUPERATION SHEIN SUR PC
+STOCK VINTED — RECUPERATION SHEIN SUR PC — 1.0.1
 
 1. Décompresse tout le dossier dans un emplacement à conserver.
 2. Sur ton site, ouvre Catalogue > Récupération > Associer mon PC.
@@ -13,8 +13,26 @@ Le programme récupère les fiches une par une. Les produits sont revérifiés s
 après chaque récupération réussie. Si le PC est éteint, ils attendent son prochain lancement.
 Une association seule ne signifie pas que le prix a été récupéré : le site affiche le résultat.
 
-Si Shein demande une vérification humaine, effectue-la dans sa fenêtre, puis reviens
-dans celle du programme et appuie sur Entrée. Ne ferme pas le programme pendant ce temps.
+Si Shein demande une vérification humaine ou si une page ne charge pas, tout le programme
+attend ton intervention sans naviguer vers l'article suivant. Termine la vérification
+toi-même, puis ouvre le produit demandé. Reviens dans le programme et appuie sur Entrée :
+la fiche ouverte est lue sans rechargement. Un mauvais SKU reste refusé.
+P permet de passer l'article ; Q arrête le programme. Une taille sélectionnée doit être
+désélectionnée pour relever le prix de fiche, sinon utilise un relevé via l'extension.
+Les sections Description et Mesures ne sont plus ouvertes automatiquement.
+
+SI LA VERIFICATION RESTE BLOQUEE
+N'insiste pas en relançant le programme. Ferme-le et ouvre Shein dans ton Edge ou Chrome
+habituel. Sur le site, Catalogue > Récupération > Navigateur habituel donne accès à
+l'extension de relevé. Elle prépare les informations à ton clic et demande de les
+vérifier dans le catalogue avant l'enregistrement. Elle n'a pas besoin de run.bat ni de
+code d'association, et ne réalise pas de surveillance automatique en arrière-plan.
+Si Shein affiche aussi une vérification dans le navigateur habituel, termine-la toi-même.
+
+MISE A JOUR DEPUIS 1.0.0
+Ferme l'ancien programme. Remplace les fichiers par ceux du nouveau ZIP dans le même
+dossier. Conserve le sous-dossier .data pour garder l'association. Relance run.bat,
+puis utilise Réessayer sur le site pour les anciennes récupérations en échec.
 Les prix sont ceux affichés dans cette session Shein, hors coupons du panier. Les tailles
 proposées sont enregistrées, sans acheter ni ajouter d'article au panier. Les mesures
 non affichées ne sont pas inventées. Les prix Dotb ne sont pas modifiés par ce programme.

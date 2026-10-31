@@ -56,6 +56,18 @@ begin
   perform public.finish_catalog_collection((j->>'id')::uuid,device,(j->>'lease')::uuid,null,'blocked','Human check');
   if not exists(select 1 from public.catalog_products where id=p and collection_status='blocked' and next_check_at is null) then raise exception 'Blocked refresh still scheduled'; end if;
   if (select price from public.catalog_product_summary where id=p)<>20 then raise exception 'Failed collection erased last price'; end if;
+  -- The PC resumes this same blocked job after reading the open page, without enqueue/re-navigation.
+  update public.catalog_collection_jobs set status='running',lease=gen_random_uuid(),lease_expires_at=now()+interval '3 minutes',finished_at=null,message=null
+    where id=(j->>'id')::uuid and collector_id=device and lease=(j->>'lease')::uuid and status='blocked';
+  if not found then raise exception 'Blocked job did not resume'; end if;
+  select to_jsonb(c) into replay from public.catalog_collection_jobs c where id=(j->>'id')::uuid;
+  begin
+    perform public.finish_catalog_collection((j->>'id')::uuid,device,(j->>'lease')::uuid,payload);
+    raise exception 'Old lease accepted after resume';
+  exception when others then if sqlerrm not like '%collection_lease_expired%' then raise; end if; end;
+  perform public.finish_catalog_collection((replay->>'id')::uuid,device,(replay->>'lease')::uuid,payload);
+  perform public.finish_catalog_collection((replay->>'id')::uuid,device,(replay->>'lease')::uuid,payload);
+  if (select count(*) from public.catalog_observations where id=(replay->>'id')::uuid)<>1 then raise exception 'Resumed job duplicated result'; end if;
   update public.catalog_collectors set revoked_at=now() where id=device;
   begin perform public.claim_catalog_collection(device);raise exception 'Revoked device accepted';
   exception when others then if sqlerrm not like '%device_revoked%' then raise; end if; end;

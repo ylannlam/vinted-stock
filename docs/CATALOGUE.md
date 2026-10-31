@@ -15,7 +15,9 @@ Les ventes récentes apparaissent dans trois groupes : articles suivis, à class
 5. **Importer des SKU ou liens** accepte aussi 50 références, une par ligne, indépendamment de Dotb. Les demandes sont conservées sur le serveur quand le PC est hors ligne.
 6. La **Bibliothèque** réunit photos, prix, tailles de la couleur sélectionnée, description et mesures lorsqu'elles sont lisibles, annonces Dotb et ventes par SKU. **Fluctuations** compare deux relevés comparables ; **Best sellers** classe les ventes importées ayant un SKU.
 
-Une vérification humaine demandée par Shein met le travail en attente. La terminer soi-même dans la fenêtre du programme puis appuyer sur Entrée. Le programme ne la contourne pas. **Réessayer** relance aussi depuis le site. Une fiche bloquée ne se relance pas toutes les six heures avant cette intervention.
+Le programme 1.0.1 met tout le travail en pause sur une vérification humaine ou une page inaccessible. Il ne passe pas au produit suivant pendant l'intervention. Terminer soi-même la vérification, ouvrir le produit demandé puis appuyer sur Entrée : il lit cette page sans navigation ni rechargement, vérifie le SKU/identifiant, puis renouvelle la réservation de la même tâche. Une tâche retirée ou relancée entre-temps n'est pas réactivée. P passe l'article, Q arrête le programme. Les sections Description et Mesures ne sont plus ouvertes automatiquement. **Réessayer** relance depuis le site, notamment les anciens échecs.
+
+Si Shein refuse encore le navigateur dédié, **Récupération → Navigateur habituel** propose l'extension 0.2.0 pour Edge/Chrome. Elle prépare un relevé sur clic depuis la fiche que l'utilisateur a ouverte, puis ouvre le formulaire du catalogue. Elle n'utilise ni code PC ni cookies et ne surveille pas les prix en arrière-plan. L'utilisateur vérifie et enregistre le relevé avec son compte administrateur, puis l'associe au SKU Dotb. Ce recours n'est pas une garantie d'accès à Shein : toute vérification dans le navigateur habituel reste à terminer par l'utilisateur.
 
 ## Exactitude et limites
 
@@ -34,7 +36,7 @@ Les tâches ont une réservation de trois minutes, prolongée toutes les 30 seco
 
 Administrateurs : import, association du PC, demandes, saisies et associations. Rôle stock : lecture. Visiteurs : aucun accès aux données. Les tables techniques sont accessibles au serveur uniquement.
 
-Sources : `tools/shein-collector/`. Archive : `public/downloads/shein-collector.zip`, construite avec `tools/package-collector.ps1`. L'ancienne extension reste dans les sources mais n'est pas nécessaire à ce parcours.
+Sources : `tools/shein-collector/`. Archive : `public/downloads/shein-collector.zip`, construite avec `tools/package-collector.ps1`. L'extension de secours est dans `extensions/shein/`, empaquetée par `tools/package-extension.ps1` dans `public/downloads/shein-catalogue.zip`.
 
 ## Vérification
 

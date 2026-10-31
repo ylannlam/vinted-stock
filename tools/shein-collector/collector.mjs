@@ -24,32 +24,32 @@ async function saveJSON(name,value) {
   await rename(`${target}.tmp`,target)
 }
 async function loadJSON(name) {try{return JSON.parse(await readFile(path.join(dataDir,name),'utf8'))}catch{return null}}
+async function navigate(page,url) {
+  try {await page.goto(url,{waitUntil:'domcontentloaded',timeout:45000})}
+  catch(error) {
+    // A challenge may already be visible even when navigation never completes.
+    const visible=await page.evaluate(readSheinPage).catch(()=>null)
+    if(visible?.error==='human_check')return visible
+    throw error
+  }
+  if(!allowedPage(page.url()))return {error:'page_unavailable'}
+  await page.waitForFunction(()=>document.getElementById('productMainPriceId')||/humain|robot|captcha|verification|vérification/i.test(document.body?.innerText||'')||[...document.querySelectorAll('a[href]')].some(a=>/-p-\d+\.html/.test(a.href)),undefined,{timeout:20000}).catch(()=>{})
+  return null
+}
 async function openProduct(page,url) {
   if(!allowedPage(url))throw Object.assign(Error('Lien Shein invalide.'),{code:'page_unavailable'})
-  await page.goto(url,{waitUntil:'domcontentloaded',timeout:45000})
-  if(!allowedPage(page.url()))throw Object.assign(Error('La fiche a redirigé vers une autre adresse.'),{code:'page_unavailable'})
-  await page.waitForFunction(()=>document.getElementById('productMainPriceId')||/vérifier que vous êtes humain|je suis humain|verify (that )?you are human/i.test(document.body?.innerText||''),undefined,{timeout:20000}).catch(()=>{})
-  const initial=await page.evaluate(readSheinPage)
-  if(initial.error)return initial
-  // Expand only product information. Never interact with a verification challenge.
-  for(const label of [/^Description/i,/^Tailles?\s*&\s*Mesures/i]) {
-    const button=page.getByRole('button',{name:label}).first()
-    if(await button.count() && await button.isVisible() && await button.getAttribute('aria-expanded')==='false') {
-      await button.click({timeout:5000}).catch(()=>{})
-      const details=await page.evaluate(readSheinPage)
-      if(details.error==='human_check')return details
-    }
-  }
-  const expanded=await page.evaluate(readSheinPage)
-  return expanded.error ? expanded : {...expanded,description:expanded.description||initial.description}
+  const interrupted=await navigate(page,url)
+  // Read only what is already displayed; expanding sections can interrupt a valid page.
+  return interrupted||page.evaluate(readSheinPage)
 }
 export async function collect(page,job) {
   if(job.expected_supplier_id)return openProduct(page,job.input)
   const sku=job.expected_sku
   if(!/^[A-Za-z0-9_-]{1,200}$/.test(sku||''))return {error:'sku_not_found'}
-  await page.goto(`https://fr.shein.com/pdsearch/${encodeURIComponent(sku)}/`,{waitUntil:'domcontentloaded',timeout:45000})
-  if(!allowedPage(page.url()))return {error:'page_unavailable'}
-  await page.waitForFunction(()=>[...document.querySelectorAll('a[href]')].some(a=>/-p-\d+\.html/.test(a.href))||/vérifier que vous êtes humain|je suis humain|verify (that )?you are human/i.test(document.body?.innerText||''),undefined,{timeout:20000}).catch(()=>{})
+  const interrupted=await navigate(page,`https://fr.shein.com/pdsearch/${encodeURIComponent(sku)}/`)
+  if(interrupted)return interrupted
+  const gate=await page.evaluate(readSheinPage)
+  if(gate.error==='human_check')return gate
   const search=await page.evaluate(readSheinSearch)
   if(search.error)return search
   for(const url of search.urls) {
@@ -59,6 +59,28 @@ export async function collect(page,job) {
     await wait(2000)
   }
   return {error:'sku_not_found'}
+}
+
+export async function readOpenProduct(page,job) {
+  if(!allowedPage(page.url()))return {error:'page_unavailable'}
+  const value=await page.evaluate(readSheinPage).catch(()=>({error:'page_unavailable'}))
+  if(value.error)return value
+  if(value.selected_size)return {error:'variant_selected'}
+  const id=new URL(value.supplier_url).pathname.match(/-p-(\d+)\.html$/i)?.[1]
+  if(job.expected_supplier_id&&id!==job.expected_supplier_id || job.expected_sku&&value.supplier_sku?.toLowerCase()!==job.expected_sku.toLowerCase())return {error:'sku_mismatch'}
+  return value
+}
+
+export async function waitForOpenProduct(page,job,ask,log=console.log) {
+  // No navigation, clicks or timed retry while the user is handling Shein.
+  while(true) {
+    const command=(await ask('Entrée : lire la fiche ouverte | P : passer cet article | Q : arrêter : ')).trim().toLowerCase()
+    if(command==='q')return {stop:true}
+    if(command==='p')return {skip:true}
+    const result=await readOpenProduct(page,job)
+    if(!result.error)return {result}
+    log(result.error==='sku_mismatch'?'Ce n’est pas le produit attendu. Ouvre la fiche du SKU demandé.':result.error==='variant_selected'?'Une taille est sélectionnée. Désélectionne-la pour relever le prix de fiche, ou utilise l’extension pour un relevé de cette taille.':'La fiche est encore inaccessible ou incomplète. Ouvre le produit après la vérification, puis appuie sur Entrée. Le programme reste en pause.')
+  }
 }
 
 async function main() {
@@ -88,7 +110,7 @@ async function main() {
     if(heartbeatBusy||stopping)return
     heartbeatBusy=true
     try{await apiCall(connection.token,{action:'heartbeat',...(currentJob?{job_id:currentJob.id,lease:currentJob.lease}:{})})}
-    catch(e){if([401,403].includes(e.status)){console.log('PC déconnecté depuis le site.');stopping=true}}
+    catch(e){if([401,403].includes(e.status)){console.log('PC déconnecté depuis le site.');stopping=true;promptAbort.abort()}}
     finally{heartbeatBusy=false}
   },30000)
   console.log('Programme prêt. Ajoute des SKU ou liens sur ton site.\nLes nouvelles vérifications sont prévues toutes les 6 h.\nGarde ce programme ouvert et le PC éveillé. Ferme le navigateur pour arrêter.')
@@ -117,13 +139,18 @@ async function main() {
         try {result=await collect(page,job)}catch(e){result={error:e.code||'page_unavailable'}}
         if(!result.error && job.expected_sku && result.supplier_sku?.toLowerCase()!==job.expected_sku.toLowerCase())result={error:'sku_mismatch'}
         if(result.error) {
-          const human=result.error==='human_check'
-          await apiCall(connection.token,{action:'fail',job_id:job.id,lease:job.lease,status:human?'blocked':'failed',code:result.error})
+          const needsHelp=['human_check','page_unavailable','price_unreadable'].includes(result.error)
+          await apiCall(connection.token,{action:'fail',job_id:job.id,lease:job.lease,status:needsHelp?'blocked':'failed',code:result.error})
           currentJob=null
-          if(human) {
-            console.log('Shein demande une vérification humaine. Termine-la toi-même dans la fenêtre du navigateur. Le programme ne la contourne pas.')
-            await terminal.question('Une fois la fiche accessible, appuie sur Entrée pour reprendre. ',{signal:promptAbort.signal})
-            if(!stopping)await apiCall(connection.token,{action:'resume_blocked',job_id:job.id,lease:job.lease})
+          if(needsHelp) {
+            console.log('Récupération en pause. La page ne changera pas toute seule.\nSi Shein demande une vérification, termine-la toi-même puis ouvre le produit demandé.\nSi elle reste bloquée, utilise l’extension dans ton navigateur habituel : Catalogue > Récupération > Navigateur habituel.')
+            const recovered=await waitForOpenProduct(page,job,prompt=>terminal.question(prompt,{signal:promptAbort.signal}))
+            if(recovered.stop){stopping=true;break}
+            if(recovered.result&&!stopping) {
+              const resumed=await apiCall(connection.token,{action:'resume_blocked',job_id:job.id,lease:job.lease,keep_page:true})
+              currentJob=resumed.job
+              await saveJSON('pending.json',{action:'complete',job_id:currentJob.id,lease:currentJob.lease,result:recovered.result})
+            }
           } else console.log(`Fiche à vérifier (${result.error}). Le détail est visible sur le site.`)
         } else await saveJSON('pending.json',{action:'complete',job_id:job.id,lease:job.lease,result})
         if(process.argv.includes('--once')&&!await loadJSON('pending.json'))break

@@ -1,6 +1,6 @@
 import { authorize } from '../server/auth.js'
 import { AppError, isId } from '../server/dotb.js'
-import { authorizeCollector, newCollectorToken, validateCollection } from '../server/collector.js'
+import { authorizeCollector, newCollectorToken, validateCollection, resumeOpenCollection } from '../server/collector.js'
 import { collectionReferences } from '../src/lib/collector.js'
 
 export const config={maxDuration:30}
@@ -33,6 +33,7 @@ export default async function handler(req,res) {
       check(error);if(!job)throw new AppError('Cette récupération a expiré.',409)
       if(body.action==='resume_blocked') {
         if(job.status!=='blocked')throw new AppError('Cette récupération n’est plus bloquée.',409)
+        if(body.keep_page===true)return res.json({job:await resumeOpenCollection(db,device,job)})
         const r=await db.rpc('enqueue_catalog_collection',{p_refs:[{reference_key:job.reference_key,input:job.input,expected_sku:job.expected_sku,expected_supplier_id:job.expected_supplier_id}]});check(r.error)
         return res.json({queued:r.data})
       }
@@ -41,11 +42,11 @@ export default async function handler(req,res) {
       if(body.action==='complete')result=validateCollection(body.result,job)
       else {
         failure=body.status==='blocked'?'blocked':'failed'
-        const messages={human_check:'Shein demande une vérification humaine. Ouvre la fenêtre du programme sur ton PC.',
+        const messages={human_check:'Récupération en pause : vérification Shein à terminer sur le PC. Si elle reste bloquée, utilise le navigateur habituel ci-dessous.',
           sku_not_found:'Aucun produit correspondant exactement à ce SKU n’a été confirmé.',
           price_unreadable:'Le prix affiché en euros n’a pas pu être lu. Aucun ancien prix n’a été remplacé.',
           sku_mismatch:'La fiche ne porte pas le SKU attendu. Vérifie le lien et le SKU.',
-          page_unavailable:'La fiche Shein n’a pas pu être chargée. Réessaie depuis ton PC.'}
+          page_unavailable:'La fiche Shein est inaccessible. Avec le programme à jour, la page reste ouverte : vérifie-la sur le PC ou utilise le navigateur habituel.'}
         message=messages[body.code]||'La récupération a échoué. Le programme sur ton PC donne le détail.'
       }
       const r=await db.rpc('finish_catalog_collection',{p_job:job.id,p_device:device.id,p_lease:job.lease,p_result:result,p_failure:failure,p_message:message});check(r.error)
