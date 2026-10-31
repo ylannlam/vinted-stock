@@ -33,3 +33,17 @@ export async function collectorRequest(method='GET',body) {
   if(!response.ok)throw new Error(result.error||'La récupération Shein est indisponible.')
   return result
 }
+
+export async function resourcesRequest(method='GET',body,query='') {
+  const response=await authenticatedFetch(`/api/resources${query}`,{method,...(body===undefined?{}:{body:JSON.stringify(body)})})
+  const result=await response.json().catch(()=>({}))
+  if(!response.ok)throw new Error(result.error||'La bibliothèque est indisponible. Ton formulaire est conservé.')
+  return result
+}
+
+export async function uploadResourceImage(file,request=resourcesRequest) {
+  const ticket=await request('POST',{action:'upload',type:file.type,size:file.size})
+  const {error}=await supabase.storage.from('creative-assets').uploadToSignedUrl(ticket.path,ticket.token,file,{contentType:file.type})
+  if(error)throw new Error('L’image n’a pas pu être envoyée. Ton texte est conservé ; vérifie ta connexion puis réessaie.')
+  return {path:ticket.path}
+}

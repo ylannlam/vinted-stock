@@ -1,8 +1,9 @@
 import SalesTab from './components/SalesTab'
 import BudgetTab from './components/BudgetTab'
 import CatalogueTab from './components/CatalogueTab'
+import ResourcesTab from './components/ResourcesTab'
 import { captureDraft } from './lib/catalog'
-import { TAB_SALES, TAB_BUDGET, TAB_CATALOG } from './constants'
+import { TAB_SALES, TAB_BUDGET, TAB_CATALOG, TAB_RESOURCES } from './constants'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
 import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE } from './constants'
@@ -35,7 +36,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState(() => {
     if(captureDraft())return TAB_CATALOG
     const saved = localStorage.getItem('activeTab')
-    const validTabs = [TAB_CATALOG, TAB_BUDGET, TAB_SALES, TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE]
+    const validTabs = [TAB_RESOURCES, TAB_CATALOG, TAB_BUDGET, TAB_SALES, TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE]
     if(['__proxies__','__employees__','__fonds__','__connexions__'].includes(saved))return TAB_COMPTES_VINTED
     return validTabs.includes(saved) ? saved : TAB_SALES
   })
@@ -62,6 +63,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('activeTab', activeTab)
   }, [activeTab])
+
+  useEffect(() => {
+    if(profile && profile.role!=='admin' && activeTab===TAB_RESOURCES)setActiveTab(TAB_SALES)
+  }, [profile,activeTab])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -551,6 +556,7 @@ export default function App() {
       />
 
       {activeTab === TAB_BUDGET && isAdmin && <BudgetTab />}
+      {activeTab === TAB_RESOURCES && isAdmin && <ResourcesTab />}
       {activeTab === TAB_SALES && <SalesTab isAdmin={isAdmin} />}
       {activeTab === TAB_CATALOG && (userRole==='admin'||userRole==='stock') && <CatalogueTab isAdmin={isAdmin} />}
       {activeTab === TAB_COMPTES_VINTED && <VintedAccountsTab />}
@@ -647,7 +653,7 @@ export default function App() {
         )
       })()}
 
-      {activeTab !== TAB_CATALOG && activeTab !== TAB_BUDGET && activeTab !== TAB_SALES && activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_A_RECEVOIR && (
+      {activeTab !== TAB_RESOURCES && activeTab !== TAB_CATALOG && activeTab !== TAB_BUDGET && activeTab !== TAB_SALES && activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_A_RECEVOIR && (
         <Gallery
           items={filteredItems}
           loading={itemsLoading}
@@ -672,7 +678,7 @@ export default function App() {
         />
       )}
 
-      {activeTab !== TAB_CATALOG && activeTab !== TAB_BUDGET && activeTab !== TAB_SALES && activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_A_ENVOYER && activeTab !== TAB_A_ENVOYER_LOT && activeTab !== TAB_ENVOYES && (
+      {activeTab !== TAB_RESOURCES && activeTab !== TAB_CATALOG && activeTab !== TAB_BUDGET && activeTab !== TAB_SALES && activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_A_ENVOYER && activeTab !== TAB_A_ENVOYER_LOT && activeTab !== TAB_ENVOYES && (
         <button
           onClick={() => activeTab === TAB_A_RECEVOIR ? setShowAddCommandeModal(true) : setShowAddModal(true)}
           className={`fixed bottom-6 right-5 w-14 h-14 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-105 z-40 ${
