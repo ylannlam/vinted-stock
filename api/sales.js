@@ -30,7 +30,7 @@ export default async function handler(req, res) {
       const { data, count } = await readPage(head => db.from('sales_lines')
         .select('*,order:sales_orders!inner(*)', { count: 'exact', head })
         .eq('source_active', true).order('id'), offset)
-      const { data: catalog, count: catalogCount } = await readPage(head => db.from('sales_catalog')
+      const { data: catalog, count: catalogCount } = await readPage(head => db.from('sales_catalog_resolved')
         .select('*', { count: 'exact', head }).order('sku'), offset)
       return res.json({ lines: data, catalog, count, catalog_count: catalogCount, connected: !!process.env.DOTB_API_TOKEN,
         last_sync: state.last_completed_at, resume: !!state.cursor, processed: state.processed })

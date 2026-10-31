@@ -26,3 +26,10 @@ export async function catalogRequest(method = 'GET', body, query = '') {
   if (!response.ok) throw new Error(result.error || 'Le catalogue est indisponible. Réessayez.')
   return result
 }
+
+export async function collectorRequest(method='GET',body) {
+  const response=await authenticatedFetch('/api/collector',{method,...(body===undefined?{}:{body:JSON.stringify(body)})})
+  const result=await response.json().catch(()=>({}))
+  if(!response.ok)throw new Error(result.error||'La récupération Shein est indisponible.')
+  return result
+}

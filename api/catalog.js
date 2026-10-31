@@ -23,12 +23,13 @@ export default async function handler(req, res) {
       if (!Number.isSafeInteger(offset) || offset<0 || offset>1000000) throw new AppError('Page invalide.')
       const { data:state,error } = await db.from('catalog_sync_state').select('cursor,processed,last_completed_at').eq('id',true).single()
       check(error)
-      const [products,items,links] = await Promise.all([
+      const [products,items,links,sales] = await Promise.all([
         readPage(head=>db.from('catalog_product_summary').select('*',{count:'exact',head}).order('created_at',{ascending:false}).order('id'),offset),
         readPage(head=>db.from('catalog_dotb_items').select('*',{count:'exact',head}).order('id'),offset),
         readPage(head=>db.from('catalog_sku_links').select('*',{count:'exact',head}).order('sku'),offset),
+        readPage(head=>db.from('catalog_sales_by_sku').select('*',{count:'exact',head}).order('sku').order('currency'),offset),
       ])
-      return res.json({products:products.data,items:items.data,links:links.data,product_count:products.count,item_count:items.count,link_count:links.count,
+      return res.json({products:products.data,items:items.data,links:links.data,sales:sales.data,sales_count:sales.count,product_count:products.count,item_count:items.count,link_count:links.count,
         connected:!!process.env.DOTB_API_TOKEN,resume:!!state.cursor,processed:state.processed,last_sync:state.last_completed_at})
     }
     if (role!=='admin') throw new AppError('Seul un administrateur peut modifier le catalogue.',403)
@@ -60,6 +61,7 @@ export default async function handler(req, res) {
         const items=normalizeDotbItems(await recoverDotbSupplierLinks(page.data))
         const r=await db.rpc('import_catalog_dotb_page',{p_items:items,p_cursor:page.has_more?page.next_cursor:null,p_lease:lease})
         check(r.error)
+        if(!page.has_more) { const queued=await db.rpc('queue_catalog_sources');check(queued.error) }
         return res.json({has_more:page.has_more,processed:(state.cursor?state.processed:0)+items.length})
       } finally {
         await db.from('catalog_sync_state').update({lease:null,locked_until:new Date(0).toISOString(),next_allowed_at:new Date(Date.now()+1700).toISOString()}).eq('id',true).eq('lease',lease)

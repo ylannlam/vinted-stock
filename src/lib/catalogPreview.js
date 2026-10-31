@@ -1,10 +1,25 @@
 import { validateObservation, validateSupplierAssociation } from '../../server/catalog'
+import { collectionReferences } from './collector'
 const product={id:'11111111-1111-4111-8111-111111111111',supplier_id:'123456',supplier_url:'https://fr.shein.com/Demo-p-123456.html',title:'Robe midi à fleurs · exemple',supplier_sku:'sz-DEMO',price:18.08,previous_price:19.90,size:'M',color:'Nude',availability:'available',observed_at:new Date().toISOString(),linked_skus:1}
 const products=[product],items=[{id:'demo-item',sku:'sz-DEMO',title:'Robe midi · taille M',supplier_url:product.supplier_url}],links=[{sku:'sz-DEMO',product_id:product.id,updated_at:new Date().toISOString()}]
 const observations=[{id:crypto.randomUUID(),product_id:product.id,price:18.08,currency:'EUR',size:'M',color:'Nude',availability:'available',observed_at:new Date().toISOString()},{id:crypto.randomUUID(),product_id:product.id,price:19.90,currency:'EUR',size:'M',color:'Nude',availability:'available',observed_at:new Date(Date.now()-86400000).toISOString()}]
+Object.assign(product,{collection_status:'completed',price_scope:'product',size:'',last_checked_at:new Date().toISOString(),next_check_at:new Date(Date.now()+21600000).toISOString(),sizes:[{size:'S',availability:'available'},{size:'M',availability:'available'},{size:'L',availability:'unavailable'}],description:'Exemple de description récupérée sur la fiche fournisseur.',details:[{name:'Taille · Tour de poitrine',value:'M · 92 cm'}]})
+const sales=[{sku:'sz-DEMO',currency:'EUR',quantity:8,known_prices:8,revenue:320,last_sale:new Date().toISOString()}]
+const devices=[],jobs=[]
+export async function collectorPreview(method='GET',body) {
+  if(method==='GET')return structuredClone({devices:devices.filter(d=>!d.revoked_at),jobs,pending:jobs.filter(j=>j.status==='queued').length})
+  if(body.action==='create_device'){const id=crypto.randomUUID();devices.push({id,name:body.name,enabled:true,expires_at:new Date(Date.now()+90*86400000).toISOString()});return {id,token:'CODE-DEMONSTRATION-SANS-ACCES'}}
+  if(body.action==='pause_device'){devices.find(d=>d.id===body.id).enabled=body.enabled;return {saved:true}}
+  if(body.action==='revoke_device'){devices.find(d=>d.id===body.id).revoked_at=new Date().toISOString();return {saved:true}}
+  if(body.action==='queue_due')return {queued:0}
+  const refs=body.action==='retry'?[jobs.find(j=>j.id===body.id)]:collectionReferences(body.references)
+  let queued=0
+  for(const ref of refs)if(!jobs.some(j=>j.reference_key===ref.reference_key&&j.status==='queued')){jobs.unshift({...ref,id:crypto.randomUUID(),status:'queued',created_at:new Date().toISOString()});queued++}
+  return {queued}
+}
 export async function catalogPreview(method='GET',body,query='') {
   if(method==='GET' && query.includes('product_id'))return {observations:structuredClone(observations),count:observations.length}
-  if(method==='GET')return structuredClone({products,items,links,product_count:products.length,item_count:items.length,link_count:links.length,connected:true,last_sync:new Date().toISOString()})
+  if(method==='GET')return structuredClone({products,items,links,sales,product_count:products.length,item_count:items.length,link_count:links.length,sales_count:sales.length,connected:true,last_sync:new Date().toISOString()})
   if(body.action==='sync')return {has_more:false,processed:1}
   if(body.action==='supplier'){
     const valid=validateSupplierAssociation(body)

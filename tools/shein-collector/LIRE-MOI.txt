@@ -1,0 +1,31 @@
+STOCK VINTED — RECUPERATION SHEIN SUR PC
+
+1. Décompresse tout le dossier dans un emplacement à conserver.
+2. Sur ton site, ouvre Catalogue > Récupération > Associer mon PC.
+3. Double-clique sur run.bat et colle le code d'association demandé.
+
+Le programme utilise Edge, ou Chrome si Edge n'est pas installé, dans une fenêtre séparée.
+Il ne récupère pas tes cookies ni les mots de passe de ton navigateur habituel.
+La clé Dotb et la clé de base de données restent sur le serveur du site.
+
+Ajoute tes SKU ou liens sur le site, depuis ton PC ou ton téléphone.
+Le programme récupère les fiches une par une. Les produits sont revérifiés six heures
+après chaque récupération réussie. Si le PC est éteint, ils attendent son prochain lancement.
+Une association seule ne signifie pas que le prix a été récupéré : le site affiche le résultat.
+
+Si Shein demande une vérification humaine, effectue-la dans sa fenêtre, puis reviens
+dans celle du programme et appuie sur Entrée. Ne ferme pas le programme pendant ce temps.
+Les prix sont ceux affichés dans cette session Shein, hors coupons du panier. Les tailles
+proposées sont enregistrées, sans acheter ni ajouter d'article au panier. Les mesures
+non affichées ne sont pas inventées. Les prix Dotb ne sont pas modifiés par ce programme.
+
+Pour arrêter : ferme la fenêtre du navigateur ou appuie sur Ctrl+C dans le programme.
+Pour reprendre : relance run.bat. Tu peux mettre le PC en pause ou le déconnecter sur le site.
+Si le code a expiré ou a été révoqué, lance « run.bat --associer » pour associer à nouveau.
+L'association expire au bout de 90 jours.
+
+Le sous-dossier .data contient l'association, la session dédiée et un éventuel résultat en
+attente d'envoi. Garde-le privé et ne le partage pas. Il n'est pas inclus dans le ZIP fourni.
+
+Prérequis : Windows, Node.js 20 ou plus récent, Microsoft Edge ou Google Chrome, Internet.
+Le premier lancement installe la bibliothèque Playwright depuis le registre officiel npm.

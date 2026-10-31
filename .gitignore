@@ -6,3 +6,4 @@ dist
 .claude/
 
 supabase/.temp/
+tools/shein-collector/.data/

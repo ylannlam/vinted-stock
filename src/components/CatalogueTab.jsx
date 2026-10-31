@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { availabilityLabels, isStale, observationChange, sheinProduct, sheinSearchUrl, variantLabel } from '../lib/catalog'
 import { safeUrl } from '../lib/fulfillment'
+import CollectionManager from './CollectionManager'
+import CatalogueLibrary, {BestSellerList,ProductDetails} from './CatalogueLibrary'
 const defaultRequest = (...args) => import('../lib/api').then(m => m.catalogRequest(...args))
+const defaultCollectorRequest = (...args) => import('../lib/api').then(m => m.collectorRequest(...args))
 const input = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-teal-600 bg-white'
 const button = 'border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white hover:bg-gray-50 disabled:opacity-40'
 const primary = 'rounded-lg px-4 py-2 text-sm font-medium bg-teal-700 text-white hover:bg-teal-800 disabled:opacity-40'
@@ -52,12 +55,13 @@ function SkuRow({group,data,isAdmin,busy,onLink,onHistory}) {
   </tr>
 }
 
-export default function CatalogueTab({isAdmin,request=defaultRequest}) {
-  const [data,setData]=useState({products:[],items:[],links:[]}), [tab,setTab]=useState('products')
+export default function CatalogueTab({isAdmin,request=defaultRequest,collectorRequest=defaultCollectorRequest}) {
+  const [data,setData]=useState({products:[],items:[],links:[],sales:[]}), [tab,setTab]=useState('products')
   const [search,setSearch]=useState(''), [filter,setFilter]=useState('all'), [page,setPage]=useState(0)
   const [busy,setBusy]=useState(false), [error,setError]=useState(''), [notice,setNotice]=useState('')
   const [editing,setEditing]=useState(null),[linking,setLinking]=useState(null),[history,setHistory]=useState(null)
   const [historyFilter,setHistoryFilter]=useState('all')
+  const [details,setDetails]=useState(null)
   const alive=useRef(true),operation=useRef(false)
   const groups=[...data.items.reduce((map,item)=>{
     if (!item.sku) return map
@@ -65,13 +69,13 @@ export default function CatalogueTab({isAdmin,request=defaultRequest}) {
     map.get(item.sku).items.push(item);return map
   },new Map()).values()]
   async function load() {
-    const first=await request(), products=[...first.products],items=[...first.items],links=[...first.links]
-    for(let offset=250;offset<Math.max(first.product_count,first.item_count,first.link_count);offset+=250) {
+    const first=await request(), products=[...first.products],items=[...first.items],links=[...first.links],sales=[...(first.sales||[])]
+    for(let offset=250;offset<Math.max(first.product_count,first.item_count,first.link_count,first.sales_count||0);offset+=250) {
       if(!alive.current)return
       const next=await request('GET',undefined,`?offset=${offset}`)
-      products.push(...next.products);items.push(...next.items);links.push(...next.links)
+      products.push(...next.products);items.push(...next.items);links.push(...next.links);sales.push(...(next.sales||[]))
     }
-    if(alive.current)setData({...first,products,items,links})
+    if(alive.current)setData({...first,products,items,links,sales})
   }
   async function run(action) {
     if(operation.current)return
@@ -134,30 +138,35 @@ export default function CatalogueTab({isAdmin,request=defaultRequest}) {
     setLinking(null);setNotice('Fiche Shein associée à ce SKU. Tu pourras ajouter les relevés de prix ensuite.');await load()
   }
   const term=search.trim().toLowerCase()
-  const visibleProducts=data.products.filter(p=>`${p.title} ${p.supplier_sku||''} ${p.supplier_id} ${data.links.filter(l=>l.product_id===p.id).map(l=>l.sku).join(' ')}`.toLowerCase().includes(term) &&
-    (filter==='all'||filter==='review'&&(isStale(p)||p.price==null||p.availability==='unknown')||filter==='up'&&observationChange(p)?.amount>0||filter==='down'&&observationChange(p)?.amount<0))
+  const productView=['products','fluctuations'].includes(tab)
+  const visibleProducts=data.products.filter(p=>(tab!=='fluctuations'||!!observationChange(p)?.amount)&&`${p.title} ${p.supplier_sku||''} ${p.supplier_id} ${data.links.filter(l=>l.product_id===p.id).map(l=>l.sku).join(' ')}`.toLowerCase().includes(term) &&
+    (filter==='all'||filter==='review'&&(isStale(p)||p.price==null||['blocked','failed'].includes(p.collection_status)||(p.price_scope!=='product'&&p.availability==='unknown'))||filter==='up'&&observationChange(p)?.amount>0||filter==='down'&&observationChange(p)?.amount<0))
   const visibleGroups=groups.filter(g=>`${g.sku} ${g.items.map(i=>i.title).join(' ')}`.toLowerCase().includes(term))
-  const visible=tab==='products'?visibleProducts:visibleGroups
+  const visible=productView?visibleProducts:visibleGroups
   const pages=Math.max(1,Math.ceil(visible.length/20)),currentPage=Math.min(page,pages-1)
   const withoutSku=data.items.filter(i=>!i.sku).length
   const historyRows=history?.observations.filter(o=>historyFilter==='all'||JSON.stringify([o.size,o.color])===historyFilter)||[]
   return <main className="max-w-screen-2xl mx-auto p-4 sm:p-6 space-y-5 text-slate-800">
     <header className="flex flex-wrap justify-between items-center gap-4"><div><p className="text-xs font-semibold tracking-widest text-teal-700 uppercase mb-1">Sourcing & suivi</p><h1 className="text-2xl font-bold">Catalogue</h1><p className="text-sm text-gray-500 mt-1">Tes références Shein, reliées aux SKU de Dotb.</p></div>
-      <div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={()=>run(load)}>Actualiser</button>{isAdmin&&<><button className={button} disabled={busy||!data.connected} onClick={()=>run(sync)}>{data.resume?'Reprendre l’import':'Importer les articles Dotb'}</button><button className={primary} disabled={busy} onClick={()=>draft()}>+ Relevé Shein</button></>}</div>
+      <div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={()=>run(load)}>Actualiser</button>{isAdmin&&<><button className={button} disabled={busy||!data.connected} onClick={()=>run(sync)}>{data.resume?'Reprendre l’import':'Importer les articles Dotb'}</button><button className={primary} disabled={busy} onClick={()=>draft()}>Saisie manuelle</button></>}</div>
     </header>
     {error&&!editing&&!linking&&<p role="alert" className="border border-red-200 bg-red-50 rounded-xl p-3 text-sm text-red-800">{error}</p>}
     {notice&&<p role="status" className="text-sm text-teal-800">{notice}</p>}
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{[[data.products.length,'Produits suivis'],[groups.length,'SKU Dotb'],[data.links.filter(l=>l.product_id).length,'SKU associés'],[data.products.filter(p=>isStale(p)||p.price==null||p.availability==='unknown').length,'Produits à vérifier']].map(([n,label])=><div className="bg-white rounded-xl border p-4" key={label}><p className="text-2xl font-semibold">{n}</p><p className="text-xs text-gray-500 mt-1">{label}</p></div>)}</div>
-    <div className="flex gap-2 border-b">{[['products','Produits Shein'],['sku','SKU Dotb'],['extension','Extension Shein']].map(([key,label])=><button key={key} onClick={()=>{setTab(key);setSearch('');setFilter('all')}} aria-pressed={tab===key} className={`px-3 py-3 text-sm border-b-2 ${tab===key?'border-teal-700 text-teal-800 font-semibold':'border-transparent text-gray-500'}`}>{label}</button>)}</div>
-    {tab==='extension'?<section className="bg-white border rounded-2xl p-5 sm:p-8 max-w-3xl space-y-4"><h2 className="font-semibold text-lg">Une fiche Shein → un relevé vérifié</h2><p className="text-sm text-gray-600">L’extension prépare le nom, le lien, la référence et le prix lorsqu’ils sont lisibles. Tu vérifies le prix, la taille et la couleur avant d’enregistrer.</p><ol className="list-decimal ml-5 text-sm space-y-3"><li>Télécharge puis décompresse l’extension dans un dossier à conserver.</li><li>Dans Chrome, ouvre <code>chrome://extensions</code> (Edge : <code>edge://extensions</code>). Active « Mode développeur », puis « Charger l’extension non empaquetée ». Choisis le dossier contenant <code>manifest.json</code>.</li><li>Sur la fiche Shein, clique sur l’extension, puis « Lire la fiche ouverte » et « Vérifier dans mon catalogue ».</li><li>Choisis le SKU Dotb correspondant, vérifie les champs et enregistre.</li></ol><a download href="/downloads/shein-catalogue.zip" className={`${primary} inline-block`}>Télécharger l’extension</a><p className="text-xs text-gray-500">Première version · collecte à ton clic · aucune clé à renseigner · pas de suivi en arrière-plan. Une vérification demandée par Shein reste à effectuer dans ton navigateur.</p></section>:<>
-      <div className="flex flex-wrap gap-3"><input aria-label="Rechercher dans le catalogue" value={search} onChange={e=>setSearch(e.target.value)} className={`${input} flex-1 min-w-48`} placeholder="Rechercher un produit ou un SKU…"/>{tab==='products'&&<select aria-label="Filtrer les produits" value={filter} onChange={e=>setFilter(e.target.value)} className={`${input} sm:!w-auto`}><option value="all">Tous les produits</option><option value="review">À vérifier</option><option value="up">Prix en hausse</option><option value="down">Prix en baisse</option></select>}</div>
-      {tab==='sku'&&<p className="text-sm text-gray-500">Un SKU Shein regroupe les annonces du même produit ; les tailles et couleurs restent dans les relevés. {withoutSku>0&&`${withoutSku} articles importés n’ont pas encore de SKU : renseigne-les dans Dotb puis relance l’import.`}</p>}
-      <div className="bg-white rounded-xl border overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-gray-50 text-gray-500 text-xs"><tr>{(tab==='products'?['Produit / SKU','Dernier prix relevé','Variante & disponibilité','Mise à jour','Actions']:['SKU / article Dotb','Annonces','Fiche Shein associée','Actions']).map(t=><th key={t} className="p-4 font-medium">{t}</th>)}</tr></thead><tbody>
-        {tab==='products'?visibleProducts.slice(currentPage*20,(currentPage+1)*20).map(p=><tr key={p.id} className="border-t hover:bg-gray-50/60"><td className="p-4 min-w-64"><div className="flex gap-3 items-center"><Photo url={p.photo_url}/><div><p className="font-medium max-w-sm line-clamp-2">{p.title}</p><p className="text-xs text-gray-500 mt-1">{data.links.filter(l=>l.product_id===p.id).map(l=>l.sku).join(' · ')||p.supplier_sku||`Shein #${p.supplier_id}`}</p><a href={p.supplier_url} target="_blank" rel="noreferrer" className="text-xs text-teal-700 underline">Ouvrir sur Shein ↗</a></div></div></td><td className="p-4 min-w-40"><p className="font-semibold mb-1">{money(p.price)}</p><Delta product={p}/></td><td className="p-4 min-w-44"><p className="text-xs mb-2">{variantLabel(p)}</p><span className={`rounded-full px-2 py-1 text-xs ${p.availability==='available'?'bg-teal-50 text-teal-800':'bg-amber-50 text-amber-800'}`}>{availabilityLabels[p.availability]||'À vérifier'}</span></td><td className="p-4 text-xs text-gray-500 whitespace-nowrap">{date(p.observed_at)}{isStale(p)&&<p className="text-amber-700 mt-1">À actualiser</p>}</td><td className="p-4"><div className="flex flex-col gap-2 items-start"><button disabled={busy} className="text-teal-700 underline text-xs" onClick={()=>run(()=>showHistory(p))}>Historique</button>{isAdmin&&<button disabled={busy} className={button} onClick={()=>draft({supplier_url:p.supplier_url,title:p.title,photo_url:p.photo_url,supplier_sku:p.supplier_sku})}>Nouveau relevé</button>}</div></td></tr>):visibleGroups.slice(currentPage*20,(currentPage+1)*20).map(g=><SkuRow key={g.sku} group={g} data={data} isAdmin={isAdmin} busy={busy} onLink={openLink} onHistory={p=>run(()=>showHistory(p))}/>)}
-        {!visible.length&&<tr><td colSpan={tab==='products'?5:4} className="py-16 px-6 text-center"><p className="font-medium">{busy?'Chargement du catalogue…':search?'Aucun résultat':tab==='products'?'Ton catalogue Shein commence ici':'Aucun SKU importé pour le moment'}</p><p className="text-sm text-gray-500 mt-2">{tab==='products'?'Ajoute un relevé ou crée une fiche depuis un SKU Dotb.':'Renseigne le SKU Shein dans Dotb, enregistre, puis importe les articles.'}</p></td></tr>}
-      </tbody></table><div className="flex items-center justify-between gap-3 border-t px-4 py-3 text-xs text-gray-500"><span>{visible.length} {tab==='products'?'produits':'SKU'} · Page {currentPage+1}/{pages}</span><div className="flex gap-2"><button className={button} disabled={!currentPage} onClick={()=>setPage(currentPage-1)}>Précédente</button><button className={button} disabled={currentPage+1>=pages} onClick={()=>setPage(currentPage+1)}>Suivante</button></div></div></div>
-      <p className="text-xs text-gray-500">Dernier import Dotb complet : {data.last_sync?date(data.last_sync):'aucun'} · Les prix affichés sont des relevés datés, hors coupons du panier. Aucun prix de vente Dotb n’est modifié.</p>
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{[[data.products.length,'Produits suivis'],[groups.length,'SKU Dotb'],[data.links.filter(l=>l.product_id).length,'SKU associés'],[data.products.filter(p=>isStale(p)||p.price==null||['blocked','failed'].includes(p.collection_status)||(p.price_scope!=='product'&&p.availability==='unknown')).length,'Produits à vérifier']].map(([n,label])=><div className="bg-white rounded-xl border p-4" key={label}><p className="text-2xl font-semibold">{n}</p><p className="text-xs text-gray-500 mt-1">{label}</p></div>)}</div>
+    <div className="flex gap-1 border-b overflow-x-auto">{[['products','Bibliothèque'],['fluctuations','Fluctuations'],['bestsellers','Best sellers'],['sku','Annonces Dotb'],['collector','Récupération']].map(([key,label])=><button key={key} onClick={()=>{setTab(key);setSearch('');setFilter('all')}} aria-pressed={tab===key} className={`whitespace-nowrap px-3 py-3 text-sm border-b-2 ${tab===key?'border-teal-700 text-teal-800 font-semibold':'border-transparent text-gray-500'}`}>{label}</button>)}</div>
+    <CollectionManager isAdmin={isAdmin} full={tab==='collector'} request={collectorRequest} onCollected={()=>run(load)} onManage={()=>setTab('collector')}/>
+    {tab!=='collector'&&<>
+      <div className="flex flex-wrap gap-3"><input aria-label="Rechercher dans le catalogue" value={search} onChange={e=>setSearch(e.target.value)} className={`${input} flex-1 min-w-48`} placeholder="Rechercher un produit ou un SKU…"/>{productView&&<select aria-label="Filtrer les produits" value={filter} onChange={e=>setFilter(e.target.value)} className={`${input} sm:!w-auto`}><option value="all">Tous les produits</option><option value="review">À vérifier</option><option value="up">Prix en hausse</option><option value="down">Prix en baisse</option></select>}</div>
+      {tab==='fluctuations'&&<p className="text-sm text-gray-500">Variation entre deux prix de même portée et de même couleur. Les prix de fiche et ceux d’une taille précise restent comparés séparément.</p>}
+      {tab==='sku'&&<p className="text-sm text-gray-500">Le même SKU relie tes annonces Dotb à une fiche Shein. {withoutSku>0&&`${withoutSku} articles importés n’ont pas encore de SKU.`}</p>}
+      {productView?<>
+        <CatalogueLibrary products={visibleProducts.slice(currentPage*20,(currentPage+1)*20)} data={data} busy={busy} isAdmin={isAdmin} onDetails={setDetails} onHistory={p=>run(()=>showHistory(p))} onRefresh={p=>run(async()=>{await collectorRequest('POST',{action:'enqueue',references:p.supplier_url});setNotice('Récupération demandée. Le PC associé va traiter cette fiche.');await load()})}/>
+        {!visibleProducts.length&&<div className="rounded-xl border bg-white p-10 text-center text-gray-500 text-sm">{busy?'Chargement…':tab==='fluctuations'?'Les variations apparaîtront après deux récupérations comparables.':'Ajoute tes SKU ou liens Shein, ou importe tes articles Dotb.'}</div>}
+      </>:tab==='bestsellers'?<BestSellerList data={data} search={search} onDetails={setDetails}/>:<div className="rounded-xl border bg-white overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-gray-50 text-gray-500 text-xs"><tr>{['SKU / article Dotb','Annonces','Fiche Shein associée','Actions'].map(t=><th key={t} className="p-4 font-medium">{t}</th>)}</tr></thead><tbody>{visibleGroups.slice(currentPage*20,(currentPage+1)*20).map(g=><SkuRow key={g.sku} group={g} data={data} isAdmin={isAdmin} busy={busy} onLink={openLink} onHistory={p=>run(()=>showHistory(p))}/>)}{!visibleGroups.length&&<tr><td colSpan="4" className="p-10 text-center text-gray-500">Aucun SKU correspondant. Importe les articles après avoir enregistré leurs SKU dans Dotb.</td></tr>}</tbody></table></div>}
+      {tab!=='bestsellers'&&<div className="flex justify-between items-center text-xs text-gray-500"><span>{visible.length} {productView?'produits':'SKU'} · Page {currentPage+1}/{pages}</span><div className="flex gap-2"><button className={button} disabled={!currentPage} onClick={()=>setPage(currentPage-1)}>Précédente</button><button className={button} disabled={currentPage+1>=pages} onClick={()=>setPage(currentPage+1)}>Suivante</button></div></div>}
+      <p className="text-xs text-gray-500">Dernier import Dotb : {data.last_sync?date(data.last_sync):'aucun'}. Les prix Shein sont datés, propres à la session du PC et hors coupons du panier.</p>
     </>}
+    {details&&<Dialog title={details.title} close={()=>setDetails(null)} busy={busy}><ProductDetails product={details} items={data.items.filter(i=>data.links.some(l=>l.sku===i.sku&&l.product_id===details.id))}/></Dialog>}
     {editing&&<Dialog title="Vérifier le relevé Shein" close={closeDraft} busy={busy}><form onSubmit={e=>{e.preventDefault();run(saveObservation)}} className="space-y-4">
       <p className="text-sm text-gray-500">Vérifie la fiche ouverte sur Shein. Un prix illisible reste vide ; il ne devient jamais zéro.</p>
       <div className="grid sm:grid-cols-2 gap-3">{[['supplier_url','Lien complet de la fiche Shein',2000],['title','Nom du produit',500],['supplier_sku','SKU affiché sur Shein',200],['price','Prix affiché (€)',30],['size','Taille observée',80],['color','Couleur observée',100]].map(([key,label,max])=><label key={key} className="text-xs text-gray-600">{label}<input className={`${input} mt-1`} required={['title','supplier_url'].includes(key)} inputMode={key==='price'?'decimal':undefined} maxLength={max} value={editing[key]} onChange={e=>setEditing({...editing,[key]:e.target.value,confirmed:false})}/></label>)}
