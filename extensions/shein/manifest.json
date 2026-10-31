@@ -1,8 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "Stock Vinted — relevé Shein",
-  "version": "0.2.0",
-  "description": "Préparer un relevé depuis une fiche Shein ouverte, puis le vérifier dans votre catalogue Stock Vinted.",
-  "permissions": ["activeTab", "scripting"],
-  "action": { "default_popup": "popup.html", "default_title": "Relever cet article Shein" }
+  "name": "Stock Vinted — bibliothèque Shein",
+  "version": "0.3.0",
+  "minimum_chrome_version": "120",
+  "description": "Traiter les liens et SKU ajoutés sur Stock Vinted et enregistrer les fiches Shein dans la bibliothèque.",
+  "permissions": ["storage", "alarms", "scripting"],
+  "host_permissions": ["https://fr.shein.com/*", "https://www.shein.com/*", "https://vinted-stock.vercel.app/*"],
+  "background": { "service_worker": "worker.js", "type": "module" },
+  "action": { "default_popup": "popup.html", "default_title": "Bibliothèque Shein — récupération" }
 }

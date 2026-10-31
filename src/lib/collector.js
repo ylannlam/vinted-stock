@@ -1,6 +1,6 @@
 import { supplierLink, sheinSearchUrl } from './catalog.js'
 
-export const collectionLabels = { queued: 'En attente du PC', running: 'Récupération en cours', completed: 'Fiche récupérée', blocked: 'En pause · fiche à ouvrir', failed: 'À réessayer' }
+export const collectionLabels = { queued: 'En attente de récupération', running: 'Récupération en cours', completed: 'Ajouté à la bibliothèque', blocked: 'À vérifier dans l’extension', failed: 'À réessayer' }
 
 export function collectionReferences(value) {
   if (typeof value !== 'string' || value.length > 30000) throw Error('Colle au maximum 50 SKU ou liens, un par ligne.')

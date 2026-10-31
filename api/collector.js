@@ -42,12 +42,15 @@ export default async function handler(req,res) {
       if(body.action==='complete')result=validateCollection(body.result,job)
       else {
         failure=body.status==='blocked'?'blocked':'failed'
-        const messages={human_check:'Récupération en pause : vérification Shein à terminer sur le PC. Si elle reste bloquée, utilise le navigateur habituel ci-dessous.',
+        const messages={human_check:'Vérification Shein requise : ouvre l’onglet depuis l’extension, termine la vérification puis clique sur Reprendre.',
           sku_not_found:'Aucun produit correspondant exactement à ce SKU n’a été confirmé.',
           price_unreadable:'Le prix affiché en euros n’a pas pu être lu. Aucun ancien prix n’a été remplacé.',
           sku_mismatch:'La fiche ne porte pas le SKU attendu. Vérifie le lien et le SKU.',
-          page_unavailable:'La fiche Shein est inaccessible. Avec le programme à jour, la page reste ouverte : vérifie-la sur le PC ou utilise le navigateur habituel.'}
-        message=messages[body.code]||'La récupération a échoué. Le programme sur ton PC donne le détail.'
+          selected_size:'Une taille est sélectionnée. Désélectionne-la dans l’onglet puis reprends le relevé du prix de fiche.',
+          color_unreadable:'La couleur de la fiche est illisible. Vérifie la page dans l’extension.',
+          photos_unreadable:'Les photos ne sont pas encore lisibles. Vérifie la page dans l’extension.',
+          page_unavailable:'La fiche Shein est inaccessible. Ouvre l’onglet depuis l’extension puis reprends après vérification.'}
+        message=messages[body.code]||'La récupération a échoué. Ouvre l’extension pour voir le détail.'
       }
       const r=await db.rpc('finish_catalog_collection',{p_job:job.id,p_device:device.id,p_lease:job.lease,p_result:result,p_failure:failure,p_message:message});check(r.error)
       return res.json({saved:true,product_id:r.data})

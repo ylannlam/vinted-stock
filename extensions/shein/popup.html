@@ -1,8 +1,9 @@
 <!doctype html>
-<html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="popup.css"><title>Relevé Shein</title></head>
-<body><header><span>STOCK VINTED</span><h1>Relever cet article</h1></header>
-<p>Ouvrez la fiche Shein et choisissez votre taille et votre couleur. Le relevé sera à vérifier dans votre catalogue.</p>
-<button id="read">Lire la fiche ouverte</button>
-<p id="status" role="status"></p>
-<section id="preview" hidden><h2 id="title"></h2><p id="price"></p><p class="muted">Les promotions personnelles et le stock de la variante doivent être vérifiés sur la fiche. Aucun achat n’est effectué.</p><button id="send">Vérifier dans mon catalogue →</button></section>
-<script src="popup.js"></script></body></html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bibliothèque Shein</title><link rel="stylesheet" href="popup.css"></head>
+<body><header><span>STOCK VINTED · 0.3.0</span><h1>Bibliothèque Shein</h1></header>
+<p>Colle tes liens ou SKU sur ton site. Cette extension récupère les fiches et les ajoute à ta bibliothèque.</p>
+<form id="connect"><label for="code">Code d’association créé sur ton site</label><input id="code" type="password" autocomplete="off" required placeholder="svpc_…"><button>Associer ce navigateur</button></form>
+<section id="controls" hidden><p id="status" role="status" aria-live="polite"></p><p id="reference" class="reference"></p><p id="count" class="muted"></p><div class="actions"><button id="start">Démarrer</button><button id="pause" class="secondary">Arrêter</button><button id="resume" hidden>Reprendre la fiche ouverte</button><button id="open" class="secondary">Ouvrir l’onglet Shein</button></div><button id="disconnect" class="text-button">Déconnecter cette extension</button></section>
+<button id="skip" class="secondary" hidden>Laisser à vérifier et continuer</button><p id="error" role="alert"></p><button id="site" class="secondary">Ouvrir mon site</button>
+<p class="muted">Garde ce navigateur ouvert et le PC éveillé. En cas de vérification Shein, termine-la toi-même dans l’onglet puis clique sur Reprendre. Aucune commande n’est passée.</p>
+<script type="module" src="popup.js"></script></body></html>

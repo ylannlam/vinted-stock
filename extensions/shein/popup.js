@@ -1,27 +1,29 @@
-let draft
-const read = document.getElementById('read'), send = document.getElementById('send'), status = document.getElementById('status')
-read.addEventListener('click', async () => {
-  read.disabled = true; status.textContent = ''; draft = null
-  document.getElementById('preview').hidden = true
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-    if (!/^https:\/\/(fr|www)\.shein\.com\//.test(tab?.url || '')) throw Error('Ouvrez d’abord une fiche produit Shein dans cet onglet.')
-    const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['extractor.js'] })
-    if (!result?.result?.supplier_url || result.error) throw Error('Fiche inaccessible. Terminez la vérification Shein et réessayez depuis un produit.')
-    draft = { ...result.result, capture_id: crypto.randomUUID() }
-    document.getElementById('title').textContent = draft.title || 'Nom à compléter dans le catalogue'
-    document.getElementById('price').textContent = draft.price ? `Prix à vérifier : ${draft.price} €` : 'Prix non lisible : vous pourrez le renseigner.'
-    document.getElementById('preview').hidden = false
-  } catch (error) { status.textContent = error.message || 'Impossible de lire cette page.' }
-  finally { read.disabled = false }
+const $=id=>document.getElementById(id)
+let busy=false
+function render(s) {
+  $('connect').hidden=s.connected;$('controls').hidden=!s.connected
+  $('status').textContent=s.message
+  $('reference').textContent=s.job?`En cours : ${s.job.expected_sku||s.job.input}`:''
+  $('count').textContent=`${s.completed||0} fiche(s) enregistrée(s) par cette extension.`
+  $('start').hidden=s.enabled||s.phase==='blocked';$('pause').hidden=!s.enabled
+  $('resume').hidden=s.phase!=='blocked';$('open').hidden=!s.job&&!s.tabId
+  $('skip').hidden=!s.connected||s.phase!=='blocked'||s.blockedCode==='human_check'
+}
+async function send(action,extra={}) {
+  const reply=await chrome.runtime.sendMessage({action,...extra})
+  if(!reply?.ok)throw Error(reply?.error||'Extension indisponible. Recharge-la dans la page des extensions.')
+  render(reply.state)
+}
+async function act(action,extra={}) {
+  if(busy)return;busy=true;$('error').textContent=''
+  document.querySelectorAll('button').forEach(b=>b.disabled=true)
+  try{await send(action,extra);if(action==='connect')$('code').value=''}catch(e){$('error').textContent=e.message}
+  finally{busy=false;document.querySelectorAll('button').forEach(b=>b.disabled=false)}
+}
+$('connect').addEventListener('submit',e=>{e.preventDefault();act('connect',{token:$('code').value})})
+for(const action of ['start','pause','resume','skip','open','site'])$(action).addEventListener('click',()=>act(action))
+$('disconnect').addEventListener('click',()=>{
+  if(confirm('Déconnecter cette extension ? Les fiches enregistrées sont conservées. Une récupération en cours devra être relancée depuis le site.'))act('disconnect')
 })
-send.addEventListener('click', async () => {
-  if (!draft) return
-  send.disabled = true
-  try {
-    const fragment = encodeURIComponent(JSON.stringify(draft))
-    if (fragment.length > 24000) throw Error('Fiche trop volumineuse. Utilisez le formulaire manuel du catalogue.')
-    await chrome.tabs.create({ url: `https://vinted-stock.vercel.app/#shein-import=${fragment}` })
-    window.close()
-  } catch (error) { status.textContent = error.message; send.disabled = false }
-})
+act('status')
+setInterval(()=>{if(!busy)send('status').catch(e=>{$('error').textContent=e.message})},1500)
