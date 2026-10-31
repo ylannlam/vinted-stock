@@ -1,26 +1,28 @@
-# Bibliothèque Shein — extension 0.3.0
+# Bibliothèque Shein — 0.4.0
 
-Colle un lien produit Shein ou un SKU dans le catalogue Stock Vinted, clique sur **Ajouter à ma bibliothèque**. L’extension associée prend les demandes en attente, ouvre la fiche dans ton navigateur habituel, vérifie son SKU, puis enregistre photos, prix, couleur et tailles lisibles. Les prix réussis sont revérifiés après 6 heures quand le navigateur fonctionne.
+Les commandes se trouvent dans **Catalogue**, sur https://vinted-stock.vercel.app. L’extension récupère les articles dans un onglet séparé de ton navigateur habituel.
 
-## Installation (Edge ou Chrome 120+)
-1. Décompresse ce dossier et conserve-le sur ton PC.
-2. Dans `edge://extensions` ou `chrome://extensions`, active le mode développeur, choisis **Charger l’extension non empaquetée** puis ce dossier.
-3. Sur ton site, **Catalogue → Récupération → Créer le code d’association**. Copie ce code dans l’extension, puis clique sur **Associer ce navigateur** et **Démarrer**.
-4. Colle tes liens ou SKU dans la bibliothèque. Les fiches apparaissent après leur récupération. Le site affiche les demandes en attente et les erreurs.
+## Installation unique
+1. Décompresse le dossier et conserve-le sur le PC.
+2. Dans `edge://extensions` ou `chrome://extensions`, active le mode développeur et charge ce dossier comme extension non empaquetée.
+3. Actualise le catalogue puis clique sur **Connecter et démarrer**. Aucun code à copier.
 
-Pour remplacer 0.2.0, remplace les fichiers dans son dossier, recharge l’extension dans la page des extensions et accepte les nouvelles permissions si le navigateur les demande. L’ancienne version était manuelle ; cette version traite une file et a besoin de l’accès aux deux domaines Shein et à ton site.
+Déjà associé en 0.3.0 ? Remplace les fichiers dans le même dossier et recharge l’extension, puis la page du catalogue. L’association existante est conservée. L’extension ne demande aucun domaine ou type de permission supplémentaire.
 
-Pas de Node.js ni de run.bat pour cette extension. Arrête l’ancien programme si tu utilises l’extension.
+## Utilisation
+- Colle un lien produit Shein ou un SKU dans **Ajouter des articles Shein**, puis clique sur **Ajouter les articles**. Plusieurs références : une par ligne, maximum 50.
+- Suis **En cours / À vérifier / Ajoutés** dans le catalogue. Une fiche sans couleur ou avec un prix illisible reste à vérifier ; les suivantes continuent. Les informations manquantes sont indiquées sur la fiche.
+- En cas de vérification Shein, utilise **Ouvrir Shein**, termine-la toi-même et clique sur **J’ai vérifié · reprendre** dans le catalogue. La vérification n’est ni résolue ni contournée automatiquement.
+- La récupération tente aussi d’ouvrir Description et Tailles & Mesures pour lire leur contenu affiché. Les informations absentes ne sont pas inventées.
+- **Mettre en pause / Reprendre les imports** se pilote sur le site. Le menu de l’extension reste un secours.
+- Garde le navigateur ouvert et le PC éveillé. Après redémarrage, une récupération active reprend ; une pause volontaire ou une vérification humaine reste en pause. Un bail expiré peut nécessiter une relance depuis le catalogue.
+- Les prix sont revérifiés après 6 heures lorsque le navigateur est disponible. L’import Dotb se déclenche encore depuis le site ; les exclusions choisies restent appliquées.
 
-## En cas de pause
-- Garde le navigateur ouvert et le PC éveillé. La fenêtre de l’extension peut se fermer.
-- L’extension utilise un seul onglet qu’elle a créé. Elle ne prend pas le contrôle de tes autres onglets.
-- Si Shein affiche une vérification, l’extension ne la résout pas et ne recharge pas la page. **Ouvrir l’onglet Shein**, termine la vérification, puis **Reprendre la fiche ouverte**. Si nécessaire, ouvre le produit demandé dans ce même onglet.
-- Un mauvais SKU, un prix illisible, des photos absentes ou une taille sélectionnée suspendent la fiche. Aucun ancien prix n’est remplacé par zéro.
-- Après redémarrage du navigateur, clique sur **Démarrer**. Une demande expirée peut nécessiter **Réessayer** dans la file du site.
-- L’accès à Shein dépend du site et de ta session : l’installation ne garantit pas que Shein acceptera toutes les consultations.
+Pas de run.bat ni de Node.js. Arrête l’ancien programme si tu utilises l’extension.
 
-## Données et permissions
-Le code d’association, limité à ces récupérations, reste dans le stockage local de l’extension. Il expire après 90 jours et peut être révoqué depuis le site. Les requêtes authentifiées vont uniquement à `https://vinted-stock.vercel.app/api/collector`, sans redirection. Ni cookies, ni mots de passe, ni clé Dotb ne sont lus. Aucun achat, message ou changement de prix Dotb n’est effectué. Les scripts lisent le contenu affiché sur Shein ; aucune API privée ni contournement de vérification.
+## Accès
+Chrome ou Edge 120+. Seuls fr.shein.com, www.shein.com et vinted-stock.vercel.app sont autorisés. Un script de liaison fonctionne uniquement sur ton site et transmet des commandes limitées au collecteur. Il ne reçoit jamais le code d’association stocké ni les baux de récupération. Les commandes d’autres sites ou de sous-cadres sont refusées.
 
-L’import Dotb reste déclenché depuis le site. Les articles Dotb exclus ou non classés restent soumis aux règles de suivi du catalogue. Les fiches ajoutées directement avec un lien sont des références autonomes.
+Le code d’association reste dans le stockage local protégé de l’extension, expire après 90 jours et peut être révoqué depuis le catalogue. Les requêtes authentifiées vont uniquement au point d’accès fixe `/api/collector` de ton site, sans redirection ni cookies. Aucun mot de passe, clé Dotb, historique de navigation ou cookie n’est lu. Aucun achat ni changement d’annonce n’est effectué.
+
+L’accès à Shein dépend de ta session et des contrôles du fournisseur. Une connexion réussie ne garantit pas que toutes les fiches seront accessibles.

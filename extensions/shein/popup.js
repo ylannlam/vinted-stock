@@ -6,7 +6,7 @@ function render(s) {
   $('reference').textContent=s.job?`En cours : ${s.job.expected_sku||s.job.input}`:''
   $('count').textContent=`${s.completed||0} fiche(s) enregistrée(s) par cette extension.`
   $('start').hidden=s.enabled||s.phase==='blocked';$('pause').hidden=!s.enabled
-  $('resume').hidden=s.phase!=='blocked';$('open').hidden=!s.job&&!s.tabId
+  $('resume').hidden=s.phase!=='blocked';$('open').hidden=!s.job&&!s.hasTab
   $('skip').hidden=!s.connected||s.phase!=='blocked'||s.blockedCode==='human_check'
 }
 async function send(action,extra={}) {

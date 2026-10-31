@@ -9,6 +9,13 @@ const tracking={starts_at:'2026-10-29T23:00:00Z',time_zone:'Europe/Paris'}
 items[0].tracking_status='included'
 items.push({id:'22222222-2222-4222-8222-222222222222',sku:'sz-DEMO-RECENT',title:'Article à classer · exemple',tracking_status:'unclassified'})
 const devices=[],jobs=[]
+let browserState={version:'0.4.0',connected:false,enabled:false,phase:'idle',message:'Navigateur prêt à être connecté.'}
+export async function collectorBridgePreview(action='status') {
+  if(action==='connect')browserState={...browserState,connected:true,device_id:devices.at(-1)?.id}
+  if(action==='start'||action==='resume')browserState={...browserState,enabled:true,phase:'idle',message:'En attente de tes liens ou SKU.'}
+  if(action==='pause')browserState={...browserState,enabled:false,message:'Import en pause.'}
+  return structuredClone(browserState)
+}
 export async function collectorPreview(method='GET',body) {
   if(method==='GET')return structuredClone({devices:devices.filter(d=>!d.revoked_at),jobs,pending:jobs.filter(j=>j.status==='queued').length})
   if(body.action==='create_device'){const id=crypto.randomUUID();devices.push({id,name:body.name,enabled:true,expires_at:new Date(Date.now()+90*86400000).toISOString()});return {id,token:'CODE-DEMONSTRATION-SANS-ACCES'}}

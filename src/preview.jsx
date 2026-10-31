@@ -4,7 +4,7 @@ import { TAB_SALES, TAB_BUDGET, TAB_COMPTES_VINTED, TAB_CATALOG, TAB_RESOURCES }
 import ResourcesTab from './components/ResourcesTab'
 import {resourcesPreview,resourcesPreviewUpload} from './lib/resourcesPreview'
 import CatalogueTab from './components/CatalogueTab'
-import { catalogPreview, collectorPreview } from './lib/catalogPreview'
+import { catalogPreview, collectorPreview, collectorBridgePreview } from './lib/catalogPreview'
 import BudgetTab from './components/BudgetTab'
 import { validateTracker } from '../server/drop-tracker'
 import React, {useState} from 'react'
@@ -59,6 +59,6 @@ const demoClient={from(table){
 }}
 function PreviewApp(){
  const [tab,setTab]=useState(location.hash==='#ressources'?TAB_RESOURCES:location.hash==='#catalogue'?TAB_CATALOG:location.hash==='#suivi'?TAB_BUDGET:location.hash==='#comptes'?TAB_COMPTES_VINTED:TAB_SALES)
- return <div className="min-h-screen bg-gray-50"><div className="bg-amber-100 text-amber-900 px-4 py-2 text-sm font-medium">DÉMO · Données fictives · Réinitialisée à chaque rechargement</div><header className="bg-white px-4 py-3 font-bold text-teal-700">Stock Vinted</header><CategoryTabs active={tab} onChange={setTab} items={[]} commandes={[]} userRole="admin"/>{tab===TAB_RESOURCES?<ResourcesTab request={resourcesPreview} upload={resourcesPreviewUpload}/>:tab===TAB_CATALOG?<CatalogueTab isAdmin request={catalogPreview} collectorRequest={collectorPreview}/>:tab===TAB_BUDGET?<BudgetTab request={trackerRequest}/>:tab===TAB_COMPTES_VINTED?<VintedAccountsTab client={demoClient}/>:<SalesTab isAdmin request={request}/>}</div>
+ return <div className="min-h-screen bg-gray-50"><div className="bg-amber-100 text-amber-900 px-4 py-2 text-sm font-medium">DÉMO · Données fictives · Réinitialisée à chaque rechargement</div><header className="bg-white px-4 py-3 font-bold text-teal-700">Stock Vinted</header><CategoryTabs active={tab} onChange={setTab} items={[]} commandes={[]} userRole="admin"/>{tab===TAB_RESOURCES?<ResourcesTab request={resourcesPreview} upload={resourcesPreviewUpload}/>:tab===TAB_CATALOG?<CatalogueTab isAdmin request={catalogPreview} collectorRequest={collectorPreview} collectorBridge={collectorBridgePreview}/>:tab===TAB_BUDGET?<BudgetTab request={trackerRequest}/>:tab===TAB_COMPTES_VINTED?<VintedAccountsTab client={demoClient}/>:<SalesTab isAdmin request={request}/>}</div>
 }
 createRoot(document.getElementById('root')).render(<PreviewApp/>)

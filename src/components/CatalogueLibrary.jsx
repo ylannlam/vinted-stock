@@ -1,10 +1,11 @@
-import {observationChange} from '../lib/catalog'
+import {observationChange,missingProductFields} from '../lib/catalog'
 import {collectionLabels} from '../lib/collector'
 import {safeUrl,money} from '../lib/fulfillment'
 const date=value=>value?new Date(value).toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short'}):'Pas encore vérifié'
 const button='rounded-lg border px-3 py-2 text-sm bg-white hover:bg-gray-50 disabled:opacity-40'
 export function ProductDetails({product,items}) {
   return <div className="space-y-4">
+    {!!missingProductFields(product).length&&<p className="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg p-3">Non récupéré : {missingProductFields(product).join(', ')}. Ces informations restent à compléter.</p>}
     <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">{(product.photos?.length?product.photos:[product.photo_url]).filter(safeUrl).map(url=><a key={url} href={url} target="_blank" rel="noreferrer"><img src={url} className="w-full aspect-[3/4] rounded-lg object-cover" alt={product.title} referrerPolicy="no-referrer"/></a>)}</div>
     <p className="text-sm font-mono break-all">{product.supplier_sku||'SKU non récupéré'}</p>
     <div className="bg-slate-50 p-4 rounded-xl"><p className="text-sm">Prix affiché sur Shein : <strong>{product.price==null?'À récupérer':money(product.price)}</strong></p><p className="text-xs text-gray-500 mt-1">{date(product.observed_at)} · {product.color||'Couleur non précisée'}{product.price_scope==='product'?' · avant sélection de taille, hors coupons':''}</p></div>
@@ -25,6 +26,7 @@ export default function CatalogueLibrary({products,data,busy,isAdmin,onDetails,o
         <div><p className="text-xl font-semibold">{p.price==null?'Prix à récupérer':money(p.price)}</p>{delta&&<p className={`text-xs mt-1 ${delta.amount>0?'text-rose-700':'text-teal-700'}`}>{delta.amount>0?'▲ +':delta.amount<0?'▼ ':''}{money(delta.amount)} · {Math.abs(delta.percent).toFixed(1)} % <span className="text-gray-400">(avant {money(p.previous_price)})</span></p>}<p className="text-xs text-gray-500 mt-1">{p.color||'Couleur à récupérer'}{p.price_scope==='product'?' · prix de la fiche':p.size?` · ${p.size}`:''}</p></div>
         <div className="flex flex-wrap gap-1">{p.sizes?.map(s=><span key={s.size} className={`text-xs px-2 py-1 rounded border ${s.availability==='unavailable'?'line-through text-gray-400':'bg-teal-50 text-teal-800'}`}>{s.size}</span>)}</div>
         <p className="text-xs text-gray-500">{listings.length} annonce(s) Dotb · {sales} vente(s) reliée(s)</p>
+        {!!missingProductFields(p).length&&<p className="text-xs text-amber-800 bg-amber-50 rounded-lg p-2">À compléter : {missingProductFields(p).join(', ')}.</p>}
         <div className="text-xs text-gray-500 mt-auto"><p>{collectionLabels[p.collection_status]||'À récupérer'}</p><p>Vérifié : {date(p.last_checked_at||p.observed_at)}</p>{p.next_check_at&&<p>Prochaine vérification : {date(p.next_check_at)}</p>}{p.collection_message&&<p className="text-amber-800 mt-1">{p.collection_message}</p>}</div>
         <div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={()=>onDetails(p)}>Fiche</button><button className={button} disabled={busy} onClick={()=>onHistory(p)}>Historique</button>{isAdmin&&<button className="text-xs text-teal-700 underline" disabled={busy} onClick={()=>onRefresh(p)}>Récupérer maintenant</button>}</div>
       </div>

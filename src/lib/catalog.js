@@ -52,6 +52,12 @@ export const availabilityLabels = { unknown: 'À vérifier', available: 'Disponi
 export const variantLabel = row => [row.size, row.color].filter(Boolean).join(' · ') || 'Variante non précisée'
 export const isStale = (row, now = Date.now()) => !row.observed_at || now - Date.parse(row.observed_at) > 86400000
 
+export function missingProductFields(product) {
+  return [[!product.photo_url&&!product.photos?.length,'photos'],[product.price==null,'prix'],[!product.color,'couleur'],
+    [!product.sizes?.length,'tailles'],[!product.description,'description'],[!product.details?.length,'détails']]
+    .filter(([missing])=>missing).map(([,label])=>label)
+}
+
 export function captureDraft() {
   const prefix = '#shein-import='
   if (window.location.hash.startsWith(prefix)) {

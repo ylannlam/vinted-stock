@@ -43,6 +43,41 @@ test('rendered Shein DOM yields only the displayed product, selected color and p
   assert.equal(vm.runInNewContext(`(${readSheinPage.toString()})()`,domFixture({human:true})).error,'human_check')
   assert.equal(vm.runInNewContext(`(${readSheinPage.toString()})()`,domFixture({price:'Prix indisponible'})).error,'price_unreadable')
 })
+test('single-color pages use only a visible explicit heading and reject conflicting or hidden colors',()=>{
+  for(const variant of ['text','label','hidden','conflict']) {
+    const context=domFixture(),query=context.document.querySelector,all=context.document.querySelectorAll
+    context.document.querySelector=q=>q.includes('Color options')?null:query(q)
+    const heading=(color,visible=true)=>({innerText:`Couleur: ${color}`,getAttribute:()=>variant==='label'?`Couleur ${color}`:null,getClientRects:()=>visible?[{}]:[]})
+    context.document.querySelectorAll=q=>q==='h2,h3,[role="heading"]'?(variant==='conflict'?[heading('Nude'),heading('Noir')]:[heading('Nude',variant!=='hidden')]):all(q)
+    const actual=vm.runInNewContext(`(${readSheinPage.toString()})()`,context)
+    assert.equal(actual.color,['hidden','conflict'].includes(variant)?'':'Nude')
+    if(actual.color)assert.equal(actual.photos.length,1)
+  }
+})
+test('challenge URLs pause both readers before challenge text has loaded',()=>{
+  const context=domFixture();context.location={href:'https://fr.shein.com/risk/challenge?captcha_type=909',pathname:'/risk/challenge'}
+  assert.equal(vm.runInNewContext(`(${readSheinPage.toString()})()`,context).error,'human_check')
+  assert.equal(vm.runInNewContext(`(${readSheinSearch.toString()})()`,context).error,'human_check')
+})
+
+test('expanded product details support display:contents rows and exclude unrelated tables',()=>{
+  const context=domFixture(),all=context.document.querySelectorAll
+  const cell=text=>({innerText:text,getClientRects:()=>[{}]})
+  const item={getClientRects:()=>[],querySelector:q=>cell(q.endsWith('textname')?'Composition:':'100% Polyester')}
+  const region={innerText:'Composition: 100% Polyester',querySelectorAll:()=>[item]}
+  const button={innerText:'Description\n#Looks festifs',getAttribute:k=>k==='aria-expanded'?'true':null,parentElement:{querySelector:()=>region}}
+  const table={getClientRects:()=>[{}],querySelector:()=>({}),querySelectorAll:()=>[['Taille','Poitrine'],['S','82']].map(row=>({querySelectorAll:()=>row.map(cell)}))}
+  const measures={getClientRects:()=>[{}],getAttribute:()=> 'Tailles & Mesures',querySelector:()=>cell('CM'),querySelectorAll:()=>[table]}
+  context.document.querySelectorAll=q=>q==='button'?[...all(q),button]:q==='[role="group"]'?[measures]:q==='table'?assert.fail('must not read unrelated tables'):all(q)
+  const value=vm.runInNewContext(`(${readSheinPage.toString()})()`,context)
+  assert.equal(value.description,region.innerText)
+  assert.deepEqual(JSON.parse(JSON.stringify(value.details)),[{name:'Composition',value:'100% Polyester'},{name:'Unité des mesures',value:'CM'},{name:'Taille · Poitrine',value:'S · 82'}])
+  const query=context.document.querySelector
+  context.document.querySelector=q=>q.includes('Color options')?null:query(q)
+  item.querySelector=q=>cell(q.endsWith('textname')?'Couleur:':'Nude')
+  const singleColor=vm.runInNewContext(`(${readSheinPage.toString()})()`,context)
+  assert.equal(singleColor.color,'Nude');assert.equal(singleColor.photos.length,1)
+})
 test('search extraction deduplicates real product links and stops at human checks',()=>{
   const context={URL,document:{body:{innerText:''},querySelectorAll:()=>[{href:url},{href:url+'?tracking=1'},{href:'https://evil.test/Dress-p-1.html'}]}}
   assert.equal(vm.runInNewContext(`(${readSheinSearch.toString()})()`,context).urls.length,1)

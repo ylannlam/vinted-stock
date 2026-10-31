@@ -58,7 +58,9 @@ export function createEngine(port) {
     const out=s.outbox
     await api(out)
     if(out.action==='complete')await save({outbox:null,job:null,phase:'idle',completed:s.completed+1,message:'Fiche ajoutée à la bibliothèque. Recherche de la suivante…'})
-    else await save({outbox:null,phase:'blocked'})
+    else if(['human_check','page_unavailable'].includes(out.code))await save({outbox:null,phase:'blocked'})
+    else await save({outbox:null,job:null,phase:'idle',reviewed:(s.reviewed||0)+1,
+      message:'Une fiche reste à vérifier dans le catalogue. Les autres demandes continuent.'})
   }
   async function block(code) {
     await save({phase:'blocked',blockedCode:code,message:messages[code]||messages.page_unavailable,
@@ -66,7 +68,7 @@ export function createEngine(port) {
     await deliver()
   }
   async function handleError(error) {
-    if([401,403].includes(error.status))await save({enabled:false,message:'Association expirée ou retirée. Crée un nouveau code sur le site.'})
+    if([401,403].includes(error.status))await save({enabled:false,needsConnection:true,message:'Association expirée ou retirée. Reconnecte ce navigateur depuis le catalogue.'})
     else if(error.status===409) {
       // Never submit an old result using a new lease or replay an excluded job.
       await save({enabled:false,job:null,outbox:null,phase:'idle',message:error.message+' Relance depuis la file du site, puis clique sur Démarrer.'})
@@ -98,14 +100,21 @@ export function createEngine(port) {
       if(current.status==='loading'&&port.now()-s.since<90000)return s
       if(!allowedPage(current.url)){await block('page_unavailable');return s}
       const isProduct=!!productId(current.url)
-      const result=await port.read(s.tabId,isProduct?'product':'search')
+      let result=await port.read(s.tabId,isProduct?'product':'search')
       if(result?.error==='human_check'){await block('human_check');return s}
       if(s.phase==='search'&&!isProduct) {
         const candidates=(result?.urls||[]).filter(productId).slice(0,5)
         if(!candidates.length){if(port.now()-s.since<60000)return s;await block('sku_not_found');return s}
         await save({candidates,candidate:0});await navigate(candidates[0],'product');return s
       }
-      const problem=resultError(result,s.job)
+      let problem=resultError(result,s.job)
+      // Single-color products expose the color only inside their description.
+      // Identity and the absence of a selected size must already be confirmed.
+      if(port.enrich&&(!problem||['color_unreadable','photos_unreadable'].includes(problem))) {
+        await save({message:'Lecture de la description et des détails…'})
+        result=await port.enrich(s.tabId,result,s.job)
+        problem=resultError(result,s.job)
+      }
       if(problem) {
         if(problem==='sku_mismatch'&&s.candidates?.[s.candidate+1]) {
           await save({candidate:s.candidate+1});await navigate(s.candidates[s.candidate],'product');return s
@@ -143,7 +152,7 @@ export function createEngine(port) {
         const isProduct=!!productId(current.url)
         const value=await port.read(s.tabId,isProduct?'product':'search')
         const problem=isProduct?resultError(value,s.job):value?.error||(!value?.urls?.length?'sku_not_found':null)
-        if(problem){await save({message:messages[problem]||messages.page_unavailable});return s}
+        if(problem&&!['color_unreadable','photos_unreadable'].includes(problem)){await save({message:messages[problem]||messages.page_unavailable});return s}
         const response=await api({...jobBody('resume_blocked'),keep_page:true})
         await save({job:response.job,phase:isProduct?'product':'search',since:port.now(),enabled:true,message:'Reprise de la fiche ouverte…'})
         return tick()

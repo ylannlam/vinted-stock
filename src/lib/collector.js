@@ -1,6 +1,19 @@
 import { supplierLink, sheinSearchUrl } from './catalog.js'
 
-export const collectionLabels = { queued: 'En attente de récupération', running: 'Récupération en cours', completed: 'Ajouté à la bibliothèque', blocked: 'À vérifier dans l’extension', failed: 'À réessayer' }
+export const collectionLabels = { queued: 'En attente', running: 'Import en cours', completed: 'Ajouté', blocked: 'À vérifier', failed: 'À réessayer' }
+
+// Display the latest outcome, not an old failure for a product imported successfully later.
+export function latestCollections(jobs) {
+  const idsBySku=new Map()
+  for(const j of jobs){const id=supplierLink(j.input).product?.supplier_id;if(id&&j.expected_sku)idsBySku.set(j.expected_sku.toLowerCase(),id)}
+  const seen=new Set()
+  return [...jobs].sort((a,b)=>Date.parse(b.created_at)-Date.parse(a.created_at)).filter(j=>{
+    const sku=j.expected_sku?.toLowerCase(),product=supplierLink(j.input).product?.supplier_id||idsBySku.get(sku)
+    const key=product?`product:${product}`:sku?`sku:${sku}`:j.reference_key||j.input
+    if(seen.has(key))return false
+    seen.add(key);return true
+  })
+}
 
 export function collectionReferences(value) {
   if (typeof value !== 'string' || value.length > 30000) throw Error('Colle au maximum 50 SKU ou liens, un par ligne.')

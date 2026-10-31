@@ -42,15 +42,15 @@ export default async function handler(req,res) {
       if(body.action==='complete')result=validateCollection(body.result,job)
       else {
         failure=body.status==='blocked'?'blocked':'failed'
-        const messages={human_check:'Vérification Shein requise : ouvre l’onglet depuis l’extension, termine la vérification puis clique sur Reprendre.',
+        const messages={human_check:'Vérification Shein requise : clique sur Ouvrir Shein, termine la vérification puis reprends ici.',
           sku_not_found:'Aucun produit correspondant exactement à ce SKU n’a été confirmé.',
           price_unreadable:'Le prix affiché en euros n’a pas pu être lu. Aucun ancien prix n’a été remplacé.',
           sku_mismatch:'La fiche ne porte pas le SKU attendu. Vérifie le lien et le SKU.',
           selected_size:'Une taille est sélectionnée. Désélectionne-la dans l’onglet puis reprends le relevé du prix de fiche.',
-          color_unreadable:'La couleur de la fiche est illisible. Vérifie la page dans l’extension.',
-          photos_unreadable:'Les photos ne sont pas encore lisibles. Vérifie la page dans l’extension.',
-          page_unavailable:'La fiche Shein est inaccessible. Ouvre l’onglet depuis l’extension puis reprends après vérification.'}
-        message=messages[body.code]||'La récupération a échoué. Ouvre l’extension pour voir le détail.'
+          color_unreadable:'Couleur non reconnue sur cette fiche. Les autres articles peuvent continuer ; vérifie ce produit puis relance-le.',
+          photos_unreadable:'Photos non récupérées sur cette fiche. Vérifie ce produit puis relance-le.',
+          page_unavailable:'La fiche Shein est inaccessible. Clique sur Ouvrir Shein puis reprends ici après vérification.'}
+        message=messages[body.code]||'Cet article n’a pas pu être récupéré. Vérifie sa fiche puis relance-le.'
       }
       const r=await db.rpc('finish_catalog_collection',{p_job:job.id,p_device:device.id,p_lease:job.lease,p_result:result,p_failure:failure,p_message:message});check(r.error)
       return res.json({saved:true,product_id:r.data})

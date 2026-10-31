@@ -42,11 +42,23 @@ test('SKU searches candidates and confirms exact SKU before saving',async()=>{
   await f.engine.tick();await f.engine.tick()
   assert.deepEqual(f.navigations,[`https://fr.shein.com/pdsearch/${sku}/`,url]);assert.equal(f.state.completed,1)
 })
-test('wrong SKU never enters the library and requires explicit intervention',async()=>{
+
+test('single-color product opens its description before mandatory color validation',async()=>{
+  const f=fixture();f.value={...product(),color:'',photos:[]};let expanded=0
+  f.port.enrich=async()=>{expanded++;return {...product(),description:'Couleur: Nude'}}
+  await f.engine.tick();await f.engine.tick()
+  assert.equal(expanded,1);assert.equal(f.state.completed,1)
+  for(const patch of [{supplier_sku:'wrong'},{error:'human_check'},{selected_size:'M'}]) {
+    const other=fixture();other.value={...product(),...patch};other.port.enrich=()=>assert.fail('do not expand before identity and state validation')
+    await other.engine.tick();await other.engine.tick()
+    assert.equal(other.state.completed,0)
+  }
+})
+test('wrong SKU never enters the library and does not stall the remaining queue',async()=>{
   const f=fixture();f.value={...product(),supplier_sku:'wrong'}
-  await f.engine.tick();await f.engine.tick();assert.equal(f.state.phase,'blocked')
+  await f.engine.tick();await f.engine.tick();assert.equal(f.state.phase,'idle');assert.equal(f.status,'blocked')
   assert.equal(f.requests.some(r=>r.action==='complete'),false)
-  const calls=f.requests.length;await f.engine.tick();assert.equal(f.requests.length,calls)
+  await f.engine.tick();assert.equal(f.requests.at(-1).action,'claim')
 })
 test('CAPTCHA pauses the entire queue; resume reads the same tab without reloading',async()=>{
   const f=fixture();await f.engine.tick();f.value={error:'human_check'};await f.engine.tick()
@@ -64,7 +76,7 @@ test('lost completion reply survives worker restart and reuses the same lease an
   await createEngine(f.port).tick();assert.equal(f.state.completed,1);assert.deepEqual(f.requests.at(-1),original)
   assert.equal(f.navigations.length,1)
 })
-test('a bad product can be left for review, but a CAPTCHA cannot be skipped automatically',async()=>{
+test('a bad product is left for review automatically, but a CAPTCHA cannot be skipped',async()=>{
   const f=fixture();await f.engine.tick();f.value={...product(),supplier_sku:'wrong'};await f.engine.tick()
   await f.engine.command('skip');assert.equal(f.state.phase,'idle');assert.equal(f.status,'blocked')
   const captcha=fixture();await captcha.engine.tick();captcha.value={error:'human_check'};await captcha.engine.tick()
@@ -87,8 +99,24 @@ test('closing or redirecting the owned tab blocks, never takes over another tab'
 test('selected-size, missing-color, missing-photo and unreadable-price observations never save',async()=>{
   for(const patch of [{selected_size:'M'},{color:''},{photos:[]},{error:'price_unreadable'}]){
     const f=fixture();await f.engine.tick();f.advance(61000);f.value={...product(),...patch};await f.engine.tick()
-    assert.equal(f.state.phase,'blocked');assert.equal(f.requests.some(r=>r.action==='complete'),false)
+    assert.equal(f.state.phase,'idle');assert.equal(f.status,'blocked');assert.equal(f.requests.some(r=>r.action==='complete'),false)
   }
+})
+test('missing color in the first item does not prevent automatic completion of the next one',async()=>{
+  const f=fixture(),queue=[{...row,id:'missing-color'},{...row,id:'next-product'}],finished=[]
+  f.port.api=async body=>{
+    if(body.action==='claim')return {job:queue.shift()||null}
+    if(body.action==='heartbeat')return {enabled:true}
+    if(body.action==='complete')validateCollection(body.result,row)
+    if(['fail','complete'].includes(body.action)){finished.push([body.job_id,body.action]);return {saved:true}}
+    throw Error('Unexpected action')
+  }
+  f.port.read=async()=>({...product(),color:f.state.job.id==='missing-color'?'':'Nude'})
+  await f.engine.tick();f.advance(61000);await f.engine.tick()
+  assert.equal(f.state.job,null);assert.equal(f.state.phase,'idle')
+  await f.engine.tick();await f.engine.tick()
+  assert.deepEqual(finished,[['missing-color','fail'],['next-product','complete']])
+  assert.equal(f.state.completed,1);assert.equal(f.state.reviewed,1)
 })
 test('loading gets time to finish; a slow unreadable page then blocks',async()=>{
   const f=fixture();await f.engine.tick();f.value={error:'page_unavailable'}

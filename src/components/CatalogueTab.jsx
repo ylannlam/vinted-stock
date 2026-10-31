@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { availabilityLabels, isStale, observationChange, sheinProduct, sheinSearchUrl, variantLabel } from '../lib/catalog'
+import { availabilityLabels, isStale, missingProductFields, observationChange, sheinProduct, sheinSearchUrl, variantLabel } from '../lib/catalog'
 import { safeUrl } from '../lib/fulfillment'
 import CollectionManager from './CollectionManager'
 import TrackingPeriod from './TrackingPeriod'
@@ -57,7 +57,7 @@ function SkuRow({group,data,isAdmin,busy,onLink,onHistory}) {
   </tr>
 }
 
-export default function CatalogueTab({isAdmin,request=defaultRequest,collectorRequest=defaultCollectorRequest}) {
+export default function CatalogueTab({isAdmin,request=defaultRequest,collectorRequest=defaultCollectorRequest,collectorBridge}) {
   const [data,setData]=useState({products:[],items:[],links:[],sales:[],review_items:[]}), [tab,setTab]=useState('products')
   const [search,setSearch]=useState(''), [filter,setFilter]=useState('all'), [page,setPage]=useState(0)
   const [busy,setBusy]=useState(false), [error,setError]=useState(''), [notice,setNotice]=useState('')
@@ -142,7 +142,7 @@ export default function CatalogueTab({isAdmin,request=defaultRequest,collectorRe
   const term=search.trim().toLowerCase()
   const productView=['products','fluctuations'].includes(tab)
   const visibleProducts=data.products.filter(p=>(tab!=='fluctuations'||!!observationChange(p)?.amount)&&`${p.title} ${p.supplier_sku||''} ${p.supplier_id} ${data.links.filter(l=>l.product_id===p.id).map(l=>l.sku).join(' ')}`.toLowerCase().includes(term) &&
-    (filter==='all'||filter==='review'&&(isStale(p)||p.price==null||['blocked','failed'].includes(p.collection_status)||(p.price_scope!=='product'&&p.availability==='unknown'))||filter==='up'&&observationChange(p)?.amount>0||filter==='down'&&observationChange(p)?.amount<0))
+    (filter==='all'||filter==='review'&&(isStale(p)||missingProductFields(p).length>0||['blocked','failed'].includes(p.collection_status)||(p.price_scope!=='product'&&p.availability==='unknown'))||filter==='up'&&observationChange(p)?.amount>0||filter==='down'&&observationChange(p)?.amount<0))
   const visibleGroups=groups.filter(g=>`${g.sku} ${g.items.map(i=>i.title).join(' ')}`.toLowerCase().includes(term))
   const visible=productView?visibleProducts:visibleGroups
   const pages=Math.max(1,Math.ceil(visible.length/20)),currentPage=Math.min(page,pages-1)
@@ -155,20 +155,20 @@ export default function CatalogueTab({isAdmin,request=defaultRequest,collectorRe
     <TrackingPeriod period={data.tracking}>Seuls les articles que tu as inclus sont suivis. Classe les nouveaux articles dans « Articles à classer ».</TrackingPeriod>
     {error&&!editing&&!linking&&<p role="alert" className="border border-red-200 bg-red-50 rounded-xl p-3 text-sm text-red-800">{error}</p>}
     {notice&&<p role="status" className="text-sm text-teal-800">{notice}</p>}
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{[[data.products.length,'Produits suivis'],[groups.length,'SKU Dotb'],[data.links.filter(l=>l.product_id).length,'SKU associés'],[data.products.filter(p=>isStale(p)||p.price==null||['blocked','failed'].includes(p.collection_status)||(p.price_scope!=='product'&&p.availability==='unknown')).length,'Produits à vérifier']].map(([n,label])=><div className="bg-white rounded-xl border p-4" key={label}><p className="text-2xl font-semibold">{n}</p><p className="text-xs text-gray-500 mt-1">{label}</p></div>)}</div>
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{[[data.products.length,'Produits suivis'],[groups.length,'SKU Dotb'],[data.links.filter(l=>l.product_id).length,'SKU associés'],[data.products.filter(p=>isStale(p)||missingProductFields(p).length>0||['blocked','failed'].includes(p.collection_status)||(p.price_scope!=='product'&&p.availability==='unknown')).length,'Produits à vérifier']].map(([n,label])=><div className="bg-white rounded-xl border p-4" key={label}><p className="text-2xl font-semibold">{n}</p><p className="text-xs text-gray-500 mt-1">{label}</p></div>)}</div>
     <div className="flex gap-1 border-b overflow-x-auto">{[['products','Bibliothèque'],['fluctuations','Fluctuations'],['bestsellers','Best sellers'],['sku','Annonces Dotb'],['classification',`Articles à classer (${data.review_items?.filter(i=>i.tracking_status==='unclassified').length||0})`],['collector','Récupération']].map(([key,label])=><button key={key} onClick={()=>{setTab(key);setSearch('');setFilter('all')}} aria-pressed={tab===key} className={`whitespace-nowrap px-3 py-3 text-sm border-b-2 ${tab===key?'border-teal-700 text-teal-800 font-semibold':'border-transparent text-gray-500'}`}>{label}</button>)}</div>
-    <CollectionManager isAdmin={isAdmin} full={tab==='collector'} request={collectorRequest} onCollected={()=>run(load)} onManage={()=>setTab('collector')}/>
+    <CollectionManager isAdmin={isAdmin} full={tab==='collector'} request={collectorRequest} bridge={collectorBridge} onCollected={()=>run(load)} onManage={()=>setTab('collector')}/>
     {tab==='classification'&&<CatalogueClassification items={data.review_items||[]} isAdmin={isAdmin} request={request} onSaved={load}/>}
     {!['collector','classification'].includes(tab)&&<>
       <div className="flex flex-wrap gap-3"><input aria-label="Rechercher dans le catalogue" value={search} onChange={e=>setSearch(e.target.value)} className={`${input} flex-1 min-w-48`} placeholder="Rechercher un produit ou un SKU…"/>{productView&&<select aria-label="Filtrer les produits" value={filter} onChange={e=>setFilter(e.target.value)} className={`${input} sm:!w-auto`}><option value="all">Tous les produits</option><option value="review">À vérifier</option><option value="up">Prix en hausse</option><option value="down">Prix en baisse</option></select>}</div>
       {tab==='fluctuations'&&<p className="text-sm text-gray-500">Variation entre deux prix de même portée et de même couleur. Les prix de fiche et ceux d’une taille précise restent comparés séparément.</p>}
       {tab==='sku'&&<p className="text-sm text-gray-500">Le même SKU relie tes annonces Dotb à une fiche Shein. {withoutSku>0&&`${withoutSku} articles importés n’ont pas encore de SKU.`}</p>}
       {productView?<>
-        <CatalogueLibrary products={visibleProducts.slice(currentPage*20,(currentPage+1)*20)} data={data} busy={busy} isAdmin={isAdmin} onDetails={setDetails} onHistory={p=>run(()=>showHistory(p))} onRefresh={p=>run(async()=>{await collectorRequest('POST',{action:'enqueue',references:p.supplier_url});setNotice('Récupération demandée. Le PC associé va traiter cette fiche.');await load()})}/>
+        <CatalogueLibrary products={visibleProducts.slice(currentPage*20,(currentPage+1)*20)} data={data} busy={busy} isAdmin={isAdmin} onDetails={setDetails} onHistory={p=>run(()=>showHistory(p))} onRefresh={p=>run(async()=>{await collectorRequest('POST',{action:'enqueue',references:p.supplier_url});setNotice('Demande enregistrée. Son résultat apparaîtra dans le suivi des ajouts.');await load()})}/>
         {!visibleProducts.length&&<div className="rounded-xl border bg-white p-10 text-center text-gray-500 text-sm">{busy?'Chargement…':tab==='fluctuations'?'Les variations apparaîtront après deux récupérations comparables.':'Ajoute tes SKU ou liens Shein, ou importe tes articles Dotb.'}</div>}
       </>:tab==='bestsellers'?<BestSellerList data={data} search={search} onDetails={setDetails}/>:<div className="rounded-xl border bg-white overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-gray-50 text-gray-500 text-xs"><tr>{['SKU / article Dotb','Annonces','Fiche Shein associée','Actions'].map(t=><th key={t} className="p-4 font-medium">{t}</th>)}</tr></thead><tbody>{visibleGroups.slice(currentPage*20,(currentPage+1)*20).map(g=><SkuRow key={g.sku} group={g} data={data} isAdmin={isAdmin} busy={busy} onLink={openLink} onHistory={p=>run(()=>showHistory(p))}/>)}{!visibleGroups.length&&<tr><td colSpan="4" className="p-10 text-center text-gray-500">Aucun SKU correspondant. Importe les articles après avoir enregistré leurs SKU dans Dotb.</td></tr>}</tbody></table></div>}
       {tab!=='bestsellers'&&<div className="flex justify-between items-center text-xs text-gray-500"><span>{visible.length} {productView?'produits':'SKU'} · Page {currentPage+1}/{pages}</span><div className="flex gap-2"><button className={button} disabled={!currentPage} onClick={()=>setPage(currentPage-1)}>Précédente</button><button className={button} disabled={currentPage+1>=pages} onClick={()=>setPage(currentPage+1)}>Suivante</button></div></div>}
-      <p className="text-xs text-gray-500">Dernier import Dotb : {data.last_sync?date(data.last_sync):'aucun'}. Les prix Shein sont datés, propres à la session du PC et hors coupons du panier.</p>
+      <p className="text-xs text-gray-500">Dernier import Dotb : {data.last_sync?date(data.last_sync):'aucun'}. Les prix Shein sont datés, propres à la session du navigateur et hors coupons du panier.</p>
     </>}
     {details&&<Dialog title={details.title} close={()=>setDetails(null)} busy={busy}><ProductDetails product={details} items={data.items.filter(i=>data.links.some(l=>l.sku===i.sku&&l.product_id===details.id))}/></Dialog>}
     {editing&&<Dialog title="Vérifier le relevé Shein" close={closeDraft} busy={busy}><form onSubmit={e=>{e.preventDefault();run(saveObservation)}} className="space-y-4">
