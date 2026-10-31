@@ -1,5 +1,5 @@
 import { AppError, isId } from './dotb.js'
-import { sheinProduct, parsePrice } from '../src/lib/catalog.js'
+import { sheinProduct, parsePrice, supplierLink } from '../src/lib/catalog.js'
 import { safeUrl } from '../src/lib/fulfillment.js'
 
 const text = (value, max, label) => {
@@ -39,16 +39,43 @@ export function normalizeDotbItems(data, now = new Date().toISOString()) {
     if (!isId(item.id) || ids.has(item.id)) throw new AppError('Article Dotb incomplet ou dupliqué.', 502)
     ids.add(item.id)
     const trim = (value, max) => typeof value === 'string' ? value.slice(0, max) : null
-    const supplier=sheinProduct(item.supplier_link)
+    const link=supplierLink(item.supplier_link),supplier=link.product
     if (typeof item.sku==='string' && item.sku.trim().length>200) throw new AppError('Un SKU Dotb dépasse 200 caractères.',502)
     return { id: item.id, sku: typeof item.sku==='string' ? item.sku.trim() || null : null, title: trim(item.title, 500),
       account_id: isId(item.vinted_account_id) ? item.vinted_account_id : null,
-      status: trim(item.status, 50), supplier_url: safeUrl(item.supplier_link),
+      status: trim(item.status, 50), supplier_url: link.url, supplier_link_status:link.status,
       supplier_id: supplier?.supplier_id || null, supplier_canonical_url: supplier?.supplier_url || null,
       price: item.price != null && String(item.price).trim() && Number.isFinite(Number(item.price)) && Number(item.price) >= 0 && Number(item.price)<1e10 ? String(item.price) : null,
       currency: /^[A-Z]{3}$/.test(item.currency || '') ? item.currency : null,
       photo_url: safeUrl(item.photos?.[0]?.url), synced_at: now }
   })
+}
+
+export function validateSupplierAssociation(body) {
+  if(typeof body.sku!=='string'||!body.sku.trim()||body.sku.trim().length>200||
+    (body.updated_at!==null && !Number.isFinite(Date.parse(body.updated_at))))throw new AppError('SKU ou association invalide.')
+  const product=supplierLink(body.supplier_url).product
+  if(!product)throw new AppError('Collez le lien complet d’une fiche produit Shein, après avoir ouvert le résultat de recherche.')
+  return {...product,sku:body.sku.trim()}
+}
+
+// A list entry may omit the supplier field. Consult the item's detail before giving up.
+// Bounded lookups keep the page inside the sync lease and Dotb's request allowance.
+export async function recoverDotbSupplierLinks(data,{fetcher=fetch,token=process.env.DOTB_API_TOKEN,sleep=ms=>new Promise(r=>setTimeout(r,ms))}={}) {
+  const result=data.map(item=>({...item}));let checked=0
+  for(const item of result) {
+    if(!isId(item.id)||typeof item.sku!=='string'||!item.sku.trim()||supplierLink(item.supplier_link).url||checked>=5)continue
+    checked++;await sleep(1100)
+    try {
+      const response=await fetcher(`https://dotb.io/api/public/v1/items/${item.id}`,{headers:{Authorization:`Bearer ${token}`,Accept:'application/json'},signal:AbortSignal.timeout(3000),redirect:'error'})
+      if([401,402,429].includes(response.status))break
+      if(!response.ok)continue
+      const detail=await response.json()
+      if(detail?.id!==item.id || (detail.sku||'').trim()!==item.sku.trim())continue
+      if(supplierLink(detail.supplier_link).url)item.supplier_link=detail.supplier_link
+    } catch { /* Preserve the list entry; missing links remain visible and repairable. */ }
+  }
+  return result
 }
 
 export async function readDotbItems(cursor, fetcher = fetch, token = process.env.DOTB_API_TOKEN) {

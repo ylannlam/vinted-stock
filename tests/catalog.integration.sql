@@ -4,7 +4,8 @@ do $$
 declare p uuid; capture uuid:=gen_random_uuid(); item uuid:=gen_random_uuid(); lease_id uuid:=gen_random_uuid();
   supplier text:='98765432109876543210'; payload jsonb; version timestamptz; admin_id uuid; rows_count integer;
 begin
-  if exists(select 1 from public.catalog_products where supplier_id=supplier) then raise exception 'Test identifier already used'; end if;
+  if exists(select 1 from public.catalog_products where supplier_id in (supplier,'98765432109876543211','98765432109876543212')) or
+    exists(select 1 from public.catalog_dotb_items where sku in ('ROLLBACK-SKU','ROLLBACK-LINK-ONLY','ROLLBACK-KNOWN-SKU')) then raise exception 'Test identifier already used'; end if;
   payload:=jsonb_build_object('id',capture,'price',18,'currency','EUR','size','M','color','Nude','availability','available','source','manual','observed_at',now()-interval '3 hours');
   p:=public.record_catalog_observation(jsonb_build_object('supplier_id',supplier,'supplier_url','https://fr.shein.com/Test-p-'||supplier||'.html','title','ROLLBACK TEST'),payload,null);
   perform public.record_catalog_observation(jsonb_build_object('supplier_id',supplier,'supplier_url','https://fr.shein.com/Test-p-'||supplier||'.html','title','ROLLBACK TEST'),payload,null);
@@ -31,6 +32,16 @@ begin
   update public.catalog_sync_state set lease=lease_id,locked_until=now()+interval '1 minute' where id;
   perform public.import_catalog_dotb_page('[]'::jsonb,null,lease_id);
   if exists(select 1 from public.catalog_sku_links where sku='ROLLBACK-SKU' and product_id is not null) then raise exception 'Manual unlink overwritten'; end if;
+  insert into public.catalog_dotb_items(id,sku,title,synced_at,supplier_link_status) values(gen_random_uuid(),'ROLLBACK-LINK-ONLY','Test missing supplier',now(),'missing');
+  p:=public.create_catalog_product_for_sku('ROLLBACK-LINK-ONLY','98765432109876543211','https://fr.shein.com/Test-p-98765432109876543211.html',null);
+  if not exists(select 1 from public.catalog_sku_links where sku='ROLLBACK-LINK-ONLY' and product_id=p) then raise exception 'Link-only creation failed'; end if;
+  if exists(select 1 from public.catalog_observations where product_id=p) then raise exception 'Product creation invented an observation'; end if;
+  insert into public.catalog_dotb_items(id,sku,title,synced_at,supplier_link_status) values(gen_random_uuid(),'ROLLBACK-KNOWN-SKU','Test known SKU',now(),'missing');
+  insert into public.catalog_products(supplier_id,supplier_url,title,supplier_sku) values('98765432109876543212','https://fr.shein.com/Test-p-98765432109876543212.html','Test known product','ROLLBACK-KNOWN-SKU') returning id into p;
+  update public.catalog_sync_state set lease=lease_id,locked_until=now()+interval '1 minute' where id;
+  perform public.import_catalog_dotb_page('[]'::jsonb,null,lease_id);
+  if not exists(select 1 from public.catalog_sku_links where sku='ROLLBACK-KNOWN-SKU' and product_id=p) then raise exception 'Known SKU lookup failed'; end if;
+  if has_function_privilege('authenticated','public.create_catalog_product_for_sku(text,text,text,timestamptz)','execute') then raise exception 'Public supplier write access'; end if;
   if has_table_privilege('anon','public.catalog_products','select') or has_function_privilege('authenticated','public.record_catalog_observation(jsonb,jsonb,uuid)','execute') then raise exception 'Unexpected public grant'; end if;
   select id into admin_id from public.profiles where role='admin' limit 1;
   perform set_config('request.jwt.claim.sub',admin_id::text,true);

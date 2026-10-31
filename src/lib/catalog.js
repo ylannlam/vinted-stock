@@ -10,6 +10,27 @@ export function sheinProduct(value) {
   } catch { return null }
 }
 
+export function supplierLink(value) {
+  if (typeof value!=='string' || !value.trim()) return {url:null,product:null,status:'missing'}
+  if(value.length>6000)return {url:null,product:null,status:'invalid'}
+  let candidate=value.trim()
+  const markdown=candidate.match(/^\[[^\]]*\]\((https?:\/\/\S+)\)$/i)
+  if(markdown)candidate=markdown[1]
+  if(/^<https?:\/\/[^<>]+>$/i.test(candidate))candidate=candidate.slice(1,-1)
+  if(/^(fr|www)\.shein\.com\//i.test(candidate))candidate=`https://${candidate}`
+  try {
+    const url=new URL(candidate)
+    if(url.protocol==='http:' && ['fr.shein.com','www.shein.com'].includes(url.hostname))url.protocol='https:'
+    if(url.protocol!=='https:'||url.username||url.password||url.port||url.href.length>2000)throw Error('Invalid URL')
+    const product=sheinProduct(url.href)
+    return {url:url.href,product,status:product?'recognized':'unrecognized'}
+  } catch {return {url:null,product:null,status:'invalid'}}
+}
+
+export function sheinSearchUrl(sku) {
+  return typeof sku==='string' && /^[a-z0-9_-]{1,200}$/i.test(sku) ? `https://fr.shein.com/pdsearch/${encodeURIComponent(sku)}/` : null
+}
+
 export function parsePrice(value) {
   if (value === null || value === undefined || String(value).trim() === '') return null
   let s = String(value).trim().replace(/\s|\u00a0|\u202f/g, '').replace(/€|EUR/gi, '')

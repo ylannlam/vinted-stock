@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { authorize } from '../server/auth.js'
 import { AppError, isId } from '../server/dotb.js'
-import { validateObservation, normalizeDotbItems, readDotbItems } from '../server/catalog.js'
+import { validateObservation, validateSupplierAssociation, normalizeDotbItems, readDotbItems, recoverDotbSupplierLinks } from '../server/catalog.js'
 import { readPage } from '../server/pagination.js'
 
 export const config = { maxDuration: 60 }
@@ -34,6 +34,13 @@ export default async function handler(req, res) {
     if (role!=='admin') throw new AppError('Seul un administrateur peut modifier le catalogue.',403)
     const body=req.body
     if (!body || typeof body!=='object') throw new AppError('Formulaire invalide.')
+    if(req.method==='POST' && body.action==='supplier') {
+      const product=validateSupplierAssociation(body)
+      const {data,error}=await db.rpc('create_catalog_product_for_sku',{p_sku:product.sku,p_supplier_id:product.supplier_id,p_supplier_url:product.supplier_url,p_updated:body.updated_at})
+      if(error?.message?.includes('link_conflict'))throw new AppError('Cette association a changé. Actualisez avant de recommencer.',409)
+      if(error?.message?.includes('sku_missing'))throw new AppError('Ce SKU n’est plus présent. Importez les articles Dotb.',409)
+      check(error);return res.json({saved:true,product_id:data})
+    }
     if (req.method==='POST' && body.action==='observe') {
       const {product,observation}=validateObservation(body)
       const {data,error}=await db.rpc('record_catalog_observation',{p_product:product,p_observation:observation,p_user:user.id})
@@ -48,7 +55,9 @@ export default async function handler(req, res) {
       if (!state) throw new AppError('Un import est en cours. Réessayez dans quelques secondes.',409)
       try {
         if (!state.cursor) { const r=await db.from('catalog_sync_state').update({processed:0}).eq('lease',lease); check(r.error) }
-        const page=await readDotbItems(state.cursor),items=normalizeDotbItems(page.data)
+        const page=await readDotbItems(state.cursor)
+        normalizeDotbItems(page.data) // Validate identifiers before making any detail requests.
+        const items=normalizeDotbItems(await recoverDotbSupplierLinks(page.data))
         const r=await db.rpc('import_catalog_dotb_page',{p_items:items,p_cursor:page.has_more?page.next_cursor:null,p_lease:lease})
         check(r.error)
         return res.json({has_more:page.has_more,processed:(state.cursor?state.processed:0)+items.length})

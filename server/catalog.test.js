@@ -2,8 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
-import { validateObservation, normalizeDotbItems, readDotbItems } from './catalog.js'
-import { sheinProduct, parsePrice, observationChange } from '../src/lib/catalog.js'
+import { validateObservation, validateSupplierAssociation, normalizeDotbItems, readDotbItems, recoverDotbSupplierLinks } from './catalog.js'
+import { sheinProduct, supplierLink, sheinSearchUrl, parsePrice, observationChange } from '../src/lib/catalog.js'
 import handler from '../api/catalog.js'
 const id='11111111-1111-4111-8111-111111111111', url='https://fr.shein.com/Dress-p-123456.html?ref=tracking'
 const now=Date.parse('2026-10-31T12:00:00Z')
@@ -30,6 +30,42 @@ test('Dotb SKU is kept intact; selling price is never a supplier observation',()
   assert.equal('observation' in row,false)
   assert.throws(()=>normalizeDotbItems([{id},{id}]))
   assert.equal(normalizeDotbItems([{id,sku:'',price:'999999999999'}])[0].price,null)
+})
+test('supplier links accept copied Markdown and Shein links without a scheme',()=>{
+  for(const value of [url,`[Robe](${url})`,`<${url}>`,url.replace('https://',''),url.replace('https:','http:')]){
+    const link=supplierLink(value);assert.equal(link.product.supplier_id,'123456');assert.equal(link.status,'recognized')
+    assert.equal(normalizeDotbItems([{id,sku:'sz123',supplier_link:value}])[0].supplier_id,'123456')
+  }
+  assert.equal(supplierLink(null).status,'missing')
+  assert.equal(supplierLink('javascript:alert(1)').status,'invalid')
+  assert.equal(supplierLink('https://user:pass@fr.shein.com/Dress-p-123.html').status,'invalid')
+  assert.equal(supplierLink('https://fr.shein.com/pdsearch/sz123/').status,'unrecognized')
+  assert.equal(supplierLink('https://fr.shein.com.evil.test/Dress-p-123.html').product,null)
+  assert.equal(sheinSearchUrl('sz25052272411726746'),'https://fr.shein.com/pdsearch/sz25052272411726746/')
+  assert.equal(sheinSearchUrl('../malicious'),null)
+})
+test('a supplier association requires a real product but no invented price',()=>{
+  const valid=validateSupplierAssociation({sku:'sz123',supplier_url:url,updated_at:null})
+  assert.equal(valid.supplier_id,'123456');assert.equal('price' in valid,false)
+  assert.throws(()=>validateSupplierAssociation({sku:'sz123',supplier_url:'https://fr.shein.com/pdsearch/sz123/',updated_at:null}))
+  assert.throws(()=>validateSupplierAssociation({sku:'sz123',supplier_url:url,updated_at:'bad'}))
+})
+test('missing list links are recovered only from the same Dotb item and SKU',async()=>{
+  const data=[{id,sku:'sz123',supplier_link:null}],options={token:'test',sleep:async()=>{}}
+  const recover=detail=>recoverDotbSupplierLinks(data,{...options,fetcher:async()=>({ok:true,json:async()=>detail})})
+  assert.equal((await recover({id,sku:'sz123',supplier_link:url}))[0].supplier_link,url)
+  assert.equal((await recover({id,sku:'other',supplier_link:url}))[0].supplier_link,null)
+  assert.equal((await recover({id:'22222222-2222-4222-8222-222222222222',sku:'sz123',supplier_link:url}))[0].supplier_link,null)
+  const failure=await recoverDotbSupplierLinks(data,{...options,fetcher:async()=>{throw Error('timeout')}})
+  assert.equal(failure[0].supplier_link,null);assert.equal(data[0].supplier_link,null)
+})
+test('detail recovery is bounded, stops on rate limit and skips usable links',async()=>{
+  let calls=0
+  const data=Array.from({length:8},(_,i)=>({id:`11111111-1111-4111-8111-${String(i).padStart(12,'0')}`,sku:'sz123'}))
+  const opts={token:'test',sleep:async()=>{},fetcher:async()=>{calls++;return {ok:false,status:404}}}
+  await recoverDotbSupplierLinks(data,opts);assert.equal(calls,5)
+  calls=0;await recoverDotbSupplierLinks(data,{...opts,fetcher:async()=>{calls++;return {ok:false,status:429}}});assert.equal(calls,1)
+  calls=0;await recoverDotbSupplierLinks([{id,sku:'sz123',supplier_link:url},{id,sku:32}],opts);assert.equal(calls,0)
 })
 test('Dotb pagination fails safely on a repeating cursor or malformed response',async()=>{
   const fake=body=>async()=>({ok:true,json:async()=>body})

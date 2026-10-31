@@ -6,8 +6,9 @@ Première livraison : import **manuel** du catalogue Dotb, liaison par SKU, rele
 
 1. Dans Dotb, enregistrer le SKU affiché sur Shein et le lien complet du produit. Plusieurs tailles peuvent partager ce SKU.
 2. Dans **Catalogue**, cliquer **Importer les articles Dotb**. L’import lit des pages de 100 articles, avec pause et reprise. Il ne modifie pas les annonces Dotb.
-3. Les groupes de SKU dont tous les liens désignent le même produit Shein sont associés automatiquement à la fin de l’import. Les liens absents, liens courts et groupes ambigus restent à associer manuellement dans **SKU Dotb**. Une association manuelle existante est conservée.
-4. Ouvrir le produit Shein, vérifier le prix et la variante, puis ajouter un **Relevé Shein**, ou utiliser l’extension téléchargeable dans l’onglet du même nom.
+3. Les groupes de SKU dont tous les liens désignent le même produit Shein sont associés automatiquement à la fin de l’import. Si aucun lien exploitable n’arrive dans la liste, l’import consulte le détail de l’article Dotb (jusqu’à cinq vérifications par page). Les liens copiés au format Markdown, sans protocole ou en HTTP pour les domaines Shein acceptés sont normalisés. Un SKU Shein déjà connu peut retrouver son unique fiche existante. Une association manuelle est toujours conservée.
+4. Si un lien reste absent ou ambigu, **SKU Dotb** affiche le problème et propose **Rechercher ce SKU sur Shein** puis **Ajouter le lien Shein**. La fiche est créée sans imposer de relevé de prix. Une URL de recherche n’est pas considérée comme une fiche produit.
+5. Ouvrir le produit Shein, vérifier le prix et la variante, puis ajouter un **Relevé Shein**, ou utiliser l’extension téléchargeable dans l’onglet du même nom.
 
 La référence SKU est conservée telle quelle (espaces périphériques retirés). La taille et la couleur appartiennent au relevé, pas au SKU. Les comparaisons exigent la même taille, la même couleur et la même devise. Les prix inconnus restent vides. Un relevé de plus de 24 h est signalé comme ancien. Les coupons et réductions personnalisées du panier ne sont pas calculés.
 
