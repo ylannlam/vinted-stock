@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { availabilityLabels, isStale, observationChange, sheinProduct, sheinSearchUrl, variantLabel } from '../lib/catalog'
 import { safeUrl } from '../lib/fulfillment'
 import CollectionManager from './CollectionManager'
+import TrackingPeriod from './TrackingPeriod'
+import CatalogueClassification from './CatalogueClassification'
 import CatalogueLibrary, {BestSellerList,ProductDetails} from './CatalogueLibrary'
 const defaultRequest = (...args) => import('../lib/api').then(m => m.catalogRequest(...args))
 const defaultCollectorRequest = (...args) => import('../lib/api').then(m => m.collectorRequest(...args))
@@ -56,7 +58,7 @@ function SkuRow({group,data,isAdmin,busy,onLink,onHistory}) {
 }
 
 export default function CatalogueTab({isAdmin,request=defaultRequest,collectorRequest=defaultCollectorRequest}) {
-  const [data,setData]=useState({products:[],items:[],links:[],sales:[]}), [tab,setTab]=useState('products')
+  const [data,setData]=useState({products:[],items:[],links:[],sales:[],review_items:[]}), [tab,setTab]=useState('products')
   const [search,setSearch]=useState(''), [filter,setFilter]=useState('all'), [page,setPage]=useState(0)
   const [busy,setBusy]=useState(false), [error,setError]=useState(''), [notice,setNotice]=useState('')
   const [editing,setEditing]=useState(null),[linking,setLinking]=useState(null),[history,setHistory]=useState(null)
@@ -69,13 +71,13 @@ export default function CatalogueTab({isAdmin,request=defaultRequest,collectorRe
     map.get(item.sku).items.push(item);return map
   },new Map()).values()]
   async function load() {
-    const first=await request(), products=[...first.products],items=[...first.items],links=[...first.links],sales=[...(first.sales||[])]
-    for(let offset=250;offset<Math.max(first.product_count,first.item_count,first.link_count,first.sales_count||0);offset+=250) {
+    const first=await request(), products=[...first.products],items=[...first.items],links=[...first.links],sales=[...(first.sales||[])],review_items=[...(first.review_items||[])]
+    for(let offset=250;offset<Math.max(first.product_count,first.item_count,first.link_count,first.sales_count||0,first.review_count||0);offset+=250) {
       if(!alive.current)return
       const next=await request('GET',undefined,`?offset=${offset}`)
-      products.push(...next.products);items.push(...next.items);links.push(...next.links);sales.push(...(next.sales||[]))
+      products.push(...next.products);items.push(...next.items);links.push(...next.links);sales.push(...(next.sales||[]));review_items.push(...(next.review_items||[]))
     }
-    if(alive.current)setData({...first,products,items,links,sales})
+    if(alive.current)setData({...first,products,items,links,sales,review_items})
   }
   async function run(action) {
     if(operation.current)return
@@ -150,12 +152,14 @@ export default function CatalogueTab({isAdmin,request=defaultRequest,collectorRe
     <header className="flex flex-wrap justify-between items-center gap-4"><div><p className="text-xs font-semibold tracking-widest text-teal-700 uppercase mb-1">Sourcing & suivi</p><h1 className="text-2xl font-bold">Catalogue</h1><p className="text-sm text-gray-500 mt-1">Tes références Shein, reliées aux SKU de Dotb.</p></div>
       <div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={()=>run(load)}>Actualiser</button>{isAdmin&&<><button className={button} disabled={busy||!data.connected} onClick={()=>run(sync)}>{data.resume?'Reprendre l’import':'Importer les articles Dotb'}</button><button className={primary} disabled={busy} onClick={()=>draft()}>Saisie manuelle</button></>}</div>
     </header>
+    <TrackingPeriod period={data.tracking}>Seuls les articles que tu as inclus sont suivis. Classe les nouveaux articles dans « Articles à classer ».</TrackingPeriod>
     {error&&!editing&&!linking&&<p role="alert" className="border border-red-200 bg-red-50 rounded-xl p-3 text-sm text-red-800">{error}</p>}
     {notice&&<p role="status" className="text-sm text-teal-800">{notice}</p>}
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{[[data.products.length,'Produits suivis'],[groups.length,'SKU Dotb'],[data.links.filter(l=>l.product_id).length,'SKU associés'],[data.products.filter(p=>isStale(p)||p.price==null||['blocked','failed'].includes(p.collection_status)||(p.price_scope!=='product'&&p.availability==='unknown')).length,'Produits à vérifier']].map(([n,label])=><div className="bg-white rounded-xl border p-4" key={label}><p className="text-2xl font-semibold">{n}</p><p className="text-xs text-gray-500 mt-1">{label}</p></div>)}</div>
-    <div className="flex gap-1 border-b overflow-x-auto">{[['products','Bibliothèque'],['fluctuations','Fluctuations'],['bestsellers','Best sellers'],['sku','Annonces Dotb'],['collector','Récupération']].map(([key,label])=><button key={key} onClick={()=>{setTab(key);setSearch('');setFilter('all')}} aria-pressed={tab===key} className={`whitespace-nowrap px-3 py-3 text-sm border-b-2 ${tab===key?'border-teal-700 text-teal-800 font-semibold':'border-transparent text-gray-500'}`}>{label}</button>)}</div>
+    <div className="flex gap-1 border-b overflow-x-auto">{[['products','Bibliothèque'],['fluctuations','Fluctuations'],['bestsellers','Best sellers'],['sku','Annonces Dotb'],['classification',`Articles à classer (${data.review_items?.filter(i=>i.tracking_status==='unclassified').length||0})`],['collector','Récupération']].map(([key,label])=><button key={key} onClick={()=>{setTab(key);setSearch('');setFilter('all')}} aria-pressed={tab===key} className={`whitespace-nowrap px-3 py-3 text-sm border-b-2 ${tab===key?'border-teal-700 text-teal-800 font-semibold':'border-transparent text-gray-500'}`}>{label}</button>)}</div>
     <CollectionManager isAdmin={isAdmin} full={tab==='collector'} request={collectorRequest} onCollected={()=>run(load)} onManage={()=>setTab('collector')}/>
-    {tab!=='collector'&&<>
+    {tab==='classification'&&<CatalogueClassification items={data.review_items||[]} isAdmin={isAdmin} request={request} onSaved={load}/>}
+    {!['collector','classification'].includes(tab)&&<>
       <div className="flex flex-wrap gap-3"><input aria-label="Rechercher dans le catalogue" value={search} onChange={e=>setSearch(e.target.value)} className={`${input} flex-1 min-w-48`} placeholder="Rechercher un produit ou un SKU…"/>{productView&&<select aria-label="Filtrer les produits" value={filter} onChange={e=>setFilter(e.target.value)} className={`${input} sm:!w-auto`}><option value="all">Tous les produits</option><option value="review">À vérifier</option><option value="up">Prix en hausse</option><option value="down">Prix en baisse</option></select>}</div>
       {tab==='fluctuations'&&<p className="text-sm text-gray-500">Variation entre deux prix de même portée et de même couleur. Les prix de fiche et ceux d’une taille précise restent comparés séparément.</p>}
       {tab==='sku'&&<p className="text-sm text-gray-500">Le même SKU relie tes annonces Dotb à une fiche Shein. {withoutSku>0&&`${withoutSku} articles importés n’ont pas encore de SKU.`}</p>}

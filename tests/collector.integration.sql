@@ -10,7 +10,7 @@ begin
   select id into owner_id from public.profiles where role='admin' limit 1;
   if owner_id is null then raise exception 'No administrator'; end if;
   insert into public.catalog_collectors(id,name,token_hash,created_by) values(device,'ROLLBACK test',repeat('a',64),owner_id);
-  insert into public.catalog_dotb_items(id,sku,title,synced_at) values(gen_random_uuid(),fixture_sku,'ROLLBACK',now());
+  insert into public.catalog_dotb_items(id,sku,title,synced_at,tracking_status) values(gen_random_uuid(),fixture_sku,'ROLLBACK',now(),'included');
   n:=public.enqueue_catalog_collection(jsonb_build_array(jsonb_build_object('reference_key','sku:'||fixture_sku,'input',fixture_sku,'expected_sku',fixture_sku)));
   if n<>1 then raise exception 'Job not queued'; end if;
   n:=public.enqueue_catalog_collection(jsonb_build_array(jsonb_build_object('reference_key','sku:'||fixture_sku,'input',fixture_sku,'expected_sku',fixture_sku)));

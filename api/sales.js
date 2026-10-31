@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { authorize } from '../server/auth.js'
 import { AppError, normalizeOrders, readDotbPage, validateEdit } from '../server/dotb.js'
 import { STAGES } from '../src/lib/fulfillment.js'
+import {readTrackingPeriod} from '../server/tracking.js'
 
 export const config = { maxDuration: 60 }
 const fail = error => { if (error) throw error }
@@ -21,18 +22,19 @@ export default async function handler(req, res) {
     const auth = await authorize(req, res, ['admin','stock'])
     if (!auth) return
     const { db, role, user } = auth
+    const tracking=await readTrackingPeriod(db)
     if (req.method === 'GET') {
       const offset = Number(req.query?.offset || 0)
       if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1000000) throw new AppError('Page invalide.')
       const { data: state, error: stateError } = await db.from('dotb_sync_state').select('cursor,last_completed_at,processed').eq('id',true).single()
       if (stateError && !['42P01','PGRST205'].includes(stateError.code)) throw stateError
       if (stateError) return res.json({ setup_required: true, connected: !!process.env.DOTB_API_TOKEN, lines: [], catalog: [], count: 0 })
-      const { data, count } = await readPage(head => db.from('sales_lines')
-        .select('*,order:sales_orders!inner(*)', { count: 'exact', head })
+      const { data, count } = await readPage(head => db.from('sales_lines_in_period')
+        .select('*', { count: 'exact', head })
         .eq('source_active', true).order('id'), offset)
       const { data: catalog, count: catalogCount } = await readPage(head => db.from('sales_catalog_resolved')
         .select('*', { count: 'exact', head }).order('sku'), offset)
-      return res.json({ lines: data, catalog, count, catalog_count: catalogCount, connected: !!process.env.DOTB_API_TOKEN,
+      return res.json({ lines: data, catalog, count, tracking, catalog_count: catalogCount, connected: !!process.env.DOTB_API_TOKEN,
         last_sync: state.last_completed_at, resume: !!state.cursor, processed: state.processed })
     }
     if (req.method === 'POST') {
@@ -46,7 +48,7 @@ export default async function handler(req, res) {
       if (!state) throw new AppError('Une synchronisation est déjà en cours, ou vient de terminer. Réessayez dans quelques secondes.',409)
       try {
         if (!state.cursor) { const { error: resetError } = await db.from('dotb_sync_state').update({ processed: 0 }).eq('lease',lease); fail(resetError) }
-        const page = await readDotbPage(state.cursor)
+        const page = await readDotbPage(state.cursor,fetch,process.env.DOTB_API_TOKEN,tracking.starts_at)
         const { orders, lines } = normalizeOrders(page.data)
         const { error: importError } = await db.rpc('import_dotb_page', {
           p_orders: orders, p_lines: lines, p_cursor: page.has_more ? page.next_cursor : null, p_lease: lease,

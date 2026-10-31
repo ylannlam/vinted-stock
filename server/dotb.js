@@ -26,6 +26,7 @@ export function normalizeOrders(data, now = new Date().toISOString()) {
       // Only necessary product metadata is retained; no buyer address/email or raw response.
       lines.push({ id, order_id: order.id, dotb_item_id: item.id, source: {
         title: str(item.title), sku: str(item.sku, 200), supplier_link: safeUrl(item.supplier_link),
+        dotb_listing_id: isId(item.vinted_item_id) ? item.vinted_item_id : null,
         thumbnail_url: safeUrl(item.thumbnail_url), selling_price: decimal(item.selling_price),
         purchase_price: decimal(item.purchase_price), location: str(item.location, 100),
       } })
@@ -39,10 +40,10 @@ function decimal(value) {
   return Number.isFinite(number) && number >= 0 ? number.toFixed(2) : null
 }
 
-export async function readDotbPage(cursor, fetcher = fetch, token = process.env.DOTB_API_TOKEN) {
+export async function readDotbPage(cursor, fetcher = fetch, token = process.env.DOTB_API_TOKEN, from = null) {
   if (!token) throw new AppError('La connexion Dotb reste à activer par l’administrateur.', 503)
   const url = new URL('https://dotb.io/api/public/v1/orders')
-  url.search = new URLSearchParams({ include: 'items,account', limit: '100', sort: 'order_date', ...(cursor ? { cursor } : {}) })
+  url.search = new URLSearchParams({ include: 'items,account', limit: '100', sort: 'order_date', ...(from ? {from} : {}), ...(cursor ? { cursor } : {}) })
   let response
   try { response = await fetcher(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }, signal: AbortSignal.timeout(12000), redirect: 'error' }) }
   catch { throw new AppError('Dotb ne répond pas. Réessayez ; la progression est conservée.', 504) }

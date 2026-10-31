@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
+import TrackingPeriod from './TrackingPeriod'
 const defaultRequest = (...args) => import('../lib/api').then(m => m.salesRequest(...args))
 import { STAGES, skuOf, supplierOf, stageOf, blocked, deadline, money, nextStage, ORDER_LABELS } from '../lib/fulfillment'
 
 export default function SalesTab({ isAdmin, request = defaultRequest }) {
   const [data, setData] = useState({ lines: [], catalog: [] })
+  const [scope,setScope]=useState('included')
   const [filter, setFilter] = useState('all'), [search, setSearch] = useState('')
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
   const [editing, setEditing] = useState(null)
@@ -27,8 +29,9 @@ export default function SalesTab({ isAdmin, request = defaultRequest }) {
     } while(page.has_more)
     await load(); setNotice('Synchronisation terminée. Les données de préparation ont été conservées.')
   }
-  const active = data.lines.filter(l => !blocked(l))
-  const visible = data.lines.filter(l => (filter === 'all' || (filter === 'review' ? blocked(l) : !blocked(l) && stageOf(l) === filter)) &&
+  const scoped=data.lines.filter(l=>(l.tracking_status||'unclassified')===scope)
+  const active = scoped.filter(l => !blocked(l))
+  const visible = scoped.filter(l => (filter === 'all' || (filter === 'review' ? blocked(l) : !blocked(l) && stageOf(l) === filter)) &&
     `${l.source.title || ''} ${skuOf(l)} ${l.order.account_login || ''} ${l.supplier_order_ref || ''}`.toLowerCase().includes(search.toLowerCase()))
   function edit(line) {
     const product = data.catalog.find(p => p.sku === skuOf(line))
@@ -41,12 +44,14 @@ export default function SalesTab({ isAdmin, request = defaultRequest }) {
       <div className="flex gap-2"><button disabled={busy} onClick={() => run(load)} className="border rounded-lg px-3 py-2 text-sm">Actualiser</button>
         {isAdmin && <button disabled={busy || data.setup_required || !data.connected} onClick={() => run(sync)} className="rounded-lg px-4 py-2 bg-teal-700 text-white text-sm disabled:opacity-40">{busy ? 'Traitement…' : data.resume ? 'Reprendre l’import' : 'Synchroniser Dotb'}</button>}</div>
     </div>
+    <TrackingPeriod period={data.tracking}>Les ventes d’articles non classés restent à part. Classe leurs annonces dans Catalogue → Articles à classer.</TrackingPeriod>
+    <div className="flex gap-2 flex-wrap">{[['included','Articles suivis'],['unclassified','À classer'],['excluded','Articles exclus']].map(([key,label])=><button key={key} className={`border rounded-lg px-3 py-2 text-sm ${scope===key?'bg-teal-700 text-white':'bg-white'}`} onClick={()=>{setScope(key);setFilter('all')}}>{label} · {data.lines.filter(l=>(l.tracking_status||'unclassified')===key).length}</button>)}</div>
     {error && <div role="alert" className="bg-red-50 border border-red-200 p-3 rounded-lg text-red-800 text-sm">{error}</div>}
     {notice && <p role="status" className="text-sm text-teal-800">{notice}</p>}
     {data.setup_required ? <div className="bg-amber-50 border border-amber-200 rounded-lg p-4"><h2 className="font-semibold">Activation du suivi nécessaire</h2><p className="text-sm mt-1">La nouvelle structure de données doit être installée avant le premier import. Le stock existant reste disponible dans les autres onglets.</p></div> : data.connected === false && <p className="bg-amber-50 p-3 rounded-lg text-sm">La connexion Dotb n’est pas encore activée. Les ventes déjà importées restent consultables.</p>}
     <div className="flex flex-wrap gap-1 border-b pb-3">
       {[{id:'all',label:'Toutes'}, ...STAGES, {id:'review',label:'À vérifier'}].map(s => <button key={s.id} disabled={busy} onClick={()=>setFilter(s.id)} className={`px-3 py-2 rounded-md text-sm ${filter===s.id?'bg-teal-700 text-white':'bg-white border text-gray-600'}`}>
-        {s.label} <span className="opacity-70">{s.id==='all'?data.lines.length:s.id==='review'?data.lines.length-active.length:active.filter(l=>stageOf(l)===s.id).length}</span>
+        {s.label} <span className="opacity-70">{s.id==='all'?scoped.length:s.id==='review'?scoped.length-active.length:active.filter(l=>stageOf(l)===s.id).length}</span>
       </button>)}
     </div>
     <input aria-label="Rechercher une vente" className={input} placeholder="Rechercher un article, un SKU, un compte ou une commande Shein…" value={search} onChange={e=>setSearch(e.target.value)} />
@@ -60,9 +65,9 @@ export default function SalesTab({ isAdmin, request = defaultRequest }) {
           {!blocked(line) && nextStage(line) && <button disabled={busy} onClick={()=>run(async()=>{ if(nextStage(line)==='shipped' && !window.confirm('Confirmer que cet article a été déposé auprès du transporteur ?')) return; await request('PATCH',{action:'advance',id:line.id,updated_at:line.updated_at,stage:nextStage(line)}); await load() })} className="border rounded px-2 py-1 text-xs">{STAGES.find(s=>s.id===stage)?.action} →</button>}
           {line.order.label_url && <a href={line.order.label_url} target="_blank" rel="noreferrer" className="text-xs underline">Bordereau</a>}</div></td>
       </tr>})}
-      {!visible.length && <tr><td colSpan="5" className="text-center py-16 text-gray-500">{busy?'Chargement…':data.lines.length?'Aucune vente ne correspond à ces filtres.':'Aucune vente importée. Connectez Dotb puis lancez une synchronisation.'}</td></tr>}
+      {!visible.length && <tr><td colSpan="5" className="text-center py-16 text-gray-500">{busy?'Chargement…':scoped.length?'Aucune vente ne correspond à ces filtres.':data.tracking?'Aucune vente dans ce groupe sur cette période. Synchronise Dotb puis classe les articles dans le Catalogue.':'Aucune vente importée. Connectez Dotb puis lancez une synchronisation.'}</td></tr>}
     </tbody></table></div>
-    <p className="text-xs text-gray-500">Dernier import complet : {data.last_sync ? new Date(data.last_sync).toLocaleString('fr-FR') : 'aucun'} · Les étapes de préparation sont propres à votre site. Les prix fournisseurs ne sont pas suivis automatiquement.</p>
+    <p className="text-xs text-gray-500">Dernier import complet : {data.last_sync ? new Date(data.last_sync).toLocaleString('fr-FR') : 'aucun'} · Les étapes de préparation sont propres à votre site. Les prix fournisseurs sont consultables dans le Catalogue.</p>
     {editing && <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto p-4 flex items-start justify-center" onKeyDown={e=>{if(e.key==='Escape'&&!busy)setEditing(null)}}>
       <form role="dialog" aria-modal="true" aria-label="Renseigner la vente" onSubmit={e=>{e.preventDefault();run(async()=>{await request('PATCH',{...editing,action:'edit'});setEditing(null);await load()})}} className="bg-white rounded-xl p-5 max-w-xl w-full my-8 space-y-3">
         <div className="flex justify-between"><h2 className="font-bold">Renseigner la vente</h2><button type="button" disabled={busy} onClick={()=>setEditing(null)}>Fermer</button></div>

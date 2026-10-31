@@ -2,8 +2,14 @@
 
 ## Utilisation
 
+Le suivi commence le **30 octobre 2026 à 00 h, Europe/Paris** (`2026-10-29T23:00:00Z`), avec une date fixe. Les imports de commandes utilisent cette borne `from` et les vues de ventes/statistiques l'appliquent aussi aux données déjà enregistrées. Les ventes plus anciennes restent conservées en base.
+
+L'API publique Dotb ne fournit pas la date de création des articles, dans la liste comme dans le détail (OpenAPI vérifié le 31 octobre 2026). **Catalogue → Articles à classer** permet donc de sélectionner jusqu'à 100 articles et de confirmer « Depuis le 30 octobre » ou « Avant ». Un article non classé n'est jamais déclaré récent à partir de sa date d'import. Le choix persiste lors des synchronisations et peut être corrigé. Les articles exclus ou non classés sortent des compteurs, statistiques et récupérations automatiques ; leurs fiches, liens et anciens relevés restent en base.
+
+Les ventes récentes apparaissent dans trois groupes : articles suivis, à classer, exclus. Le lien à l'annonce utilise `vinted_item_id` fourni dans la ligne de commande, conservé séparément de l'identifiant de cette ligne. À défaut de cet identifiant, un SKU n'est classé que si toutes ses annonces connues ont le même classement ; un mélange ancien/récent reste à classer. Les statistiques ne comptent que les ventes d'articles inclus.
+
 1. Dans Dotb, enregistrer le véritable SKU Shein et, si disponible, le lien complet du produit. Plusieurs annonces et tailles peuvent partager ce SKU.
-2. Dans Catalogue, cliquer **Importer les articles Dotb**. L'import conserve les associations manuelles, reprend après interruption et prépare les fiches à récupérer. Il ne modifie pas les annonces Dotb.
+2. Dans Catalogue, cliquer **Importer les articles Dotb**, puis classer les nouvelles annonces dans **Articles à classer**. L'import conserve les associations et classements manuels, reprend après interruption et prépare les fiches incluses à récupérer. Il ne modifie pas les annonces Dotb.
 3. Dans **Récupération**, télécharger le programme Windows, décompresser le dossier puis **Associer mon PC**. Lancer `run.bat` et coller le code. Edge ou Chrome et Node.js 20+ sont nécessaires. Les dépendances sont installées depuis le fichier verrouillé au premier lancement.
 4. Garder ce programme ouvert et le PC éveillé. Il traite les demandes une par une dans un navigateur dédié. Une fiche avec lien est ouverte directement ; un SKU sans lien est recherché puis vérifié exactement sur la fiche trouvée. Chaque collecte réussie prévoit une nouvelle vérification six heures plus tard.
 5. **Importer des SKU ou liens** accepte aussi 50 références, une par ligne, indépendamment de Dotb. Les demandes sont conservées sur le serveur quand le PC est hors ligne.

@@ -56,7 +56,7 @@ export default async function handler(req,res) {
     if(req.method==='GET') {
       const [devices,jobs,counts]=await Promise.all([
         db.from('catalog_collectors').select('id,name,created_at,last_seen_at,enabled,revoked_at,expires_at').is('revoked_at',null).order('created_at',{ascending:false}),
-        db.from('catalog_collection_jobs').select('id,input,expected_sku,product_id,status,created_at,started_at,finished_at,message').order('created_at',{ascending:false}).limit(100),
+        db.from('catalog_collection_jobs').select('id,input,expected_sku,product_id,status,created_at,started_at,finished_at,message').neq('status','excluded').order('created_at',{ascending:false}).limit(100),
         db.from('catalog_collection_jobs').select('id',{count:'exact',head:true}).in('status',['queued','running'])
       ]);[devices,jobs,counts].forEach(x=>check(x.error))
       return res.json({devices:devices.data,jobs:jobs.data,pending:counts.count})

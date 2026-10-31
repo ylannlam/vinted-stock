@@ -19,7 +19,7 @@ const lines = ['to_order','ordered','in_transit','received','prepared','shipped'
   order:{id:`vente-${i}`,account_login:`Compte démo ${i%2+1}`,currency:'EUR',status:'label_sent',deadline:new Date(Date.now()+(i+1)*86400000).toISOString()},
 }))
 async function request(method='GET',body) {
-  if(method==='GET')return {lines:structuredClone(lines),catalog:structuredClone(catalog),count:lines.length,connected:true}
+  if(method==='GET')return {lines:structuredClone(lines).map(l=>({...l,tracking_status:'included'})),catalog:structuredClone(catalog),count:lines.length,connected:true,tracking:{starts_at:'2026-10-29T23:00:00Z',time_zone:'Europe/Paris'}}
   if(method==='POST')return {processed:lines.length,has_more:false}
   const line=lines.find(l=>l.id===body.id)
   if(body.action==='edit') {
