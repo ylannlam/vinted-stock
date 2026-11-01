@@ -11,7 +11,7 @@ begin
  perform public.select_creative_accounts(jsonb_build_array(jsonb_build_object('id',a,'version',1,'enabled',true)));
  insert into public.creative_resources(id,kind,title,content,content_back,image_bucket,image_path) values(bg,'background','Test DA','Front','Rear','fonds','test-only.png');
  update public.creative_accounts set background_id=bg,prompt_back=E'Custom\nrear',notes='Keep',version=3 where id=a;
- perform public.sync_creative_accounts(jsonb_build_array(jsonb_build_object('id',a,'login','Renamed A')));
+ perform public.sync_creative_accounts(jsonb_build_array(jsonb_build_object('id',upper(a::text),'login','Renamed A'),jsonb_build_object('id',lower(a::text),'login','Duplicate A')));
  if not (select enabled and background_id=bg and prompt_back=E'Custom\nrear' and notes='Keep' and version=3 and login='Renamed A' from public.creative_accounts where id=a) then raise exception 'Sync overwrote DA'; end if;
  if (select source_present from public.creative_accounts where id=b) then raise exception 'Missing account not identified'; end if;
  begin

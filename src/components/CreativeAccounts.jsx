@@ -27,7 +27,7 @@ export default function CreativeAccounts({resources,request=defaultRequest,onLib
   try{await action()}catch(e){if(alive.current)setError(e.message||'Impossible de terminer. Réessaie.')}
   finally{operation.current=false;if(alive.current){setBusy(false);setLoading(false)}}
  }
- useEffect(()=>{alive.current=true;run(load);return()=>{alive.current=false}},[request])
+ useEffect(()=>{alive.current=true;run(async()=>{const rows=await load();if(alive.current&&!rows.length)await sync()});return()=>{alive.current=false}},[request])
  useEffect(()=>{
   if(!dirty)return
   const warn=e=>{e.preventDefault();e.returnValue=''}
@@ -44,7 +44,7 @@ export default function CreativeAccounts({resources,request=defaultRequest,onLib
   setAccounts(old=>old.map(a=>{const change=changes.find(c=>c.id===a.id);return change?{...a,enabled:change.enabled,version:a.version+1}:a}))
   setSelection(null);setDirty(false);setNotice('Choix des comptes enregistré. Les comptes mis de côté restent disponibles.')
  }
- async function sync(){await request('POST',{action:'sync'});const rows=await load();openSelection(rows);setNotice(`${rows.filter(a=>a.source_present).length} comptes récupérés depuis Dotb.`)}
+ async function sync(){await request('POST',{action:'sync'});const rows=await load();if(!alive.current)return;openSelection(rows);setNotice(`${rows.filter(a=>a.source_present).length} comptes récupérés depuis Dotb.`)}
  function edit(account){setEditing({...account});setDirty(false);setError('');setNotice('')}
  function update(patch){setEditing(old=>({...old,...patch}));setDirty(true)}
  function closeEditor(){if(dirty&&!window.confirm('Fermer sans enregistrer cette DA ?'))return;setEditing(null);setDirty(false);setError('')}

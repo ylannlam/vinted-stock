@@ -9,7 +9,12 @@ const form={id,version:1,background_id:bg,prompt_front:null,prompt_back:'Dos\nsp
 const response=()=>({code:200,setHeader(){},status(code){this.code=code;return this},json(body){this.body=body;return this},end(){return this}})
 test('Dotb accounts keep only identity data and never mistake a disconnected bridge for a ban',()=>{
  assert.deepEqual(normalizeAccounts({data:[{id,login:' Boutique ',country:'FR',bridge:{connected:false},email:'private'}]}),[{id,login:'Boutique',country:'FR'}])
- for(const result of [{data:null},{data:[{id,login:'A'},{id,login:'B'}]},{data:[{id:'bad',login:'A'}]},{data:[],has_more:true}])assert.throws(()=>normalizeAccounts(result))
+ for(const result of [{data:null},{data:[{id:'bad',login:'A'}]},{data:[],has_more:true}])assert.throws(()=>normalizeAccounts(result))
+})
+test('repeated Dotb accounts and mixed-case UUIDs are imported once',()=>{
+ const accountId='abcdefab-cdef-4abc-8def-abcdefabcdef'
+ assert.deepEqual(normalizeAccounts({data:[{id:accountId.toUpperCase(),login:'Original',country:'FR'},{id:accountId,login:'Duplicate'},{id:accountId,login:'Duplicate again'}]}),[{id:accountId,login:'Original',country:'FR'}])
+ assert.throws(()=>normalizeAccounts({data:[{id:accountId,login:'Original'},{id:accountId,login:null}]}))
 })
 test('Dotb fetch requires a token, handles rate limits, and rejects malformed replies without mutating data',async()=>{
  await assert.rejects(readDotbAccounts(()=>{throw Error('must not fetch')},''),/activer/)

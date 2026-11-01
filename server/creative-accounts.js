@@ -2,13 +2,15 @@ import {AppError,isId} from './dotb.js'
 
 export function normalizeAccounts(result) {
   if(!result||!Array.isArray(result.data)||result.has_more===true)throw new AppError('Liste Dotb incomplète. Les comptes enregistrés sont conservés.',502)
-  const ids=new Set()
-  return result.data.map(a=>{
-    if(!a||!isId(a.id)||ids.has(a.id)||typeof a.login!=='string'||!a.login.trim()||a.login.length>200||a.country!=null&&(typeof a.country!=='string'||a.country.length>20))throw new AppError('Réponse Dotb invalide. Aucun compte modifié.',502)
-    ids.add(a.id)
+  const accounts=new Map()
+  for(const a of result.data){
+    if(!a||!isId(a.id)||typeof a.login!=='string'||!a.login.trim()||a.login.length>200||a.country!=null&&(typeof a.country!=='string'||a.country.length>20))throw new AppError('Réponse Dotb invalide. Aucun compte modifié.',502)
+    const id=a.id.toLowerCase()
     // Bridge connectivity is not a ban status. Do not guess whether an account is banned.
-    return {id:a.id,login:a.login.trim(),country:a.country||null}
-  })
+    // Postgres UUID equality ignores letter case; collapse repeated accounts before upsert.
+    if(!accounts.has(id))accounts.set(id,{id,login:a.login.trim(),country:a.country||null})
+  }
+  return [...accounts.values()]
 }
 export async function readDotbAccounts(fetcher=fetch,token=process.env.DOTB_API_TOKEN) {
   if(!token)throw new AppError('La connexion Dotb reste à activer par l’administrateur.',503)
