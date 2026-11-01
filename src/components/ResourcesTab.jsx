@@ -42,8 +42,8 @@ function ImageField({editing,file,onFile,onRemove,busy}) {
   </div>
 }
 
-export default function ResourcesTab({request=defaultRequest,upload=defaultUpload,accountsRequest}) {
-  const [section,setSection]=useState('library')
+export default function ResourcesTab({request=defaultRequest,upload=defaultUpload,accountsRequest,initialSection}) {
+  const [section,setSection]=useState(initialSection==='accounts'?'accounts':'library')
   const [rows,setRows]=useState([]),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false)
   const [error,setError]=useState(''),[notice,setNotice]=useState(''),[tab,setTab]=useState('all')
   const [search,setSearch]=useState(''),[category,setCategory]=useState(''),[favorites,setFavorites]=useState(false),[sort,setSort]=useState('recent'),[limit,setLimit]=useState(24)
@@ -100,12 +100,11 @@ export default function ResourcesTab({request=defaultRequest,upload=defaultUploa
     if(action==='archive'){setDetailId(null);setNotice(values.archived?'Ressource archivée. Tu peux la restaurer dans Archives.':'Ressource restaurée dans la bibliothèque.')}
   }
   function remove(row) {
-    const message=row.kind==='background'?`Supprimer définitivement le fond « ${row.title} » et ses deux prompts de la bibliothèque ?`:`Supprimer définitivement le prompt « ${row.title} » ?`
+    const message=`Retirer « ${row.title} » de la bibliothèque ? Tu pourras le restaurer dans Archives.`
     if(!window.confirm(message))return
     run(async()=>{
-      await request('DELETE',{action:'delete',id:row.id,version:row.version})
-      setRows(old=>old.filter(r=>r.id!==row.id));setDetailId(null);setDownload(null)
-      setNotice(row.kind==='background'?'Fond et prompts associés supprimés.':'Prompt supprimé.')
+      await change(row,'archive',{archived:true});setDetailId(null);setDownload(null)
+      setNotice('Ressource retirée. Son fond et ses prompts restent récupérables dans Archives.')
     })
   }
   async function copy(row,key='content') {

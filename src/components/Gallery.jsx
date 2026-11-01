@@ -1,10 +1,16 @@
+import {useEffect,useState} from 'react'
+import {Pagination} from './WorkspaceUI'
 import ItemCard from './ItemCard'
 import LotCard from './LotCard'
 
-export default function Gallery({ items, loading, lotSelected, onToggleLot, onMarkSold, onMarkSent, onMarkUnsent, onRemettreEnVente, onRemettreEnStock, onMarkReceived, onDelete, onUpdateEmplacement, onBordereauDrop, onPhotoDrop, onEdit, onToggleReception, onLotMarkSent, onDeleteLot, isLotTab, showAddHint }) {
+export default function Gallery({ items, loading, lotSelected, onToggleLot, onMarkSold, onMarkSent, onMarkUnsent, onRemettreEnVente, onRemettreEnStock, onMarkReceived, onDelete, onUpdateEmplacement, onBordereauDrop, onPhotoDrop, onEdit, onToggleReception, onLotMarkSent, onDeleteLot, isLotTab, showAddHint, onPreparePhoto }) {
+  const [page,setPage]=useState(0)
+  const itemIds=items.map(item=>item.id).join(',')
+  useEffect(()=>setPage(0),[itemIds])
+  const pageItems=items.slice(page*48,(page+1)*48)
   if (loading) {
     return (
-      <div className="p-2 grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+      <div className="p-2 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
         {[...Array(6)].map((_, i) => (
           <div key={i} className="bg-white rounded-2xl overflow-hidden border border-gray-100 animate-pulse">
             <div className="aspect-square bg-gray-200" />
@@ -62,8 +68,8 @@ export default function Gallery({ items, loading, lotSelected, onToggleLot, onMa
 
   // Vue normale
   return (
-    <div className="p-2 pb-28 grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
-      {items.map(item => (
+    <div><div className="p-2 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+      {pageItems.map(item => (
         <ItemCard
           key={item.id}
           item={item}
@@ -80,9 +86,10 @@ export default function Gallery({ items, loading, lotSelected, onToggleLot, onMa
           onBordereauDrop={onBordereauDrop}
           onPhotoDrop={onPhotoDrop}
           onEdit={onEdit}
+          onPreparePhoto={onPreparePhoto}
           onToggleReception={onToggleReception}
         />
       ))}
-    </div>
+    </div><div className="px-4 pb-24"><Pagination page={page} count={items.length} size={48} onChange={setPage}/></div></div>
   )
 }

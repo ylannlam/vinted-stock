@@ -2,6 +2,25 @@
 @tailwind components;
 @tailwind utilities;
 
+/* A sale remains one readable card on a phone; actions never sit off-screen. */
+@media (max-width: 767px) {
+  .sales-list { border: 0; background: transparent; }
+  .sales-list table, .sales-list tbody { display: block; width: 100%; }
+  .sales-list thead { display: none; }
+  .sales-list tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); background: white; border: 1px solid #e2e8f0; border-radius: 16px; margin-bottom: 12px; padding: 8px; }
+  .sales-list td { display: block; min-width: 0; padding: 8px; overflow-wrap: anywhere; white-space: normal; }
+  .sales-list td:first-child, .sales-list td:last-child, .sales-list td[colspan] { grid-column: 1 / -1; }
+  .sales-list td:first-child img { width: 64px; height: 88px; flex-shrink: 0; }
+  .sales-list td:first-child .min-w-52 { min-width: 0; }
+  .sales-list td:last-child > div { flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .sales-list td:last-child button, .sales-list td:last-child a { min-height: 40px; padding: 8px 10px; }
+  .sales-list td:nth-child(2)::before { content: 'Compte / vente'; }
+  .sales-list td:nth-child(3)::before { content: 'Fournisseur'; }
+  .sales-list td:nth-child(4)::before { content: 'Préparation'; }
+  .sales-list td:nth-child(5)::before { content: 'Échéance'; }
+  .sales-list td::before { display: block; color: #64748b; font-size: 11px; margin-bottom: 6px; }
+}
+
 * {
   -webkit-tap-highlight-color: transparent;
 }

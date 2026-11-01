@@ -1,131 +1,14 @@
-import { TAB_SALES, TAB_BUDGET, TAB_CATALOG, TAB_RESOURCES } from '../constants'
-import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED } from '../constants'
-
-export default function CategoryTabs({ active, onChange, items, commandes, userRole }) {
-  const isAdmin = userRole === 'admin'
-  const isStock = userRole === 'stock'
-  const isEmploye = userRole === 'employe'
-
-  // employes don't see any of these tabs
-  if (isEmploye) return null
-
-  const aRecevoirCount = commandes ? commandes.length : items.filter(i => i.status === 'a_recevoir').length
-  const lotBordereaux = new Set(
-    Object.entries(items.filter(i => i.status === 'vendu' && i.bordereau_url)
-      .reduce((acc, i) => { acc[i.bordereau_url] = (acc[i.bordereau_url] || 0) + 1; return acc }, {}))
-      .filter(([, n]) => n > 1).map(([url]) => url)
-  )
-  const aEnvoyerCount  = items.filter(i => i.status === 'vendu' && !lotBordereaux.has(i.bordereau_url)).length
-  const envoyesCount   = items.filter(i => i.status === 'envoye').length
-  const lotsCount = (() => {
-    const pending = items.filter(i => i.status === 'vendu' && i.bordereau_url)
-    const counts = pending.reduce((acc, i) => { acc[i.bordereau_url] = (acc[i.bordereau_url] || 0) + 1; return acc }, {})
-    return Object.values(counts).filter(n => n > 1).length
-  })()
-
-  function tabClass(isActive, color = 'teal') {
-    const colors = {
-      teal:   isActive ? 'border-teal-500 text-teal-600'     : 'border-transparent text-gray-500 hover:text-gray-800',
-      orange: isActive ? 'border-orange-500 text-orange-600' : 'border-transparent text-gray-500 hover:text-gray-800',
-      blue:   isActive ? 'border-blue-500 text-blue-600'     : 'border-transparent text-gray-500 hover:text-gray-800',
-      purple: isActive ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-800',
-    }
-    return `px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${colors[color]}`
-  }
-
-  function badgeClass(isActive, color = 'teal') {
-    const colors = {
-      teal:   isActive ? 'bg-teal-100 text-teal-600'     : 'bg-gray-100 text-gray-500',
-      orange: isActive ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-500',
-      blue:   isActive ? 'bg-blue-100 text-blue-600'     : 'bg-gray-100 text-gray-500',
-      purple: isActive ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-500',
-    }
-    return `ml-1.5 text-xs px-1.5 py-0.5 rounded-full font-normal ${colors[color]}`
-  }
-
-  return (
-    <div className="bg-white border-b border-gray-200 sticky top-14 z-20 shadow-sm">
-      <div className="overflow-x-auto scrollbar-hide">
-        <div className="flex min-w-max px-2">
-
-          <button onClick={() => onChange(TAB_SALES)} className={tabClass(active === TAB_SALES)}>Ventes & achats</button>
-          <button onClick={() => onChange(TAB_CATALOG)} className={tabClass(active === TAB_CATALOG)}>Catalogue</button>
-          {isAdmin && <button onClick={() => onChange(TAB_RESOURCES)} className={tabClass(active === TAB_RESOURCES)}>Prompts & fonds</button>}
-          {isAdmin && <button onClick={() => onChange(TAB_BUDGET)} className={tabClass(active === TAB_BUDGET)}>Budget</button>}
-          {/* Onglet Stock */}
-          <button onClick={() => onChange(TAB_TOUT)} className={tabClass(active === TAB_TOUT)}>
-            Stock
-            <span className={badgeClass(active === TAB_TOUT)}>
-              {items.filter(i => i.status === 'en_stock').length}
-            </span>
-          </button>
-
-          {/* Séparateur */}
-          <div className="flex items-center px-1">
-            <div className="w-px h-5 bg-gray-200" />
-          </div>
-
-          {/* À recevoir */}
-          <button
-            onClick={() => onChange(TAB_A_RECEVOIR)}
-            className={tabClass(active === TAB_A_RECEVOIR, 'purple')}
-          >
-            À recevoir
-            {aRecevoirCount > 0 && (
-              <span className={badgeClass(active === TAB_A_RECEVOIR, 'purple')}>{aRecevoirCount}</span>
-            )}
-          </button>
-
-          {/* À envoyer */}
-          <button
-            onClick={() => onChange(TAB_A_ENVOYER)}
-            className={tabClass(active === TAB_A_ENVOYER, 'orange')}
-          >
-            À envoyer
-            {aEnvoyerCount > 0 && (
-              <span className={badgeClass(active === TAB_A_ENVOYER, 'orange')}>{aEnvoyerCount}</span>
-            )}
-          </button>
-
-          {/* Lots */}
-          <button
-            onClick={() => onChange(TAB_A_ENVOYER_LOT)}
-            className={tabClass(active === TAB_A_ENVOYER_LOT, 'orange')}
-          >
-            Lots
-            {lotsCount > 0 && (
-              <span className={badgeClass(active === TAB_A_ENVOYER_LOT, 'orange')}>{lotsCount}</span>
-            )}
-          </button>
-
-          {/* Articles envoyés */}
-          <button
-            onClick={() => onChange(TAB_ENVOYES)}
-            className={tabClass(active === TAB_ENVOYES, 'blue')}
-          >
-            Envoyés
-            {envoyesCount > 0 && (
-              <span className={badgeClass(active === TAB_ENVOYES, 'blue')}>{envoyesCount}</span>
-            )}
-          </button>
-
-          {/* Comptes Vinted (admin uniquement) */}
-          {isAdmin && (
-            <>
-              <div className="flex items-center px-1">
-                <div className="w-px h-5 bg-gray-200" />
-              </div>
-              <button
-                onClick={() => onChange(TAB_COMPTES_VINTED)}
-                className={tabClass(active === TAB_COMPTES_VINTED, 'teal')}
-              >
-                🔐 Comptes
-              </button>
-            </>
-          )}
-
-        </div>
-      </div>
-    </div>
-  )
+import {useState,useEffect} from 'react'
+import {TAB_HOME,TAB_HISTORY,TAB_SALES,TAB_BUDGET,TAB_CATALOG,TAB_RESOURCES,TAB_TOUT,TAB_A_RECEVOIR,TAB_A_ENVOYER,TAB_A_ENVOYER_LOT,TAB_ENVOYES,TAB_COMPTES_VINTED} from '../constants'
+export default function CategoryTabs({active,onChange,items=[],commandes=[],userRole,sentCount=0}){
+ const [menu,setMenu]=useState(false)
+ useEffect(()=>setMenu(false),[active])
+ if(userRole==='employe')return null
+ const admin=userRole==='admin',stockTabs=[TAB_TOUT,TAB_A_RECEVOIR,TAB_A_ENVOYER,TAB_A_ENVOYER_LOT,TAB_ENVOYES]
+ const primary=[[TAB_HOME,'Accueil'],[TAB_SALES,'Ventes'],[TAB_TOUT,'Stock'],[TAB_CATALOG,'Catalogue'],...(admin?[[TAB_RESOURCES,'Atelier photo'],[TAB_BUDGET,'Budget']]:[])]
+ const other=[...(admin?[[TAB_COMPTES_VINTED,'Comptes']]:[]),[TAB_HISTORY,'Historique & corbeille']]
+ const tabClass=id=>`px-3 py-3 text-sm font-medium rounded-lg transition ${active===id||(id===TAB_TOUT&&stockTabs.includes(active))?'bg-teal-50 text-teal-800':'text-slate-500 hover:bg-slate-50'}`
+ const sold=items.filter(i=>i.status==='vendu'),groups=sold.reduce((a,i)=>{if(i.bordereau_url)a[i.bordereau_url]=(a[i.bordereau_url]||0)+1;return a},{})
+ const sub=[[TAB_TOUT,'Disponibles',items.filter(i=>i.status==='en_stock').length],[TAB_A_RECEVOIR,'À recevoir',commandes.length],[TAB_A_ENVOYER,'À envoyer',sold.filter(i=>!i.bordereau_url||groups[i.bordereau_url]<2).length],[TAB_A_ENVOYER_LOT,'Lots',Object.values(groups).filter(n=>n>1).length],[TAB_ENVOYES,'Envoyés',sentCount]]
+ return <div className="sticky top-14 z-20 bg-white border-b shadow-sm"><nav aria-label="Navigation principale" className="max-w-screen-2xl mx-auto px-2 py-1 flex items-center gap-1">{primary.map(([id,label],index)=><button key={id} aria-current={active===id?'page':undefined} className={`${tabClass(id)} ${index>2?'hidden md:block':''}`} onClick={()=>onChange(id)}>{label}</button>)}<button aria-expanded={menu} aria-controls="navigation-more" className="ml-auto px-3 py-3 text-sm font-medium text-slate-600" onClick={()=>setMenu(!menu)}><span className="md:hidden">Menu</span><span className="hidden md:inline">Plus</span> {menu?'×':'☰'}</button></nav>{menu&&<nav id="navigation-more" aria-label="Autres rubriques" className="max-w-screen-2xl mx-auto grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 border-t">{primary.slice(3).map(([id,label])=><button key={id} className={`${tabClass(id)} md:hidden text-left`} onClick={()=>{onChange(id);setMenu(false)}}>{label}</button>)}{other.map(([id,label])=><button key={id} className={tabClass(id)+' text-left'} onClick={()=>{onChange(id);setMenu(false)}}>{label}</button>)}</nav>}{stockTabs.includes(active)&&<nav aria-label="Étapes du stock physique" className="max-w-screen-2xl mx-auto flex flex-wrap gap-1 px-3 py-2 border-t bg-slate-50">{sub.map(([id,label,count])=><button key={id} className={`rounded-lg px-3 py-2 text-xs ${active===id?'bg-white shadow-sm text-teal-800 font-semibold':'text-slate-500'}`} onClick={()=>onChange(id)}>{label} <span className="ml-1 opacity-70">{count}</span></button>)}</nav>}</div>
 }

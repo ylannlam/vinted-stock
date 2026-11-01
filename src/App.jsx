@@ -1,10 +1,18 @@
-import SalesTab from './components/SalesTab'
-import BudgetTab from './components/BudgetTab'
-import CatalogueTab from './components/CatalogueTab'
-import ResourcesTab from './components/ResourcesTab'
+const SalesTab=lazy(()=>import('./components/SalesTab'))
+const BudgetTab=lazy(()=>import('./components/BudgetTab'))
+const CatalogueTab=lazy(()=>import('./components/CatalogueTab'))
+const ResourcesTab=lazy(()=>import('./components/ResourcesTab'))
 import { captureDraft } from './lib/catalog'
 import { TAB_SALES, TAB_BUDGET, TAB_CATALOG, TAB_RESOURCES } from './constants'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, lazy, Suspense } from 'react'
+import {useNavigation} from './lib/navigation'
+import {readAllRows} from './lib/workspace'
+import {ErrorNotice,PageBoundary} from './components/WorkspaceUI'
+import {workspaceErrors} from '../server/workspace'
+import {TAB_HOME,TAB_HISTORY} from './constants'
+const HomeTab=lazy(()=>import('./components/HomeTab'))
+const HistoryTab=lazy(()=>import('./components/HistoryTab'))
+const PhotoPreparation=lazy(()=>import('./components/PhotoPreparation'))
 import { supabase } from './lib/supabase'
 import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE } from './constants'
 import Login from './Login'
@@ -17,8 +25,8 @@ import FilterBar from './components/FilterBar'
 import AddItemModal from './components/AddItemModal'
 import EditItemModal from './components/EditItemModal'
 import SoldModal from './components/SoldModal'
-import VintedAccountsTab from './components/VintedAccountsTab'
-import WorkspaceTab from './components/WorkspaceTab'
+const VintedAccountsTab=lazy(()=>import('./components/VintedAccountsTab'))
+const WorkspaceTab=lazy(()=>import('./components/WorkspaceTab'))
 import EmplacementsView from './components/EmplacementsView'
 import LotPdfModal from './components/LotPdfModal'
 import { getCapacities, getOccupied, firstFreeSlot } from './lib/emplacements'
@@ -33,13 +41,8 @@ export default function App() {
   const [profile, setProfile] = useState(null)
   const profileFetchedForRef = useRef(null) // évite les double-fetches
   const [profileLoading, setProfileLoading] = useState(false)
-  const [activeTab, setActiveTab] = useState(() => {
-    if(captureDraft())return TAB_CATALOG
-    const saved = localStorage.getItem('activeTab')
-    const validTabs = [TAB_RESOURCES, TAB_CATALOG, TAB_BUDGET, TAB_SALES, TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE]
-    if(['__proxies__','__employees__','__fonds__','__connexions__'].includes(saved))return TAB_COMPTES_VINTED
-    return validTabs.includes(saved) ? saved : TAB_SALES
-  })
+  const [activeTab,setActiveTab,navigationFilters]=useNavigation(captureDraft)
+  const [stockError,setStockError]=useState(''),[commandeError,setCommandeError]=useState(''),[profileError,setProfileError]=useState(''),[stockNotice,setStockNotice]=useState(''),[photoArticle,setPhotoArticle]=useState(null)
   const [items, setItems] = useState([])
   const [itemsLoading, setItemsLoading] = useState(false)
   // Filtres / recherche / tri : persistés entre les rechargements
@@ -65,7 +68,7 @@ export default function App() {
   }, [activeTab])
 
   useEffect(() => {
-    if(profile && profile.role!=='admin' && activeTab===TAB_RESOURCES)setActiveTab(TAB_SALES)
+    if(profile && profile.role!=='admin' && [TAB_RESOURCES,TAB_BUDGET,TAB_COMPTES_VINTED].includes(activeTab))setActiveTab(TAB_HOME)
   }, [profile,activeTab])
 
   useEffect(() => {
@@ -107,14 +110,10 @@ export default function App() {
   }, [user])
 
   async function fetchProfile() {
-    setProfileLoading(true)
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single()
-    setProfile(data ?? null)
-    setProfileLoading(false)
+    setProfileLoading(true);setProfileError('')
+    try {const {data,error}=await supabase.from('profiles').select('*').eq('id',user.id).single();if(error)throw error;setProfile(data??null)}
+    catch {setProfileError('Ton profil n’a pas pu être chargé. Vérifie ta connexion puis réessaie.')}
+    finally{setProfileLoading(false)}
   }
 
   useEffect(() => {
@@ -129,22 +128,23 @@ export default function App() {
   }, [profile])
 
   async function fetchItems() {
-    setItemsLoading(true)
-    const { data, error } = await supabase
-      .from('items')
-      .select('*')
-      .order('created_at', { ascending: false })
-    if (!error && data) setItems(data)
-    setItemsLoading(false)
+    setItemsLoading(true);setStockError('')
+    try{const data=await readAllRows(()=>supabase.from('items').select('*',{count:'exact'}).is('deleted_at',null).order('created_at',{ascending:false}).order('id'));setItems(data)}
+    catch{setStockError('Le stock n’a pas pu être actualisé. Les articles déjà chargés sont conservés.')}
+    finally{setItemsLoading(false)}
   }
-
   async function fetchCommandes() {
-    const { data } = await supabase
-      .from('commandes')
-      .select('*')
-      .eq('status', 'en_attente')
-      .order('created_at', { ascending: false })
-    if (data) setCommandes(data)
+    setCommandeError('')
+    try{setCommandes(await readAllRows(()=>supabase.from('commandes').select('*',{count:'exact'}).is('deleted_at',null).eq('status','en_attente').order('created_at',{ascending:false}).order('id')))}
+    catch{setCommandeError('Les commandes n’ont pas pu être actualisées. Réessaie.')}
+  }
+  async function trash(kind,id){
+    const {error}=await supabase.rpc('set_stock_trash',{p_kind:kind,p_id:id,p_restore:false})
+    if(error){setStockError('La mise à la corbeille a échoué. Réessaie.');return false}
+    setStockNotice('Élément placé dans la corbeille. Tu peux le restaurer depuis Plus → Historique & corbeille.')
+    setItems(prev=>prev.filter(i=>kind==='items'?i.id!==id:i.commande_id!==id))
+    if(kind==='commandes'){setCommandes(prev=>prev.filter(c=>c.id!==id));setSelectedCommandeId(null)}
+    return true
   }
 
   function handleCreateCommande(commande) {
@@ -189,53 +189,13 @@ export default function App() {
     }
   }
 
-  async function handleDeleteCommandeArticle(itemId) {
-    const { error } = await supabase.from('items').delete().eq('id', itemId)
-    if (!error) setItems(prev => prev.filter(i => i.id !== itemId))
+  async function handleDeleteCommandeArticle(itemId) { await trash('items',itemId) }
+  async function handleReceptionCommande(commande,emplacements){
+    const {data,error}=await supabase.rpc('receive_stock_order',{p_id:commande.id,p_slots:emplacements})
+    if(error){const key=Object.keys(workspaceErrors).find(k=>error.message?.includes(k));setStockError(key?workspaceErrors[key]:'La réception n’a pas été enregistrée. Réessaie.');throw new Error(key?workspaceErrors[key]:'La réception n’a pas été enregistrée.')}
+    setItems(prev=>prev.map(i=>data.find(u=>u.id===i.id)||i));setCommandes(prev=>prev.filter(c=>c.id!==commande.id));setReceptionCommande(null);setSelectedCommandeId(null);setActiveTab(TAB_TOUT)
   }
-
-  async function handleReceptionCommande(commande, emplacements) {
-    try {
-      const results = await Promise.all(
-        Object.entries(emplacements).map(([id, emp]) =>
-          supabase.from('items')
-            .update({ status: 'en_stock', emplacement: emp.trim() })
-            .eq('id', id)
-            .select()
-            .single()
-        )
-      )
-      const failed = results.find(r => r.error)
-      if (failed) throw new Error(failed.error.message)
-
-      const { error: cmdErr } = await supabase
-        .from('commandes').update({ status: 'recue' }).eq('id', commande.id)
-      if (cmdErr) throw cmdErr
-
-      const updatedItems = results.map(r => r.data).filter(Boolean)
-      setItems(prev => prev.map(i => updatedItems.find(u => u.id === i.id) ?? i))
-      setCommandes(prev => prev.filter(c => c.id !== commande.id))
-      setReceptionCommande(null)
-      setSelectedCommandeId(null)
-      setActiveTab(TAB_TOUT)
-    } catch (err) {
-      alert('Erreur : ' + err.message)
-    }
-  }
-
-  async function handleDeleteCommande(commandeId) {
-    try {
-      const { error: itemsErr } = await supabase.from('items').delete().eq('commande_id', commandeId)
-      if (itemsErr) throw itemsErr
-      const { error: cmdErr } = await supabase.from('commandes').delete().eq('id', commandeId)
-      if (cmdErr) throw cmdErr
-      setCommandes(prev => prev.filter(c => c.id !== commandeId))
-      setItems(prev => prev.filter(i => i.commande_id !== commandeId))
-      setSelectedCommandeId(null)
-    } catch (err) {
-      alert('Erreur : ' + err.message)
-    }
-  }
+  async function handleDeleteCommande(commandeId) {await trash('commandes',commandeId)}
 
   function handleItemUpdated(updatedItem, newItems = []) {
     setItems(prev => [
@@ -270,10 +230,7 @@ export default function App() {
     }
   }
 
-  async function handleDelete(itemId) {
-    const { error } = await supabase.from('items').delete().eq('id', itemId)
-    if (!error) setItems(prev => prev.filter(i => i.id !== itemId))
-  }
+  async function handleDelete(itemId) {await trash('items',itemId)}
 
   async function handleRemettreEnStock(item) {
     const others = items.filter(i => i.id !== item.id)
@@ -311,7 +268,8 @@ export default function App() {
       .eq('id', item.id)
       .select()
       .single()
-    if (!error && data) setItems(prev => prev.map(i => i.id === data.id ? data : i))
+    if(error){setStockError('La modification n’a pas été enregistrée. Réessaie.');return}
+    if(data)setItems(prev=>prev.map(i=>i.id===data.id?data:i))
   }
 
   async function handleMarkReceived(item) {
@@ -402,7 +360,8 @@ export default function App() {
   async function handleToggleReception(itemId, value) {
     const { data, error } = await supabase
       .from('items').update({ reception_needed: value }).eq('id', itemId).select().single()
-    if (!error && data) setItems(prev => prev.map(i => i.id === data.id ? data : i))
+    if(error){setStockError('La modification n’a pas été enregistrée. Réessaie.');return}
+    if(data)setItems(prev=>prev.map(i=>i.id===data.id?data:i))
   }
 
   async function handlePhotoDrop(itemId, file) {
@@ -417,7 +376,7 @@ export default function App() {
       if (updateErr) throw updateErr
       setItems(prev => prev.map(i => i.id === data.id ? data : i))
     } catch (err) {
-      console.error('Photo drop failed:', err.message)
+      setStockError('La photo n’a pas pu être enregistrée. Réessaie.')
     }
   }
 
@@ -440,7 +399,8 @@ export default function App() {
       .eq('id', itemId)
       .select()
       .single()
-    if (!error && data) setItems(prev => prev.map(i => i.id === data.id ? data : i))
+    if(error){setStockError('La modification n’a pas été enregistrée. Réessaie.');return}
+    if(data)setItems(prev=>prev.map(i=>i.id===data.id?data:i))
   }
 
   async function handleLogout() {
@@ -478,7 +438,7 @@ export default function App() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
           </div>
-          <h2 className="text-lg font-bold text-gray-900 mb-2">Compte non configuré</h2>
+          <h2 className="text-lg font-bold text-gray-900 mb-2">{profileError?'Connexion à réessayer':'Compte non configuré'}</h2>{profileError&&<ErrorNotice error={profileError} retry={fetchProfile}/>}
           <p className="text-gray-500 text-sm mb-4">Votre compte n'a pas encore été configuré. Contactez votre administrateur.</p>
           <button onClick={handleLogout} className="text-sm text-red-500 hover:text-red-700 font-medium">Se déconnecter</button>
         </div>
@@ -499,7 +459,7 @@ export default function App() {
           <div className="bg-teal-50 border-b border-teal-100 px-4 py-2.5">
             <span className="text-sm font-semibold text-teal-700">Espace de travail</span>
           </div>
-          <WorkspaceTab profile={profile} />
+          <Suspense fallback={<p className="p-6">Chargement…</p>}><PageBoundary><WorkspaceTab profile={profile} /></PageBoundary></Suspense>
         </div>
       </div>
     )
@@ -553,13 +513,20 @@ export default function App() {
         items={items}
         commandes={commandes}
         userRole={userRole}
+        sentCount={items.filter(i=>i.status==='envoye').length}
       />
 
-      {activeTab === TAB_BUDGET && isAdmin && <BudgetTab />}
-      {activeTab === TAB_RESOURCES && isAdmin && <ResourcesTab />}
-      {activeTab === TAB_SALES && <SalesTab isAdmin={isAdmin} />}
-      {activeTab === TAB_CATALOG && (userRole==='admin'||userRole==='stock') && <CatalogueTab isAdmin={isAdmin} />}
-      {activeTab === TAB_COMPTES_VINTED && <VintedAccountsTab />}
+      {(stockError||commandeError)&&<div className="max-w-screen-2xl mx-auto p-4 space-y-3"><ErrorNotice error={stockError} retry={fetchItems} busy={itemsLoading}/><ErrorNotice error={commandeError} retry={fetchCommandes}/></div>}
+      {stockNotice&&<div role="status" className="max-w-screen-2xl mx-auto p-3 bg-teal-50 text-sm text-teal-800 flex justify-between gap-3">{stockNotice}<button onClick={()=>setStockNotice('')}>Fermer</button></div>}
+      <Suspense fallback={<p role="status" className="p-8 text-center text-gray-500">Chargement de l’écran…</p>}><PageBoundary key={activeTab}>
+      {activeTab===TAB_HOME&&<HomeTab isAdmin={isAdmin} onNavigate={setActiveTab}/>}
+      {activeTab===TAB_HISTORY&&<HistoryTab isAdmin={isAdmin} onRestored={()=>{fetchItems();fetchCommandes()}}/>}
+      {activeTab === TAB_BUDGET && isAdmin && <BudgetTab onOpenSale={row=>setActiveTab(TAB_SALES,{search:(row.title||row.account_login||'').slice(0,200)})} />}
+      {activeTab === TAB_RESOURCES && isAdmin && <ResourcesTab key={JSON.stringify(navigationFilters)} initialSection={navigationFilters.section} />}
+      {activeTab === TAB_SALES && <SalesTab key={JSON.stringify(navigationFilters)} isAdmin={isAdmin} initialFilters={navigationFilters} onPreparePhoto={setPhotoArticle} />}
+      {activeTab === TAB_CATALOG && (userRole==='admin'||userRole==='stock') && <CatalogueTab isAdmin={isAdmin} onPreparePhoto={isAdmin?setPhotoArticle:undefined} />}
+      {activeTab === TAB_COMPTES_VINTED && isAdmin && <VintedAccountsTab onDirections={()=>setActiveTab(TAB_RESOURCES,{section:'accounts'})} />}
+      </PageBoundary></Suspense>
 
 
       {activeTab === TAB_TOUT && (
@@ -653,7 +620,7 @@ export default function App() {
         )
       })()}
 
-      {activeTab !== TAB_RESOURCES && activeTab !== TAB_CATALOG && activeTab !== TAB_BUDGET && activeTab !== TAB_SALES && activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_A_RECEVOIR && (
+      {activeTab !== TAB_HOME && activeTab !== TAB_HISTORY && activeTab !== TAB_RESOURCES && activeTab !== TAB_CATALOG && activeTab !== TAB_BUDGET && activeTab !== TAB_SALES && activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_A_RECEVOIR && (
         <Gallery
           items={filteredItems}
           loading={itemsLoading}
@@ -670,6 +637,7 @@ export default function App() {
           onBordereauDrop={handleBordereauDrop}
           onPhotoDrop={handlePhotoDrop}
           onEdit={setEditItem}
+          onPreparePhoto={isAdmin?setPhotoArticle:undefined}
           onToggleReception={handleToggleReception}
           onLotMarkSent={handleLotMarkSent}
           onDeleteLot={handleDeleteLot}
@@ -678,7 +646,7 @@ export default function App() {
         />
       )}
 
-      {activeTab !== TAB_RESOURCES && activeTab !== TAB_CATALOG && activeTab !== TAB_BUDGET && activeTab !== TAB_SALES && activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_A_ENVOYER && activeTab !== TAB_A_ENVOYER_LOT && activeTab !== TAB_ENVOYES && (
+      {activeTab !== TAB_HOME && activeTab !== TAB_HISTORY && activeTab !== TAB_RESOURCES && activeTab !== TAB_CATALOG && activeTab !== TAB_BUDGET && activeTab !== TAB_SALES && activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_A_ENVOYER && activeTab !== TAB_A_ENVOYER_LOT && activeTab !== TAB_ENVOYES && (
         <button
           onClick={() => activeTab === TAB_A_RECEVOIR ? setShowAddCommandeModal(true) : setShowAddModal(true)}
           className={`fixed bottom-6 right-5 w-14 h-14 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-105 z-40 ${
@@ -720,6 +688,7 @@ export default function App() {
         </div>
       )}
 
+      {photoArticle&&<Suspense fallback={null}><PhotoPreparation article={photoArticle} onClose={()=>setPhotoArticle(null)} onConfigure={()=>setActiveTab(TAB_RESOURCES,{section:'accounts'})}/></Suspense>}
       {showEmplacements && (
         <EmplacementsView
           items={items.filter(i => i.status !== 'envoye')}

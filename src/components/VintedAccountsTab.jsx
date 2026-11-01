@@ -1,3 +1,5 @@
+import {readAllRows} from '../lib/workspace'
+import {Pagination} from './WorkspaceUI'
 import AccountPreparation from './AccountPreparation'
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
@@ -9,20 +11,20 @@ import AccountDetails, { CopyValue } from './AccountDetails'
 const secondary = 'rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50'
 const selectClass = 'border border-gray-200 bg-white rounded-lg px-3 py-2 text-xs text-gray-600 focus:outline-none focus:border-teal-400'
 
-export default function VintedAccountsTab({client=supabase}) {
+export default function VintedAccountsTab({client=supabase,onDirections}) {
   const [accounts,setAccounts]=useState([])
   const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('')
   const [view,setView]=useState('ready'),[search,setSearch]=useState(''),[sort,setSort]=useState('priority'),[dueOnly,setDueOnly]=useState(false)
   const [selectedId,setSelectedId]=useState(null),[editAccount,setEditAccount]=useState(undefined)
   const [now,setNow]=useState(Date.now())
-  const [deleteId,setDeleteId]=useState(null)
+  const [deleteId,setDeleteId]=useState(null),[page,setPage]=useState(0)
+  useEffect(()=>setPage(0),[view,search,sort,dueOnly])
   useEffect(()=>{fetchAll();const timer=setInterval(()=>setNow(Date.now()),30000);return()=>clearInterval(timer)},[])
 
   async function fetchAll() {
     setLoading(true);setError('')
     try {
-      const a=await client.from('vinted_accounts').select('*').order('created_at',{ascending:false})
-      if(a.error)throw a.error
+      const a={data:await readAllRows(()=>client.from('vinted_accounts').select('*',{count:'exact'}).is('deleted_at',null).order('created_at',{ascending:false}).order('id'))}
       // Preserve the existing automatic release of elapsed temporary bans.
       let list=a.data
       const expired=list.filter(x=>!x.is_shadowbanned&&x.statut==='banni_temp'&&x.deban_at&&Date.parse(x.deban_at)<=Date.now())
@@ -79,7 +81,7 @@ export default function VintedAccountsTab({client=supabase}) {
     },`${account.pseudo} est maintenant dans les comptes prêts.`)
   }
   async function remove(id){
-    const ok=await mutate(async()=>{const {error}=await client.from('vinted_accounts').delete().eq('id',id);if(error)throw error;setAccounts(prev=>prev.filter(a=>a.id!==id))},'Compte supprimé.')
+    const ok=await mutate(async()=>{const {error}=await client.from('vinted_accounts').update({deleted_at:new Date().toISOString()}).eq('id',id);if(error)throw error;setAccounts(prev=>prev.filter(a=>a.id!==id))},'Compte placé dans la corbeille. Tu peux le restaurer depuis Historique & corbeille.')
     if(ok){setSelectedId(null);setDeleteId(null)}
   }
   async function archive(account){
@@ -97,7 +99,7 @@ export default function VintedAccountsTab({client=supabase}) {
   return <main className="max-w-screen-2xl mx-auto p-4 space-y-4">
     <header className="flex flex-wrap justify-between items-center gap-3">
       <div><div className="flex items-center gap-2"><h1 className="text-xl font-bold text-gray-900">Comptes</h1><span className="text-xs text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">{accounts.length}</span></div><p className="text-sm text-gray-500 mt-1">Les comptes en isolement et les comptes abandonnés restent séparés des comptes prêts.</p></div>
-      <div className="flex gap-2"><button disabled={loading||busy} onClick={fetchAll} className={secondary}>Actualiser</button><button disabled={busy} onClick={()=>openEdit(null)} className="px-4 py-2 bg-teal-500 text-white rounded-lg text-sm font-semibold disabled:opacity-50">+ Ajouter un compte</button></div>
+      <div className="flex flex-wrap gap-2">{onDirections&&<button className={secondary} onClick={onDirections}>Fonds et prompts par compte</button>}<button disabled={loading||busy} onClick={fetchAll} className={secondary}>Actualiser</button><button disabled={busy} onClick={()=>openEdit(null)} className="px-4 py-2 bg-teal-500 text-white rounded-lg text-sm font-semibold disabled:opacity-50">+ Ajouter un compte</button></div>
     </header>
     {error&&<p role="alert" className="border border-red-200 bg-red-50 text-red-700 p-3 rounded-lg text-sm">{error}</p>}
     {notice&&<p role="status" className="text-xs text-teal-700">{notice}</p>}
@@ -114,19 +116,20 @@ export default function VintedAccountsTab({client=supabase}) {
       {view==='isolation'&&<div className="px-4 py-3 bg-amber-50 text-amber-900 text-xs leading-relaxed"><strong>Isolement sur téléphone</strong> · Jour 1 : création, puis 1re annonce après environ 2 h → Jour 2 : 2e annonce → Jour 3 : prêt à passer sur proxy. Les horaires sont des rappels : tu peux confirmer une annonce dès qu’elle est postée.</div>}
       {view==='shadowban'&&<p className="px-4 py-3 bg-gray-100 text-gray-600 text-xs">Comptes abandonnés : exclus des comptes prêts et du suivi de création.</p>}
       <div className="overflow-x-auto"><table className="w-full text-left min-w-[820px]"><thead className="text-[10px] uppercase tracking-wide text-gray-400 border-y border-gray-100"><tr>{['Compte',view==='isolation'?'Préparation':'Statut',...(view==='isolation'?['Rappel conseillé']:[]),'Environnement','Action'].map(h=><th className="font-semibold px-4 py-3" key={h}>{h}</th>)}</tr></thead>
-        <tbody>{loading?<tr><td colSpan={view==='isolation'?5:4} className="py-16 text-center text-sm text-gray-400">Chargement des comptes…</td></tr>:displayed.map(a=>{
+        <tbody>{loading?<tr><td colSpan={view==='isolation'?5:4} className="py-16 text-center text-sm text-gray-400">Chargement des comptes…</td></tr>:displayed.slice(page*50,(page+1)*50).map(a=>{
           const group=accountGroup(a),due=isAccountDue(a,now),deadline=accountDeadline(a,now)
           return <tr key={a.id} className={`border-b border-gray-100 last:border-0 hover:bg-gray-50/70 ${due?'bg-orange-50/30':''}`}>
             <td className="px-4 py-3"><div className="flex items-center gap-3"><span className={`w-9 h-9 rounded-lg flex items-center justify-center font-semibold text-xs shrink-0 ${group==='blocked'?'bg-gray-100 text-gray-400':'bg-teal-50 text-teal-700'}`}>{a.ads_power_num?`#${a.ads_power_num}`:a.pseudo?.slice(0,2).toUpperCase()}</span><div className="min-w-0"><button onClick={()=>{setSelectedId(a.id);setError('')}} className="font-semibold text-sm text-gray-900 hover:text-teal-600 text-left" aria-label={`Ouvrir ${a.pseudo}`}>{a.pseudo}</button><div className="text-xs text-gray-400 mt-0.5 flex gap-1.5 items-center"><span className="max-w-52 truncate" title={a.email||''}>{a.email||'Email non renseigné'}</span><CopyValue value={a.email} label={`Copier l’email de ${a.pseudo}`}/></div></div></div></td>
             <td className="px-4 py-3"><AccountPreparation account={a} busy={busy} onAdvance={advance} onMarkReady={markReady} onEdit={openEdit}/></td>
             {view==='isolation'&&<td className="px-4 py-3"><p className={`text-xs ${due?'text-orange-700 font-semibold':'text-gray-600'}`}>{group!=='isolation'?'—':deadline||'À planifier'}</p>{deadline&&<p className="text-[10px] text-gray-400 mt-1">{new Date(a.creation_next_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</p>}</td>}
             <td className="px-4 py-3"><p className="text-xs text-gray-700">{a.browser|| (a.ads_power_num?'AdsPower':'Navigateur non renseigné')}</p><p className="text-[11px] text-gray-400 mt-1">{group==='isolation'?'Téléphone · isolement':group==='shadowban'?'Ne plus utiliser':''}</p></td>
-            <td className="px-4 py-3"><div className="flex flex-col items-start gap-1.5"><div className="flex flex-wrap items-center gap-3"><button onClick={()=>{setSelectedId(a.id);setError('')}} className="text-xs text-gray-500 hover:text-gray-800">Voir la fiche</button><button disabled={busy} onClick={()=>{setDeleteId(a.id);setError('')}} aria-label={`Supprimer ${a.pseudo}`} className="text-xs text-red-600 hover:text-red-800 disabled:opacity-40">Supprimer</button></div>{deleteId===a.id&&<div role="group" aria-label={`Confirmer la suppression de ${a.pseudo}`} className="bg-red-50 border border-red-200 rounded-lg p-3 max-w-64 text-xs text-red-800"><p>Supprimer définitivement « {a.pseudo} » du suivi ?</p><p className="mt-1 text-red-600">Cela ne ferme pas le compte sur Vinted.</p><div className="flex gap-3 mt-3"><button disabled={busy} onClick={()=>remove(a.id)} className="font-semibold disabled:opacity-40">{busy?'Suppression…':'Confirmer'}</button><button disabled={busy} onClick={()=>setDeleteId(null)} className="disabled:opacity-40">Annuler</button></div></div>}</div></td>
+            <td className="px-4 py-3"><div className="flex flex-col items-start gap-1.5"><div className="flex flex-wrap items-center gap-3"><button onClick={()=>{setSelectedId(a.id);setError('')}} className="text-xs text-gray-500 hover:text-gray-800">Voir la fiche</button><button disabled={busy} onClick={()=>{setDeleteId(a.id);setError('')}} aria-label={`Supprimer ${a.pseudo}`} className="text-xs text-red-600 hover:text-red-800 disabled:opacity-40">Supprimer</button></div>{deleteId===a.id&&<div role="group" aria-label={`Confirmer la suppression de ${a.pseudo}`} className="bg-red-50 border border-red-200 rounded-lg p-3 max-w-64 text-xs text-red-800"><p>Mettre « {a.pseudo} » à la corbeille ?</p><p className="mt-1 text-red-600">Tu pourras le restaurer. Le compte Vinted reste ouvert.</p><div className="flex gap-3 mt-3"><button disabled={busy} onClick={()=>remove(a.id)} className="font-semibold disabled:opacity-40">{busy?'Suppression…':'Confirmer'}</button><button disabled={busy} onClick={()=>setDeleteId(null)} className="disabled:opacity-40">Annuler</button></div></div>}</div></td>
           </tr>
         })}{!loading&&!displayed.length&&<tr><td colSpan={view==='isolation'?5:4} className="py-16 text-center"><p className="text-sm text-gray-500">{accounts.length?'Aucun compte ne correspond à ces filtres.':'Aucun compte dans ce groupe.'}</p>{filtered&&<button onClick={reset} className="mt-3 text-xs text-teal-600 font-semibold">Effacer les filtres</button>}</td></tr>}</tbody>
       </table></div>
       <footer className="px-4 py-3 border-t border-gray-100 flex flex-wrap justify-between gap-2 text-[11px] text-gray-400"><span>{displayed.length} compte{displayed.length>1?'s':''} affiché{displayed.length>1?'s':''} sur {accounts.length}</span>{view==='isolation'&&<span>Tu confirmes les actions réalisées. Aucun blocage lié aux horaires.</span>}</footer>
     </section>
+    <Pagination page={page} count={displayed.length} onChange={setPage} busy={busy||loading}/>
     {selected&&<AccountDetails key={selected.id} account={selected} busy={busy} error={error} now={now} onClose={()=>setSelectedId(null)} onEdit={openEdit} onAdvance={advance} onMarkReady={markReady} onDelete={remove}
       onShadowban={()=>archive(selected)} />}
     {editAccount!==undefined&&<AccountFormModal account={editAccount} onClose={()=>setEditAccount(undefined)} onSave={handleSave} error={error}/>}

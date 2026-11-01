@@ -3,10 +3,19 @@ import { supabase } from './supabase'
 export async function authenticatedFetch(url, options = {}) {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) throw new Error('Session expirée. Reconnectez-vous.')
-  return fetch(url, { ...options, headers: {
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),45000)
+  try{return await fetch(url, { ...options, signal:options.signal||controller.signal, headers: {
     'Content-Type': 'application/json', ...options.headers,
     Authorization: `Bearer ${session.access_token}`,
-  } })
+  } })}catch(error){throw new Error(error.name==='AbortError'?'Le serveur met trop de temps à répondre. Tes données sont conservées ; réessaie.':'Connexion interrompue. Vérifie ta connexion puis réessaie.')}finally{clearTimeout(timer)}
+}
+
+export async function workspaceRequest(view='overview',query={},body) {
+  const params=new URLSearchParams({view,...query})
+  const response=await authenticatedFetch(`/api/workspace?${params}`,{method:body?'PATCH':'GET',...(body?{body:JSON.stringify(body)}:{})})
+  const result=await response.json().catch(()=>({}))
+  if(!response.ok)throw new Error(result.error||'Les données sont indisponibles. Réessaie.')
+  return result
 }
 
 export async function salesRequest(method = 'GET', body, query = '') {

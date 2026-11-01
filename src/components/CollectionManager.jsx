@@ -27,10 +27,11 @@ export default function CollectionManager({isAdmin,full=false,compact=false,requ
   }
   useEffect(()=>{
     alive.current=true;let loading=false,checking=false
-    const poll=async()=>{if(loading)return;loading=true;try{await refresh()}catch(e){if(alive.current)setError(e.message)}finally{loading=false}}
-    const check=async()=>{if(checking)return;checking=true;try{const s=await bridge('status');if(alive.current)setBrowser(s)}catch{if(alive.current)setBrowser(null)}finally{checking=false}}
+    const poll=async()=>{if(loading||document.visibilityState!=='visible')return;loading=true;try{await refresh();if(alive.current)setError('')}catch(e){if(alive.current)setError(e.message)}finally{loading=false}}
+    const check=async()=>{if(checking||document.visibilityState!=='visible')return;checking=true;try{const s=await bridge('status');if(alive.current)setBrowser(s)}catch{if(alive.current)setBrowser(null)}finally{checking=false}}
     poll();check();const timer=setInterval(poll,5000),browserTimer=setInterval(check,3000)
-    return()=>{alive.current=false;clearInterval(timer);clearInterval(browserTimer)}
+    const resume=()=>{if(document.visibilityState==='visible'){poll();check()}};document.addEventListener('visibilitychange',resume)
+    return()=>{alive.current=false;clearInterval(timer);clearInterval(browserTimer);document.removeEventListener('visibilitychange',resume)}
   },[request,bridge])
   async function perform(work) {
     if(running.current)return

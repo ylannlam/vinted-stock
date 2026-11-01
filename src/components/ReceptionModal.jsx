@@ -5,6 +5,7 @@ export default function ReceptionModal({ commande, items, stockItems, onClose, o
   const suggestions = useMemo(() => computeSuggestions(items, stockItems), [])
   const [emplacements, setEmplacements] = useState(() => suggestions)
   const [saving, setSaving] = useState(false)
+  const [error,setError]=useState('')
 
   const occupiedEmplacements = new Set(
     stockItems.filter(i => i.emplacement).map(i => i.emplacement.trim().toLowerCase())
@@ -28,10 +29,9 @@ export default function ReceptionModal({ commande, items, stockItems, onClose, o
   const canSubmit = allFilled && !hasConflict
 
   async function handleSubmit() {
-    if (!canSubmit) return
-    setSaving(true)
-    await onReceived(commande, emplacements)
-    setSaving(false)
+    if (!canSubmit||saving) return
+    setSaving(true);setError('')
+    try{await onReceived(commande, emplacements)}catch(e){setError(e.message||'Réception non enregistrée. Réessaie.')}finally{setSaving(false)}
   }
 
   return (
@@ -53,6 +53,7 @@ export default function ReceptionModal({ commande, items, stockItems, onClose, o
         </div>
 
         <div className="px-5 py-4 space-y-4">
+          {error&&<p role="alert" className="bg-red-50 text-red-800 rounded-xl p-3 text-sm">{error}</p>}
           <div className="flex items-start gap-2 bg-teal-50 border border-teal-100 rounded-xl px-3 py-2.5">
             <svg className="w-4 h-4 text-teal-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />

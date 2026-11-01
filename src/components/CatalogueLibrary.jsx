@@ -3,8 +3,8 @@ import {collectionLabels} from '../lib/collector'
 import {safeUrl,money} from '../lib/fulfillment'
 const date=value=>value?new Date(value).toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short'}):'Pas encore vérifié'
 const button='rounded-lg border px-3 py-2 text-sm bg-white hover:bg-gray-50 disabled:opacity-40'
-export function ProductDetails({product,items}) {
-  return <div className="space-y-4">
+export function ProductDetails({product,items,onPreparePhoto}) {
+  return <div className="space-y-4">{onPreparePhoto&&<button className={button} onClick={onPreparePhoto}>Préparer les photos avec la DA d’un compte</button>}
     {!!missingProductFields(product).length&&<p className="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg p-3">Non récupéré : {missingProductFields(product).join(', ')}. Ces informations restent à compléter.</p>}
     <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">{(product.photos?.length?product.photos:[product.photo_url]).filter(safeUrl).map(url=><a key={url} href={url} target="_blank" rel="noreferrer"><img src={url} className="w-full aspect-[3/4] rounded-lg object-cover" alt={product.title} referrerPolicy="no-referrer"/></a>)}</div>
     <p className="text-sm font-mono break-all">{product.supplier_sku||'SKU non récupéré'}</p>

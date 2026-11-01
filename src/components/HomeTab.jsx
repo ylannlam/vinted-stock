@@ -1,0 +1,27 @@
+import {useEffect,useState} from 'react'
+import {TAB_SALES,TAB_CATALOG,TAB_RESOURCES,TAB_BUDGET,TAB_TOUT,TAB_A_ENVOYER,TAB_A_RECEVOIR} from '../constants'
+import {ErrorNotice,buttonClass} from './WorkspaceUI'
+const defaultRequest=(...args)=>import('../lib/api').then(m=>m.workspaceRequest(...args))
+export default function HomeTab({isAdmin,onNavigate,request=defaultRequest}){
+ const [data,setData]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false)
+ async function load(){setBusy(true);try{setData(await request());setError('')}catch(e){setError(e.message)}finally{setBusy(false)}}
+ useEffect(()=>{load()},[])
+ const date=new Intl.DateTimeFormat('fr-FR',{weekday:'long',day:'numeric',month:'long',timeZone:'Europe/Paris'}).format(new Date())
+ const tiles=data?[
+  {label:'Échéances proches',value:data.sales.urgent,detail:'Moins de 48 h ou en retard',tab:TAB_SALES,filters:{urgent:true},warning:true},
+  {label:'Achats à passer',value:data.sales.to_order,detail:'Ventes Dotb à approvisionner',tab:TAB_SALES,filters:{stage:'to_order'}},
+  {label:'Colis prêts',value:data.sales.to_ship,detail:'Ventes Dotb à déposer',tab:TAB_SALES,filters:{stage:'prepared'}},
+  {label:'Références manquantes',value:data.sales.missing_sku,detail:'SKU à compléter',tab:TAB_SALES,filters:{stage:'missing_sku'}},
+ ]:[]
+ return <main className="mx-auto max-w-screen-2xl p-4 sm:p-6 space-y-6">
+  <header className="flex flex-wrap justify-between items-center gap-3"><div><p className="text-sm text-teal-700 capitalize">{date}</p><h1 className="mt-1 text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900">À faire aujourd’hui</h1><p className="mt-2 text-sm text-slate-500">Tes priorités, tes articles et tes outils au même endroit.</p></div><button disabled={busy} className={buttonClass} onClick={load}>{busy?'Actualisation…':'Actualiser'}</button></header>
+  <ErrorNotice error={error} retry={load} busy={busy}/>
+  {!data&&!error?<p role="status" className="p-8 text-slate-500">Chargement des priorités…</p>:data&&<>
+   <section aria-label="Priorités des ventes" className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">{tiles.map(t=><button key={t.label} onClick={()=>onNavigate(t.tab,t.filters)} className={`text-left border rounded-2xl p-4 sm:p-5 transition hover:shadow-md ${t.warning&&t.value?'border-amber-200 bg-amber-50':'border-slate-200 bg-white'}`}><p className="text-sm font-medium text-slate-600">{t.label}</p><p className={`text-3xl font-semibold my-3 ${t.warning&&t.value?'text-amber-800':'text-slate-900'}`}>{t.value}</p><p className="text-xs text-slate-500">{t.detail} ↗</p></button>)}</section>
+   <div className="grid lg:grid-cols-[1.6fr_1fr] gap-5"><section className="rounded-2xl bg-white border border-slate-200 p-5"><h2 className="font-semibold text-lg">À traiter en premier</h2>{data.urgent_lines.length?<div className="divide-y mt-3">{data.urgent_lines.map(l=><button key={l.id} onClick={()=>onNavigate(TAB_SALES,{search:l.title||'',urgent:true})} className="w-full text-left py-4 flex flex-wrap justify-between gap-2"><span className="min-w-0"><span className="block text-sm font-medium">{l.title||'Article sans titre'}</span><span className="text-xs text-slate-500">{l.account_login}</span></span><span className="text-xs text-amber-800">{new Date(l.deadline_at).toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short'})}</span></button>)}</div>:<p className="py-8 text-sm text-slate-500">Aucune vente à expédier sous 48 h. Les prochaines urgences apparaîtront ici.</p>}
+    <div className="flex flex-wrap gap-2">{data.sales.review>0&&<button className={buttonClass} onClick={()=>onNavigate(TAB_SALES,{stage:'review'})}>{data.sales.review} vente(s) à vérifier</button>}<button className={buttonClass} onClick={()=>onNavigate(TAB_SALES)}>Toutes les ventes →</button></div>
+   </section><section className="rounded-2xl bg-white border border-slate-200 p-5 space-y-4"><h2 className="font-semibold text-lg">Mon stock physique</h2><p className="text-sm text-slate-500">Articles gérés dans ton stock, indépendamment des ventes importées de Dotb.</p>{[[`${data.stock.available} articles disponibles`,TAB_TOUT],[`${data.stock.to_ship} articles à envoyer`,TAB_A_ENVOYER],[`${data.stock.receiving} commandes à recevoir`,TAB_A_RECEVOIR]].map(([label,tab])=><button key={tab} className="flex justify-between w-full rounded-xl bg-slate-50 p-3 text-sm font-medium" onClick={()=>onNavigate(tab)}>{label}<span>→</span></button>)}</section></div>
+   <section className="grid md:grid-cols-3 gap-4" aria-label="Outils"><button className="rounded-2xl border bg-white p-5 text-left" onClick={()=>onNavigate(TAB_CATALOG)}><h2 className="font-semibold">Catalogue Shein</h2><p className="mt-2 text-sm text-slate-500">{data.collector.pending} récupération(s) en cours · {data.collector.review} à vérifier</p></button>{isAdmin&&<><button className="rounded-2xl border bg-white p-5 text-left" onClick={()=>onNavigate(TAB_RESOURCES,{section:'accounts'})}><h2 className="font-semibold">Atelier photo</h2><p className="mt-2 text-sm text-slate-500">{data.directions?.selected||0} comptes sélectionnés · {data.directions?.incomplete||0} DA à compléter</p></button><button className="rounded-2xl border bg-white p-5 text-left" onClick={()=>onNavigate(TAB_BUDGET)}><h2 className="font-semibold">Budget & marges</h2><p className="mt-2 text-sm text-slate-500">Coûts réels, remboursements et marge par vente.</p></button></>}</section>
+  </>}
+ </main>
+}

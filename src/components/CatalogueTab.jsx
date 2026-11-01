@@ -56,7 +56,7 @@ function SkuRow({group,data,isAdmin,busy,onLink,onHistory}) {
   </tr>
 }
 
-export default function CatalogueTab({isAdmin,request=defaultRequest,collectorRequest=defaultCollectorRequest,collectorBridge}) {
+export default function CatalogueTab({isAdmin,request=defaultRequest,collectorRequest=defaultCollectorRequest,collectorBridge,onPreparePhoto}) {
   const [data,setData]=useState({products:[],items:[],links:[],sales:[]}), [tab,setTab]=useState('products')
   const [search,setSearch]=useState(''), [filter,setFilter]=useState('all'), [page,setPage]=useState(0)
   const [busy,setBusy]=useState(false), [error,setError]=useState(''), [notice,setNotice]=useState('')
@@ -160,7 +160,7 @@ export default function CatalogueTab({isAdmin,request=defaultRequest,collectorRe
       {tab!=='bestsellers'&&<div className="flex justify-between items-center text-xs text-gray-500"><span>{visible.length} {productView?'produits':'SKU'} · Page {currentPage+1}/{pages}</span><div className="flex gap-2"><button className={button} disabled={!currentPage} onClick={()=>setPage(currentPage-1)}>Précédente</button><button className={button} disabled={currentPage+1>=pages} onClick={()=>setPage(currentPage+1)}>Suivante</button></div></div>}
       <p className="text-xs text-gray-500">Catalogue alimenté par les ventes depuis le début du suivi. Les prix Shein sont datés et hors coupons du panier.</p>
     </>}
-    {details&&<Dialog title={details.title} close={()=>setDetails(null)} busy={busy}><ProductDetails product={details} items={data.items.filter(i=>data.links.some(l=>l.sku===i.sku&&l.product_id===details.id))}/></Dialog>}
+    {details&&<Dialog title={details.title} close={()=>setDetails(null)} busy={busy}><ProductDetails onPreparePhoto={isAdmin&&onPreparePhoto?()=>{setDetails(null);onPreparePhoto({type:'catalog',id:details.id,title:details.title,photo_url:details.photo_url,sku:details.supplier_sku})}:undefined} product={details} items={data.items.filter(i=>data.links.some(l=>l.sku===i.sku&&l.product_id===details.id))}/></Dialog>}
     {editing&&<Dialog title="Vérifier le relevé Shein" close={closeDraft} busy={busy}><form onSubmit={e=>{e.preventDefault();run(saveObservation)}} className="space-y-4">
       <p className="text-sm text-gray-500">Vérifie la fiche ouverte sur Shein. Un prix illisible reste vide ; il ne devient jamais zéro.</p>
       <div className="grid sm:grid-cols-2 gap-3">{[['supplier_url','Lien complet de la fiche Shein',2000],['title','Nom du produit',500],['supplier_sku','SKU affiché sur Shein',200],['price','Prix affiché (€)',30],['size','Taille observée',80],['color','Couleur observée',100]].map(([key,label,max])=><label key={key} className="text-xs text-gray-600">{label}<input className={`${input} mt-1`} required={['title','supplier_url'].includes(key)} inputMode={key==='price'?'decimal':undefined} maxLength={max} value={editing[key]} onChange={e=>setEditing({...editing,[key]:e.target.value,confirmed:false})}/></label>)}

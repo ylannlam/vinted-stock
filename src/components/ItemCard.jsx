@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 
-export default function ItemCard({ item, isLotSelected, onToggleLot, onMarkSold, onMarkSent, onMarkUnsent, onRemettreEnVente, onRemettreEnStock, onDelete, onUpdateEmplacement, onBordereauDrop, onPhotoDrop, onEdit, onMarkReceived, onToggleReception }) {
+export default function ItemCard({ item, isLotSelected, onToggleLot, onMarkSold, onMarkSent, onMarkUnsent, onRemettreEnVente, onRemettreEnStock, onDelete, onUpdateEmplacement, onBordereauDrop, onPhotoDrop, onEdit, onMarkReceived, onToggleReception, onPreparePhoto }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmSent, setConfirmSent] = useState(false)
   const [confirmReceived, setConfirmReceived] = useState(false)
@@ -145,7 +145,7 @@ export default function ItemCard({ item, isLotSelected, onToggleLot, onMarkSold,
               onClick={() => { setConfirmDelete(false); onDelete(item.id) }}
               className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-semibold shadow-sm"
             >
-              Suppr.
+              Corbeille
             </button>
             <button
               onClick={() => setConfirmDelete(false)}
@@ -158,7 +158,7 @@ export default function ItemCard({ item, isLotSelected, onToggleLot, onMarkSold,
           <button
             onClick={() => setConfirmDelete(true)}
             className="absolute top-1.5 left-1.5 w-6 h-6 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-white transition-colors shadow-sm"
-            aria-label="Supprimer"
+            aria-label="Mettre à la corbeille"
           >
             <svg className="w-3 h-3 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -211,6 +211,7 @@ export default function ItemCard({ item, isLotSelected, onToggleLot, onMarkSold,
       {/* Infos bas de carte */}
       <div className="px-2 py-1.5">
 
+        {onPreparePhoto&&<button className="text-xs text-teal-700 rounded-lg bg-teal-50 px-2 py-2 mb-2 w-full" onClick={()=>onPreparePhoto({...item,type:'stock',title:`Article ${item.size} · ${item.emplacement||'sans emplacement'}`})}>Préparer les photos</button>}
         {/* Emplacement + édition inline */}
         {(isStock || item.emplacement) && (
           <div className="mb-1 min-w-0">

@@ -5,6 +5,7 @@ import { AppError, normalizeOrders, readDotbPage, validateEdit, validateSaleSku 
 import { STAGES } from '../src/lib/fulfillment.js'
 import {readTrackingPeriod} from '../server/tracking.js'
 import {automationStatus,enableSalesAutomation} from '../server/sales-automation.js'
+import {salesFilters,financeValues,batchValues} from '../server/workspace.js'
 
 export const config = { maxDuration: 60 }
 const fail = error => { if (error) throw error }
@@ -26,6 +27,12 @@ export default async function handler(req, res) {
     const { db, role, user } = auth
     const tracking=await readTrackingPeriod(db)
     if (req.method === 'GET') {
+      if(req.query?.view==='page'){
+        const filters=salesFilters(req.query)
+        const {data,error}=await db.rpc('sales_workspace_page',{p_filters:filters,p_known_revision:typeof req.query.revision==='string'?req.query.revision:null});fail(error)
+        if(data.unchanged)return res.json(data)
+        return res.json({...data,tracking,automation:await automationStatus(db),connected:!!process.env.DOTB_API_TOKEN})
+      }
       const offset = Number(req.query?.offset || 0)
       if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1000000) throw new AppError('Page invalide.')
       const { data: state, error: stateError } = await db.from('dotb_sync_state').select('cursor,last_completed_at,processed').eq('id',true).single()
@@ -67,6 +74,11 @@ export default async function handler(req, res) {
     }
     const body = req.body
     if (!body || typeof body !== 'object') throw new AppError('Formulaire invalide.')
+    if(body.action==='batch'){
+      const batch=batchValues(body)
+      const {error}=await db.rpc('save_sales_batch',{p_lines:batch.lines,p_action:batch.operation,p_value:batch.value,p_user:user.id});fail(error)
+      return res.json({saved:true,count:batch.lines.length})
+    }
     if (body.action === 'sku') {
       const sku = validateSaleSku(body)
       const { error } = await db.rpc('save_sales_sku', { p_id: body.id, p_version: body.updated_at, p_sku: sku, p_user: user.id })
@@ -77,7 +89,14 @@ export default async function handler(req, res) {
     if (body.action === 'advance') {
       if (!STAGES.some(s=>s.id===body.stage) || typeof body.id !== 'string' || body.id.length>80 || !Number.isFinite(Date.parse(body.updated_at))) throw new AppError('Étape invalide.')
       stage = body.stage
-    } else if (body.action === 'edit') { ({ edit, product } = validateEdit(body)) }
+    } else if (body.action === 'edit') {
+      ({ edit, product } = validateEdit(body))
+      if(body.finance_confirmed!==undefined){
+        const finance=financeValues(body)
+        const {error}=await db.rpc('save_sales_workspace',{p_id:body.id,p_version:body.updated_at,p_edit:edit,p_product:product,p_fees:finance.fees,p_refund:finance.refund,p_confirmed:finance.confirmed,p_user:user.id});fail(error)
+        return res.json({saved:true})
+      }
+    }
     else throw new AppError('Action inconnue.')
     const { error } = await db.rpc('save_sales_line', { p_id: body.id, p_version: body.updated_at,
       p_edit: edit, p_product: product, p_stage: stage, p_user: user.id })

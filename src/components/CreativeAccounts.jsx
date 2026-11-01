@@ -1,6 +1,7 @@
 import {useEffect,useRef,useState} from 'react'
 import ResourceDialog from './ResourceDialog'
 import {directionPrompts,filterCreativeAccounts} from '../lib/creativeAccounts'
+import {directionReady} from '../lib/workspace'
 
 const defaultRequest=(...args)=>import('../lib/api').then(m=>m.creativeAccountsRequest(...args))
 const input='w-full border border-gray-300 rounded-lg px-3 py-2.5 bg-white text-sm focus:outline-teal-600'
@@ -72,6 +73,7 @@ export default function CreativeAccounts({resources,request=defaultRequest,onLib
    const background=resources.find(r=>r.id===account.background_id),prompts=directionPrompts(account,background)
    return <article key={account.id} className="rounded-2xl border bg-white p-4 space-y-4">
     <header className="flex flex-wrap justify-between items-center gap-3"><div><h3 className="font-semibold break-all">{account.login}</h3><p className="text-xs text-gray-500">{account.country||'Compte Dotb'}{!account.source_present?' · Absent de la dernière liste Dotb':''}</p></div><button className={button} disabled={busy} onClick={()=>edit(account)}>Configurer la DA</button></header>
+    <p className={`text-xs rounded-lg px-3 py-2 ${directionReady(account,background)?'text-teal-800 bg-teal-50':'text-amber-900 bg-amber-50'}`}>{directionReady(account,background)?'DA prête · fond et deux prompts renseignés':'DA à compléter · vérifie le fond et les prompts avant / arrière'}</p>
     <div className="grid sm:grid-cols-[150px_1fr] gap-4">
      <div>{background?.image_url?<img src={background.image_url} alt={`Fond de ${account.login}`} className="w-full h-52 object-contain bg-stone-100 rounded-lg"/>:<div className="h-40 grid place-items-center bg-stone-100 rounded-lg text-xs text-gray-500 text-center p-3">{background?'Aperçu indisponible':'Aucun fond associé'}</div>}<p className="text-xs font-medium mt-2 break-words">{background?.title||'Choisis un fond dans Configurer la DA'}</p>{background?.archived_at&&<p className="text-xs text-amber-700">Fond archivé : choisis un autre fond.</p>}{background?.image_path&&<button className={`${button} mt-2 !text-xs w-full`} disabled={busy} onClick={()=>onDownload(background)}>Télécharger le fond</button>}</div>
      <div className="space-y-3">{[['front','Avant','prompt_front'],['back','Arrière','prompt_back']].map(([side,label,field])=><div key={side} className="border rounded-lg p-3"><div className="flex justify-between items-center gap-2"><span className="text-sm font-medium">{label}</span><button className={`${button} !text-xs`} disabled={!prompts[side].trim()} onClick={()=>copy(prompts[side],`Prompt ${label.toLowerCase()}`)}>Copier · {label}</button></div><p className="text-[11px] text-gray-500 mt-1">{account[field]===null?'Repris du fond':'Personnalisé pour ce compte'}</p><textarea aria-label={`Prompt ${label.toLowerCase()} de ${account.login}`} className={`${input} mt-2 h-24 !text-xs`} readOnly value={prompts[side]} placeholder="À compléter dans la DA ou dans le fond." onFocus={e=>e.target.select()}/></div>)}</div>

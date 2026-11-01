@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { validateTracker } from '../../server/drop-tracker'
 import { budgetTotals, euro, mergeExpenses } from '../lib/budget'
+import SalesFinance from './SalesFinance'
 const defaultRequest = (...args) => import('../lib/api').then(m=>m.authenticatedFetch(...args))
 const today = () => new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10)
 const field = 'w-full border border-gray-200 rounded-lg bg-white px-3 py-2 text-sm focus:outline-none focus:border-teal-400'
 const button = 'border border-gray-200 bg-white text-gray-600 rounded-lg px-3 py-2 text-xs font-semibold hover:bg-gray-50 disabled:opacity-50'
 
-export default function BudgetTab({request=defaultRequest}) {
+export default function BudgetTab({request=defaultRequest,onOpenSale,financeRequest}) {
   const [record,setRecord]=useState(null), [busy,setBusy]=useState(false), [error,setError]=useState(''), [notice,setNotice]=useState('')
   const [month,setMonth]=useState(today().slice(0,7)), [kind,setKind]=useState('all'), [search,setSearch]=useState('')
   const [draft,setDraft]=useState(null), [budget,setBudget]=useState(''), [deleteId,setDeleteId]=useState(null)
@@ -52,7 +53,9 @@ export default function BudgetTab({request=defaultRequest}) {
     {error&&<p role="alert" className="rounded-lg border border-red-200 bg-red-50 text-red-700 p-3 text-sm">{error}</p>}
     {notice&&<p role="status" className="text-xs text-teal-700">{notice}</p>}
     {!record?<p className="text-sm text-gray-400 py-10 text-center">{busy?'Chargement du budget…':'Le budget n’a pas pu être chargé.'}</p>:<>
-      <div className="flex flex-wrap gap-3 items-center"><label className="text-xs font-semibold text-gray-500">Période <input aria-label="Période" type="month" value={month} onChange={e=>setMonth(e.target.value)} className="ml-2 border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-800"/></label><button className={button} onClick={()=>setMonth('')}>Toutes les périodes</button><span className="text-xs text-gray-400">Opérations saisies manuellement · ventes Dotb non comptabilisées automatiquement</span></div>
+      <div className="flex flex-wrap gap-3 items-center"><label className="text-xs font-semibold text-gray-500">Période <input aria-label="Période" type="month" value={month} onChange={e=>setMonth(e.target.value)} className="ml-2 border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-800"/></label><button className={button} onClick={()=>setMonth('')}>Toutes les périodes</button></div>
+      <SalesFinance month={month} onOpenSale={onOpenSale} request={financeRequest}/>
+      <div><h2 className="font-semibold text-lg">Trésorerie saisie manuellement</h2><p className="text-xs text-slate-500 mt-1">Tes opérations et ton budget mensuel. Ce solde n’est pas additionné aux marges automatiques.</p></div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{[['Dépenses',totals.expenses,'text-red-600'],['Revenus',totals.income,'text-teal-600'],['Solde',totals.balance,totals.balance<0?'text-red-600':'text-teal-600'],['Budget mensuel',limit,'text-gray-900']].map(([label,value,color])=><div key={label} className="bg-white border border-gray-200 rounded-xl p-4"><p className="text-xs text-gray-500">{label}</p><p className={`text-2xl font-semibold mt-1 ${color}`}>{euro(value)}</p></div>)}</div>
       {draft&&<form className="bg-white border border-teal-200 rounded-xl p-4" onSubmit={async e=>{e.preventDefault();const value={...draft,cat:draft.cat.trim()||'Sans catégorie',amount:Number(draft.amount)};if(!(value.amount>0)){setError('Renseignez un montant positif.');return}const existing=record.payload.expenses.find(x=>x.id===draft.id);const expenses=existing?record.payload.expenses.map(x=>x.id===draft.id?value:x):[...record.payload.expenses,value];if(await save({...record.payload,expenses}))setDraft(null)}}>
         <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">{[['date','Date','date'],['cat','Catégorie','text'],['label','Libellé','text'],['amount','Montant (€)','number']].map(([key,label,type])=><label className={`text-xs text-gray-500 ${key==='label'?'lg:col-span-2':''}`} key={key}>{label}<input autoFocus={key==='label'} aria-label={label} className={`${field} mt-1`} type={type} required={['date','amount'].includes(key)} min={type==='number'?'0.01':undefined} step={type==='number'?'0.01':undefined} maxLength={2000} list={key==='cat'?'budget-categories':undefined} value={draft[key]} onChange={e=>setDraft({...draft,[key]:e.target.value})}/></label>)}<label className="text-xs text-gray-500">Type<select aria-label="Type d’opération" className={`${field} mt-1`} value={draft.type} onChange={e=>setDraft({...draft,type:e.target.value})}><option value="out">Dépense</option><option value="in">Revenu</option></select></label></div>

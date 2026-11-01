@@ -15,3 +15,5 @@ export const TAB_CATALOG = '__catalog__'
 export const TAB_RESOURCES = '__creative_resources__'
 
 export const TAB_BUDGET = '__drop_tracker__'
+export const TAB_HOME = '__home__'
+export const TAB_HISTORY = '__history__'
