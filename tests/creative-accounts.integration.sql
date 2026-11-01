@@ -12,8 +12,10 @@ begin
  insert into public.creative_resources(id,kind,title,content,content_back,image_bucket,image_path) values(bg,'background','Test DA','Front','Rear','fonds','test-only.png');
  update public.creative_accounts set background_id=bg,prompt_back=E'Custom\nrear',notes='Keep',version=3 where id=a;
  perform public.sync_creative_accounts(jsonb_build_array(jsonb_build_object('id',upper(a::text),'login','Renamed A'),jsonb_build_object('id',lower(a::text),'login','Duplicate A')));
- if not (select enabled and background_id=bg and prompt_back=E'Custom\nrear' and notes='Keep' and version=3 and login='Renamed A' from public.creative_accounts where id=a) then raise exception 'Sync overwrote DA'; end if;
+ if not (select enabled and source_present and background_id=bg and prompt_back=E'Custom\nrear' and notes='Keep' and version=3 and login='Renamed A' from public.creative_accounts where id=a) then raise exception 'Sync overwrote DA'; end if;
  if (select source_present from public.creative_accounts where id=b) then raise exception 'Missing account not identified'; end if;
+ perform public.sync_creative_accounts(jsonb_build_array(jsonb_build_object('id',a,'login','Renamed A'),jsonb_build_object('id',b,'login','Test B')));
+ if not (select source_present and not enabled from public.creative_accounts where id=b) then raise exception 'Returning account status incorrect'; end if;
  begin
   perform public.select_creative_accounts(jsonb_build_array(jsonb_build_object('id',a,'version',3,'enabled',false),jsonb_build_object('id',b,'version',999,'enabled',true)));
   raise exception 'Stale selection accepted';
