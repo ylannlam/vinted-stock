@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react'
 import ResourceDialog from './ResourceDialog'
+import CreativeAccounts from './CreativeAccounts'
 import {filterResources,validateImage} from '../lib/resources'
 
 const defaultRequest=(...args)=>import('../lib/api').then(m=>m.resourcesRequest(...args))
@@ -41,7 +42,8 @@ function ImageField({editing,file,onFile,onRemove,busy}) {
   </div>
 }
 
-export default function ResourcesTab({request=defaultRequest,upload=defaultUpload}) {
+export default function ResourcesTab({request=defaultRequest,upload=defaultUpload,accountsRequest}) {
+  const [section,setSection]=useState('library')
   const [rows,setRows]=useState([]),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false)
   const [error,setError]=useState(''),[notice,setNotice]=useState(''),[tab,setTab]=useState('all')
   const [search,setSearch]=useState(''),[category,setCategory]=useState(''),[favorites,setFavorites]=useState(false),[sort,setSort]=useState('recent'),[limit,setLimit]=useState(24)
@@ -117,6 +119,8 @@ export default function ResourcesTab({request=defaultRequest,upload=defaultUploa
     setNotice('Téléchargement demandé. Le lien reste disponible si ton navigateur ne l’a pas démarré.')
   }
   return <main className="max-w-screen-2xl mx-auto p-4 sm:p-6 space-y-5 text-slate-800">
+    <nav aria-label="Organisation de l’atelier" className="flex gap-2"><button className={section==='library'?primary:button} onClick={()=>setSection('library')}>Bibliothèque de fonds et prompts</button><button className={section==='accounts'?primary:button} onClick={()=>setSection('accounts')}>DA par compte</button></nav>
+    {section==='accounts'?<CreativeAccounts resources={rows} request={accountsRequest} onLibrary={()=>setSection('library')} onDownload={row=>run(()=>prepareDownload(row))}/>:<>
     <header className="flex flex-wrap justify-between items-center gap-4"><div><p className="text-xs font-semibold tracking-widest text-teal-700 uppercase mb-1">Ton atelier photo</p><h1 className="text-2xl font-bold">Prompts & fonds</h1><p className="text-sm text-gray-500 mt-1">Tes fonds et les prompts pour y placer tes articles, au même endroit.</p></div><div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={()=>run(load)}>Actualiser</button><button className={button} disabled={busy} onClick={()=>openEditor('prompt')}>+ Nouveau prompt</button><button className={primary} disabled={busy} onClick={()=>openEditor('background')}>+ Ajouter un fond</button></div></header>
     <div className="rounded-2xl bg-teal-50 border border-teal-100 p-5 flex flex-wrap justify-between gap-4"><p className="text-sm text-teal-900 max-w-2xl">Garde le fond, ses prompts avant et arrière et tes consignes ensemble. Quand tu prépares une photo, télécharge le fond et copie le prompt dans ton outil d’image avec la photo de l’article.</p><div className="flex items-center gap-6 text-sm text-teal-900"><span><strong className="text-xl mr-1">{active.filter(r=>r.kind==='background').length}</strong> fonds</span><span><strong className="text-xl mr-1">{active.filter(r=>r.kind==='prompt').length}</strong> prompts</span></div></div>
     {!editing&&!detail&&error&&<p role="alert" className="rounded-xl bg-red-50 border border-red-200 text-red-800 p-3 text-sm">{error}</p>}
@@ -138,6 +142,8 @@ export default function ResourcesTab({request=defaultRequest,upload=defaultUploa
       {!visible.length&&<div className="rounded-2xl border border-dashed bg-white text-center p-10 space-y-3"><p className="font-medium">{search||category||favorites?'Aucune ressource ne correspond.':tab==='archived'?'Aucune ressource archivée.':'Ta bibliothèque est prête à accueillir tes idées.'}</p><p className="text-sm text-gray-500">{tab==='archived'?'Les ressources archivées restent disponibles ici.':'Ajoute un fond avec ses prompts avant et arrière, ou sauvegarde un prompt à réutiliser.'}</p></div>}
       <div className="flex items-center justify-between text-xs text-gray-500"><span>{visible.length} ressource{visible.length!==1?'s':''}</span>{visible.length>limit&&<button className={button} onClick={()=>setLimit(n=>n+24)}>Afficher davantage</button>}</div>
     </>}
+    </>}
+    {section==='accounts'&&error&&!detail&&<p role="alert" className="text-red-800 text-sm">{error}</p>}
     {editing&&<ResourceDialog title={editing.version?'Modifier la ressource':editing.kind==='background'?'Ajouter un fond':'Nouveau prompt'} onClose={closeEditor} busy={busy}><form className="space-y-5" onSubmit={e=>{e.preventDefault();run(save)}}>
       <div className="grid md:grid-cols-2 gap-5"><div className="space-y-4"><label className="block text-sm">Titre<input autoFocus className={`${input} mt-1`} required maxLength={120} value={editing.title} disabled={busy} placeholder={editing.kind==='background'?'Ex. Mur crème · lumière douce':'Ex. Robe sur mannequin'} onChange={e=>update({title:e.target.value})}/></label>
         <label className="block text-sm">Catégorie <span className="text-gray-400">· facultatif</span><input className={`${input} mt-1`} list="resource-categories" maxLength={60} value={editing.category} disabled={busy} placeholder="Robes, mannequin, extérieur…" onChange={e=>update({category:e.target.value})}/><datalist id="resource-categories">{categories.map(c=><option value={c} key={c}/>)}</datalist></label>

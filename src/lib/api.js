@@ -41,6 +41,13 @@ export async function resourcesRequest(method='GET',body,query='') {
   return result
 }
 
+export async function creativeAccountsRequest(method='GET',body,query='') {
+  const response=await authenticatedFetch(`/api/creative-accounts${query}`,{method,...(body===undefined?{}:{body:JSON.stringify(body)})})
+  const result=await response.json().catch(()=>({}))
+  if(!response.ok)throw new Error(result.error||'Les directions artistiques sont indisponibles. Tes modifications sont conservées.')
+  return result
+}
+
 export async function uploadResourceImage(file,request=resourcesRequest) {
   const ticket=await request('POST',{action:'upload',type:file.type,size:file.size})
   const {error}=await supabase.storage.from('creative-assets').uploadToSignedUrl(ticket.path,ticket.token,file,{contentType:file.type})
