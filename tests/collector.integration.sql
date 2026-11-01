@@ -11,6 +11,10 @@ begin
   if owner_id is null then raise exception 'No administrator'; end if;
   insert into public.catalog_collectors(id,name,token_hash,created_by) values(device,'ROLLBACK test',repeat('a',64),owner_id);
   insert into public.catalog_dotb_items(id,sku,title,synced_at,tracking_status) values(gen_random_uuid(),fixture_sku,'ROLLBACK',now(),'included');
+  insert into public.sales_orders(id,status,currency,order_date) values(fixture_order,'label_sent','EUR',now()),(cancelled_id,'cancelled','EUR',now());
+  insert into public.sales_lines(id,order_id,dotb_item_id,source,supplier_order_ref) values
+    ('COLLECTOR-TEST-'||fixture_order,fixture_order,gen_random_uuid(),jsonb_build_object('sku',fixture_sku,'selling_price','40.00'),'TEST'),
+    ('COLLECTOR-TEST-'||cancelled_id,cancelled_id,gen_random_uuid(),jsonb_build_object('sku',fixture_sku,'selling_price','80.00'),null);
   n:=public.enqueue_catalog_collection(jsonb_build_array(jsonb_build_object('reference_key','sku:'||fixture_sku,'input',fixture_sku,'expected_sku',fixture_sku)));
   if n<>1 then raise exception 'Job not queued'; end if;
   n:=public.enqueue_catalog_collection(jsonb_build_array(jsonb_build_object('reference_key','sku:'||fixture_sku,'input',fixture_sku,'expected_sku',fixture_sku)));
@@ -39,10 +43,6 @@ begin
     (gen_random_uuid(),p,99,'EUR','M','Nude','available','manual',now()-interval '30 minutes','variant');
   if not exists(select 1 from public.catalog_product_summary where id=p and price=20 and previous_price=18) then raise exception 'Different price scopes compared'; end if;
   if not exists(select 1 from public.sales_catalog_resolved r where r.sku='COLLECTOR-ROLLBACK' and r.supplier_url=payload->>'supplier_url') then raise exception 'Supplier not available to sales'; end if;
-  insert into public.sales_orders(id,status,currency,order_date) values(fixture_order,'label_sent','EUR',now()),(cancelled_id,'cancelled','EUR',now());
-  insert into public.sales_lines(id,order_id,dotb_item_id,source,supplier_order_ref) values
-    ('COLLECTOR-TEST-'||fixture_order,fixture_order,gen_random_uuid(),jsonb_build_object('sku',fixture_sku,'selling_price','40.00'),'TEST'),
-    ('COLLECTOR-TEST-'||cancelled_id,cancelled_id,gen_random_uuid(),jsonb_build_object('sku',fixture_sku,'selling_price','80.00'),null);
   if not exists(select 1 from public.catalog_sales_by_sku s where s.sku='COLLECTOR-ROLLBACK' and quantity=1 and revenue=40) then raise exception 'Sales aggregation or cancelled exclusion wrong'; end if;
   select updated_at into old_version from public.sales_lines where id='COLLECTOR-TEST-'||fixture_order;
   perform public.save_sales_line('COLLECTOR-TEST-'||fixture_order,old_version,null,null,'ordered',owner_id);

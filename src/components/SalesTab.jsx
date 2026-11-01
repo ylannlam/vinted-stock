@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import TrackingPeriod from './TrackingPeriod'
+import CollectionManager from './CollectionManager'
 const defaultRequest = (...args) => import('../lib/api').then(m => m.salesRequest(...args))
 import { STAGES, skuOf, supplierOf, productOf, stageOf, blocked, deadline, money, nextStage, ORDER_LABELS } from '../lib/fulfillment'
 
-export default function SalesTab({ isAdmin, request = defaultRequest }) {
+export default function SalesTab({ isAdmin, request = defaultRequest, collectorRequest, collectorBridge }) {
   const [data, setData] = useState({ lines: [], catalog: [] })
   const [filter, setFilter] = useState('all'), [search, setSearch] = useState('')
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
@@ -67,6 +68,7 @@ export default function SalesTab({ isAdmin, request = defaultRequest }) {
       </div>
       {isAdmin&&!data.automation?.enabled&&<button disabled={busy||!data.connected} onClick={()=>run(async()=>{await request('POST',{action:'automation'});await load()})} className="border rounded-lg px-3 py-2 disabled:opacity-40">Activer la réception automatique</button>}
     </div>
+    <CollectionManager compact isAdmin={isAdmin} request={collectorRequest} bridge={collectorBridge} onCollected={load}/>
     <TrackingPeriod period={data.tracking}>Toutes les ventes de cette période sont suivies automatiquement, quelle que soit la date de création de l’annonce.</TrackingPeriod>
     {error && <div role="alert" className="bg-red-50 border border-red-200 p-3 rounded-lg text-red-800 text-sm">{error}</div>}
     {notice && <p role="status" className="text-sm text-teal-800">{notice}</p>}
@@ -83,7 +85,7 @@ export default function SalesTab({ isAdmin, request = defaultRequest }) {
         <td className="p-3"><div>{line.order.account_login || 'Compte inconnu'}</div><div>{money(line.source.selling_price,line.order.currency)}</div><small className="text-gray-500">{ORDER_LABELS[line.order.status] || 'Statut à vérifier'}</small></td>
         <td className="p-3 min-w-48">
           {supplier&&<a className="text-teal-700 underline" href={supplier} target="_blank" rel="noreferrer">Ouvrir la fiche Shein</a>}
-          {product?.price!=null?<><div className="font-semibold mt-1">{money(product.price,product.currency)}</div><p className="text-xs text-gray-500">Prix relevé{product.color?` · ${product.color}`:''} · hors coupons</p><p className="text-xs text-gray-500">Relevé le {new Date(product.observed_at).toLocaleString('fr-FR')}</p></>:<p className="text-xs text-gray-500 mt-1">{!skuOf(line)?'Ajoute le SKU Shein pour retrouver la fiche.':product?.retrieval_status==='running'?'Récupération Shein en cours…':product?.retrieval_status==='queued'?'En attente du navigateur Shein.':['blocked','failed'].includes(product?.retrieval_status)?product.retrieval_message||'Fiche à vérifier dans la Bibliothèque.':'Fiche Shein à récupérer.'}</p>}
+          {product?.price!=null?<><div className="font-semibold mt-1">{money(product.price,product.currency)}</div><p className="text-xs text-gray-500">Prix relevé{product.color?` · ${product.color}`:''} · hors coupons</p><p className="text-xs text-gray-500">Relevé le {new Date(product.observed_at).toLocaleString('fr-FR')}</p></>:<p className="text-xs text-gray-500 mt-1">{!skuOf(line)?'Ajoute le SKU Shein pour retrouver la fiche.':product?.retrieval_status==='running'?'Récupération Shein en cours…':product?.retrieval_status==='queued'?'En attente du navigateur Shein.':['blocked','failed'].includes(product?.retrieval_status)?product.retrieval_message||'Fiche à vérifier dans la Bibliothèque.':'Recherche Shein prévue automatiquement.'}</p>}
         </td>
         <td className="p-3"><span className="bg-teal-50 text-teal-800 rounded px-2 py-1 text-xs">{STAGES.find(s=>s.id===stage)?.label}</span><div className="text-xs text-gray-500 mt-2">{line.supplier_order_ref || 'Commande Shein non renseignée'}</div>{line.location && <small>Emplacement : {line.location}</small>}</td>
         <td className={`p-3 whitespace-nowrap ${due?.urgent?'text-red-700':'text-gray-500'}`}>{due?.text || '—'}</td>

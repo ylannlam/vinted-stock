@@ -11,7 +11,7 @@ begin
   insert into public.catalog_dotb_items(id,sku,title,synced_at,tracking_status) values
     (old_listing,fixture_sku,'Legacy excluded listing',now(),'excluded'),
     (unknown_listing,fixture_sku,'Legacy unclassified listing',now(),'unclassified');
-  assert (select count(*) from public.catalog_tracked_items where id in (old_listing,unknown_listing))=2,'Catalogue must not require classification';
+  assert not exists(select 1 from public.catalog_tracked_items where id in (old_listing,unknown_listing)),'Unsold listings must not enter the catalogue';
   insert into public.sales_orders(id,status,currency,order_date) values
     (a,'completed','EUR',cutoff-interval '1 millisecond'),(b,'completed','EUR',cutoff),
     (c,'completed','EUR',cutoff+interval '1 hour'),(d,'paid','EUR',cutoff+interval '1 hour'),
@@ -22,6 +22,7 @@ begin
     ('DATE-'||c,c,gen_random_uuid(),jsonb_build_object('sku',fixture_sku,'selling_price','30','dotb_listing_id',unknown_listing)),
     ('DATE-'||d,d,gen_random_uuid(),jsonb_build_object('sku',fixture_sku,'selling_price','40')),
     ('DATE-'||e,e,gen_random_uuid(),jsonb_build_object('sku',fixture_sku,'selling_price','100'));
+  assert (select count(*) from public.catalog_tracked_items where id in (old_listing,unknown_listing))=2,'Sold listings must not require classification';
   assert not exists(select 1 from public.sales_lines_in_period where order_id=a),'Pre-cutoff sale must remain out';
   assert (select count(*) from public.sales_lines_in_period where order_id in (b,c,d) and tracking_status='included')=3,'Recent sales must be included regardless of listing age or classification';
   assert exists(select 1 from public.catalog_sales_by_sku s where s.sku=fixture_sku and quantity=3 and revenue=90),'Stats must include all recent valid sales, excluding history and cancellations';

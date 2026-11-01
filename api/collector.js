@@ -95,6 +95,7 @@ export default async function handler(req,res) {
     }
     throw new AppError('Action inconnue.')
   } catch(error) {
+    if(error.message?.includes('unsold_reference'))return res.status(409).json({error:'Cette référence ne correspond à aucune vente suivie. Les fiches sont préparées automatiquement depuis les ventes.'})
     console.error('collector_request_failed',{code:error.code||'unknown',status:error.status||500})
     const conflict=/collection_lease_expired|collection_product_mismatch|device_revoked/.test(error.message||'')
     return res.status(conflict?409:error.status||500).json({error:conflict?'Cette récupération ou l’association du PC a expiré. Actualisez le site.':error instanceof AppError?error.message:'La récupération est momentanément indisponible. Les fiches existantes sont conservées.'})
