@@ -10,14 +10,14 @@ import { validateTracker } from '../server/drop-tracker'
 import React, {useState} from 'react'
 import { createRoot } from 'react-dom/client'
 import SalesTab from './components/SalesTab'
-import { validateEdit } from '../server/dotb'
+import { validateEdit, validateSaleSku } from '../server/dotb'
 import { nextStage, blocked, supplierOf, skuOf } from './lib/fulfillment'
 import './index.css'
 const catalog = [{sku:'DEMO-100-M',supplier_url:'https://fr.shein.com/Demo-p-123456.html',price:12.50,currency:'EUR',color:'Beige',observed_at:new Date().toISOString()},
   {sku:'DEMO-101-M',retrieval_status:'queued'}]
 const lines = ['to_order','ordered','in_transit','received','prepared','shipped'].map((stage,i)=>({
   id:`demo-${i}`,updated_at:new Date().toISOString(),stage,
-  source:{title:['Blouse fleurie','Robe côtelée','Chemisier satiné','Gilet court','Jupe plissée','Top manches longues'][i],sku:`DEMO-${100+i}-M`,selling_price:'24.90',supplier_link:'https://fr.shein.com/'},
+  source:{title:['Blouse fleurie','Robe côtelée','Chemisier satiné','Gilet court','Jupe plissée','Top manches longues'][i],sku:i===0||i===2?null:`DEMO-${100+i}-M`,selling_price:'24.90',supplier_link:'https://fr.shein.com/'},
   supplier_order_ref:i?'DEMO-COMMANDE-01':null,
   order:{id:`vente-${i}`,account_login:`Compte démo ${i%2+1}`,currency:'EUR',status:'label_sent',deadline:new Date(Date.now()+(i+1)*86400000).toISOString()},
 }))
@@ -25,7 +25,11 @@ async function request(method='GET',body) {
   if(method==='GET')return {lines:structuredClone(lines).map(l=>({...l,tracking_status:'included'})),catalog:structuredClone(catalog),count:lines.length,connected:true,automation:{configured:true,enabled:true,last_received_at:new Date().toISOString()},tracking:{starts_at:'2026-10-30T23:00:00Z',time_zone:'Europe/Paris'}}
   if(method==='POST')return {processed:lines.length,has_more:false}
   const line=lines.find(l=>l.id===body.id)
-  if(body.action==='edit') {
+  if(body.action==='sku') {
+    if(body.updated_at!==line.updated_at)throw Error('Cet article a changé. Actualisez la liste avant de recommencer.')
+    line.sku_override=validateSaleSku(body)
+    if(!catalog.some(p=>p.sku===line.sku_override))catalog.push({sku:line.sku_override,retrieval_status:'queued'})
+  } else if(body.action==='edit') {
     const {edit,product}=validateEdit(body);Object.assign(line,edit)
     if(product){const old=catalog.find(p=>p.sku===product.sku);if(old)Object.assign(old,product);else catalog.push(product)}
   } else {

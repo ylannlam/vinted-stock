@@ -62,6 +62,13 @@ export async function readDotbPage(cursor, fetcher = fetch, token = process.env.
   return result
 }
 
+export function validateSaleSku(body) {
+  if (!body || typeof body.id !== 'string' || !body.id || body.id.length > 80 || !date(body.updated_at)) throw new AppError('Article ou version manquante.')
+  const sku = typeof body.sku === 'string' ? body.sku.trim() : ''
+  if (!/^[A-Za-z0-9_-]{1,200}$/.test(sku)) throw new AppError('Colle le SKU Shein seul (ex. sz25052272411726746), sans lien ni espaces.')
+  return sku
+}
+
 export function validateEdit(body) {
   if (!body || typeof body !== 'object' || typeof body.id !== 'string' || body.id.length > 80 || !date(body.updated_at)) throw new AppError('Article ou version manquante.')
   const text = (value, max, label) => {

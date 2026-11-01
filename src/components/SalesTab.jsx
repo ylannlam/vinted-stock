@@ -9,6 +9,7 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
   const [filter, setFilter] = useState('all'), [search, setSearch] = useState('')
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
   const [editing, setEditing] = useState(null)
+  const [skuEditing, setSkuEditing] = useState(null)
   const loading=useRef(false),activationAttempted=useRef(false)
   async function load() {
     if(loading.current)return
@@ -26,10 +27,10 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
   async function run(fn) { setBusy(true); setError(''); try { await fn() } catch(e) { setError(e.message) } finally { setBusy(false) } }
   useEffect(() => { run(load) }, [])
   useEffect(()=>{
-    if(busy||editing)return
+    if(busy||editing||skuEditing)return
     const timer=setInterval(()=>{if(document.visibilityState==='visible')load().catch(e=>setError(e.message))},15000)
     return ()=>clearInterval(timer)
-  },[busy,editing])
+  },[busy,editing,skuEditing])
   useEffect(()=>{
     if(!isAdmin||!data.connected||!data.automation||data.automation.configured||data.automation.error||activationAttempted.current)return
     activationAttempted.current=true
@@ -46,11 +47,23 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
   }
   const scoped=data.lines
   const active = scoped.filter(l => !blocked(l))
-  const visible = scoped.filter(l => (filter === 'all' || (filter === 'review' ? blocked(l) : !blocked(l) && stageOf(l) === filter)) &&
+  const withoutSku = active.filter(l => !skuOf(l))
+  const visible = scoped.filter(l => (filter === 'all' || (filter === 'missing_sku' ? !blocked(l)&&!skuOf(l) : filter === 'review' ? blocked(l) : !blocked(l) && stageOf(l) === filter)) &&
     `${l.source.title || ''} ${skuOf(l)} ${l.order.account_login || ''} ${l.supplier_order_ref || ''}`.toLowerCase().includes(search.toLowerCase()))
   function edit(line) {
+    setSkuEditing(null); setError('')
     const product = data.catalog.find(p => p.sku === skuOf(line))
     setEditing({ ...line, sku: skuOf(line), supplier_url: supplierOf(line, data.catalog) || '', variant: product?.variant || '', actual_cost: line.actual_cost ?? '' })
+  }
+  function editSku(line) {
+    setError(''); setNotice('')
+    setSkuEditing({id:line.id,updated_at:line.updated_at,sku:skuOf(line)})
+  }
+  async function saveSku() {
+    await request('PATCH',{action:'sku',...skuEditing})
+    setSkuEditing(null)
+    await load()
+    setNotice('SKU enregistré. La fiche Shein est reliée ou sera récupérée automatiquement par le navigateur connecté.')
   }
   const input = 'border border-gray-300 rounded-md px-3 py-2 text-sm w-full focus:outline-teal-600'
   return <main className="max-w-screen-2xl mx-auto p-4 space-y-4">
@@ -62,7 +75,7 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
     <div className="border rounded-lg bg-white p-4 text-sm flex flex-wrap justify-between items-center gap-3">
       <div><p className="font-medium text-gray-900">{data.automation?.enabled?'Réception automatique des ventes activée':'Réception automatique des ventes'}</p>
         <p className="text-gray-500 mt-1">{data.automation?.enabled?'Dès que Dotb reçoit une vente, elle arrive ici. La page se met à jour automatiquement.':'La connexion se configure à l’ouverture par un administrateur.'}</p>
-        <p className="text-gray-500 text-xs mt-1">Les fiches Shein se complètent automatiquement avec le SKU de chaque vente. Garde le navigateur et la récupération Shein actifs.</p>
+        <p className="text-gray-500 text-xs mt-1">Tu peux ajouter le SKU Shein ici après la vente, même s’il est vide dans Dotb. La récupération démarre dès l’enregistrement. Garde le navigateur et la récupération Shein actifs.</p>
         {data.automation?.last_received_at&&<p className="text-xs text-teal-700 mt-1">Dernière réception : {new Date(data.automation.last_received_at).toLocaleString('fr-FR')}</p>}
         {data.automation?.error&&<p className="text-amber-700 mt-1">{data.automation.error}</p>}
       </div>
@@ -70,18 +83,25 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
     </div>
     <CollectionManager compact isAdmin={isAdmin} request={collectorRequest} bridge={collectorBridge} onCollected={load}/>
     <TrackingPeriod period={data.tracking}>Toutes les ventes de cette période sont suivies automatiquement, quelle que soit la date de création de l’annonce.</TrackingPeriod>
-    {error && <div role="alert" className="bg-red-50 border border-red-200 p-3 rounded-lg text-red-800 text-sm">{error}</div>}
+    {error && !skuEditing && <div role="alert" className="bg-red-50 border border-red-200 p-3 rounded-lg text-red-800 text-sm">{error}</div>}
     {notice && <p role="status" className="text-sm text-teal-800">{notice}</p>}
     {data.setup_required ? <div className="bg-amber-50 border border-amber-200 rounded-lg p-4"><h2 className="font-semibold">Activation du suivi nécessaire</h2><p className="text-sm mt-1">La nouvelle structure de données doit être installée avant le premier import. Le stock existant reste disponible dans les autres onglets.</p></div> : data.connected === false && <p className="bg-amber-50 p-3 rounded-lg text-sm">La connexion Dotb n’est pas encore activée. Les ventes déjà importées restent consultables.</p>}
     <div className="flex flex-wrap gap-1 border-b pb-3">
-      {[{id:'all',label:'Toutes'}, ...STAGES, {id:'review',label:'À vérifier'}].map(s => <button key={s.id} disabled={busy} onClick={()=>setFilter(s.id)} className={`px-3 py-2 rounded-md text-sm ${filter===s.id?'bg-teal-700 text-white':'bg-white border text-gray-600'}`}>
-        {s.label} <span className="opacity-70">{s.id==='all'?scoped.length:s.id==='review'?scoped.length-active.length:active.filter(l=>stageOf(l)===s.id).length}</span>
+      {[{id:'all',label:'Toutes'}, {id:'missing_sku',label:'Sans SKU'}, ...STAGES, {id:'review',label:'À vérifier'}].map(s => <button key={s.id} disabled={busy} onClick={()=>{setFilter(s.id);setSkuEditing(null);setError('')}} className={`px-3 py-2 rounded-md text-sm ${filter===s.id?'bg-teal-700 text-white':'bg-white border text-gray-600'}`}>
+        {s.label} <span className="opacity-70">{s.id==='all'?scoped.length:s.id==='missing_sku'?withoutSku.length:s.id==='review'?scoped.length-active.length:active.filter(l=>stageOf(l)===s.id).length}</span>
       </button>)}
     </div>
     <input aria-label="Rechercher une vente" className={input} placeholder="Rechercher un article, un SKU, un compte ou une commande Shein…" value={search} onChange={e=>setSearch(e.target.value)} />
     <div className="overflow-x-auto border rounded-lg bg-white"><table className="w-full text-sm text-left"><thead className="bg-gray-50 text-gray-500 text-xs"><tr>{['Article / SKU','Compte / Vente','Fiche Shein','Approvisionnement','Échéance','Actions'].map(t=><th key={t} className="p-3">{t}</th>)}</tr></thead><tbody>
       {visible.map(line => { const due=deadline(line), stage=stageOf(line), supplier=supplierOf(line,data.catalog),product=productOf(line,data.catalog); return <tr key={line.id} className="border-t hover:bg-gray-50">
-        <td className="p-3 min-w-48"><div className="flex gap-3">{(line.source.thumbnail_url||product?.photo_url)&&<img src={line.source.thumbnail_url||product.photo_url} alt="" className="w-12 h-16 rounded object-cover" loading="lazy"/>}<div><div className="font-medium">{line.source.title || 'Article sans titre'}</div><div className={skuOf(line)?'text-gray-500 text-xs':'text-amber-700 text-xs'}>{skuOf(line)||'SKU à renseigner'}</div></div></div></td>
+        <td className="p-3 min-w-48"><div className="flex gap-3">{(line.source.thumbnail_url||product?.photo_url)&&<img src={line.source.thumbnail_url||product.photo_url} alt="" className="w-12 h-16 rounded object-cover" loading="lazy"/>}<div className="min-w-0"><div className="font-medium">{line.source.title || 'Article sans titre'}</div>
+          {skuEditing?.id===line.id?<form className="mt-2 space-y-2 min-w-52 max-w-sm" aria-label={`SKU de ${line.source.title||'cet article'}`} onSubmit={e=>{e.preventDefault();run(saveSku)}} onKeyDown={e=>{if(e.key==='Escape'&&!busy){setSkuEditing(null);setError('')}}}>
+            <label className="block text-xs text-gray-600">SKU Shein<input autoFocus required disabled={busy} autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={200} placeholder="Ex. sz25052272411726746" className={`${input} mt-1`} value={skuEditing.sku} onChange={e=>setSkuEditing({...skuEditing,sku:e.target.value})}/></label>
+            <p className="text-xs text-gray-500">Colle la référence de l’article Shein. La recherche démarrera automatiquement.</p>
+            {error&&<p role="alert" className="text-xs text-red-700">{error}</p>}
+            <div className="flex flex-wrap gap-2"><button disabled={busy||!skuEditing.sku.trim()} className="rounded-md bg-teal-700 text-white px-3 py-2 text-xs disabled:opacity-40">{busy?'Enregistrement…':'Enregistrer le SKU'}</button><button type="button" disabled={busy} onClick={()=>{setSkuEditing(null);setError('')}} className="text-xs px-2 py-2">Annuler</button></div>
+          </form>:<><div className={skuOf(line)?'text-gray-500 text-xs break-all':'text-amber-700 text-xs'}>{skuOf(line)||'SKU à renseigner'}</div>{!blocked(line)&&<button disabled={busy} onClick={()=>editSku(line)} className={`mt-2 text-xs ${skuOf(line)?'text-teal-700 underline':'rounded-md bg-teal-700 text-white px-3 py-2'}`}>{skuOf(line)?'Modifier le SKU':'Ajouter le SKU Shein'}</button>}</>}
+        </div></div></td>
         <td className="p-3"><div>{line.order.account_login || 'Compte inconnu'}</div><div>{money(line.source.selling_price,line.order.currency)}</div><small className="text-gray-500">{ORDER_LABELS[line.order.status] || 'Statut à vérifier'}</small></td>
         <td className="p-3 min-w-48">
           {supplier&&<a className="text-teal-700 underline" href={supplier} target="_blank" rel="noreferrer">Ouvrir la fiche Shein</a>}

@@ -1,7 +1,7 @@
 import { readPage } from '../server/pagination.js'
 import { randomUUID } from 'node:crypto'
 import { authorize } from '../server/auth.js'
-import { AppError, normalizeOrders, readDotbPage, validateEdit } from '../server/dotb.js'
+import { AppError, normalizeOrders, readDotbPage, validateEdit, validateSaleSku } from '../server/dotb.js'
 import { STAGES } from '../src/lib/fulfillment.js'
 import {readTrackingPeriod} from '../server/tracking.js'
 import {automationStatus,enableSalesAutomation} from '../server/sales-automation.js'
@@ -15,6 +15,7 @@ const errorMessages = {
   purchase_details_required: 'Renseignez le SKU, le lien fournisseur et le numéro de commande Shein avant de continuer.',
   bundle_not_ready: 'Préparez tous les articles de cette vente en lot avant de confirmer le dépôt.',
   line_not_found: 'Cet article n’est plus disponible.', sync_lease_expired: 'La synchronisation a expiré. Vous pouvez la reprendre.',
+  invalid_sku: 'Colle le SKU Shein seul, sans lien ni espaces.',
 }
 
 export default async function handler(req, res) {
@@ -66,6 +67,12 @@ export default async function handler(req, res) {
     }
     const body = req.body
     if (!body || typeof body !== 'object') throw new AppError('Formulaire invalide.')
+    if (body.action === 'sku') {
+      const sku = validateSaleSku(body)
+      const { error } = await db.rpc('save_sales_sku', { p_id: body.id, p_version: body.updated_at, p_sku: sku, p_user: user.id })
+      fail(error)
+      return res.json({ saved: true, sku })
+    }
     let edit = null, product = null, stage = null
     if (body.action === 'advance') {
       if (!STAGES.some(s=>s.id===body.stage) || typeof body.id !== 'string' || body.id.length>80 || !Number.isFinite(Date.parse(body.updated_at))) throw new AppError('Étape invalide.')
