@@ -8,10 +8,12 @@ export function resourceValue(body) {
   if(!body||!isId(body.id)||!['prompt','background'].includes(body.kind))throw new AppError('Ressource invalide.')
   const value=(key,max,trim=true)=>{
     const text=body[key]??''
-    if(typeof text!=='string'||text.length>max)throw new AppError(`Le champ ${key==='content'?'prompt':key==='title'?'titre':key==='category'?'catégorie':'notes'} est trop long ou invalide.`)
+    if(typeof text!=='string'||text.length>max)throw new AppError(`Le champ ${key==='content_back'?'prompt arrière':key==='content'?'prompt':key==='title'?'titre':key==='category'?'catégorie':'notes'} est trop long ou invalide.`)
     return trim?text.trim():text
   }
   const result={id:body.id,kind:body.kind,title:value('title',120),category:value('category',60),content:value('content',50000,false),notes:value('notes',3000,false)}
+  // Older open tabs omit this field: do not erase an already saved rear prompt.
+  if(Object.hasOwn(body,'content_back'))result.content_back=value('content_back',50000,false)
   if(!result.title)throw new AppError('Donne un titre à cette ressource.')
   if(result.kind==='prompt'&&!result.content.trim())throw new AppError('Ajoute le texte du prompt.')
   if(body.image_path!==null&&body.image_path!==undefined&&(typeof body.image_path!=='string'||body.image_path.length>300))throw new AppError('Image invalide.')

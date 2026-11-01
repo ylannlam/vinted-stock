@@ -7,7 +7,7 @@ const check=e=>{if(e)throw e}
 export function resourcesHandler(authorizer=authorize) {
 return async function handler(req,res) {
   res.setHeader('Cache-Control','no-store')
-  if(!['GET','POST','PATCH'].includes(req.method)){res.setHeader('Allow','GET, POST, PATCH');return res.status(405).end()}
+  if(!['GET','POST','PATCH','DELETE'].includes(req.method)){res.setHeader('Allow','GET, POST, PATCH, DELETE');return res.status(405).end()}
   try {
     const auth=await authorizer(req,res,['admin']);if(!auth)return
     const {db,user}=auth
@@ -28,6 +28,15 @@ return async function handler(req,res) {
     if(!isId(body.id))throw new AppError('Ressource invalide.')
     const existing=await db.from('creative_resources').select('*').eq('id',body.id).maybeSingle();check(existing.error)
     const current=existing.data
+    if(req.method==='DELETE') {
+      if(body.action!=='delete')throw new AppError('Action inconnue.')
+      if(!current)return res.json({deleted:true,id:body.id})
+      if(!Number.isInteger(body.version)||body.version!==current.version)throw new AppError('Cette ressource a changé. Actualise avant de la supprimer.',409)
+      const removed=await db.from('creative_resources').delete().eq('id',body.id).eq('version',body.version).select('id').maybeSingle();check(removed.error)
+      if(!removed.data)throw new AppError('Cette ressource a changé. Actualise avant de la supprimer.',409)
+      // Images can be shared with legacy backgrounds; never delete shared storage here.
+      return res.json({deleted:true,id:body.id})
+    }
     if(body.action==='download') {
       if(!current?.image_path)throw new AppError('Image introuvable.',404)
       const name=current.title.replace(/[^\p{L}\p{N} _-]/gu,'').slice(0,100)||'fond'
@@ -37,7 +46,7 @@ return async function handler(req,res) {
     // A create request may have succeeded before its network response was lost.
     if(current&&body.action==='save'&&body.version==null&&current.created_by===user.id) {
       const value=resourceValue(body)
-      if(['kind','title','category','content','notes'].every(k=>value[k]===current[k])&&(body.image_path||null)===current.image_path)
+      if(['kind','title','category','content','notes'].every(k=>value[k]===current[k])&&(value.content_back===undefined||value.content_back===(current.content_back||''))&&(body.image_path||null)===current.image_path)
         return res.json({saved:true,resource:(await attachImages(db,[current]))[0]})
     }
     if(current && (!Number.isInteger(body.version)||body.version!==current.version))throw new AppError('Cette ressource a changé. Actualise avant de réessayer ; ton texte reste dans le formulaire.',409)

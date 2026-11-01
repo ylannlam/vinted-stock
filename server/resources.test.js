@@ -43,15 +43,16 @@ function database(initial=[]) {
   const rows=structuredClone(initial)
   const db={rows,from(table){
     assert.equal(table,'creative_resources')
-    let filters=[],patch=null,insert=null,head=false,single=false,start=0,end=Infinity
+    let filters=[],patch=null,insert=null,head=false,single=false,start=0,end=Infinity,remove=false
     const result=()=>{
       let data=rows.filter(r=>filters.every(([k,v])=>r[k]===v))
       if(insert){if(rows.some(r=>r.id===insert.id))return {error:{code:'23505'}};const row={version:1,favorite:false,archived_at:null,...insert};rows.push(row);data=[row]}
       if(patch)data.forEach(r=>Object.assign(r,patch))
+      if(remove)data.forEach(r=>rows.splice(rows.indexOf(r),1))
       const count=data.length;data=data.slice(start,end+1)
       return {data:head?null:structuredClone(single?data[0]||null:data),count,error:null}
     }
-    const q={select(_s,options={}){head=!!options.head;return q},order(){return q},eq(k,v){filters.push([k,v]);return q},range(a,b){start=a;end=b;return q},update(p){patch=p;return q},insert(p){insert=p;return q},maybeSingle(){single=true;return Promise.resolve(result())},single(){return q.maybeSingle()},then(resolve){return Promise.resolve(result()).then(resolve)}};return q
+    const q={delete(){remove=true;return q},select(_s,options={}){head=!!options.head;return q},order(){return q},eq(k,v){filters.push([k,v]);return q},range(a,b){start=a;end=b;return q},update(p){patch=p;return q},insert(p){insert=p;return q},maybeSingle(){single=true;return Promise.resolve(result())},single(){return q.maybeSingle()},then(resolve){return Promise.resolve(result()).then(resolve)}};return q
   },storage:{getBucket:async()=>({data:{public:false}}),from(bucket){return {
     info:async path=>{assert.equal(bucket,'creative-assets');return {data:{contentType:'image/png',size:100}}},
     createSignedUrls:async paths=>({data:paths.map(path=>({path,signedUrl:`https://example.test/${path}`}))}),
@@ -86,8 +87,36 @@ test('API accepts only the current legacy image or an owned verified upload, and
   assert.equal((await call(db,{action:'upload',type:'image/png',size:100})).code,200)
 })
 test('resource API refuses unauthenticated reads, uploads, saves, downloads and archives',async()=>{
-  for(const [method,action] of [['GET',null],['POST','upload'],['POST','save'],['POST','download'],['PATCH','archive']]){
+  for(const [method,action] of [['GET',null],['POST','upload'],['POST','save'],['POST','download'],['PATCH','archive'],['DELETE','delete']]){
     const res=response();await handler({method,headers:{},body:{action},query:{}},res)
     assert.equal(res.code,401);assert.equal(res.headers['Cache-Control'],'no-store')
+  }
+})
+
+test('front and rear prompts persist independently, old clients preserve rear text, and search finds it',async()=>{
+  const db=database(),body={...form({kind:'background',image_path:asset,content_back:'  Vue arrière\nGarder les coutures.  '}),action:'save'}
+  assert.equal((await call(db,body)).body.resource.content_back,body.content_back)
+  assert.equal((await call(db,body)).code,200)
+  assert.equal((await call(db,{...body,content_back:'Other'})).code,409)
+  const oldClient={...body,version:1,content:'Nouveau devant'};delete oldClient.content_back
+  const updated=(await call(db,oldClient)).body.resource
+  assert.equal(updated.content_back,body.content_back)
+  assert.equal(filterResources([updated],{search:'coutures'}).length,1)
+  const cleared=(await call(db,{...oldClient,version:2,content_back:''})).body.resource
+  assert.equal(cleared.content_back,'');assert.equal(cleared.content,'Nouveau devant')
+  assert.throws(()=>resourceValue({...body,content_back:'x'.repeat(50001)}))
+  assert.throws(()=>resourceValue({...body,content_back:{}}))
+})
+
+test('deletion rejects stale versions, removes either kind and safely retries after a lost response',async()=>{
+  for(const kind of ['prompt','background']){
+    const db=database([{...form({kind,image_path:kind==='background'?asset:null,content_back:'Dos'}),version:3}])
+    assert.equal((await call(db,{id,action:'delete',version:2},'DELETE')).code,409)
+    assert.equal(db.rows.length,1)
+    assert.equal((await call(db,{id,action:'delete'},'DELETE')).code,409)
+    const body={id,action:'delete',version:3}
+    assert.equal((await call(db,body,'DELETE')).body.deleted,true)
+    assert.equal(db.rows.length,0)
+    assert.equal((await call(db,body,'DELETE')).body.deleted,true)
   }
 })

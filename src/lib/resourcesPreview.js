@@ -10,6 +10,10 @@ export async function resourcesPreview(method='GET',body) {
   const old=rows.find(r=>r.id===body.id)
   if(body.action==='download')return {url:old.image_url}
   if(old&&old.version!==body.version)throw Error('Cette ressource a changé. Actualise la bibliothèque.')
+  if(method==='DELETE'&&body.action==='delete'){
+    if(old)rows.splice(rows.indexOf(old),1)
+    return {deleted:true,id:body.id}
+  }
   let value
   if(body.action==='save')value={...old,...body,image_url:images.get(body.image_path)||old?.image_url||null}
   else if(body.action==='favorite')value={...old,favorite:body.favorite}

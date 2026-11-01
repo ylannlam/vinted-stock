@@ -10,7 +10,7 @@ export function filterResources(rows,{tab='all',search='',category='',favorites=
   return rows.filter(r=>(tab==='archived'?!!r.archived_at:!r.archived_at)
     &&(!['prompt','background'].includes(tab)||r.kind===tab)
     &&(!favorites||r.favorite)&&(!category||r.category===category)
-    &&(!term||fold([r.title,r.category,r.content,r.notes].join(' ')).includes(term)))
+    &&(!term||fold([r.title,r.category,r.content,r.content_back,r.notes].join(' ')).includes(term)))
     .sort((a,b)=>sort==='name'?a.title.localeCompare(b.title,'fr'):
       sort==='favorites'?Number(b.favorite)-Number(a.favorite)||Date.parse(b.updated_at)-Date.parse(a.updated_at):Date.parse(b.updated_at)-Date.parse(a.updated_at))
 }
