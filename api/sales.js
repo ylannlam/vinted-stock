@@ -31,7 +31,13 @@ export default async function handler(req, res) {
         const filters=salesFilters(req.query)
         const {data,error}=await db.rpc('sales_workspace_page',{p_filters:filters,p_known_revision:typeof req.query.revision==='string'?req.query.revision:null});fail(error)
         if(data.unchanged)return res.json(data)
-        return res.json({...data,tracking,automation:await automationStatus(db),connected:!!process.env.DOTB_API_TOKEN})
+        const [syncState,automation]=await Promise.all([
+          db.from('dotb_sync_state').select('cursor,last_completed_at,processed').eq('id',true).single(),
+          automationStatus(db),
+        ])
+        fail(syncState.error)
+        return res.json({...data,tracking,automation,connected:!!process.env.DOTB_API_TOKEN,
+          last_sync:syncState.data.last_completed_at,resume:!!syncState.data.cursor,processed:syncState.data.processed})
       }
       const offset = Number(req.query?.offset || 0)
       if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1000000) throw new AppError('Page invalide.')
