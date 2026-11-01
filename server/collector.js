@@ -46,18 +46,6 @@ export async function authorizeCollector(req) {
 
 export async function resumeOpenCollection(db,device,job) {
   if(!device.enabled)throw new AppError('Ce PC est en pause. Reprends la récupération sur le site.',409)
-  if(job.expected_sku) {
-    const [known,included]=await Promise.all([
-      db.from('catalog_dotb_items').select('id').eq('sku',job.expected_sku).limit(1),
-      db.from('catalog_tracked_items').select('id').eq('sku',job.expected_sku).limit(1)
-    ])
-    if(known.error||included.error)throw known.error||included.error
-    if(known.data.length&&!included.data.length)throw new AppError('Ce SKU est exclu du suivi ou reste à classer dans le catalogue.',409)
-  } else if(job.product_id) {
-    const tracked=await db.from('catalog_tracked_products').select('id').eq('id',job.product_id).maybeSingle()
-    if(tracked.error)throw tracked.error
-    if(!tracked.data)throw new AppError('Cette fiche a été retirée du suivi.',409)
-  }
   const {data,error}=await db.from('catalog_collection_jobs').update({status:'running',lease:randomUUID(),
     lease_expires_at:new Date(Date.now()+180000).toISOString(),finished_at:null,message:null})
     .eq('id',job.id).eq('collector_id',device.id).eq('lease',job.lease).eq('status','blocked').select('*').maybeSingle()

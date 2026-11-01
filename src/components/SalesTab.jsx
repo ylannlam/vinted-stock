@@ -5,7 +5,6 @@ import { STAGES, skuOf, supplierOf, productOf, stageOf, blocked, deadline, money
 
 export default function SalesTab({ isAdmin, request = defaultRequest }) {
   const [data, setData] = useState({ lines: [], catalog: [] })
-  const [scope,setScope]=useState('active')
   const [filter, setFilter] = useState('all'), [search, setSearch] = useState('')
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
   const [editing, setEditing] = useState(null)
@@ -44,7 +43,7 @@ export default function SalesTab({ isAdmin, request = defaultRequest }) {
     } while(page.has_more)
     await load(); setNotice('Synchronisation terminée. Les données de préparation ont été conservées.')
   }
-  const scoped=data.lines.filter(l=>scope==='active'?l.tracking_status!=='excluded':(l.tracking_status||'unclassified')===scope)
+  const scoped=data.lines
   const active = scoped.filter(l => !blocked(l))
   const visible = scoped.filter(l => (filter === 'all' || (filter === 'review' ? blocked(l) : !blocked(l) && stageOf(l) === filter)) &&
     `${l.source.title || ''} ${skuOf(l)} ${l.order.account_login || ''} ${l.supplier_order_ref || ''}`.toLowerCase().includes(search.toLowerCase()))
@@ -62,14 +61,13 @@ export default function SalesTab({ isAdmin, request = defaultRequest }) {
     <div className="border rounded-lg bg-white p-4 text-sm flex flex-wrap justify-between items-center gap-3">
       <div><p className="font-medium text-gray-900">{data.automation?.enabled?'Réception automatique des ventes activée':'Réception automatique des ventes'}</p>
         <p className="text-gray-500 mt-1">{data.automation?.enabled?'Dès que Dotb reçoit une vente, elle arrive ici. La page se met à jour automatiquement.':'La connexion se configure à l’ouverture par un administrateur.'}</p>
-        <p className="text-gray-500 text-xs mt-1">Les fiches Shein des articles suivis se complètent avec le SKU. Garde le navigateur et la récupération Shein actifs.</p>
+        <p className="text-gray-500 text-xs mt-1">Les fiches Shein se complètent automatiquement avec le SKU de chaque vente. Garde le navigateur et la récupération Shein actifs.</p>
         {data.automation?.last_received_at&&<p className="text-xs text-teal-700 mt-1">Dernière réception : {new Date(data.automation.last_received_at).toLocaleString('fr-FR')}</p>}
         {data.automation?.error&&<p className="text-amber-700 mt-1">{data.automation.error}</p>}
       </div>
       {isAdmin&&!data.automation?.enabled&&<button disabled={busy||!data.connected} onClick={()=>run(async()=>{await request('POST',{action:'automation'});await load()})} className="border rounded-lg px-3 py-2 disabled:opacity-40">Activer la réception automatique</button>}
     </div>
-    <TrackingPeriod period={data.tracking}>Les ventes d’articles non classés restent à part. Classe leurs annonces dans Catalogue → Articles à classer.</TrackingPeriod>
-    <div className="flex gap-2 flex-wrap">{[['active','Ventes à suivre'],['included','Articles suivis'],['unclassified','À classer'],['excluded','Articles exclus']].map(([key,label])=><button key={key} className={`border rounded-lg px-3 py-2 text-sm ${scope===key?'bg-teal-700 text-white':'bg-white'}`} onClick={()=>{setScope(key);setFilter('all')}}>{label} · {data.lines.filter(l=>key==='active'?l.tracking_status!=='excluded':(l.tracking_status||'unclassified')===key).length}</button>)}</div>
+    <TrackingPeriod period={data.tracking}>Toutes les ventes de cette période sont suivies automatiquement, quelle que soit la date de création de l’annonce.</TrackingPeriod>
     {error && <div role="alert" className="bg-red-50 border border-red-200 p-3 rounded-lg text-red-800 text-sm">{error}</div>}
     {notice && <p role="status" className="text-sm text-teal-800">{notice}</p>}
     {data.setup_required ? <div className="bg-amber-50 border border-amber-200 rounded-lg p-4"><h2 className="font-semibold">Activation du suivi nécessaire</h2><p className="text-sm mt-1">La nouvelle structure de données doit être installée avant le premier import. Le stock existant reste disponible dans les autres onglets.</p></div> : data.connected === false && <p className="bg-amber-50 p-3 rounded-lg text-sm">La connexion Dotb n’est pas encore activée. Les ventes déjà importées restent consultables.</p>}
@@ -81,11 +79,11 @@ export default function SalesTab({ isAdmin, request = defaultRequest }) {
     <input aria-label="Rechercher une vente" className={input} placeholder="Rechercher un article, un SKU, un compte ou une commande Shein…" value={search} onChange={e=>setSearch(e.target.value)} />
     <div className="overflow-x-auto border rounded-lg bg-white"><table className="w-full text-sm text-left"><thead className="bg-gray-50 text-gray-500 text-xs"><tr>{['Article / SKU','Compte / Vente','Fiche Shein','Approvisionnement','Échéance','Actions'].map(t=><th key={t} className="p-3">{t}</th>)}</tr></thead><tbody>
       {visible.map(line => { const due=deadline(line), stage=stageOf(line), supplier=supplierOf(line,data.catalog),product=productOf(line,data.catalog); return <tr key={line.id} className="border-t hover:bg-gray-50">
-        <td className="p-3 min-w-48"><div className="flex gap-3">{(line.source.thumbnail_url||product?.photo_url)&&<img src={line.source.thumbnail_url||product.photo_url} alt="" className="w-12 h-16 rounded object-cover" loading="lazy"/>}<div><div className="font-medium">{line.source.title || 'Article sans titre'}</div><div className={skuOf(line)?'text-gray-500 text-xs':'text-amber-700 text-xs'}>{skuOf(line)||'SKU à renseigner'}</div>{line.tracking_status==='unclassified'&&<span className="text-xs text-amber-700">Article à classer · hors statistiques</span>}</div></div></td>
+        <td className="p-3 min-w-48"><div className="flex gap-3">{(line.source.thumbnail_url||product?.photo_url)&&<img src={line.source.thumbnail_url||product.photo_url} alt="" className="w-12 h-16 rounded object-cover" loading="lazy"/>}<div><div className="font-medium">{line.source.title || 'Article sans titre'}</div><div className={skuOf(line)?'text-gray-500 text-xs':'text-amber-700 text-xs'}>{skuOf(line)||'SKU à renseigner'}</div></div></div></td>
         <td className="p-3"><div>{line.order.account_login || 'Compte inconnu'}</div><div>{money(line.source.selling_price,line.order.currency)}</div><small className="text-gray-500">{ORDER_LABELS[line.order.status] || 'Statut à vérifier'}</small></td>
         <td className="p-3 min-w-48">
           {supplier&&<a className="text-teal-700 underline" href={supplier} target="_blank" rel="noreferrer">Ouvrir la fiche Shein</a>}
-          {product?.price!=null?<><div className="font-semibold mt-1">{money(product.price,product.currency)}</div><p className="text-xs text-gray-500">Prix relevé{product.color?` · ${product.color}`:''} · hors coupons</p><p className="text-xs text-gray-500">Relevé le {new Date(product.observed_at).toLocaleString('fr-FR')}</p></>:<p className="text-xs text-gray-500 mt-1">{!skuOf(line)?'Ajoute le SKU Shein pour retrouver la fiche.':line.tracking_status!=='included'?'Classe cet article dans le Catalogue pour lancer la récupération.':product?.retrieval_status==='running'?'Récupération Shein en cours…':product?.retrieval_status==='queued'?'En attente du navigateur Shein.':['blocked','failed'].includes(product?.retrieval_status)?product.retrieval_message||'Fiche à vérifier dans la Bibliothèque.':'Fiche Shein à récupérer.'}</p>}
+          {product?.price!=null?<><div className="font-semibold mt-1">{money(product.price,product.currency)}</div><p className="text-xs text-gray-500">Prix relevé{product.color?` · ${product.color}`:''} · hors coupons</p><p className="text-xs text-gray-500">Relevé le {new Date(product.observed_at).toLocaleString('fr-FR')}</p></>:<p className="text-xs text-gray-500 mt-1">{!skuOf(line)?'Ajoute le SKU Shein pour retrouver la fiche.':product?.retrieval_status==='running'?'Récupération Shein en cours…':product?.retrieval_status==='queued'?'En attente du navigateur Shein.':['blocked','failed'].includes(product?.retrieval_status)?product.retrieval_message||'Fiche à vérifier dans la Bibliothèque.':'Fiche Shein à récupérer.'}</p>}
         </td>
         <td className="p-3"><span className="bg-teal-50 text-teal-800 rounded px-2 py-1 text-xs">{STAGES.find(s=>s.id===stage)?.label}</span><div className="text-xs text-gray-500 mt-2">{line.supplier_order_ref || 'Commande Shein non renseignée'}</div>{line.location && <small>Emplacement : {line.location}</small>}</td>
         <td className={`p-3 whitespace-nowrap ${due?.urgent?'text-red-700':'text-gray-500'}`}>{due?.text || '—'}</td>
@@ -93,7 +91,7 @@ export default function SalesTab({ isAdmin, request = defaultRequest }) {
           {!blocked(line) && nextStage(line) && <button disabled={busy} onClick={()=>run(async()=>{ if(nextStage(line)==='shipped' && !window.confirm('Confirmer que cet article a été déposé auprès du transporteur ?')) return; await request('PATCH',{action:'advance',id:line.id,updated_at:line.updated_at,stage:nextStage(line)}); await load() })} className="border rounded px-2 py-1 text-xs">{STAGES.find(s=>s.id===stage)?.action} →</button>}
           {line.order.label_url && <a href={line.order.label_url} target="_blank" rel="noreferrer" className="text-xs underline">Bordereau</a>}</div></td>
       </tr>})}
-      {!visible.length && <tr><td colSpan="6" className="text-center py-16 text-gray-500">{busy?'Chargement…':scoped.length?'Aucune vente ne correspond à ces filtres.':data.automation?.enabled?'Les prochaines ventes reçues par Dotb apparaîtront ici automatiquement.':data.tracking?'Aucune vente dans ce groupe sur cette période. Synchronise Dotb puis classe les articles dans le Catalogue.':'Aucune vente importée. Connectez Dotb puis lancez une synchronisation.'}</td></tr>}
+      {!visible.length && <tr><td colSpan="6" className="text-center py-16 text-gray-500">{busy?'Chargement…':scoped.length?'Aucune vente ne correspond à ces filtres.':data.automation?.enabled?'Les prochaines ventes reçues par Dotb apparaîtront ici automatiquement.':data.tracking?'Aucune vente sur cette période. Synchronise Dotb pour récupérer les ventes récentes.':'Aucune vente importée. Connectez Dotb puis lancez une synchronisation.'}</td></tr>}
     </tbody></table></div>
     <p className="text-xs text-gray-500">Dernier import complet : {data.last_sync ? new Date(data.last_sync).toLocaleString('fr-FR') : 'aucun'} · Les étapes de préparation sont propres à votre site. Les prix fournisseurs sont consultables dans le Catalogue.</p>
     {editing && <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto p-4 flex items-start justify-center" onKeyDown={e=>{if(e.key==='Escape'&&!busy)setEditing(null)}}>

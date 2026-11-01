@@ -25,24 +25,18 @@ export default async function handler(req, res) {
       if (!Number.isSafeInteger(offset) || offset<0 || offset>1000000) throw new AppError('Page invalide.')
       const { data:state,error } = await db.from('catalog_sync_state').select('cursor,processed,last_completed_at').eq('id',true).single()
       check(error)
-      const [products,items,links,sales,review] = await Promise.all([
+      const [products,items,links,sales] = await Promise.all([
         readPage(head=>db.from('catalog_tracked_products').select('*',{count:'exact',head}).order('created_at',{ascending:false}).order('id'),offset),
         readPage(head=>db.from('catalog_tracked_items').select('*',{count:'exact',head}).order('id'),offset),
         readPage(head=>db.from('catalog_tracked_links').select('*',{count:'exact',head}).order('sku'),offset),
         readPage(head=>db.from('catalog_sales_by_sku').select('*',{count:'exact',head}).order('sku').order('currency'),offset),
-        readPage(head=>db.from('catalog_dotb_items').select('*',{count:'exact',head}).order('id'),offset),
       ])
-      return res.json({products:products.data,items:items.data,links:links.data,sales:sales.data,review_items:review.data,review_count:review.count,tracking,sales_count:sales.count,product_count:products.count,item_count:items.count,link_count:links.count,
+      return res.json({products:products.data,items:items.data,links:links.data,sales:sales.data,tracking,sales_count:sales.count,product_count:products.count,item_count:items.count,link_count:links.count,
         connected:!!process.env.DOTB_API_TOKEN,resume:!!state.cursor,processed:state.processed,last_sync:state.last_completed_at})
     }
     if (role!=='admin') throw new AppError('Seul un administrateur peut modifier le catalogue.',403)
     const body=req.body
     if (!body || typeof body!=='object') throw new AppError('Formulaire invalide.')
-    if(req.method==='PATCH'&&body.action==='classify') {
-      if(!Array.isArray(body.ids)||body.ids.length<1||body.ids.length>100||body.ids.some(id=>!isId(id))||new Set(body.ids).size!==body.ids.length||!['included','excluded','unclassified'].includes(body.status))throw new AppError('Sélectionne entre 1 et 100 articles et leur période.')
-      const r=await db.rpc('classify_catalog_items',{p_ids:body.ids,p_status:body.status});check(r.error)
-      return res.json({saved:true,classified:r.data})
-    }
     if(req.method==='POST' && body.action==='supplier') {
       const product=validateSupplierAssociation(body)
       const {data,error}=await db.rpc('create_catalog_product_for_sku',{p_sku:product.sku,p_supplier_id:product.supplier_id,p_supplier_url:product.supplier_url,p_updated:body.updated_at})

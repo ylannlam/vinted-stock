@@ -159,7 +159,7 @@ test('resume renews only the blocked job owned by this PC, refusing paused or su
   let update,filters=[]
   const query={update:p=>(update=p,query),eq:(k,v)=>(filters.push([k,v]),query),select:()=>query,maybeSingle:async()=>({data:{id:'job',lease:update.lease}})}
   const db={from:name=>{assert.equal(name,'catalog_collection_jobs');return query}}
-  const row={id:'job',lease:'old'},device={id:'device',enabled:true}
+  const row={id:'job',lease:'old',expected_sku:'sz-previously-unclassified'},device={id:'device',enabled:true}
   const saved=await resumeOpenCollection(db,device,row)
   assert.notEqual(saved.lease,'old');assert.equal(update.status,'running')
   assert.deepEqual(filters,[['id','job'],['collector_id','device'],['lease','old'],['status','blocked']])

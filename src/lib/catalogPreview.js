@@ -5,9 +5,7 @@ const products=[product],items=[{id:'demo-item',sku:'sz-DEMO',title:'Robe midi �
 const observations=[{id:crypto.randomUUID(),product_id:product.id,price:18.08,currency:'EUR',size:'M',color:'Nude',availability:'available',observed_at:new Date().toISOString()},{id:crypto.randomUUID(),product_id:product.id,price:19.90,currency:'EUR',size:'M',color:'Nude',availability:'available',observed_at:new Date(Date.now()-86400000).toISOString()}]
 Object.assign(product,{collection_status:'completed',price_scope:'product',size:'',last_checked_at:new Date().toISOString(),next_check_at:new Date(Date.now()+21600000).toISOString(),sizes:[{size:'S',availability:'available'},{size:'M',availability:'available'},{size:'L',availability:'unavailable'}],description:'Exemple de description récupérée sur la fiche fournisseur.',details:[{name:'Taille · Tour de poitrine',value:'M · 92 cm'}]})
 const sales=[{sku:'sz-DEMO',currency:'EUR',quantity:8,known_prices:8,revenue:320,last_sale:new Date().toISOString()}]
-const tracking={starts_at:'2026-10-29T23:00:00Z',time_zone:'Europe/Paris'}
-items[0].tracking_status='included'
-items.push({id:'22222222-2222-4222-8222-222222222222',sku:'sz-DEMO-RECENT',title:'Article à classer · exemple',tracking_status:'unclassified'})
+const tracking={starts_at:'2026-10-30T23:00:00Z',time_zone:'Europe/Paris'}
 const devices=[],jobs=Array.from({length:4},(_,i)=>({id:crypto.randomUUID(),reference_key:`sku:sz-DEMO-${i+1}`,input:`sz-DEMO-${i+1}`,expected_sku:`sz-DEMO-${i+1}`,status:i%2?'failed':'blocked',message:'Exemple de fiche à relancer.',created_at:new Date(Date.now()-(i+1)*60000).toISOString()}))
 let browserState={version:'0.4.0',connected:false,enabled:false,phase:'idle',message:'Navigateur prêt à être connecté.'}
 export async function collectorBridgePreview(action='status') {
@@ -30,10 +28,8 @@ export async function collectorPreview(method='GET',body) {
 export async function catalogPreview(method='GET',body,query='') {
   if(method==='GET' && query.includes('product_id'))return {observations:structuredClone(observations),count:observations.length}
   if(method==='GET'){
-    const active=items.filter(i=>i.tracking_status==='included'),activeLinks=links.filter(l=>active.some(i=>i.sku===l.sku)),activeProducts=products.filter(p=>activeLinks.some(l=>l.product_id===p.id)||!links.some(l=>l.product_id===p.id)),activeSales=sales.filter(s=>active.some(i=>i.sku===s.sku))
-    return structuredClone({products:activeProducts,items:active,links:activeLinks,sales:activeSales,review_items:items,review_count:items.length,tracking,product_count:activeProducts.length,item_count:active.length,link_count:activeLinks.length,sales_count:activeSales.length,connected:true,last_sync:new Date().toISOString()})
+    return structuredClone({products,items,links,sales,tracking,product_count:products.length,item_count:items.length,link_count:links.length,sales_count:sales.length,connected:true,last_sync:new Date().toISOString()})
   }
-  if(body.action==='classify'){items.filter(i=>body.ids.includes(i.id)).forEach(i=>i.tracking_status=body.status);return {saved:true,classified:body.ids.length}}
   if(body.action==='sync')return {has_more:false,processed:1}
   if(body.action==='supplier'){
     const valid=validateSupplierAssociation(body)

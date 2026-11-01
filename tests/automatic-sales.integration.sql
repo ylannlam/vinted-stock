@@ -7,7 +7,7 @@ declare
   orders jsonb; lines jsonb; notification jsonb; changed boolean; product uuid; result record;
 begin
   line_id:=sale::text||':'||item::text;
-  insert into public.catalog_dotb_items(id,sku,title,synced_at,tracking_status) values(listing,sku,'Test',now(),'included');
+  insert into public.catalog_dotb_items(id,sku,title,synced_at,tracking_status) values(listing,sku,'Test',now(),'unclassified');
   orders:=jsonb_build_array(jsonb_build_object('id',sale,'status','label_sent','currency','EUR','order_date',now(),'synced_at',now()));
   lines:=jsonb_build_array(jsonb_build_object('id',line_id,'order_id',sale,'dotb_item_id',item,'source',jsonb_build_object('title','Test','sku',sku,'selling_price','35.00','dotb_listing_id',listing)));
   notification:=jsonb_build_object('id',event,'type','order.created','order_id',sale,'created_at',now());
@@ -28,11 +28,13 @@ begin
   update public.sales_orders set status='label_sent' where id=sale;
   update public.sales_lines set stage='to_order' where id=line_id;
   update public.catalog_collection_jobs set status='excluded',created_at=now()-interval '2 hours' where expected_sku=sku;
-  assert public.queue_sales_sources(array[sale])=0,'unclassified items must not be collected implicitly';
+  assert public.queue_sales_sources(array[sale])=1,'unclassified listing must not block a recent sale';
+  update public.catalog_collection_jobs set status='excluded',created_at=now()-interval '2 hours' where expected_sku=sku;
   update public.catalog_dotb_items set tracking_status='excluded' where id=listing;
-  assert public.queue_sales_sources(array[sale])=0,'excluded items must not be collected';
+  assert public.queue_sales_sources(array[sale])=1,'legacy excluded listing must not block a recent sale';
+  update public.catalog_collection_jobs set status='excluded',created_at=now()-interval '2 hours' where expected_sku=sku;
   update public.catalog_dotb_items set tracking_status='included' where id=listing;
-  update public.sales_orders set order_date='2026-10-29T22:59:59Z' where id=sale;
+  update public.sales_orders set order_date=(select starts_at-interval '1 millisecond' from public.dotb_tracking_period) where id=sale;
   assert public.queue_sales_sources(array[sale])=0,'older sales must not be collected';
   insert into public.catalog_products(supplier_id,supplier_url,title,supplier_sku)
     values('999'||floor(random()*1000000000000)::bigint::text,'https://fr.shein.com/Test-p-999999999999.html','Test',sku) returning id into product;
