@@ -1,5 +1,13 @@
 import { supplierLink, sheinSearchUrl } from './catalog.js'
 
+export const extensionVersion='0.5.0'
+export function extensionNeedsUpdate(version) {
+  if(!/^\d+\.\d+\.\d+$/.test(version||''))return true
+  const installed=version.split('.').map(Number),current=extensionVersion.split('.').map(Number)
+  for(let i=0;i<3;i++){if(installed[i]!==current[i])return installed[i]<current[i]}
+  return false
+}
+
 export const collectionLabels = { queued: 'En attente', running: 'Import en cours', completed: 'Ajouté', blocked: 'À vérifier', failed: 'À réessayer' }
 
 // Display the latest outcome, not an old failure for a product imported successfully later.

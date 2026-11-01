@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Stock Vinted — bibliothèque Shein",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "minimum_chrome_version": "120",
   "description": "Traiter les liens et SKU ajoutés sur Stock Vinted et enregistrer les fiches Shein dans la bibliothèque.",
   "permissions": ["storage", "alarms", "scripting"],

@@ -1,4 +1,4 @@
-# Bibliothèque Shein — 0.4.0
+# Assistant Shein — 0.5.0
 
 Les commandes se trouvent dans **Catalogue**, sur https://vinted-stock.vercel.app. L’extension récupère les articles dans un onglet séparé de ton navigateur habituel.
 
@@ -7,10 +7,19 @@ Les commandes se trouvent dans **Catalogue**, sur https://vinted-stock.vercel.ap
 2. Dans `edge://extensions` ou `chrome://extensions`, active le mode développeur et charge ce dossier comme extension non empaquetée.
 3. Actualise le catalogue puis clique sur **Connecter et démarrer**. Aucun code à copier.
 
-Déjà associé en 0.3.0 ? Remplace les fichiers dans le même dossier et recharge l’extension, puis la page du catalogue. L’association existante est conservée. L’extension ne demande aucun domaine ou type de permission supplémentaire.
+Déjà associé en 0.3.0 ou 0.4.0 ? Mets les imports en pause, remplace les fichiers dans le même dossier, recharge l’extension puis la page du catalogue. Reprends les imports. L’association existante est conservée. L’extension ne demande aucun domaine ou type de permission supplémentaire.
+
+## Nouveau tableau de bord
+- État distinct : connecté, en pause, en cours, reconnexion ou intervention Shein.
+- Étapes de la fiche : recherche, lecture, contrôle, ajout.
+- Compteurs des fiches ajoutées et laissées à vérifier depuis l’association du navigateur.
+- Historique local des 12 dernières fiches, avec nombre de photos, tailles et champs facultatifs manquants. L’historique commence avec cette version ; les anciens compteurs restent conservés.
+- En cas de coupure réseau : tentative après 30 secondes, puis 60 secondes pour les échecs consécutifs. L’attente et le résultat à envoyer sont conservés après la suspension du navigateur. Une demande dont le bail a expiré doit être relancée depuis le catalogue.
+- Dans Aide et connexion : heure du dernier contact, diagnostic exportable sans identifiants ni données d’articles et connexion manuelle de secours.
+- Dans le catalogue : compteurs, version installée et accès permanent à la mise à jour.
 
 ## Utilisation
-- Colle un lien produit Shein ou un SKU dans **Ajouter des articles Shein**, puis clique sur **Ajouter les articles**. Plusieurs références : une par ligne, maximum 50.
+- Les ventes suivies dans Stock Vinted préparent automatiquement leur recherche Shein. Renseigne le SKU d’une vente s’il manque. Le parcours actuel est limité aux articles vendus ; l’extension ne crée pas un catalogue de produits non vendus.
 - Suis **En cours / À vérifier / Ajoutés** dans le catalogue. Une fiche sans couleur ou avec un prix illisible reste à vérifier ; les suivantes continuent. Les informations manquantes sont indiquées sur la fiche.
 - En cas de vérification Shein, utilise **Ouvrir Shein**, termine-la toi-même et clique sur **J’ai vérifié · reprendre** dans le catalogue. La vérification n’est ni résolue ni contournée automatiquement.
 - La récupération tente aussi d’ouvrir Description et Tailles & Mesures pour lire leur contenu affiché. Les informations absentes ne sont pas inventées.

@@ -1,6 +1,6 @@
 // Browser-independent state machine. Persist before navigation or sending a result.
 export const SITE = 'https://vinted-stock.vercel.app'
-export const initialState = () => ({enabled:false,phase:'idle',job:null,tabId:null,outbox:null,message:'Associe ton navigateur pour commencer.',completed:0})
+export const initialState = () => ({enabled:false,phase:'idle',job:null,tabId:null,outbox:null,message:'Connecte ton navigateur depuis le catalogue pour commencer.',completed:0,reviewed:0,history:[],failures:0,retryAt:null,lastContactAt:null})
 export function allowedPage(value) {
   try { const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password&&!u.port&&['fr.shein.com','www.shein.com'].includes(u.hostname) } catch { return false }
 }
@@ -43,7 +43,15 @@ export function createEngine(port) {
   let s
   const load=async()=>s={...initialState(),...await port.load()}
   const save=async patch=>{Object.assign(s,patch);await port.save(s)}
-  const api=body=>port.api(body)
+  const api=async body=>{
+    const response=await port.api(body)
+    await save({lastContactAt:port.now(),failures:0,retryAt:null})
+    return response
+  }
+  const record=(kind,result,code)=>({kind,at:port.now(),reference:s.job?.expected_sku||s.job?.input||'',title:result?.title||'',code:code||null,
+    photoCount:result?.photos?.length||0,sizeCount:result?.sizes?.length||0,
+    missing:result?[!result.description&&'description',!result.details?.length&&'détails',!result.sizes?.length&&'tailles'].filter(Boolean):[]})
+  const history=entry=>[entry,...(s.history||[])].slice(0,12)
   const jobBody=action=>({action,job_id:s.job.id,lease:s.job.lease})
   async function tab() {return s.tabId==null?null:port.tab(s.tabId)}
   async function navigate(url,phase) {
@@ -57,9 +65,9 @@ export function createEngine(port) {
   async function deliver() {
     const out=s.outbox
     await api(out)
-    if(out.action==='complete')await save({outbox:null,job:null,phase:'idle',completed:s.completed+1,message:'Fiche ajoutée à la bibliothèque. Recherche de la suivante…'})
+    if(out.action==='complete')await save({history:history(record('completed',out.result)),outbox:null,job:null,phase:'idle',blockedCode:null,completed:s.completed+1,message:'Fiche ajoutée à la bibliothèque. Recherche de la suivante…'})
     else if(['human_check','page_unavailable'].includes(out.code))await save({outbox:null,phase:'blocked'})
-    else await save({outbox:null,job:null,phase:'idle',reviewed:(s.reviewed||0)+1,
+    else await save({history:history(record('review',null,out.code)),outbox:null,job:null,phase:'idle',blockedCode:null,reviewed:(s.reviewed||0)+1,
       message:'Une fiche reste à vérifier dans le catalogue. Les autres demandes continuent.'})
   }
   async function block(code) {
@@ -68,23 +76,29 @@ export function createEngine(port) {
     await deliver()
   }
   async function handleError(error) {
-    if([401,403].includes(error.status))await save({enabled:false,needsConnection:true,message:'Association expirée ou retirée. Reconnecte ce navigateur depuis le catalogue.'})
+    if([401,403].includes(error.status))await save({enabled:false,needsConnection:true,retryAt:null,message:'Association expirée ou retirée. Reconnecte ce navigateur depuis le catalogue.'})
     else if(error.status===409) {
       // Never submit an old result using a new lease or replay an excluded job.
-      await save({enabled:false,job:null,outbox:null,phase:'idle',message:error.message+' Relance depuis la file du site, puis clique sur Démarrer.'})
-    } else await save({message:error.message||'Connexion interrompue. La demande reste conservée.'})
+      await save({enabled:false,job:null,outbox:null,phase:'idle',blockedCode:null,retryAt:null,message:error.message+' Relance depuis la file du site, puis reprends les imports.'})
+    } else if(error.status>=400&&error.status<500&&error.status!==429) {
+      await save({enabled:false,retryAt:null,message:'La demande a été refusée par le site. Consulte la fiche dans le catalogue avant de reprendre.'})
+    } else {
+      const failures=(s.failures||0)+1,delay=Math.min(60000,30000*2**Math.min(failures-1,1))
+      await save({failures,retryAt:port.now()+delay,message:`Connexion interrompue. Nouvelle tentative dans ${delay/1000} secondes ; la demande est conservée.`})
+    }
   }
   async function tick() {
     await load()
     if(!s.enabled)return s
+    if(s.retryAt>port.now())return s
     try {
       if(s.outbox){await deliver();return s}
       if(s.phase==='blocked')return s // No navigation, refresh or repeated CAPTCHA attempts.
       if(!s.job) {
         const response=await api({action:'claim'})
         if(response.paused){await save({enabled:false,message:'Cet appareil est en pause sur le site.'});return s}
-        if(!response.job){await save({message:'En attente de tes liens ou SKU dans la bibliothèque.'});return s}
-        await save({job:response.job,phase:'claimed',candidates:[],candidate:0})
+        if(!response.job){await save({message:'Aucune nouvelle fiche à récupérer. Les articles à vérifier restent dans le catalogue.'});return s}
+        await save({job:response.job,phase:'claimed',blockedCode:null,candidates:[],candidate:0})
       }
       const alive=await api(jobBody('heartbeat'))
       if(!alive.enabled){await save({enabled:false,message:'Cet appareil est en pause sur le site.'});return s}
@@ -111,7 +125,7 @@ export function createEngine(port) {
       // Single-color products expose the color only inside their description.
       // Identity and the absence of a selected size must already be confirmed.
       if(port.enrich&&(!problem||['color_unreadable','photos_unreadable'].includes(problem))) {
-        await save({message:'Lecture de la description et des détails…'})
+        await save({phase:'validate',message:'Contrôle de la couleur, des photos et des détails…'})
         result=await port.enrich(s.tabId,result,s.job)
         problem=resultError(result,s.job)
       }
@@ -129,16 +143,17 @@ export function createEngine(port) {
   }
   async function command(action) {
     await load()
-    if(action==='pause'){await save({enabled:false,message:'Récupération arrêtée. Clique sur Démarrer pour reprendre.'});return s}
+    if(action==='pause'){await save({enabled:false,retryAt:null,message:'Imports en pause. Reprends-les quand tu le souhaites.'});return s}
     if(action==='start') {
-      await save({enabled:true})
+      await save({enabled:true,retryAt:null,failures:0})
       // A blocked job always needs explicit recovery, never automatic navigation.
       return s.phase==='blocked'?s:tick()
     }
     if(action==='skip'&&s.phase==='blocked'&&s.blockedCode!=='human_check') {
       try {
         if(s.outbox)await deliver()
-        await save({job:null,phase:'idle',enabled:true,message:'La fiche reste à vérifier sur le site. Passage à la suivante.'})
+        if(s.phase!=='blocked'||!s.job)return tick()
+        await save({history:history(record('review',null,s.blockedCode)),reviewed:(s.reviewed||0)+1,job:null,phase:'idle',blockedCode:null,enabled:true,retryAt:null,message:'La fiche reste à vérifier sur le site. Passage à la suivante.'})
         return tick()
       } catch(error){await handleError(error)}
     }
@@ -147,14 +162,14 @@ export function createEngine(port) {
         if(s.outbox)await deliver()
         if(s.phase!=='blocked'||!s.job)return s
         const current=await tab()
-        if(!current||!allowedPage(current.url))throw Error('Rouvre l’onglet Shein de l’extension avant de reprendre.')
+        if(!current||!allowedPage(current.url)){await save({message:'Rouvre l’onglet Shein de l’extension avant de reprendre.'});return s}
         // Read the existing page first. Resuming never reloads it.
         const isProduct=!!productId(current.url)
         const value=await port.read(s.tabId,isProduct?'product':'search')
         const problem=isProduct?resultError(value,s.job):value?.error||(!value?.urls?.length?'sku_not_found':null)
         if(problem&&!['color_unreadable','photos_unreadable'].includes(problem)){await save({message:messages[problem]||messages.page_unavailable});return s}
         const response=await api({...jobBody('resume_blocked'),keep_page:true})
-        await save({job:response.job,phase:isProduct?'product':'search',since:port.now(),enabled:true,message:'Reprise de la fiche ouverte…'})
+        await save({job:response.job,phase:isProduct?'product':'search',blockedCode:null,retryAt:null,since:port.now(),enabled:true,message:'Reprise de la fiche ouverte…'})
         return tick()
       } catch(error){await handleError(error)}
     }

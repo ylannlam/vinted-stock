@@ -11,5 +11,7 @@ export function publicState(state,token,version) {
   return {version,connected:!!token&&!state.needsConnection,device_id:token?.match(/^svpc_([0-9a-f-]{36})\./)?.[1]||null,
     enabled:!!state.enabled,phase:state.phase,blockedCode:state.blockedCode||null,message:state.message,
     completed:state.completed||0,reviewed:state.reviewed||0,hasTab:state.tabId!=null,
+    lastContactAt:state.lastContactAt||null,retryAt:state.retryAt||null,
+    history:(state.history||[]).slice(0,12).map(entry=>({kind:entry.kind,at:entry.at,reference:entry.reference,title:entry.title,code:entry.code,photoCount:entry.photoCount||0,sizeCount:entry.sizeCount||0,missing:entry.missing||[]})),
     job:state.job?{id:state.job.id,input:state.job.input,expected_sku:state.job.expected_sku}:null}
 }

@@ -73,8 +73,11 @@ test('CAPTCHA pauses the entire queue; resume reads the same tab without reloadi
 test('lost completion reply survives worker restart and reuses the same lease and result',async()=>{
   const f=fixture();await f.engine.tick();f.lostReply();await f.engine.tick()
   assert.equal(f.state.outbox.action,'complete');const original=structuredClone(f.state.outbox)
+  await createEngine(f.port).tick();assert.equal(f.state.completed,0)
+  f.advance(30000)
   await createEngine(f.port).tick();assert.equal(f.state.completed,1);assert.deepEqual(f.requests.at(-1),original)
   assert.equal(f.navigations.length,1)
+  assert.equal(f.state.history.length,1);assert.equal(f.state.history[0].kind,'completed')
 })
 test('a bad product is left for review automatically, but a CAPTCHA cannot be skipped',async()=>{
   const f=fixture();await f.engine.tick();f.value={...product(),supplier_sku:'wrong'};await f.engine.tick()
@@ -131,6 +134,51 @@ test('device disabled on the site stops before visiting Shein',async()=>{
   const f=fixture();f.port.api=async()=>({paused:true,job:null});await f.engine.tick()
   assert.equal(f.state.enabled,false);assert.equal(f.navigations.length,0)
 })
+test('network retries persist across restart, back off, and stop when paused',async()=>{
+  const f=fixture();let attempts=0
+  f.port.api=async()=>{attempts++;throw Error('Failed to fetch')}
+  await f.engine.tick();assert.equal(attempts,1);assert.ok(f.state.retryAt);assert.equal(f.state.failures,1)
+  await createEngine(f.port).tick();assert.equal(attempts,1)
+  f.advance(30000);await f.engine.tick();assert.equal(attempts,2);assert.equal(f.state.failures,2)
+  f.advance(30000);await f.engine.tick();assert.equal(attempts,2)
+  f.advance(30000);await f.engine.tick();assert.equal(attempts,3)
+  await f.engine.command('pause');f.advance(60000);await f.engine.tick();assert.equal(attempts,3)
+  assert.equal(f.state.retryAt,null)
+})
+
+test('invalid requests stop while rate limiting remains retryable',async()=>{
+  for(const status of [400,404,429,503]){
+    const f=fixture();f.port.api=async()=>{throw Object.assign(Error('Rejected'),{status})}
+    await f.engine.tick()
+    assert.equal(f.state.enabled,[429,503].includes(status))
+    assert.equal(!!f.state.retryAt,[429,503].includes(status))
+  }
+})
+
+test('recent history is bounded and records quality without credentials or payload',async()=>{
+  const f=fixture();let job=0
+  f.port.api=async body=>body.action==='claim'?{job:{...row,id:`job-${++job}`}}:body.action==='heartbeat'?{enabled:true}:{saved:true}
+  for(let i=0;i<14;i++){await f.engine.tick();await f.engine.tick()}
+  assert.equal(f.state.completed,14);assert.equal(f.state.history.length,12)
+  assert.equal(f.state.history[0].photoCount,1);assert.deepEqual(f.state.history[0].missing,['description','détails','tailles'])
+  assert.equal(JSON.stringify(f.state.history).includes('lease'),false)
+  assert.equal(JSON.stringify(f.state.history).includes('ltwebstatic'),false)
+  assert.ok(f.state.lastContactAt)
+})
+
+test('resuming a closed tab explains the next action without scheduling network retries',async()=>{
+  const f=fixture();await f.engine.tick();f.close();await f.engine.tick();await f.engine.command('resume')
+  assert.match(f.state.message,/Rouvre l’onglet/);assert.equal(f.state.retryAt,null);assert.equal(f.state.phase,'blocked')
+})
+
+test('skipping an undelivered review records only one result after acknowledgement',async()=>{
+  const f=fixture(),api=f.port.api;let lost=true
+  f.port.api=async body=>{const result=await api(body);if(body.action==='fail'&&lost){lost=false;throw Error('Lost reply')}return result}
+  await f.engine.tick();f.value={...product(),supplier_sku:'wrong'};await f.engine.tick()
+  assert.ok(f.state.outbox);await f.engine.command('skip')
+  assert.equal(f.state.reviewed,1);assert.equal(f.state.history.length,1);assert.equal(f.state.history[0].reference,sku)
+})
+
 test('URLs, manifest permissions and API credential destination remain constrained',async()=>{
   for(const value of ['https://evil.test/','http://fr.shein.com/','https://user:pass@fr.shein.com/','https://fr.shein.com:8080/','https://fr.shein.com.evil.test/'])assert.equal(allowedPage(value),false)
   assert.throws(()=>jobUrl({input:'https://evil.test',expected_sku:'../../'}))

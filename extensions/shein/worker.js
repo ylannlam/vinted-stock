@@ -29,8 +29,8 @@ async function read(id,kind) {
 }
 const engine=createEngine({load:state,save:async s=>{
   await chrome.storage.local.set({state:s})
-  await chrome.action.setBadgeText({text:s.phase==='blocked'?'!':s.enabled?'ON':''})
-  await chrome.action.setBadgeBackgroundColor({color:s.phase==='blocked'?'#b45309':'#0f766e'})
+  await chrome.action.setBadgeText({text:s.needsConnection?'?':s.phase==='blocked'?'!':s.retryAt?'…':s.enabled?'ON':''})
+  await chrome.action.setBadgeBackgroundColor({color:s.phase==='blocked'||s.retryAt||s.needsConnection?'#b45309':'#0f766e'})
 },now:()=>Date.now(),api:async body=>{
   const {token}=await chrome.storage.local.get('token');return callApi(token,body)
 },tab:ownedTab,createTab,navigate:async(id,url)=>{
@@ -84,12 +84,13 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
       if(!current.needsConnection&&(current.job||current.outbox))throw Error('Termine la fiche en cours ou déconnecte d’abord cet appareil.')
       const reply=await callApi(token,{action:'heartbeat'})
       if(!reply.enabled)throw Error('Cet appareil est en pause sur le site. Réactive-le avant de l’associer.')
-      await chrome.storage.local.set({token,state:{...initialState(),message:'Association réussie. Clique sur Démarrer.'}})
+      await chrome.storage.local.set({token,state:{...initialState(),lastContactAt:Date.now(),message:'Navigateur connecté. Tu peux démarrer les imports.'}})
     } else if(['start','pause','resume','skip'].includes(message.action))await engine.command(message.action)
     else if(message.action==='open') {
       const s=await state();let tab=await ownedTab(s.tabId)
       if(!tab&&s.job){const id=await createTab();await chrome.storage.local.set({state:{...s,tabId:id}});await chrome.tabs.update(id,{url:jobUrl(s.job)});tab=await chrome.tabs.get(id)}
       if(tab){await chrome.tabs.update(tab.id,{active:true});await chrome.windows.update(tab.windowId,{focused:true})}
+      else throw Error('Aucune fiche ouverte. Reprends les imports ou consulte le catalogue.')
     } else if(message.action==='disconnect') {
       await chrome.storage.local.remove('token')
       await chrome.storage.local.set({state:initialState()})
