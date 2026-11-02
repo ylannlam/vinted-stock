@@ -10,7 +10,7 @@ export default function Gallery({ items, loading, lotSelected, onToggleLot, onMa
   const pageItems=items.slice(page*48,(page+1)*48)
   if (loading) {
     return (
-      <div className="p-2 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+      <div className="p-4 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
         {[...Array(6)].map((_, i) => (
           <div key={i} className="bg-white rounded-2xl overflow-hidden border border-gray-100 animate-pulse">
             <div className="aspect-square bg-gray-200" />
@@ -68,7 +68,7 @@ export default function Gallery({ items, loading, lotSelected, onToggleLot, onMa
 
   // Vue normale
   return (
-    <div><div className="p-2 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+    <div><div className="p-4 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
       {pageItems.map(item => (
         <ItemCard
           key={item.id}

@@ -1,3 +1,4 @@
+import ArticlePhotos from './ArticlePhotos'
 import {observationChange,missingProductFields} from '../lib/catalog'
 import {safeUrl,money} from '../lib/fulfillment'
 const date=value=>value?new Date(value).toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short'}):'Pas encore vérifié'
@@ -16,17 +17,20 @@ export function ProductDetails({product,items,onPreparePhoto}) {
   </div>
 }
 export default function CatalogueLibrary({products,data,busy,onDetails}) {
-  return <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">{products.map(p=>{
+  return <div className="article-grid catalog-grid">{products.map(p=>{
     const delta=observationChange(p),skus=data.links.filter(l=>l.product_id===p.id).map(l=>l.sku)
     const sales=(data.sales||[]).filter(s=>skus.includes(s.sku)||s.sku===p.supplier_sku).reduce((n,s)=>n+Number(s.quantity),0)
     const incomplete=missingProductFields(p).length>0||['blocked','failed'].includes(p.collection_status)
-    return <article key={p.id} className="rounded-2xl border bg-white overflow-hidden flex flex-col">
-      <button onClick={()=>onDetails(p)} className="bg-slate-100 text-left" aria-label={'Voir '+p.title}>{safeUrl(p.photo_url)?<img src={p.photo_url} alt={p.title} className="w-full aspect-[4/3] object-cover" referrerPolicy="no-referrer" loading="lazy"/>:<div className="w-full aspect-[4/3] grid place-items-center text-slate-400 text-sm">Photo à récupérer</div>}</button>
-      <div className="p-4 flex-1 flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-2 text-xs"><span className="text-slate-500">{sales} vente{sales>1?'s':''}</span>{incomplete&&<span className="rounded-full bg-amber-50 px-2 py-1 text-amber-800">Fiche à compléter</span>}</div>
-        <div><h2 className="font-semibold text-sm line-clamp-2">{p.title}</h2><p className="text-xs text-slate-400 break-all mt-1">{p.supplier_sku||skus.join(' · ')||'Shein '+p.supplier_id}</p></div>
-        <div className="mt-auto"><div className="flex flex-wrap items-center gap-2"><p className="text-xl font-semibold">{p.price==null?'Prix à récupérer':money(p.price)}</p>{delta?.amount!==0&&delta&&<span className={'rounded-full px-2 py-1 text-xs '+(delta.amount>0?'text-rose-700 bg-rose-50':'text-teal-700 bg-teal-50')}>{delta.amount>0?'+':''}{money(delta.amount)}</span>}</div><p className="text-xs text-slate-500 mt-1">{p.color||'Couleur à préciser'} · {date(p.observed_at)}</p></div>
-        <div className="flex items-center justify-between gap-2 pt-2 border-t"><button className="text-sm text-teal-800 font-medium py-1" disabled={busy} onClick={()=>onDetails(p)}>Voir les détails</button>{safeUrl(p.supplier_url)&&<a className="text-xs text-slate-500 underline py-1" href={p.supplier_url} target="_blank" rel="noreferrer">Shein ↗</a>}</div>
+    const photos=Array.isArray(p.photos)?p.photos:[]
+    return <article key={p.id} className="catalog-card">
+      <ArticlePhotos photos={[p.photo_url,...photos]} title={p.title} onOpen={()=>onDetails(p)} badge={incomplete?'À compléter':undefined}/>
+      <div className="catalog-card-body">
+        <div className="catalog-card-meta"><span>{p.color||'Produit Shein'}</span><span>{sales} vente{sales>1?'s':''}</span></div>
+        <button className="article-title-button" onClick={()=>onDetails(p)}><h2 className="article-title">{p.title||'Article Shein'}</h2></button>
+        <p className="catalog-sku">{p.supplier_sku||skus.join(' · ')||'Réf. '+p.supplier_id}</p>
+        <div className="catalog-price-row"><div><span className="card-eyebrow">Prix Shein</span><strong className="catalog-price">{p.price==null?'À récupérer':money(p.price)}</strong></div>{delta&&delta.amount!==0&&<span className={'price-change '+(delta.amount>0?'is-up':'is-down')}>{delta.amount>0?'↗ +':'↘ '}{money(delta.amount)}</span>}</div>
+        <div className="catalog-sizes" aria-label="Tailles proposées">{(p.sizes||[]).slice(0,8).map(s=><span key={s.size} title={s.availability==='unavailable'?'Indisponible':s.availability==='unknown'?'Disponibilité à vérifier':'Disponible'} className={s.availability==='unavailable'?'is-unavailable':s.availability==='unknown'?'is-unknown':''}>{s.size}</span>)}{p.sizes?.length>8&&<span>+{p.sizes.length-8}</span>}{!p.sizes?.length&&<span className="sizes-pending">Tailles à récupérer</span>}</div>
+        <div className="catalog-card-footer"><button className="article-open-button" disabled={busy} onClick={()=>onDetails(p)}>Ouvrir la fiche <span aria-hidden="true">↗</span></button>{safeUrl(p.supplier_url)&&<a className="article-details-link" href={p.supplier_url} target="_blank" rel="noreferrer">Voir sur Shein</a>}</div>
       </div>
     </article>
   })}</div>

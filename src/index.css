@@ -2,6 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
+
 /* A sale remains one readable card on a phone; actions never sit off-screen. */
 @media (max-width: 767px) {
   .sales-list { border: 0; background: transparent; }

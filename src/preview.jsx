@@ -1,3 +1,5 @@
+import Header from './components/Header'
+import {previewPhotos} from './lib/previewPhotos'
 import HomeTab from './components/HomeTab'
 import HistoryTab from './components/HistoryTab'
 import PhotoPreparation from './components/PhotoPreparation'
@@ -22,11 +24,12 @@ import {shipmentInput} from './lib/shipments'
 import {accountGroup} from './lib/accountOverview'
 import { nextStage, blocked, supplierOf, skuOf } from './lib/fulfillment'
 import './index.css'
+import './workspace.css'
 const catalog = [{sku:'DEMO-100-M',supplier_url:'https://fr.shein.com/Demo-p-123456.html',price:12.50,currency:'EUR',color:'Beige',sizes:[{size:'M',availability:'available'},{size:'L',availability:'unavailable'}],retrieval_status:'failed',retrieval_message:'Connexion interrompue. Le dernier relevé reste conservé.',observed_at:new Date().toISOString()},
   {sku:'DEMO-101-M',retrieval_status:'queued'}]
 const lines = ['to_order','ordered','in_transit','received','prepared','shipped'].map((stage,i)=>({
   id:`demo-${i}`,updated_at:new Date().toISOString(),stage,
-  source:{title:['Blouse fleurie','Robe côtelée','Chemisier satiné','Gilet court','Jupe plissée','Top manches longues'][i],sku:i===0||i===2?null:`DEMO-${100+i}-M`,selling_price:'24.90',supplier_link:'https://fr.shein.com/'},
+  source:{title:['Body à manches longues','Robe à épaules dénudées','Combinaison côtelée','Body noir','Robe de soirée','Combinaison noire'][i],thumbnail_url:previewPhotos[i%3][0],sku:i===0||i===2?null:`DEMO-${100+i}-M`,selling_price:'24.90',supplier_link:'https://fr.shein.com/'},
   supplier_size:i%2?'S':'M',supplier_size_manual:false,
   supplier_order_ref:i?'DEMO-COMMANDE-01':null,
   order:{id:`vente-${i}`,account_login:`Compte démo ${i%2+1}`,currency:'EUR',status:'label_sent',deadline:new Date(Date.now()+(i+1)*86400000).toISOString()},
@@ -100,7 +103,7 @@ const demoClient={from(table){
 }}
 function PreviewApp(){
  const [photo,setPhoto]=useState(null),[filters,setFilters]=useState({});const navigate=(id,opts={})=>{setFilters(opts);setTab(id)}
- const [tab,setTab]=useState(location.hash==='#accueil'?TAB_HOME:location.hash==='#ressources'?TAB_RESOURCES:location.hash==='#catalogue'?TAB_CATALOG:location.hash==='#suivi'?TAB_BUDGET:location.hash==='#comptes'?TAB_COMPTES_VINTED:TAB_SALES)
- return <div className="min-h-screen bg-gray-50"><div className="bg-amber-100 text-amber-900 px-4 py-2 text-sm font-medium">DÉMO · Données fictives · Réinitialisée à chaque rechargement</div><header className="bg-white px-4 py-3 font-bold text-teal-700">Stock Vinted</header><CategoryTabs active={tab} onChange={navigate} items={[]} commandes={[]} userRole="admin"/>{tab===TAB_HOME?<HomeTab isAdmin request={previewWorkspace} onNavigate={navigate}/>:tab===TAB_HISTORY?<HistoryTab isAdmin request={workspacePreview}/>:tab===TAB_RESOURCES?<ResourcesTab request={resourcesPreview} upload={resourcesPreviewUpload} accountsRequest={creativeAccountsPreview}/>:tab===TAB_CATALOG?<CatalogueTab isAdmin request={catalogPreview} collectorRequest={collectorPreview} collectorBridge={collectorBridgePreview}/>:tab===TAB_BUDGET?<BudgetTab request={trackerRequest} financeRequest={workspacePreview} onOpenSale={row=>navigate(TAB_SALES,{line:row.id})}/>:tab===TAB_COMPTES_VINTED?<VintedAccountsTab client={demoClient}/>:<SalesTab key={JSON.stringify(filters)} initialFilters={filters} onPreparePhoto={setPhoto} isAdmin request={request} collectorRequest={collectorPreview} collectorBridge={collectorBridgePreview}/>}{photo&&<PhotoPreparation article={photo} onClose={()=>setPhoto(null)} accountsRequest={creativeAccountsPreview} resourcesRequest={resourcesPreview}/>}</div>
+ const [tab,setTab]=useState(location.hash==='#accueil'?TAB_HOME:['#ressources','#atelier'].includes(location.hash)?TAB_RESOURCES:location.hash==='#catalogue'?TAB_CATALOG:['#suivi','#budget'].includes(location.hash)?TAB_BUDGET:location.hash==='#comptes'?TAB_COMPTES_VINTED:TAB_SALES)
+ return <div className="min-h-screen workspace-shell"><div className="preview-notice">DÉMO · Données fictives · Réinitialisée à chaque rechargement</div><Header profile={{pseudo:'Mon atelier',role:'admin'}}/><CategoryTabs active={tab} onChange={navigate} items={[]} commandes={[]} userRole="admin"/>{tab===TAB_HOME?<HomeTab isAdmin request={previewWorkspace} onNavigate={navigate}/>:tab===TAB_HISTORY?<HistoryTab isAdmin request={workspacePreview}/>:tab===TAB_RESOURCES?<ResourcesTab request={resourcesPreview} upload={resourcesPreviewUpload} accountsRequest={creativeAccountsPreview}/>:tab===TAB_CATALOG?<CatalogueTab isAdmin request={catalogPreview} collectorRequest={collectorPreview} collectorBridge={collectorBridgePreview}/>:tab===TAB_BUDGET?<BudgetTab request={trackerRequest} financeRequest={workspacePreview} onOpenSale={row=>navigate(TAB_SALES,{line:row.id})}/>:tab===TAB_COMPTES_VINTED?<VintedAccountsTab client={demoClient}/>:<SalesTab key={JSON.stringify(filters)} initialFilters={filters} onPreparePhoto={setPhoto} isAdmin request={request} collectorRequest={collectorPreview} collectorBridge={collectorBridgePreview}/>}{photo&&<PhotoPreparation article={photo} onClose={()=>setPhoto(null)} accountsRequest={creativeAccountsPreview} resourcesRequest={resourcesPreview}/>}</div>
 }
 createRoot(document.getElementById('root')).render(<PreviewApp/>)

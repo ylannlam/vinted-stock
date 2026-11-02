@@ -117,7 +117,7 @@ export default function ItemCard({ item, isLotSelected, onToggleLot, onMarkSold,
             alt=""
             loading="lazy"
             onClick={() => setZoomOpen(true)}
-            className={`w-full h-full object-cover cursor-zoom-in transition-opacity ${(!isStock && !isOrdered) ? 'opacity-70' : ''}`}
+            className={`w-full h-full object-contain cursor-zoom-in transition-opacity ${(!isStock && !isOrdered) ? 'opacity-70' : ''}`}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center pointer-events-none">

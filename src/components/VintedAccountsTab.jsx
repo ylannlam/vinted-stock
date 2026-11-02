@@ -91,7 +91,7 @@ export default function VintedAccountsTab({client=supabase,onDirections}) {
   function reset(){setSearch('');setDueOnly(false)}
   function openEdit(account){setSelectedId(null);setError('');setEditAccount(account)}
 
-  return <main className="max-w-screen-2xl mx-auto p-4 space-y-4">
+  return <main className="workspace-page max-w-screen-2xl mx-auto p-4 space-y-4">
     <header className="flex flex-wrap justify-between items-center gap-3">
       <div><div className="flex items-center gap-2"><h1 className="text-xl font-bold text-gray-900">Comptes</h1><span className="text-xs text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">{accounts.length}</span></div><p className="text-sm text-gray-500 mt-1">Les comptes en isolement et les comptes abandonnés restent séparés des comptes prêts.</p></div>
       <div className="flex flex-wrap gap-2">{onDirections&&<button className={secondary} onClick={onDirections}>Fonds et prompts par compte</button>}<button disabled={loading||busy} onClick={fetchAll} className={secondary}>Actualiser</button><button disabled={busy} onClick={()=>openEdit(null)} className="px-4 py-2 bg-teal-500 text-white rounded-lg text-sm font-semibold disabled:opacity-50">+ Ajouter un compte</button></div>

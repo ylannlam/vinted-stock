@@ -46,7 +46,7 @@ export default function BudgetTab({request=defaultRequest,onOpenSale,financeRequ
   const rows=periodRows.filter(e=>(kind==='all'||e.type===kind)&&`${e.cat} ${e.label}`.toLowerCase().includes(search.toLowerCase())).sort((a,b)=>b.date.localeCompare(a.date))
   const limit=record?.payload.settings.budget||0
   const categories=[...new Set(['Stock Shein','Comptes Vinted','Emballage','Frais de port','Employés','Outils / abonnements',...(record?.payload.expenses||[]).map(e=>e.cat)])]
-  return <main className="max-w-screen-2xl mx-auto p-4 space-y-4">
+  return <main className="workspace-page max-w-screen-2xl mx-auto p-4 space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-xl font-bold text-gray-900">Budget</h1><p className="text-sm text-gray-500">Dépenses, revenus et suivi de trésorerie.</p></div>
       <div className="flex flex-wrap gap-2"><button disabled={busy} onClick={load} className={button}>Actualiser</button><button disabled={!record||busy} onClick={exportBudget} className={button}>Exporter</button><button disabled={!record||busy} onClick={()=>file.current.click()} className={button}>Importer le budget</button><input hidden ref={file} type="file" accept="application/json" onChange={importBudget}/><button disabled={!record||busy} onClick={()=>setDraft({id:crypto.randomUUID(),date:today(),type:'out',cat:'',label:'',amount:''})} className="px-4 py-2 text-sm font-semibold rounded-lg bg-teal-500 text-white disabled:opacity-50">+ Ajouter une opération</button></div>
     </div>

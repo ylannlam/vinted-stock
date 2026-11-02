@@ -414,7 +414,7 @@ export default function App() {
   // Si le profil existe déjà, on reste sur l'interface même pendant un re-fetch silencieux
   if (authLoading || (profileLoading && !profile)) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen workspace-shell flex items-center justify-center">
         <div className="flex items-center gap-3 text-gray-400">
           <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -431,7 +431,7 @@ export default function App() {
   // Profile not found
   if (!profile) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="min-h-screen workspace-shell flex items-center justify-center p-4">
         <div className="text-center max-w-sm">
           <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -453,7 +453,7 @@ export default function App() {
   // Employe: show workspace only
   if (isEmploye) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen workspace-shell">
         <Header onLogout={handleLogout} profile={profile} />
         <div className="px-0 py-0">
           <div className="bg-teal-50 border-b border-teal-100 px-4 py-2.5">
@@ -505,7 +505,7 @@ export default function App() {
   })()
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen workspace-shell">
       <Header onLogout={handleLogout} profile={profile} />
       <CategoryTabs
         active={activeTab}

@@ -10,13 +10,13 @@ export default function Header({ onLogout, profile }) {
   const roleCfg = role ? roleConfig[role] : null
 
   return (
-    <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between sticky top-0 z-30 h-14">
+    <header className="workspace-header px-4 py-3 flex items-center justify-between sticky top-0 z-30 h-14">
       <div className="flex items-center gap-2.5">
         <Logo size={32} />
         <span className="font-bold text-gray-900 text-base">Stock Vinted</span>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="workspace-header-account flex items-center gap-3">
         {profile?.pseudo && (
           <span className="text-sm font-medium text-gray-700">{profile.pseudo}</span>
         )}
@@ -25,7 +25,7 @@ export default function Header({ onLogout, profile }) {
             {roleCfg.label}
           </span>
         )}
-        <button
+        {onLogout&&<button
           onClick={onLogout}
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
         >
@@ -34,7 +34,7 @@ export default function Header({ onLogout, profile }) {
               d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
           </svg>
           Déconnexion
-        </button>
+        </button>}
       </div>
     </header>
   )
