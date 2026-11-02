@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto'
 import { AppError, isId, normalizeOrders } from './dotb.js'
+import {enrichSoldSizes} from './sold-sizes.js'
 
 export const WEBHOOK_URL = 'https://vinted-stock.vercel.app/api/dotb-webhook'
 export const ORDER_EVENTS = ['order.created','order.status_changed','order.claim_opened']
@@ -45,7 +46,7 @@ export async function receiveOrderEvent(db,event,{fetcher=fetch,token=process.en
   if(event.order_id){
     const order=await dotbRequest(`orders/${event.order_id}?include=items,account`,{fetcher,token})
     if(order?.id!==event.order_id)throw new AppError('La vente reçue ne correspond pas à la vente demandée.',502)
-    normalized=normalizeOrders([order],fetchedAt)
+    normalized=await enrichSoldSizes(normalizeOrders([order],fetchedAt),{fetcher,token})
   }
   const saved=await db.rpc('receive_dotb_order_event',{p_event:event,p_orders:normalized.orders,p_lines:normalized.lines});check(saved.error)
   return {received:true,duplicate:!saved.data}

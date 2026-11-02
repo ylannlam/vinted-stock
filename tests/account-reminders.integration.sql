@@ -1,0 +1,33 @@
+begin;
+do $$ declare u uuid:=gen_random_uuid();begin
+ insert into auth.users(id,email) values(u,u||'@reminder-test.invalid');
+ insert into public.profiles(id,email,pseudo,role) values(u,u||'@reminder-test.invalid','Test rappel','admin');
+ perform set_config('request.jwt.claim.sub',u::text,true);
+end $$;
+set local role authenticated;
+do $$ declare a uuid;started timestamptz;ready timestamptz;done_at timestamptz;begin
+ insert into public.vinted_accounts(pseudo,statut,creation_stage,is_shadowbanned) values('TEST-'||gen_random_uuid(),'en_preparation','post1',false) returning id into a;
+ update public.vinted_accounts set statut='suspendu',creation_stage='blocked' where id=a;
+ select blocked_at into started from public.vinted_accounts where id=a;
+ if started is null then raise exception 'block timer not started';end if;
+ update public.vinted_accounts set notes='A note',blocked_at=now()-interval '30 days' where id=a;
+ if (select blocked_at from public.vinted_accounts where id=a) is distinct from started then raise exception 'edit reset countdown';end if;
+ update public.vinted_accounts set statut='actif',creation_stage='ready',is_ready=true where id=a;
+ select ready_at into ready from public.vinted_accounts where id=a;
+ if ready is null or (select blocked_at from public.vinted_accounts where id=a) is not null then raise exception 'ready transition failed';end if;
+ update public.vinted_accounts set notes='Another note' where id=a;
+ if (select ready_at from public.vinted_accounts where id=a) is distinct from ready then raise exception 'ready countdown restarted';end if;
+ update public.vinted_accounts set password_changed_at=now() where id=a;
+ select password_changed_at into done_at from public.vinted_accounts where id=a;
+ if done_at is null then raise exception 'password acknowledgment not saved';end if;
+ update public.vinted_accounts set password_changed_at=null where id=a;
+ if (select password_changed_at from public.vinted_accounts where id=a) is distinct from done_at then raise exception 'stale client cleared acknowledgment';end if;
+ update public.vinted_accounts set statut='banni_temp',deban_at=now()-interval '10 days' where id=a;
+ if (select statut from public.vinted_accounts where id=a)<>'banni_temp' or (select password_changed_at from public.vinted_accounts where id=a) is not null then raise exception 'ban or acknowledgment incorrect';end if;
+ if (select blocked_at from public.vinted_accounts where id=a)<=started then raise exception 'new ban did not restart clock';end if;
+ update public.vinted_accounts set statut='actif',creation_stage='ready' where id=a;
+ if (select ready_at from public.vinted_accounts where id=a)<=ready then raise exception 'new ready period did not restart';end if;
+ update public.vinted_accounts set is_shadowbanned=true where id=a;
+ if (select ready_at from public.vinted_accounts where id=a) is not null then raise exception 'archived reminder retained';end if;
+end $$;
+rollback;

@@ -6,6 +6,9 @@ import { STAGES } from '../src/lib/fulfillment.js'
 import {readTrackingPeriod} from '../server/tracking.js'
 import {automationStatus,enableSalesAutomation} from '../server/sales-automation.js'
 import {salesFilters,financeValues,batchValues,saleVariant} from '../server/workspace.js'
+import {enrichSoldSizes} from '../server/sold-sizes.js'
+import {readShipments,saveShipment,refreshShipment} from '../server/supplier-shipments.js'
+import {isId} from '../server/dotb.js'
 
 export const config = { maxDuration: 60 }
 const fail = error => { if (error) throw error }
@@ -27,13 +30,15 @@ export default async function handler(req, res) {
     const { db, role, user } = auth
     const tracking=await readTrackingPeriod(db)
     if (req.method === 'GET') {
+      if(req.query?.view==='shipments')return res.json(await readShipments(db,req.query))
       if(req.query?.view==='detail'){
         const id=req.query.id
         if(typeof id!=='string'||!id||id.length>80)throw new AppError('Vente invalide.')
         const {data:line,error}=await db.from('workspace_sales').select('*').eq('id',id).maybeSingle();fail(error)
         if(!line)throw new AppError('Cette vente n’est plus disponible dans la période suivie.',404)
         const {data:catalog,error:catalogError}=await db.from('sales_supplier_details').select('*').eq('sku',line.resolved_sku);fail(catalogError)
-        return res.json({line,catalog})
+        const parcels=await readShipments(db,{line:id})
+        return res.json({line:{...line,shipments:parcels.shipments},catalog})
       }
       if(req.query?.view==='page'){
         const filters=salesFilters(req.query)
@@ -61,6 +66,7 @@ export default async function handler(req, res) {
         last_sync: state.last_completed_at, resume: !!state.cursor, processed: state.processed })
     }
     if (req.method === 'POST') {
+      if(req.body?.action==='shipment_refresh')return res.json(await refreshShipment(db,req.body.id))
       if (role !== 'admin') throw new AppError('Seul un administrateur peut importer les ventes.',403)
       if(req.body?.action==='automation')return res.json(await enableSalesAutomation(db))
       if (!process.env.DOTB_API_TOKEN) throw new AppError('La connexion Dotb reste à activer dans les réglages du serveur.',503)
@@ -74,7 +80,7 @@ export default async function handler(req, res) {
         if (!state.cursor) { const { error: resetError } = await db.from('dotb_sync_state').update({ processed: 0 }).eq('lease',lease); fail(resetError) }
         const fetchedAt=new Date().toISOString()
         const page = await readDotbPage(state.cursor,fetch,process.env.DOTB_API_TOKEN,tracking.starts_at)
-        const { orders, lines } = normalizeOrders(page.data,fetchedAt)
+        const { orders, lines } = await enrichSoldSizes(normalizeOrders(page.data,fetchedAt))
         const { error: importError } = await db.rpc('import_dotb_page', {
           p_orders: orders, p_lines: lines, p_cursor: page.has_more ? page.next_cursor : null, p_lease: lease,
         })
@@ -88,6 +94,12 @@ export default async function handler(req, res) {
     }
     const body = req.body
     if (!body || typeof body !== 'object') throw new AppError('Formulaire invalide.')
+    if(body.action==='shipment')return res.json(await saveShipment(db,body,user.id))
+    if(body.action==='shipment_unlink'){
+      if(!isId(body.id)||typeof body.line!=='string'||body.line.length>80||!Number.isFinite(Date.parse(body.updated_at)))throw new AppError('Association invalide.')
+      const {error}=await db.rpc('unlink_supplier_shipment',{p_id:body.id,p_line:body.line,p_version:body.updated_at,p_user:user.id});fail(error)
+      return res.json({saved:true})
+    }
     if(body.action==='batch'){
       const batch=batchValues(body)
       const {error}=await db.rpc('save_sales_batch',{p_lines:batch.lines,p_action:batch.operation,p_value:batch.value,p_user:user.id});fail(error)

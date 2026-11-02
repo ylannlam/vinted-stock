@@ -1,5 +1,6 @@
 import { safeUrl } from '../src/lib/fulfillment.js'
 import { supplierLink } from '../src/lib/catalog.js'
+import { sizeFromTitle } from '../src/lib/soldSize.js'
 
 export class AppError extends Error {
   constructor(message, status = 400) { super(message); this.status = status }
@@ -21,6 +22,7 @@ export function normalizeOrders(data, now = new Date().toISOString()) {
       label_url: safeUrl(order.shipping_label_url), tracking_code: str(order.tracking_code),
       transaction_id: order.vinted_transaction_id == null ? null : String(order.vinted_transaction_id), synced_at: now })
     for (const item of order.items) {
+      const titleSize=sizeFromTitle(item.title)
       const shein=supplierLink(item.supplier_link).product
       const id = `${order.id}:${item.id}`
       if (!isId(item.id) || lineIds.has(id)) throw new AppError('Article Dotb invalide ou dupliqué. Import interrompu.', 502)
@@ -32,6 +34,8 @@ export function normalizeOrders(data, now = new Date().toISOString()) {
         dotb_listing_id: isId(item.vinted_item_id) ? item.vinted_item_id : null,
         thumbnail_url: safeUrl(item.thumbnail_url), selling_price: decimal(item.selling_price),
         purchase_price: decimal(item.purchase_price), location: str(item.location, 100),
+        size:titleSize,size_label:titleSize,size_origin:titleSize?'title':null,
+        country_code:/^[A-Z]{2}$/.test(order.account?.country_code||'')?order.account.country_code:null,
       } })
     }
   }

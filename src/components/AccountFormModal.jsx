@@ -86,7 +86,7 @@ export default function AccountFormModal({ account, onClose, onSave, error }) {
             <p className="text-xs text-gray-500">Jour 1 : 1re annonce après 2 h. Jour 2 : 2e annonce. Jour 3 : prêt à passer sur proxy.</p>
             <label className="flex gap-2 items-center text-sm text-gray-700"><input type="checkbox" checked={!!form.is_shadowbanned} onChange={e=>set('is_shadowbanned',e.target.checked)}/>Shadowban · compte abandonné</label>
             <label className="block text-xs text-gray-500">Étape
-              <select aria-label="Étape de création" className="w-full mt-1 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white" value={form.creation_stage || ''} onChange={e=>setForm(prev=>({...prev,creation_stage:e.target.value,creation_next_at:['post1','post2','wait'].includes(e.target.value)?new Date(Date.now()+(e.target.value==='post1'?7200000:86400000)).toISOString():null}))}>
+              <select aria-label="Étape de création" className="w-full mt-1 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white" value={form.creation_stage || ''} onChange={e=>setForm(prev=>({...prev,creation_stage:e.target.value,statut:e.target.value==='blocked'?'suspendu':e.target.value==='ready'?'actif':'en_preparation',creation_next_at:['post1','post2','wait'].includes(e.target.value)?new Date(Date.now()+(e.target.value==='post1'?7200000:86400000)).toISOString():null}))}>
                 <option value="">Sans suivi d’annonces</option>{CREATION_STAGES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
             </label>
@@ -187,7 +187,7 @@ export default function AccountFormModal({ account, onClose, onSave, error }) {
                     { value: 'banni_def',      label: 'Banni déf.',     color: 'bg-red-50 text-red-700 border-red-200',          active: 'bg-red-500 text-white border-red-500' },
                     { value: 'suspendu',       label: 'Suspendu',       color: 'bg-gray-50 text-gray-600 border-gray-200',       active: 'bg-gray-500 text-white border-gray-500' },
                   ].map(s => (
-                    <button key={s.value} type="button" onClick={() => set('statut', s.value)}
+                    <button key={s.value} type="button" onClick={() => setForm(prev=>({...prev,statut:s.value,...(['banni_temp','banni_def','suspendu'].includes(s.value)?{creation_stage:'blocked',creation_next_at:null}:s.value==='actif'?{creation_stage:'ready',creation_next_at:null}:prev.creation_stage==='blocked'||prev.creation_stage==='ready'?{creation_stage:'post1',creation_next_at:new Date(Date.now()+7200000).toISOString()}:{} )}))}
                       className={`py-2 rounded-xl text-sm font-medium border transition-colors ${form.statut === s.value ? s.active : s.color}`}>
                       {s.label}
                     </button>
@@ -200,14 +200,7 @@ export default function AccountFormModal({ account, onClose, onSave, error }) {
                 )}
               </div>
 
-              {form.statut === 'banni_temp' && (
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 mb-1 block">Date de débannissement</label>
-                  <input type="date" value={form.deban_at ? form.deban_at.slice(0, 10) : ''}
-                    onChange={e => set('deban_at', e.target.value ? new Date(e.target.value).toISOString() : '')}
-                    className="w-full border border-orange-200 bg-orange-50 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-orange-400" />
-                </div>
-              )}
+              <p className="text-xs text-slate-500">Passer le compte dans Bloqués démarre 5 jours d’attente. Le passer dans Prêts démarre 2 jours avant le rappel de changement de mot de passe.</p>
 
               <div>
                 <label className="text-xs font-semibold text-gray-500 mb-1 block">Notes</label>

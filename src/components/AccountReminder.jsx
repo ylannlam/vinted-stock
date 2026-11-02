@@ -1,0 +1,6 @@
+import {accountReminder} from '../lib/accountOverview'
+export default function AccountReminder({account,now,busy,onStart,onPasswordChanged}){
+ const reminder=accountReminder(account,now)
+ if(!reminder)return null
+ return <div className="space-y-2 max-w-64"><p className={`text-xs font-semibold ${reminder.overdue?'text-amber-800':reminder.done?'text-teal-700':'text-slate-700'}`}>{reminder.label}</p>{reminder.dueAt&&<p className="text-[11px] text-slate-500">{reminder.kind==='appeal'?'Vérifier la réponse':'Changer le mot de passe'} le {new Date(reminder.dueAt).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</p>}{reminder.missing&&onStart&&<button disabled={busy} className="text-xs underline text-teal-700 disabled:opacity-40" onClick={()=>onStart(account)}>Démarrer les {reminder.days} jours maintenant</button>}{reminder.kind==='password'&&!reminder.done&&onPasswordChanged&&<button disabled={busy} className="text-xs border rounded-lg px-2 py-1 text-teal-700 disabled:opacity-40" onClick={()=>onPasswordChanged(account)}>Mot de passe changé</button>}{reminder.done&&<p className="text-[11px] text-slate-500">Confirmé le {new Date(reminder.date).toLocaleDateString('fr-FR')}</p>}</div>
+}

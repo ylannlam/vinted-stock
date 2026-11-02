@@ -18,6 +18,8 @@ import { createRoot } from 'react-dom/client'
 import SalesTab from './components/SalesTab'
 import { validateEdit, validateSaleSku } from '../server/dotb'
 import {saleVariant} from '../server/workspace'
+import {shipmentInput} from './lib/shipments'
+import {accountGroup} from './lib/accountOverview'
 import { nextStage, blocked, supplierOf, skuOf } from './lib/fulfillment'
 import './index.css'
 const catalog = [{sku:'DEMO-100-M',supplier_url:'https://fr.shein.com/Demo-p-123456.html',price:12.50,currency:'EUR',color:'Beige',sizes:[{size:'M',availability:'available'},{size:'L',availability:'unavailable'}],retrieval_status:'failed',retrieval_message:'Connexion interrompue. Le dernier relevé reste conservé.',observed_at:new Date().toISOString()},
@@ -25,9 +27,11 @@ const catalog = [{sku:'DEMO-100-M',supplier_url:'https://fr.shein.com/Demo-p-123
 const lines = ['to_order','ordered','in_transit','received','prepared','shipped'].map((stage,i)=>({
   id:`demo-${i}`,updated_at:new Date().toISOString(),stage,
   source:{title:['Blouse fleurie','Robe côtelée','Chemisier satiné','Gilet court','Jupe plissée','Top manches longues'][i],sku:i===0||i===2?null:`DEMO-${100+i}-M`,selling_price:'24.90',supplier_link:'https://fr.shein.com/'},
+  supplier_size:i%2?'S':'M',supplier_size_manual:false,
   supplier_order_ref:i?'DEMO-COMMANDE-01':null,
   order:{id:`vente-${i}`,account_login:`Compte démo ${i%2+1}`,currency:'EUR',status:'label_sent',deadline:new Date(Date.now()+(i+1)*86400000).toISOString()},
 }))
+const parcels=[]
 async function previewWorkspace(view='overview',query={},body){
  if(view!=='actions')return workspacePreview(view,query,body)
  let rows=lines.filter(l=>l.stage!=='shipped').map(l=>({...l,title:l.source.title,account_login:l.order.account_login,deadline_at:l.order.deadline,sku:skuOf(l),action:({ordered:'receive',in_transit:'receive',received:'prepare',prepared:'ship'})[l.stage]||(!skuOf(l)?'missing_sku':'purchase')}))
@@ -38,7 +42,9 @@ async function previewWorkspace(view='overview',query={},body){
 async function request(method='GET',body,query='') {
   if(method==='GET'){
     const q=new URLSearchParams(query.replace(/^\?/,''));let filtered=structuredClone(lines)
-    if(q.get('view')==='detail'){const line=filtered.find(l=>l.id===q.get('id'));if(!line)throw Error('Vente introuvable');return {line,catalog:structuredClone(catalog)}}
+    const shipRows=parcels.filter(p=>p.line_ids.length).map(p=>({...p,lines:p.line_ids.map(id=>{const l=lines.find(x=>x.id===id);return {id,title:l.source.title,account:l.order.account_login,size:l.supplier_size,updated_at:l.updated_at}})}))
+    if(q.get('view')==='shipments')return {shipments:structuredClone(shipRows),count:shipRows.length,page:0}
+    if(q.get('view')==='detail'){const line=filtered.find(l=>l.id===q.get('id'));if(!line)throw Error('Vente introuvable');return {line:{...line,shipments:structuredClone(shipRows.filter(p=>p.line_ids.includes(line.id)))},catalog:structuredClone(catalog)}}
     if(q.get('account'))filtered=filtered.filter(l=>l.order.account_login===q.get('account'))
     if(q.get('search'))filtered=filtered.filter(l=>`${l.source.title} ${l.source.sku||''} ${l.supplier_order_ref||''}`.toLowerCase().includes(q.get('search').toLowerCase()))
     if(q.get('urgent')==='true')filtered=filtered.filter(l=>l.stage!=='shipped'&&Date.parse(l.order.deadline)<Date.now()+48*3600000)
@@ -46,6 +52,9 @@ async function request(method='GET',body,query='') {
     if(q.get('stage')&&q.get('stage')!=='all')filtered=filtered.filter(l=>q.get('stage')==='missing_sku'?!skuOf(l):l.stage===q.get('stage'))
     return {lines:filtered,catalog:structuredClone(catalog),count:filtered.length,counts,accounts:[...new Set(lines.map(l=>l.order.account_login))],connected:true,automation:{configured:true,enabled:true,last_received_at:new Date().toISOString()},tracking:{starts_at:'2026-10-30T23:00:00Z',time_zone:'Europe/Paris'}}
   }
+  if(method==='POST'&&body.action==='shipment_refresh'){const p=parcels.find(p=>p.id===body.id);p.checked_at=new Date().toISOString();p.refresh_after=new Date(Date.now()+900000).toISOString();p.last_error='GOFO ne fournit pas encore de suivi pour ce numéro. Dernier relevé conservé.';return {refreshed:true}}
+  if(body.action==='shipment'){const fields=shipmentInput(body);let p=parcels.find(p=>p.id===body.id||p.tracking_number===fields.tracking_number&&p.carrier===fields.carrier);if(!p){p={...fields,id:crypto.randomUUID(),line_ids:[],status:'pending',events:[],created_at:new Date().toISOString()};parcels.push(p)}else if(body.id)Object.assign(p,fields);for(const l of body.lines||[])if(!p.line_ids.includes(l.id))p.line_ids.push(l.id);p.updated_at=new Date().toISOString();return {id:p.id,saved:true}}
+  if(body.action==='shipment_unlink'){const p=parcels.find(p=>p.id===body.id);p.line_ids=p.line_ids.filter(id=>id!==body.line);return {saved:true}}
   if(method==='POST')return {processed:lines.length,has_more:false}
   if(body.action==='batch'){
     const chosen=body.lines.map(x=>lines.find(l=>l.id===x.id));if(chosen.some((l,i)=>!l||l.updated_at!==body.lines[i].updated_at))throw Error('Sélection périmée')
@@ -82,11 +91,11 @@ const demoAccounts = [
   {id:'account3',pseudo:'Atelier démo',email:'atelier@example.com',browser:'Safari · téléphone',statut:'en_preparation',creation_stage:'post2',creation_next_at:new Date(Date.now()-3600000).toISOString()},
   {id:'account4',pseudo:'Vestiaire démo',email:'vestiaire@example.com',browser:'Firefox · téléphone',statut:'en_preparation',creation_stage:'wait',creation_next_at:new Date(Date.now()-3600000*2).toISOString()},
   {id:'shadow1',pseudo:'Ancien compte',email:'archive@example.com',is_shadowbanned:true,creation_stage:'ready'},
-  {id:'account5',pseudo:'Compte suspendu',email:'suspendu@example.com',statut:'suspendu',creation_stage:'ready',is_ready:true},
+  {id:'account5',blocked_at:new Date().toISOString(),pseudo:'Compte suspendu',email:'suspendu@example.com',statut:'suspendu',creation_stage:'ready',is_ready:true},
 ]
 const demoClient={from(table){
   let patch=null,insert=null,remove=false;const filters=[];
-  const result=()=>{const source=table==='vinted_accounts'?demoAccounts:[];if(insert){const row={id:crypto.randomUUID(),created_at:new Date().toISOString(),...insert};source.push(row);return {data:[structuredClone(row)],error:null}}const list=source.filter(a=>filters.every(fn=>fn(a)));if(patch)list.forEach(a=>Object.assign(a,patch));if(remove)list.forEach(a=>source.splice(source.indexOf(a),1));return {data:structuredClone(list),error:null}}
+  const result=()=>{const source=table==='vinted_accounts'?demoAccounts:[];if(insert){const row={id:crypto.randomUUID(),created_at:new Date().toISOString(),...insert};source.push(row);return {data:[structuredClone(row)],error:null}}const list=source.filter(a=>filters.every(fn=>fn(a)));if(patch)list.forEach(a=>{const before=accountGroup(a);Object.assign(a,patch);const after=accountGroup(a);if(before!==after){a.blocked_at=after==='blocked'?new Date().toISOString():null;a.ready_at=after==='ready'?new Date().toISOString():null;a.password_changed_at=null}});if(remove)list.forEach(a=>source.splice(source.indexOf(a),1));return {data:structuredClone(list),error:null}}
   const q={select(){return q},order(){return q},eq(k,v){filters.push(a=>(k==='is_shadowbanned'?!!a[k]:a[k])===v);return q},is(k,v){filters.push(a=>(a[k]??null)===v);return q},range(a,b){const r=result();return Promise.resolve({...r,data:r.data.slice(a,b+1)})},in(k,values){filters.push(a=>values.includes(a[k]));return q},update(p){patch=p;return q},insert(p){insert=p;return q},delete(){remove=true;return q},then(resolve){return Promise.resolve(result()).then(resolve)},async maybeSingle(){const r=result();return {data:r.data[0]||null,error:null}},single(){return q.maybeSingle()}};return q
 }}
 function PreviewApp(){

@@ -19,6 +19,12 @@
   .sales-list td:nth-child(4)::before { content: 'Préparation'; }
   .sales-list td:nth-child(5)::before { content: 'Échéance'; }
   .sales-list td::before { display: block; color: #64748b; font-size: 11px; margin-bottom: 6px; }
+  .accounts-list table, .accounts-list tbody { display: block; width: 100%; min-width: 0; }
+  .accounts-list thead { display: none; }
+  .accounts-list tr { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); padding: 8px; }
+  .accounts-list td { display: block; min-width: 0; padding: 8px; overflow-wrap: anywhere; }
+  .accounts-list td:first-child, .accounts-list td:last-child, .accounts-list td[colspan] { grid-column: 1 / -1; }
+  .accounts-list td button { min-height: 36px; }
 }
 
 * {
