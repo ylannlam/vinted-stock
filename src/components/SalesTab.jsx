@@ -136,7 +136,7 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
   return <main className="workspace-page max-w-screen-2xl mx-auto p-4 sm:p-6 space-y-5 text-slate-800">
     <header className="sales-header flex flex-wrap justify-between gap-4 items-center">
       <div><h1 className="text-2xl font-bold">Mes ventes</h1><p className="text-sm text-slate-500 mt-1">Tes ventes, de la plus récente à la plus ancienne.</p><div className="flex gap-2 mt-3"><button disabled={busy} onClick={()=>run(()=>load(true))} className={buttonClass}>Actualiser</button><button aria-expanded={settingsOpen} aria-controls="sales-settings" className={buttonClass} onClick={()=>setSettingsOpen(!settingsOpen)}>Réglages</button></div></div>
-      <CollectionManager indicator full isAdmin={isAdmin} request={collectorRequest} bridge={collectorBridge} onCollected={()=>load(true)}/>
+      <CollectionManager indicator full initiallyOpen={initialFilters.connect==='shein'} isAdmin={isAdmin} request={collectorRequest} bridge={collectorBridge} onCollected={()=>load(true)}/>
     </header>
     {settingsOpen&&<section id="sales-settings" className="rounded-2xl border bg-white p-4 space-y-3"><h2 className="font-semibold text-sm">Réception des ventes Dotb</h2>
       <p className="text-sm text-slate-600">{data.automation?.enabled?'Les nouvelles ventes arrivent automatiquement.':'La réception automatique doit être activée.'}</p>

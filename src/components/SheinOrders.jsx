@@ -53,6 +53,7 @@ export default function SheinOrders({request,bridge=defaultBridge,isAdmin,onOpen
         <p className="text-xs text-slate-400 mt-2">Dernière lecture : {data.sync?.last_completed_at?new Date(data.sync.last_completed_at).toLocaleString('fr-FR'):'aucune'} · {data.count} commande{data.count>1?'s':''}</p>
       </div>
       <div className="flex flex-wrap gap-2">
+        {isAdmin&&!state?.connected&&<a className={primaryClass} href="#ventes?connect=shein">Connecter l’extension</a>}
         {isAdmin&&compatible&&state?.connected&&<>
           {o?.phase==='blocked'?<button disabled={busy} className={primaryClass} onClick={()=>command('orders_resume')}>Reprendre</button>:<button disabled={busy||active(o)} className={primaryClass} onClick={()=>command('orders_start')}>{active(o)?'Lecture en cours…':o?.enabled?'Synchroniser':'Activer la synchronisation'}</button>}
           {o?.enabled&&<button disabled={busy} className={buttonClass} onClick={()=>command('orders_pause')}>Pause</button>}

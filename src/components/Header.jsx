@@ -17,6 +17,7 @@ export default function Header({ onLogout, profile }) {
       </div>
 
       <div className="workspace-header-account flex items-center gap-3">
+        {role==='admin'&&<a href="#ventes?connect=shein" className="rounded-lg border border-teal-100 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-800">Extension Shein</a>}
         {profile?.pseudo && (
           <span className="text-sm font-medium text-gray-700">{profile.pseudo}</span>
         )}
