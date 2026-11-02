@@ -9,6 +9,7 @@ import {salesFilters,financeValues,batchValues,saleVariant} from '../server/work
 import {enrichSoldSizes} from '../server/sold-sizes.js'
 import {readShipments,saveShipment,refreshShipment} from '../server/supplier-shipments.js'
 import {isId} from '../server/dotb.js'
+import {shippingLabel} from '../server/shipping-labels.js'
 
 export const config = { maxDuration: 60 }
 const fail = error => { if (error) throw error }
@@ -70,6 +71,7 @@ export default async function handler(req, res) {
         last_sync: state.last_completed_at, resume: !!state.cursor, processed: state.processed })
     }
     if (req.method === 'POST') {
+      if(req.body?.action==='shipping_label')return res.json(await shippingLabel(db,req.body.id))
       if(req.body?.action==='shipment_refresh')return res.json(await refreshShipment(db,req.body.id))
       if (role !== 'admin') throw new AppError('Seul un administrateur peut importer les ventes.',403)
       if(req.body?.action==='automation')return res.json(await enableSalesAutomation(db))

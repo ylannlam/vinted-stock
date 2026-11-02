@@ -45,6 +45,7 @@ async function previewWorkspace(view='overview',query={},body){
  return {rows:structuredClone(rows),count:rows.length,page:0,page_size:20,counts}
 }
 async function request(method='GET',body,query='') {
+  if(method==='POST'&&body?.action==='shipping_label')return (await import('./lib/shippingLabelPreview')).shippingLabelPreview()
   if(method==='GET'){
     const q=new URLSearchParams(query.replace(/^\?/,''));let filtered=structuredClone(lines).sort(newestSalesFirst)
     const shipRows=parcels.filter(p=>p.line_ids.length).map(p=>({...p,lines:p.line_ids.map(id=>{const l=lines.find(x=>x.id===id);return {id,title:l.source.title,account:l.order.account_login,size:l.supplier_size,updated_at:l.updated_at}})}))

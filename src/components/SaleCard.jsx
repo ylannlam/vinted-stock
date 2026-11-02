@@ -4,7 +4,7 @@ import {nextSaleAction} from '../lib/saleDetails'
 import {saleDateOf,saleDateLabel} from '../lib/salesOrder'
 import {primaryClass,buttonClass,fieldClass} from './WorkspaceUI'
 
-export default function SaleCard({line,catalog,busy,selecting,selected,onSelect,onDetails,onAction,skuEditing,onSkuChange,onSkuPaste,onSkuSave,onSkuClose,error}) {
+export default function SaleCard({line,catalog,busy,selecting,selected,onSelect,onDetails,onLabel,onAction,skuEditing,onSkuChange,onSkuPaste,onSkuSave,onSkuClose,error}) {
   const product=productOf(line,catalog),due=deadline(line),stage=stageOf(line),action=nextSaleAction(line,catalog)
   const isBlocked=blocked(line),isEditing=skuEditing?.id===line.id
   const title=line.source.title||'Article sans titre'
@@ -26,6 +26,7 @@ export default function SaleCard({line,catalog,busy,selecting,selected,onSelect,
       </form>:<div className="sale-card-footer">
         {action?<button disabled={busy} onClick={()=>onAction(action)} className={primaryClass+' w-full'}>{action.label}</button>:<button disabled={busy} onClick={onDetails} className={buttonClass+' w-full'}>Voir la vente</button>}
         {action?.kind!=='details'&&action&&<button disabled={busy} onClick={onDetails} className="article-details-link">Voir les détails <span aria-hidden="true">↗</span></button>}
+        {onLabel&&!isBlocked&&<button type="button" disabled={busy} onClick={onLabel} className="article-details-link">Bordereau 100 × 150 <span aria-hidden="true">↗</span></button>}
       </div>}
     </div>
   </article>
