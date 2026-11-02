@@ -1,6 +1,7 @@
 import ArticlePhotos from './ArticlePhotos'
 import {productOf,photoOf,stageOf,blocked,deadline,money,nextStage,ORDER_LABELS,STAGES} from '../lib/fulfillment'
 import {nextSaleAction} from '../lib/saleDetails'
+import {saleDateOf,saleDateLabel} from '../lib/salesOrder'
 import {primaryClass,buttonClass,fieldClass} from './WorkspaceUI'
 
 export default function SaleCard({line,catalog,busy,selecting,selected,onSelect,onDetails,onAction,skuEditing,onSkuChange,onSkuPaste,onSkuSave,onSkuClose,error}) {
@@ -8,12 +9,14 @@ export default function SaleCard({line,catalog,busy,selecting,selected,onSelect,
   const isBlocked=blocked(line),isEditing=skuEditing?.id===line.id
   const title=line.source.title||'Article sans titre'
   const photo=photoOf(line,catalog)
+  const soldAt=saleDateOf(line)
   const status=isBlocked?ORDER_LABELS[line.order.status]||'À vérifier':STAGES.find(s=>s.id===stage)?.label
   return <article className={`sale-card ${selected?'is-selected':''}`}>
     <div className="relative"><ArticlePhotos photos={[photo]} title={title} onOpen={onDetails}/><span className={`sale-stage ${isBlocked?'sale-stage-warning':''}`}>{status}</span>{selecting&&<label className="sale-select"><input type="checkbox" aria-label={`Sélectionner ${title}`} disabled={busy||isBlocked||!nextStage(line)} checked={selected} onChange={e=>onSelect(e.target.checked)}/></label>}</div>
     <div className="sale-card-body">
       <div className="sale-card-meta"><span>{line.order.account_login||'Compte inconnu'}</span><strong className="sale-price">{money(line.source.selling_price,line.order.currency)}</strong></div>
       <button className="article-title-button" onClick={onDetails}><h2 className="article-title">{title}</h2></button>
+      {soldAt&&<time className="sale-date" dateTime={soldAt}>Vendu le {saleDateLabel(soldAt)}</time>}
       <div className="sale-variant"><span>{line.supplier_size?'Taille '+line.supplier_size:'Taille à préciser'}</span>{line.supplier_color&&<span>{line.supplier_color}</span>}{product?.price!=null&&<span className="sale-cost">Achat : {money(product.price,product.currency)}</span>}</div>
       {due&&<p className={`sale-deadline ${due.urgent?'is-urgent':''}`}>Envoi Vinted : {due.text.toLowerCase()}</p>}
       {isEditing?<form className="sale-sku-form" aria-label={`SKU de ${title}`} onSubmit={e=>{e.preventDefault();onSkuSave()}} onKeyDown={e=>{if(e.key==='Escape'&&!busy)onSkuClose()}}>

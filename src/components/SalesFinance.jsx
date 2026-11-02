@@ -1,9 +1,11 @@
 import {useEffect,useRef,useState} from 'react'
+import {useCachedState} from '../lib/useCachedState'
 import {ErrorNotice,Pagination,buttonClass} from './WorkspaceUI'
 import {money} from '../lib/fulfillment'
 const defaultRequest=(...args)=>import('../lib/api').then(m=>m.workspaceRequest(...args))
 export default function SalesFinance({month,onOpenSale,request=defaultRequest}){
- const [data,setData]=useState(null),[page,setPage]=useState(0),[busy,setBusy]=useState(false),[error,setError]=useState('')
+ const [page,setPage]=useState(0),[busy,setBusy]=useState(false),[error,setError]=useState('')
+ const [data,setData]=useCachedState(request,`finance:${month}:${page}`,null)
  const sequence=useRef(0)
  async function load(){const seq=++sequence.current;setBusy(true);try{const next=await request('finance',{month,page});if(seq===sequence.current){setData(next);setError('')}}catch(e){if(seq===sequence.current)setError(e.message)}finally{if(seq===sequence.current)setBusy(false)}}
  useEffect(()=>setPage(0),[month])

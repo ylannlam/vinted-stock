@@ -1,3 +1,4 @@
+import {useCachedState} from '../lib/useCachedState'
 import {readAllRows} from '../lib/workspace'
 import {Pagination} from './WorkspaceUI'
 import AccountPreparation from './AccountPreparation'
@@ -13,7 +14,7 @@ const secondary = 'rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs 
 const selectClass = 'border border-gray-200 bg-white rounded-lg px-3 py-2 text-xs text-gray-600 focus:outline-none focus:border-teal-400'
 
 export default function VintedAccountsTab({client=supabase,onDirections}) {
-  const [accounts,setAccounts]=useState([])
+  const [accounts,setAccounts]=useCachedState(client,'accounts',[])
   const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('')
   const [view,setView]=useState('ready'),[search,setSearch]=useState(''),[sort,setSort]=useState('priority'),[dueOnly,setDueOnly]=useState(false)
   const [selectedId,setSelectedId]=useState(null),[editAccount,setEditAccount]=useState(undefined)
@@ -113,7 +114,7 @@ export default function VintedAccountsTab({client=supabase,onDirections}) {
       {view==='ready'&&<p className="px-4 py-3 bg-teal-50 text-teal-900 text-xs">À chaque passage dans Prêts : un rappel de 2 jours pour changer le mot de passe. Confirme ensuite « Mot de passe changé ».</p>}
       {view==='shadowban'&&<p className="px-4 py-3 bg-gray-100 text-gray-600 text-xs">Comptes abandonnés : exclus des comptes prêts et du suivi de création.</p>}
       <div className="accounts-list overflow-x-auto"><table className="w-full text-left min-w-[820px]"><thead className="text-[10px] uppercase tracking-wide text-gray-400 border-y border-gray-100"><tr>{['Compte',view==='isolation'?'Préparation':'Statut',...(view==='isolation'?['Rappel conseillé']:view==='blocked'?['Réponse au déban']:view==='ready'?['Mot de passe']:[]),'Environnement','Action'].map(h=><th className="font-semibold px-4 py-3" key={h}>{h}</th>)}</tr></thead>
-        <tbody>{loading?<tr><td colSpan={view==='shadowban'?4:5} className="py-16 text-center text-sm text-gray-400">Chargement des comptes…</td></tr>:displayed.slice(page*50,(page+1)*50).map(a=>{
+        <tbody>{loading&&!accounts.length?<tr><td colSpan={view==='shadowban'?4:5} className="py-16 text-center text-sm text-gray-400">Chargement des comptes…</td></tr>:displayed.slice(page*50,(page+1)*50).map(a=>{
           const group=accountGroup(a),due=isAccountDue(a,now),deadline=accountDeadline(a,now)
           return <tr key={a.id} className={`border-b border-gray-100 last:border-0 hover:bg-gray-50/70 ${due?'bg-orange-50/30':''}`}>
             <td className="px-4 py-3"><div className="flex items-center gap-3"><span className={`w-9 h-9 rounded-lg flex items-center justify-center font-semibold text-xs shrink-0 ${group==='blocked'?'bg-gray-100 text-gray-400':'bg-teal-50 text-teal-700'}`}>{a.ads_power_num?`#${a.ads_power_num}`:a.pseudo?.slice(0,2).toUpperCase()}</span><div className="min-w-0"><button onClick={()=>{setSelectedId(a.id);setError('')}} className="font-semibold text-sm text-gray-900 hover:text-teal-600 text-left" aria-label={`Ouvrir ${a.pseudo}`}>{a.pseudo}</button><div className="text-xs text-gray-400 mt-0.5 flex gap-1.5 items-center"><span className="max-w-52 truncate" title={a.email||''}>{a.email||'Email non renseigné'}</span><CopyValue value={a.email} label={`Copier l’email de ${a.pseudo}`}/></div></div></div></td>

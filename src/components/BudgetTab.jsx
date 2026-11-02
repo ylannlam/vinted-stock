@@ -1,3 +1,4 @@
+import {useCachedState} from '../lib/useCachedState'
 import { useEffect, useRef, useState } from 'react'
 import { validateTracker } from '../../server/drop-tracker'
 import { budgetTotals, euro, mergeExpenses } from '../lib/budget'
@@ -8,9 +9,9 @@ const field = 'w-full border border-gray-200 rounded-lg bg-white px-3 py-2 text-
 const button = 'border border-gray-200 bg-white text-gray-600 rounded-lg px-3 py-2 text-xs font-semibold hover:bg-gray-50 disabled:opacity-50'
 
 export default function BudgetTab({request=defaultRequest,onOpenSale,financeRequest}) {
-  const [record,setRecord]=useState(null), [busy,setBusy]=useState(false), [error,setError]=useState(''), [notice,setNotice]=useState('')
+  const [record,setRecord]=useCachedState(request,'budget',null), [busy,setBusy]=useState(false), [error,setError]=useState(''), [notice,setNotice]=useState('')
   const [month,setMonth]=useState(today().slice(0,7)), [kind,setKind]=useState('all'), [search,setSearch]=useState('')
-  const [draft,setDraft]=useState(null), [budget,setBudget]=useState(''), [deleteId,setDeleteId]=useState(null)
+  const [draft,setDraft]=useState(null), [budget,setBudget]=useState(record?String(record.payload.settings.budget):''), [deleteId,setDeleteId]=useState(null)
   const file=useRef(null)
   async function load() {
     setBusy(true);setError('')

@@ -1,10 +1,11 @@
+import {useCachedState} from '../lib/useCachedState'
 import {useEffect,useState} from 'react'
 import {TAB_SALES,TAB_TOUT,TAB_A_ENVOYER,TAB_A_RECEVOIR} from '../constants'
 import {ErrorNotice,buttonClass} from './WorkspaceUI'
 import SaleActions from './SaleActions'
 const defaultRequest=(...args)=>import('../lib/api').then(m=>m.workspaceRequest(...args))
 export default function HomeTab({isAdmin,onNavigate,request=defaultRequest}){
- const [data,setData]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false)
+ const [data,setData]=useCachedState(request,'overview',null),[error,setError]=useState(''),[busy,setBusy]=useState(false)
  async function load(){setBusy(true);try{setData(await request());setError('')}catch(e){setError(e.message)}finally{setBusy(false)}}
  useEffect(()=>{load();const timer=setInterval(()=>{if(document.visibilityState==='visible')load()},30000);return()=>clearInterval(timer)},[])
  const date=new Intl.DateTimeFormat('fr-FR',{weekday:'long',day:'numeric',month:'long',timeZone:'Europe/Paris'}).format(new Date())

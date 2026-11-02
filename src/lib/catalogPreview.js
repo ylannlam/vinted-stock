@@ -1,5 +1,5 @@
 import { validateObservation, validateSupplierAssociation } from '../../server/catalog'
-import { collectionReferences } from './collector'
+import { collectionReferences,latestCollections } from './collector'
 import {previewPhotos} from './previewPhotos'
 const product={id:'11111111-1111-4111-8111-111111111111',supplier_id:'123456',supplier_url:'https://fr.shein.com/Demo-p-123456.html',title:'Robe midi à fleurs · exemple',supplier_sku:'sz-DEMO',price:18.08,previous_price:19.90,size:'M',color:'Nude',availability:'available',observed_at:new Date().toISOString(),linked_skus:1}
 const products=[product],items=[{id:'demo-item',sku:'sz-DEMO',title:'Robe midi · taille M',supplier_url:product.supplier_url}],links=[{sku:'sz-DEMO',product_id:product.id,updated_at:new Date().toISOString()}]
@@ -13,16 +13,19 @@ for (const [i,title,color] of [[0,'Body à manches longues · exemple','Noir'],[
   links.push({sku:p.supplier_sku,product_id:p.id,updated_at:new Date().toISOString()})
 }
 const tracking={starts_at:'2026-10-30T23:00:00Z',time_zone:'Europe/Paris'}
-const devices=[],jobs=Array.from({length:4},(_,i)=>({id:crypto.randomUUID(),reference_key:`sku:sz-DEMO-${i+1}`,input:`sz-DEMO-${i+1}`,expected_sku:`sz-DEMO-${i+1}`,status:i%2?'failed':'blocked',message:'Exemple de fiche à relancer.',created_at:new Date(Date.now()-(i+1)*60000).toISOString()}))
-let browserState={version:'0.4.0',connected:false,enabled:false,phase:'idle',message:'Navigateur prêt à être connecté.'}
+const devices=[],jobs=Array.from({length:4},(_,i)=>({id:crypto.randomUUID(),reference_key:`sku:sz-DEMO-${i+1}`,input:`sz-DEMO-${i+1}`,expected_sku:`sz-DEMO-${i+1}`,status:['completed','completed','running','queued'][i],message:null,created_at:new Date(Date.now()-(i+1)*60000).toISOString()}))
+let browserState={version:'0.5.0',connected:true,enabled:true,phase:'extract',job:jobs[2],completed:2,lastContactAt:Date.now(),message:'Récupération des photos et du lien Shein…'}
 export async function collectorBridgePreview(action='status') {
   if(action==='connect')browserState={...browserState,connected:true,device_id:devices.at(-1)?.id}
   if(action==='start'||action==='resume')browserState={...browserState,enabled:true,phase:'idle',message:'En attente de tes liens ou SKU.'}
   if(action==='pause')browserState={...browserState,enabled:false,message:'Import en pause.'}
-  return structuredClone(browserState)
+  return structuredClone({...browserState,lastContactAt:Date.now()})
 }
 export async function collectorPreview(method='GET',body) {
-  if(method==='GET')return structuredClone({devices:devices.filter(d=>!d.revoked_at),jobs,pending:jobs.filter(j=>j.status==='queued').length})
+  if(method==='GET'){
+    const recent=latestCollections(jobs),count=status=>recent.filter(j=>status.includes(j.status)).length
+    return structuredClone({devices:devices.filter(d=>!d.revoked_at),jobs,pending:count(['queued','running']),progress:{total:recent.length,completed:count(['completed']),queued:count(['queued']),running:count(['running']),review:count(['blocked','failed'])}})
+  }
   if(body.action==='create_device'){const id=crypto.randomUUID();devices.push({id,name:body.name,enabled:true,expires_at:new Date(Date.now()+90*86400000).toISOString()});return {id,token:'CODE-DEMONSTRATION-SANS-ACCES'}}
   if(body.action==='pause_device'){devices.find(d=>d.id===body.id).enabled=body.enabled;return {saved:true}}
   if(body.action==='revoke_device'){devices.find(d=>d.id===body.id).revoked_at=new Date().toISOString();return {saved:true}}

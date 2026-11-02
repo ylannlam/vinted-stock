@@ -52,3 +52,21 @@ export function collectorConnectionState(browser,devices=[],now=Date.now()) {
   if(!Number.isFinite(seen)||now-seen>=120000||seen-now>60000)return {label:'Connexion au serveur à vérifier',active:false}
   return {label:browser.job?'Récupération Shein en cours':'Connecté · en attente de ventes à traiter',active:true}
 }
+
+export function collectionProgress(progress,browser,devices=[],error='',now=Date.now()) {
+  const connection=collectorConnectionState(browser,devices,now)
+  if(error)return {percent:null,label:'Connexion à vérifier',detail:'Clique pour voir les détails',tone:'warning',working:false}
+  if(!progress)return {percent:null,label:'Connexion à l’extension…',detail:'Lecture de l’avancement',tone:'idle',working:false}
+  const {total=0,completed=0,queued=0,running=0,review=0}=progress,pending=queued+running
+  const percent=total?completed===total?100:Math.min(99,Math.floor(completed/total*100)):0
+  const working=connection.active&&!!(running||browser?.job)&&browser?.phase!=='blocked'
+  let label='En attente de ventes',tone='idle'
+  if(browser?.phase==='blocked'){label='Vérification Shein requise';tone='warning'}
+  else if(pending&&!connection.active){label=browser?.connected&&!browser.enabled?'Extension en pause':'Extension hors ligne';tone='warning'}
+  else if(working){label='Récupération en cours';tone='active'}
+  else if(pending){label='Préparation des fiches';tone='active'}
+  else if(review){label='Fiches à vérifier';tone='warning'}
+  else if(total){label='Tout est récupéré';tone='done'}
+  const detail=total?`${completed} / ${total} fiches récupérées${review?' · '+review+' à vérifier':''}`:connection.active?'Prête pour tes prochaines ventes':'Connecte ton navigateur Shein'
+  return {percent,label,detail,tone,working}
+}

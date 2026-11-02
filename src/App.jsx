@@ -7,6 +7,7 @@ import { TAB_SALES, TAB_BUDGET, TAB_CATALOG, TAB_RESOURCES } from './constants'
 import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import {useNavigation} from './lib/navigation'
 import {readAllRows} from './lib/workspace'
+import {clearViewCache,setViewCacheScope} from './lib/viewCache'
 import {ErrorNotice,PageBoundary} from './components/WorkspaceUI'
 import {workspaceErrors} from '../server/workspace'
 import {TAB_HOME,TAB_HISTORY} from './constants'
@@ -40,6 +41,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true)
   const [profile, setProfile] = useState(null)
   const profileFetchedForRef = useRef(null) // évite les double-fetches
+  const stockLoadedFor=useRef(null)
   const [profileLoading, setProfileLoading] = useState(false)
   const [activeTab,setActiveTab,navigationFilters]=useNavigation(captureDraft)
   const [stockError,setStockError]=useState(''),[commandeError,setCommandeError]=useState(''),[profileError,setProfileError]=useState(''),[stockNotice,setStockNotice]=useState(''),[photoArticle,setPhotoArticle]=useState(null)
@@ -78,6 +80,7 @@ export default function App() {
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
+        clearViewCache()
         setUser(null)
       } else if (session?.user) {
         // Journalise chaque connexion : login explicite (SIGNED_IN) ET ouverture
@@ -106,26 +109,29 @@ export default function App() {
       profileFetchedForRef.current = null
       setProfile(null)
       setItems([])
+      setCommandes([])
+      stockLoadedFor.current=null
     }
   }, [user])
 
   async function fetchProfile() {
     setProfileLoading(true);setProfileError('')
-    try {const {data,error}=await supabase.from('profiles').select('*').eq('id',user.id).single();if(error)throw error;setProfile(data??null)}
+    try {const {data,error}=await supabase.from('profiles').select('*').eq('id',user.id).single();if(error)throw error;setViewCacheScope(user.id+':'+data?.role);setProfile(data??null)}
     catch {setProfileError('Ton profil n’a pas pu être chargé. Vérifie ta connexion puis réessaie.')}
     finally{setProfileLoading(false)}
   }
 
   useEffect(() => {
     const role = profile?.role
-    if (role === 'stock' || role === 'admin') {
+    if (user?.id && (role === 'stock' || role === 'admin') && [TAB_TOUT,TAB_A_RECEVOIR,TAB_A_ENVOYER,TAB_A_ENVOYER_LOT,TAB_ENVOYES].includes(activeTab) && stockLoadedFor.current!==user.id) {
+      stockLoadedFor.current=user?.id
       fetchItems()
       fetchCommandes()
     }
     if (role === 'employe') {
       setActiveTab(TAB_WORKSPACE)
     }
-  }, [profile])
+  }, [profile,activeTab,user?.id])
 
   async function fetchItems() {
     setItemsLoading(true);setStockError('')

@@ -1,4 +1,5 @@
 import Header from './components/Header'
+import {newestSalesFirst} from './lib/salesOrder'
 import {previewPhotos} from './lib/previewPhotos'
 import HomeTab from './components/HomeTab'
 import HistoryTab from './components/HistoryTab'
@@ -29,6 +30,7 @@ const catalog = [{sku:'DEMO-100-M',photo_url:previewPhotos[0][1],supplier_url:'h
   {sku:'DEMO-101-M',retrieval_status:'queued'}]
 const lines = ['to_order','ordered','in_transit','received','prepared','shipped'].map((stage,i)=>({
   id:`demo-${i}`,updated_at:new Date().toISOString(),stage,
+  sale_date:new Date(Date.now()-i*3*3600000).toISOString(),
   source:{title:['Body à manches longues','Robe à épaules dénudées','Combinaison côtelée','Body noir','Robe de soirée','Combinaison noire'][i],thumbnail_url:previewPhotos[i%3][0],sku:i===0||i===2?null:`DEMO-${100+i}-M`,selling_price:'24.90',supplier_link:'https://fr.shein.com/'},
   supplier_size:i%2?'S':'M',supplier_size_manual:false,
   supplier_order_ref:i?'DEMO-COMMANDE-01':null,
@@ -44,7 +46,7 @@ async function previewWorkspace(view='overview',query={},body){
 }
 async function request(method='GET',body,query='') {
   if(method==='GET'){
-    const q=new URLSearchParams(query.replace(/^\?/,''));let filtered=structuredClone(lines)
+    const q=new URLSearchParams(query.replace(/^\?/,''));let filtered=structuredClone(lines).sort(newestSalesFirst)
     const shipRows=parcels.filter(p=>p.line_ids.length).map(p=>({...p,lines:p.line_ids.map(id=>{const l=lines.find(x=>x.id===id);return {id,title:l.source.title,account:l.order.account_login,size:l.supplier_size,updated_at:l.updated_at}})}))
     if(q.get('view')==='shipments')return {shipments:structuredClone(shipRows),count:shipRows.length,page:0}
     if(q.get('view')==='detail'){const line=filtered.find(l=>l.id===q.get('id'));if(!line)throw Error('Vente introuvable');return {line:{...line,shipments:structuredClone(shipRows.filter(p=>p.line_ids.includes(line.id)))},catalog:structuredClone(catalog)}}

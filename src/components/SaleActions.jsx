@@ -1,9 +1,11 @@
 import {useEffect,useRef,useState} from 'react'
+import {useCachedState} from '../lib/useCachedState'
 import {ACTIONS,actionDescription} from '../lib/saleDetails'
 import {ErrorNotice,Pagination,buttonClass} from './WorkspaceUI'
 
 export default function SaleActions({request,onOpen}) {
-  const [category,setCategory]=useState('all'),[page,setPage]=useState(0),[data,setData]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState('')
+  const [category,setCategory]=useState('all'),[page,setPage]=useState(0),[busy,setBusy]=useState(false),[error,setError]=useState('')
+  const [data,setData]=useCachedState(request,`actions:${category}:${page}`,null)
   const sequence=useRef(0)
   useEffect(()=>{
     let active=true
@@ -13,7 +15,7 @@ export default function SaleActions({request,onOpen}) {
       catch(e){if(active&&seq===sequence.current)setError(e.message)}
       finally{if(active&&seq===sequence.current)setBusy(false)}
     }
-    setData(null);load()
+    load()
     const timer=setInterval(()=>{if(document.visibilityState==='visible')load()},30000)
     return()=>{active=false;sequence.current++;clearInterval(timer)}
   },[category,page,request])

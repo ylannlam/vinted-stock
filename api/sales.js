@@ -28,7 +28,6 @@ export default async function handler(req, res) {
     const auth = await authorize(req, res, ['admin','stock'])
     if (!auth) return
     const { db, role, user } = auth
-    const tracking=await readTrackingPeriod(db)
     if (req.method === 'GET') {
       if(req.query?.view==='shipments')return res.json(await readShipments(db,req.query))
       if(req.query?.view==='detail'){
@@ -42,13 +41,18 @@ export default async function handler(req, res) {
       }
       if(req.query?.view==='page'){
         const filters=salesFilters(req.query)
-        const {data,error}=await db.rpc('sales_workspace_page',{p_filters:filters,p_known_revision:typeof req.query.revision==='string'?req.query.revision:null});fail(error)
-        if(data.unchanged)return res.json(data)
-        const [syncState,automation]=await Promise.all([
+        const known=typeof req.query.revision==='string'?req.query.revision:null
+        const pendingPage=db.rpc('sales_workspace_page',{p_filters:filters,p_known_revision:known})
+        const conditional=known?await pendingPage:null
+        if(conditional){fail(conditional.error);if(conditional.data.unchanged)return res.json(conditional.data)}
+        const [pageResult,tracking,syncState,automation]=await Promise.all([
+          conditional||pendingPage,
+          readTrackingPeriod(db),
           db.from('dotb_sync_state').select('cursor,last_completed_at,processed').eq('id',true).single(),
           automationStatus(db),
         ])
-        fail(syncState.error)
+        fail(pageResult.error);fail(syncState.error)
+        const data=pageResult.data
         return res.json({...data,tracking,automation,connected:!!process.env.DOTB_API_TOKEN,
           last_sync:syncState.data.last_completed_at,resume:!!syncState.data.cursor,processed:syncState.data.processed})
       }
@@ -57,11 +61,11 @@ export default async function handler(req, res) {
       const { data: state, error: stateError } = await db.from('dotb_sync_state').select('cursor,last_completed_at,processed').eq('id',true).single()
       if (stateError && !['42P01','PGRST205'].includes(stateError.code)) throw stateError
       if (stateError) return res.json({ setup_required: true, connected: !!process.env.DOTB_API_TOKEN, lines: [], catalog: [], count: 0 })
-      const { data, count } = await readPage(head => db.from('sales_lines_in_period')
+      const [linesPage,catalogPage,tracking]=await Promise.all([readPage(head => db.from('sales_lines_in_period')
         .select('*', { count: 'exact', head })
-        .eq('source_active', true).order('id'), offset)
-      const { data: catalog, count: catalogCount } = await readPage(head => db.from('sales_supplier_details')
-        .select('*', { count: 'exact', head }).order('sku'), offset)
+        .eq('source_active', true).order('id'), offset),
+        readPage(head => db.from('sales_supplier_details').select('*', { count: 'exact', head }).order('sku'), offset),readTrackingPeriod(db)])
+      const {data,count}=linesPage,{data:catalog,count:catalogCount}=catalogPage
       return res.json({ lines: data, catalog, count, tracking, automation:await automationStatus(db),catalog_count: catalogCount, connected: !!process.env.DOTB_API_TOKEN,
         last_sync: state.last_completed_at, resume: !!state.cursor, processed: state.processed })
     }
@@ -70,6 +74,7 @@ export default async function handler(req, res) {
       if (role !== 'admin') throw new AppError('Seul un administrateur peut importer les ventes.',403)
       if(req.body?.action==='automation')return res.json(await enableSalesAutomation(db))
       if (!process.env.DOTB_API_TOKEN) throw new AppError('La connexion Dotb reste à activer dans les réglages du serveur.',503)
+      const tracking=await readTrackingPeriod(db)
       const lease = randomUUID(), now = new Date().toISOString()
       const { data: state, error } = await db.from('dotb_sync_state')
         .update({ lease, locked_until: new Date(Date.now()+45000).toISOString() })

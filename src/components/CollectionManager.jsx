@@ -2,17 +2,20 @@ import {useEffect,useRef,useState} from 'react'
 import {collectionLabels,collectorOnline,latestCollections,collectorConnectionState} from '../lib/collector'
 import {collectorBridge} from '../lib/collectorBridge'
 import CollectorConnection from './CollectorConnection'
+import CollectorProgress from './CollectorProgress'
+import ResourceDialog from './ResourceDialog'
 import {sheinProduct,sheinSearchUrl} from '../lib/catalog'
 const defaultRequest=(...args)=>import('../lib/api').then(m=>m.collectorRequest(...args))
 const button='rounded-lg border px-3 py-2 text-sm bg-white hover:bg-gray-50 disabled:opacity-40'
 const primary='rounded-lg px-4 py-2 text-sm font-medium bg-teal-700 text-white hover:bg-teal-800 disabled:opacity-40'
 const date=value=>value?new Date(value).toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short'}):'Pas encore lancé'
 
-export default function CollectionManager({isAdmin,full=false,compact=false,disclosure=false,request=defaultRequest,bridge=collectorBridge,onCollected,onManage}) {
+export default function CollectionManager({isAdmin,full=false,compact=false,disclosure=false,indicator=false,request=defaultRequest,bridge=collectorBridge,onCollected,onManage}) {
   const [state,setState]=useState({devices:[],jobs:[],pending:0}),[browser,setBrowser]=useState(null)
   const [error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false)
   const [filter,setFilter]=useState('pending'),[showAll,setShowAll]=useState(false)
   const [selected,setSelected]=useState([])
+  const [opened,setOpened]=useState(false)
   const alive=useRef(true),running=useRef(false),latest=useRef(''),callback=useRef(onCollected)
   callback.current=onCollected
   async function refresh() {
@@ -21,7 +24,7 @@ export default function CollectionManager({isAdmin,full=false,compact=false,disc
     setState(next)
     const retryable=new Set(latestCollections(next.jobs).filter(j=>['blocked','failed'].includes(j.status)).map(j=>j.id))
     setSelected(previous=>previous.filter(id=>retryable.has(id)))
-    const completed=next.jobs.filter(j=>j.status==='completed').map(j=>j.id).sort().join(',')||'none'
+    const completed=JSON.stringify([next.progress?.completed,next.jobs.filter(j=>j.status==='completed').map(j=>j.id).sort()])
     if(latest.current&&latest.current!==completed)callback.current?.()
     latest.current=completed
   }
@@ -80,6 +83,7 @@ export default function CollectionManager({isAdmin,full=false,compact=false,disc
     </div>}
     {compact?<p className="text-xs text-gray-500">{state.pending} fiche(s) en attente ou en cours · {buckets.review.length} à vérifier. Les détails sont dans Produits Shein → Outils → Connexion Shein.</p>:full||disclosure?<details className="rounded-xl border bg-white p-4 text-sm"><summary className="cursor-pointer text-gray-500">Appareils et réglages</summary><div className="space-y-3 mt-4"><p className="text-xs text-gray-500">Les prix sont revérifiés après 6 h quand le navigateur est disponible. Les vérifications Shein nécessitent ton intervention.</p>{state.devices.map(d=><div key={d.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3"><div>{d.name}<span className="ml-2 text-xs text-gray-500">{Date.parse(d.expires_at)<Date.now()?'Expiré':!d.enabled?'Désactivé':collectorOnline(d)?'Joignable':'Hors ligne'}</span></div>{isAdmin&&<div className="flex gap-2"><button className={button} disabled={busy} onClick={()=>perform(()=>action({action:'pause_device',id:d.id,enabled:!d.enabled}))}>{d.enabled?'Désactiver':'Réactiver'}</button><button className={`${button} text-rose-700`} disabled={busy} onClick={()=>perform(()=>action({action:'revoke_device',id:d.id}))}>Déconnecter</button></div>}</div>)}</div></details>:<button className="text-xs text-gray-500 underline" onClick={onManage}>Appareils et réglages</button>}
   </section>
+  if(indicator)return <><CollectorProgress state={state} browser={browser} error={error} onOpen={()=>setOpened(true)}/>{opened&&<ResourceDialog title="Extension Shein" busy={busy} onClose={()=>setOpened(false)}>{content}</ResourceDialog>}</>
   if(!disclosure)return content
   const connection=collectorConnectionState(browser,state.devices)
   return <details className="rounded-xl border bg-white text-sm">

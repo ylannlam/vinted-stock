@@ -1,3 +1,4 @@
+import {useCachedState} from '../lib/useCachedState'
 import { useEffect, useRef, useState } from 'react'
 import { availabilityLabels, isStale, missingProductFields, observationChange, sheinProduct, sheinSearchUrl, variantLabel } from '../lib/catalog'
 import { safeUrl } from '../lib/fulfillment'
@@ -57,7 +58,7 @@ function SkuRow({group,data,isAdmin,busy,onLink,onHistory}) {
 }
 
 export default function CatalogueTab({isAdmin,request=defaultRequest,collectorRequest=defaultCollectorRequest,collectorBridge,onPreparePhoto}) {
-  const [data,setData]=useState({products:[],items:[],links:[],sales:[]}), [tab,setTab]=useState('products')
+  const [data,setData]=useCachedState(request,'catalog',{products:[],items:[],links:[],sales:[]}), [tab,setTab]=useState('products')
   const [search,setSearch]=useState(''), [filter,setFilter]=useState('all'), [page,setPage]=useState(0)
   const [busy,setBusy]=useState(false), [error,setError]=useState(''), [notice,setNotice]=useState('')
   const [editing,setEditing]=useState(null),[linking,setLinking]=useState(null),[history,setHistory]=useState(null)

@@ -1,3 +1,4 @@
+import {useCachedState} from '../lib/useCachedState'
 import {useEffect,useRef,useState} from 'react'
 import ResourceDialog from './ResourceDialog'
 import CreativeAccounts from './CreativeAccounts'
@@ -44,7 +45,7 @@ function ImageField({editing,file,onFile,onRemove,busy}) {
 
 export default function ResourcesTab({request=defaultRequest,upload=defaultUpload,accountsRequest,initialSection}) {
   const [section,setSection]=useState(initialSection==='accounts'?'accounts':'library')
-  const [rows,setRows]=useState([]),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false)
+  const [rows,setRows]=useCachedState(request,'resources',[]),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false)
   const [error,setError]=useState(''),[notice,setNotice]=useState(''),[tab,setTab]=useState('all')
   const [search,setSearch]=useState(''),[category,setCategory]=useState(''),[favorites,setFavorites]=useState(false),[sort,setSort]=useState('recent'),[limit,setLimit]=useState(24)
   const [editing,setEditing]=useState(null),[file,setFile]=useState(null),[dirty,setDirty]=useState(false),[detailId,setDetailId]=useState(null)
@@ -126,7 +127,7 @@ export default function ResourcesTab({request=defaultRequest,upload=defaultUploa
     {!detail&&notice&&<p role="status" className="text-sm text-teal-800">{notice}</p>}
     <div className="flex flex-wrap items-center justify-between gap-3 border-b"><div className="flex overflow-x-auto">{[['all','Tout'],['background','Fonds'],['prompt','Prompts'],['archived','Archives']].map(([key,label])=><button key={key} onClick={()=>setTab(key)} aria-pressed={tab===key} className={`px-4 py-3 text-sm border-b-2 ${tab===key?'border-teal-700 font-semibold text-teal-800':'border-transparent text-gray-500'}`}>{label}{key==='archived'&&rows.some(r=>r.archived_at)?` (${rows.filter(r=>r.archived_at).length})`:''}</button>)}</div><button aria-pressed={favorites} className={`${button} mb-2 ${favorites?'!bg-amber-50 !border-amber-300 !text-amber-900':''}`} onClick={()=>setFavorites(!favorites)}>{favorites?'★':'☆'} Favoris</button></div>
     <div className="flex flex-wrap gap-3"><input className={`${input} flex-1 min-w-48`} aria-label="Rechercher un fond ou un prompt" placeholder="Rechercher un titre, un prompt, une catégorie…" value={search} onChange={e=>setSearch(e.target.value)}/><select className={`${input} sm:!w-auto`} aria-label="Catégorie" value={category} onChange={e=>setCategory(e.target.value)}><option value="">Toutes les catégories</option>{categories.map(c=><option key={c}>{c}</option>)}</select><select className={`${input} sm:!w-auto`} aria-label="Trier la bibliothèque" value={sort} onChange={e=>setSort(e.target.value)}><option value="recent">Modifiés récemment</option><option value="name">Nom A → Z</option><option value="favorites">Favoris en premier</option></select></div>
-    {loading?<p role="status" className="py-12 text-center text-gray-500">Chargement de ta bibliothèque…</p>:<>
+    {loading&&!rows.length?<p role="status" className="py-12 text-center text-gray-500">Chargement de ta bibliothèque…</p>:<>
       <div className="article-grid resource-grid">{visible.slice(0,limit).map(row=><article key={row.id} className="bg-white border rounded-2xl overflow-hidden flex flex-col">
         <button className="w-full text-left relative" onClick={()=>{setDetailId(row.id);setError('');setDownload(null)}} aria-label={`Ouvrir ${row.title}`}>
           {row.image_path?<ResourceImage url={row.image_url} title={row.title} className="w-full h-72 sm:h-80 object-contain bg-stone-100 p-2"/>:<div className="h-72 sm:h-80 p-6 bg-gradient-to-br from-teal-50 to-slate-100 overflow-hidden"><span className="text-4xl leading-none text-teal-600" aria-hidden="true">“</span><p className="text-sm leading-relaxed text-slate-700 line-clamp-6 whitespace-pre-wrap">{row.content}</p></div>}

@@ -1,13 +1,23 @@
 import { supabase } from './supabase'
+import {createReadPool} from './requestPool'
+const reads=createReadPool()
 
 export async function authenticatedFetch(url, options = {}) {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) throw new Error('Session expirée. Reconnectez-vous.')
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),45000)
-  try{return await fetch(url, { ...options, signal:options.signal||controller.signal, headers: {
+  const method=(options.method||'GET').toUpperCase(),headers={
     'Content-Type': 'application/json', ...options.headers,
     Authorization: `Bearer ${session.access_token}`,
-  } })}catch(error){throw new Error(error.name==='AbortError'?'Le serveur met trop de temps à répondre. Tes données sont conservées ; réessaie.':'Connexion interrompue. Vérifie ta connexion puis réessaie.')}finally{clearTimeout(timer)}
+  }
+  const send=async()=>{
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),45000)
+    try{return await fetch(url,{...options,headers,signal:options.signal||controller.signal})}
+    catch(error){throw new Error(error.name==='AbortError'?'Le serveur met trop de temps à répondre. Tes données sont conservées ; réessaie.':'Connexion interrompue. Vérifie ta connexion puis réessaie.')}
+    finally{clearTimeout(timer)}
+  }
+  if(method==='GET'&&!options.signal)return reads.read(JSON.stringify([url,headers]),send)
+  if(method!=='GET')reads.clear()
+  try{return await send()}finally{if(method!=='GET')reads.clear()}
 }
 
 export async function workspaceRequest(view='overview',query={},body) {

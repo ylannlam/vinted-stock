@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import {useCachedState} from '../lib/useCachedState'
 import ResourceDialog from './ResourceDialog'
 import SupplierShipments,{ShipmentForm} from './SupplierShipments'
 import SaleDetails from './SaleDetails'
@@ -11,12 +12,12 @@ const defaultRequest = (...args) => import('../lib/api').then(m => m.salesReques
 import { STAGES, skuOf, photoOf, blocked, nextStage } from '../lib/fulfillment'
 
 export default function SalesTab({ isAdmin, request = defaultRequest, collectorRequest, collectorBridge, initialFilters={}, onPreparePhoto }) {
-  const [data, setData] = useState({ lines: [], catalog: [], counts:{}, accounts:[], count:0 })
   const [filter, setFilter] = useState(initialFilters.stage||'all'), [search, setSearch] = useState(initialFilters.search||'')
   const [query,setQuery]=useState(initialFilters.search||''),[account,setAccount]=useState(initialFilters.account||''),[from,setFrom]=useState(''),[to,setTo]=useState(''),[urgent,setUrgent]=useState(initialFilters.urgent===true||initialFilters.urgent==='true'),[page,setPage]=useState(0)
   const [selected,setSelected]=useState([]),[batch,setBatch]=useState(null),[batchValue,setBatchValue]=useState(''),[confirmed,setConfirmed]=useState(false)
   const revision=useRef(null),sequence=useRef(0),mutation=useRef(false)
   const filterKey=JSON.stringify({stage:filter,search:query,account,from,to,urgent,page})
+  const [data,setData]=useCachedState(request,filterKey,{lines:[],catalog:[],counts:{},accounts:[],count:0})
   useEffect(()=>{const timer=setTimeout(()=>{setQuery(search);setPage(0)},300);return()=>clearTimeout(timer)},[search])
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
   const [editing, setEditing] = useState(null)
@@ -129,16 +130,15 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
   const stages=[{id:'all',label:'Toutes'},...STAGES.filter(s=>data.counts?.[s.id]>0||filter===s.id)]
   const chooseStage=id=>{setFilter(id);setPage(0);setSkuEditing(null);setError('')}
   return <main className="workspace-page max-w-screen-2xl mx-auto p-4 sm:p-6 space-y-5 text-slate-800">
-    <header className="flex flex-wrap justify-between gap-3 items-center">
-      <div><h1 className="text-2xl font-bold">Mes ventes</h1><p className="text-sm text-slate-500 mt-1">Commande sur Shein, reçois l’article, puis expédie-le.</p></div>
-      <div className="flex gap-2"><button disabled={busy} onClick={()=>run(()=>load(true))} className={buttonClass}>Actualiser</button><button aria-expanded={settingsOpen} aria-controls="sales-settings" className={buttonClass} onClick={()=>setSettingsOpen(!settingsOpen)}>Réglages</button></div>
+    <header className="sales-header flex flex-wrap justify-between gap-4 items-center">
+      <div><h1 className="text-2xl font-bold">Mes ventes</h1><p className="text-sm text-slate-500 mt-1">Tes ventes, de la plus récente à la plus ancienne.</p><div className="flex gap-2 mt-3"><button disabled={busy} onClick={()=>run(()=>load(true))} className={buttonClass}>Actualiser</button><button aria-expanded={settingsOpen} aria-controls="sales-settings" className={buttonClass} onClick={()=>setSettingsOpen(!settingsOpen)}>Réglages</button></div></div>
+      <CollectionManager indicator full isAdmin={isAdmin} request={collectorRequest} bridge={collectorBridge} onCollected={()=>load(true)}/>
     </header>
     {settingsOpen&&<section id="sales-settings" className="rounded-2xl border bg-white p-4 space-y-3"><h2 className="font-semibold text-sm">Réception des ventes Dotb</h2>
       <p className="text-sm text-slate-600">{data.automation?.enabled?'Les nouvelles ventes arrivent automatiquement.':'La réception automatique doit être activée.'}</p>
       {data.tracking&&<p className="text-xs text-slate-500">Suivi depuis le {new Date(data.tracking.starts_at).toLocaleDateString('fr-FR',{timeZone:'Europe/Paris'})}.</p>}
       <div className="flex flex-wrap gap-2">{isAdmin&&<button disabled={busy||data.setup_required||!data.connected} className={buttonClass} onClick={()=>run(sync)}>{data.resume?'Reprendre l’import':'Synchroniser Dotb'}</button>}{isAdmin&&!data.automation?.enabled&&<button disabled={busy||!data.connected} className={buttonClass} onClick={()=>run(async()=>{await request('POST',{action:'automation'});await load(true)})}>Activer la réception automatique</button>}</div>
       <p className="text-xs text-slate-500">Dernier import complet : {data.last_sync?new Date(data.last_sync).toLocaleString('fr-FR'):'aucun'}</p>
-    <CollectionManager disclosure isAdmin={isAdmin} request={collectorRequest} bridge={collectorBridge} onCollected={()=>load(true)}/>
     </section>}
 
     <ErrorNotice error={!skuEditing&&!editing&&!batch&&!purchaseLine?error:null} retry={()=>run(()=>load(true))} busy={busy}/>

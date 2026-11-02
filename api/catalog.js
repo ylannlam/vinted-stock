@@ -12,7 +12,6 @@ export default async function handler(req, res) {
     const auth = await authorize(req,res,['admin','stock'])
     if (!auth) return
     const { db,user,role } = auth
-    const tracking=await readTrackingPeriod(db)
     if (req.method === 'GET') {
       if (req.query?.product_id) {
         if (!isId(req.query.product_id)) throw new AppError('Produit invalide.')
@@ -22,11 +21,12 @@ export default async function handler(req, res) {
       }
       const offset=Number(req.query?.offset || 0)
       if (!Number.isSafeInteger(offset) || offset<0 || offset>1000000) throw new AppError('Page invalide.')
-      const [products,items,links,sales] = await Promise.all([
+      const [products,items,links,sales,tracking] = await Promise.all([
         readPage(head=>db.from('catalog_tracked_products').select('*',{count:'exact',head}).order('created_at',{ascending:false}).order('id'),offset),
         readPage(head=>db.from('catalog_sales_items').select('*',{count:'exact',head}).order('id'),offset),
         readPage(head=>db.from('catalog_tracked_links').select('*',{count:'exact',head}).order('sku'),offset),
         readPage(head=>db.from('catalog_sales_by_sku').select('*',{count:'exact',head}).order('sku').order('currency'),offset),
+        readTrackingPeriod(db),
       ])
       return res.json({products:products.data,items:items.data,links:links.data,sales:sales.data,tracking,sales_count:sales.count,product_count:products.count,item_count:items.count,link_count:links.count,
         connected:!!process.env.DOTB_API_TOKEN,sales_only:true})
