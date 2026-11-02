@@ -1,5 +1,5 @@
 import ArticlePhotos from './ArticlePhotos'
-import {productOf,stageOf,blocked,deadline,money,nextStage,ORDER_LABELS,STAGES} from '../lib/fulfillment'
+import {productOf,photoOf,stageOf,blocked,deadline,money,nextStage,ORDER_LABELS,STAGES} from '../lib/fulfillment'
 import {nextSaleAction} from '../lib/saleDetails'
 import {primaryClass,buttonClass,fieldClass} from './WorkspaceUI'
 
@@ -7,7 +7,7 @@ export default function SaleCard({line,catalog,busy,selecting,selected,onSelect,
   const product=productOf(line,catalog),due=deadline(line),stage=stageOf(line),action=nextSaleAction(line,catalog)
   const isBlocked=blocked(line),isEditing=skuEditing?.id===line.id
   const title=line.source.title||'Article sans titre'
-  const photo=line.source.thumbnail_url||product?.photo_url
+  const photo=photoOf(line,catalog)
   const status=isBlocked?ORDER_LABELS[line.order.status]||'À vérifier':STAGES.find(s=>s.id===stage)?.label
   return <article className={`sale-card ${selected?'is-selected':''}`}>
     <div className="relative"><ArticlePhotos photos={[photo]} title={title} onOpen={onDetails}/><span className={`sale-stage ${isBlocked?'sale-stage-warning':''}`}>{status}</span>{selecting&&<label className="sale-select"><input type="checkbox" aria-label={`Sélectionner ${title}`} disabled={busy||isBlocked||!nextStage(line)} checked={selected} onChange={e=>onSelect(e.target.checked)}/></label>}</div>

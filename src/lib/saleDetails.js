@@ -1,6 +1,11 @@
 import {blocked, stageOf, skuOf, supplierOf, STAGES} from './fulfillment.js'
 const normalized = value => String(value || '').trim().toLocaleLowerCase('fr-FR')
 
+// An untouched link follows the collected SKU without changing the user's draft.
+export function draftSupplierUrl(value, catalog = []) {
+  return value.supplier_url ?? supplierOf({...value, sku_override:value.sku}, catalog) ?? ''
+}
+
 export function nextSaleAction(line, catalog=[]) {
   if(blocked(line))return {kind:'details',label:'Vérifier la vente'}
   const stage=stageOf(line)

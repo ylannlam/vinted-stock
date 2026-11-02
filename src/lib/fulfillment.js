@@ -19,6 +19,11 @@ export function money(value, currency = 'EUR') {
 }
 export function skuOf(line) { return (line.sku_override ?? line.source?.sku ?? '').trim() }
 export function productOf(line, catalog = []) { return catalog.find(p => p.sku === skuOf(line)) }
+export function photoOf(line, catalog = []) {
+  const product = productOf(line, catalog)
+  const photos = Array.isArray(product?.photos) ? product.photos : []
+  return [product?.photo_url, ...photos, line.source?.thumbnail_url].map(safeUrl).find(Boolean) || null
+}
 export function supplierOf(line, catalog = []) {
   const sameSource = line.sku_override == null || line.sku_override.trim() === (line.source?.sku||'').trim()
   return safeUrl(productOf(line, catalog)?.supplier_url || (sameSource ? line.source?.supplier_link : null))

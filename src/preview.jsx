@@ -25,7 +25,7 @@ import {accountGroup} from './lib/accountOverview'
 import { nextStage, blocked, supplierOf, skuOf } from './lib/fulfillment'
 import './index.css'
 import './workspace.css'
-const catalog = [{sku:'DEMO-100-M',supplier_url:'https://fr.shein.com/Demo-p-123456.html',price:12.50,currency:'EUR',color:'Beige',sizes:[{size:'M',availability:'available'},{size:'L',availability:'unavailable'}],retrieval_status:'failed',retrieval_message:'Connexion interrompue. Le dernier relevé reste conservé.',observed_at:new Date().toISOString()},
+const catalog = [{sku:'DEMO-100-M',photo_url:previewPhotos[0][1],supplier_url:'https://fr.shein.com/Demo-p-123456.html',price:12.50,currency:'EUR',color:'Beige',sizes:[{size:'M',availability:'available'},{size:'L',availability:'unavailable'}],retrieval_status:'failed',retrieval_message:'Connexion interrompue. Le dernier relevé reste conservé.',observed_at:new Date().toISOString()},
   {sku:'DEMO-101-M',retrieval_status:'queued'}]
 const lines = ['to_order','ordered','in_transit','received','prepared','shipped'].map((stage,i)=>({
   id:`demo-${i}`,updated_at:new Date().toISOString(),stage,

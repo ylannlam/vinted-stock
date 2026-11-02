@@ -4,11 +4,11 @@ import SupplierShipments,{ShipmentForm} from './SupplierShipments'
 import SaleDetails from './SaleDetails'
 import SaleCard from './SaleCard'
 import {ErrorNotice,Pagination,fieldClass,buttonClass,primaryClass} from './WorkspaceUI'
-import {confirmPurchase} from '../lib/saleDetails'
+import {confirmPurchase,draftSupplierUrl} from '../lib/saleDetails'
 import {commonNextStage} from '../lib/workspace'
 import CollectionManager from './CollectionManager'
 const defaultRequest = (...args) => import('../lib/api').then(m => m.salesRequest(...args))
-import { STAGES, skuOf, supplierOf, blocked, nextStage } from '../lib/fulfillment'
+import { STAGES, skuOf, photoOf, blocked, nextStage } from '../lib/fulfillment'
 
 export default function SalesTab({ isAdmin, request = defaultRequest, collectorRequest, collectorBridge, initialFilters={}, onPreparePhoto }) {
   const [data, setData] = useState({ lines: [], catalog: [], counts:{}, accounts:[], count:0 })
@@ -42,6 +42,25 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
     const timer=setInterval(()=>{if(document.visibilityState==='visible')load().catch(e=>setError(e.message))},15000)
     return ()=>clearInterval(timer)
   },[busy,editing,skuEditing,batch,purchaseLine,parcelLines,showShipments,selected.length,filterKey])
+  const detailId=editing?.id,detailSku=editing?.sku?.trim(),savedDetailSku=editing?skuOf(editing):null
+  useEffect(()=>{
+    if(busy||!detailId||!detailSku||detailSku!==savedDetailSku)return
+    let active=true,pending=false
+    const timer=setInterval(async()=>{
+      if(document.visibilityState!=='visible'||pending)return
+      pending=true
+      try {
+        const result=await request('GET',undefined,'?'+new URLSearchParams({view:'detail',id:detailId}))
+        if(!active||skuOf(result.line)!==detailSku)return
+        const catalog=result.catalog.filter(p=>p.sku===detailSku)
+        setDetailCatalog(catalog)
+        setData(current=>({...current,catalog:[...current.catalog.filter(p=>p.sku!==detailSku),...catalog]}))
+      } catch {
+        if(active)setDetailNotice('La fiche Shein n’a pas pu être actualisée. Nouvelle tentative automatique dans quelques secondes.')
+      } finally {pending=false}
+    },10000)
+    return ()=>{active=false;clearInterval(timer)}
+  },[busy,detailId,detailSku,savedDetailSku,request])
   useEffect(()=>{
     if(!isAdmin||!data.connected||!data.automation||data.automation.configured||data.automation.error||activationAttempted.current)return
     activationAttempted.current=true
@@ -62,7 +81,7 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
   function showDetail(line,catalog) {
     setSkuEditing(null);setError('');setDetailNotice('');setDetailCatalog(catalog)
     const product=catalog.find(p=>p.sku===skuOf(line))
-    setEditing({...line,sku:skuOf(line),supplier_url:supplierOf(line,catalog)||'',variant:product?.variant||'',supplier_size:line.supplier_size||'',supplier_color:line.supplier_color||'',actual_cost:line.actual_cost??'',fees_amount:line.fees_amount??0,refund_amount:line.refund_amount??0,finance_confirmed:line.finance_confirmed===true})
+    setEditing({...line,sku:skuOf(line),supplier_url:undefined,variant:product?.variant||'',supplier_size:line.supplier_size||'',supplier_color:line.supplier_color||'',actual_cost:line.actual_cost??'',fees_amount:line.fees_amount??0,refund_amount:line.refund_amount??0,finance_confirmed:line.finance_confirmed===true})
   }
   async function openDetail(id) {
     const result=await request('GET',undefined,'?'+new URLSearchParams({view:'detail',id}))
@@ -146,7 +165,7 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
     </>}
     {purchaseLine&&<ResourceDialog title="Commande Shein passée" busy={busy} onClose={()=>{setPurchaseLine(null);setError('');run(()=>load(true))}}><form className="space-y-4" onSubmit={e=>{e.preventDefault();run(async()=>{await confirmPurchase(request,purchaseLine,purchaseReference);setPurchaseLine(null);await load(true);setNotice('Commande enregistrée. La vente est maintenant dans « Commandé ».')})}}><p className="text-sm font-medium">{purchaseLine.source.title}</p><p className="text-sm text-slate-500">Colle le numéro de la commande que tu viens de passer sur Shein.</p><label className="block text-sm">Numéro de commande Shein<input autoFocus required maxLength={200} disabled={busy} className={fieldClass+' mt-2'} value={purchaseReference} onChange={e=>setPurchaseReference(e.target.value)}/></label><ErrorNotice error={error}/><button className={primaryClass} disabled={busy||!purchaseReference.trim()}>{busy?'Enregistrement…':'Confirmer l’achat'}</button></form></ResourceDialog>}
     {parcelLines&&<ShipmentForm lines={parcelLines} request={request} onClose={()=>setParcelLines(null)} onSaved={async()=>{setParcelLines(null);setSelected([]);await load(true);setShowShipments(true);setNotice('Colis associé. Tous ses articles sont regroupés ci-dessous.')}}/>}
-    {editing&&<SaleDetails key={editing.id+editing.updated_at} value={editing} onChange={setEditing} product={detailCatalog.find(p=>p.sku===editing.sku)} isAdmin={isAdmin} busy={busy} error={error} notice={detailNotice} onParcel={()=>{setParcelLines([editing]);setEditing(null)}} onShipments={()=>{setEditing(null);setShowShipments(true)}} onPreparePhoto={isAdmin&&onPreparePhoto?()=>{const line=editing;setEditing(null);onPreparePhoto({type:'sale',id:line.id,title:line.source.title,photo_url:line.source.thumbnail_url,account_login:line.order.account_login,sku:skuOf(line)})}:undefined} onClose={()=>{setEditing(null);setError('')}} onRefresh={()=>run(()=>openDetail(editing.id))} onRetry={()=>run(retryDetail)} onAdvance={()=>run(advanceDetail)} onSave={()=>run(async()=>{await request('PATCH',{...editing,action:'edit'});setEditing(null);await load(true);setNotice('Vente enregistrée. Les tailles, couleurs et coûts sont conservés pour cet article.');})}/>}
+    {editing&&<SaleDetails key={editing.id+editing.updated_at} value={editing} onChange={setEditing} product={detailCatalog.find(p=>p.sku===editing.sku.trim())} isAdmin={isAdmin} busy={busy} error={error} notice={detailNotice} onParcel={()=>{setParcelLines([editing]);setEditing(null)}} onShipments={()=>{setEditing(null);setShowShipments(true)}} onPreparePhoto={isAdmin&&onPreparePhoto?()=>{const line=editing;setEditing(null);onPreparePhoto({type:'sale',id:line.id,title:line.source.title,photo_url:photoOf(line,detailCatalog),account_login:line.order.account_login,sku:skuOf(line)})}:undefined} onClose={()=>{setEditing(null);setError('')}} onRefresh={()=>run(()=>openDetail(editing.id))} onRetry={()=>run(retryDetail)} onAdvance={()=>run(advanceDetail)} onSave={()=>run(async()=>{await request('PATCH',{...editing,supplier_url:draftSupplierUrl(editing,detailCatalog),action:'edit'});setEditing(null);await load(true);setNotice('Vente enregistrée. Les tailles, couleurs et coûts sont conservés pour cet article.');})}/>}
     {batch&&<ResourceDialog title={batch==='order_ref'?'Associer une commande Shein':'Confirmer la préparation'} busy={busy} onClose={()=>setBatch(null)}><form className="space-y-4" onSubmit={e=>{e.preventDefault();run(async()=>{await request('PATCH',{action:'batch',operation:batch,value:batchValue,lines:selectedLines.map(l=>({id:l.id,updated_at:l.updated_at}))});setBatch(null);setSelected([]);await load(true);setNotice('Les ventes sélectionnées ont été mises à jour ensemble.')})}}><p className="text-sm">{selectedLines.length} vente(s). L’ensemble est enregistré uniquement si toutes sont encore à jour.</p>{batch==='order_ref'?<label className="block text-sm">Numéro de commande Shein<input required maxLength={200} className={fieldClass+' mt-2'} value={batchValue} onChange={e=>setBatchValue(e.target.value)}/></label>:<><p className="font-semibold">Nouvelle étape : {STAGES.find(s=>s.id===batchValue)?.label}</p><label className="flex items-start gap-2 text-sm"><input type="checkbox" required checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/>{batchValue==='shipped'?'Je confirme que les colis ont été déposés auprès du transporteur.':'Je confirme que cette étape a été réalisée pour tous les articles sélectionnés.'}</label></>}<ErrorNotice error={error}/><button className={primaryClass} disabled={busy||!selectedLines.length}>{busy?'Enregistrement…':'Enregistrer'}</button></form></ResourceDialog>}
   </main>
 }
