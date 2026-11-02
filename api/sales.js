@@ -5,7 +5,7 @@ import { AppError, normalizeOrders, readDotbPage, validateEdit, validateSaleSku 
 import { STAGES } from '../src/lib/fulfillment.js'
 import {readTrackingPeriod} from '../server/tracking.js'
 import {automationStatus,enableSalesAutomation} from '../server/sales-automation.js'
-import {salesFilters,financeValues,batchValues} from '../server/workspace.js'
+import {salesFilters,financeValues,batchValues,saleVariant} from '../server/workspace.js'
 
 export const config = { maxDuration: 60 }
 const fail = error => { if (error) throw error }
@@ -27,6 +27,14 @@ export default async function handler(req, res) {
     const { db, role, user } = auth
     const tracking=await readTrackingPeriod(db)
     if (req.method === 'GET') {
+      if(req.query?.view==='detail'){
+        const id=req.query.id
+        if(typeof id!=='string'||!id||id.length>80)throw new AppError('Vente invalide.')
+        const {data:line,error}=await db.from('workspace_sales').select('*').eq('id',id).maybeSingle();fail(error)
+        if(!line)throw new AppError('Cette vente n’est plus disponible dans la période suivie.',404)
+        const {data:catalog,error:catalogError}=await db.from('sales_supplier_details').select('*').eq('sku',line.resolved_sku);fail(catalogError)
+        return res.json({line,catalog})
+      }
       if(req.query?.view==='page'){
         const filters=salesFilters(req.query)
         const {data,error}=await db.rpc('sales_workspace_page',{p_filters:filters,p_known_revision:typeof req.query.revision==='string'?req.query.revision:null});fail(error)
@@ -99,7 +107,8 @@ export default async function handler(req, res) {
       ({ edit, product } = validateEdit(body))
       if(body.finance_confirmed!==undefined){
         const finance=financeValues(body)
-        const {error}=await db.rpc('save_sales_workspace',{p_id:body.id,p_version:body.updated_at,p_edit:edit,p_product:product,p_fees:finance.fees,p_refund:finance.refund,p_confirmed:finance.confirmed,p_user:user.id});fail(error)
+        const hasVariant=body.supplier_size!==undefined||body.supplier_color!==undefined
+        const {error}=await db.rpc(hasVariant?'save_sale_details':'save_sales_workspace',{p_id:body.id,p_version:body.updated_at,p_edit:edit,p_product:product,p_fees:finance.fees,p_refund:finance.refund,p_confirmed:finance.confirmed,...(hasVariant?{p_variant:saleVariant(body)}:{}),p_user:user.id});fail(error)
         return res.json({saved:true})
       }
     }

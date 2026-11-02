@@ -38,5 +38,17 @@ export function collectionReferences(value) {
 }
 
 export function collectorOnline(device, now = Date.now()) {
-  return !device.revoked_at && Date.parse(device.expires_at) > now && !!device.last_seen_at && now - Date.parse(device.last_seen_at) < 120000
+  const seen=Date.parse(device.last_seen_at)
+  return !device.revoked_at && Date.parse(device.expires_at) > now && Number.isFinite(seen) && now-seen>=-60000 && now-seen<120000
+}
+
+export function collectorConnectionState(browser,devices=[],now=Date.now()) {
+  const remote=devices.some(d=>d.enabled&&collectorOnline(d,now))
+  if(!browser?.connected)return {label:remote?'PC de récupération joignable':browser?'Connecter ce navigateur':'En attente du PC de récupération',active:remote}
+  if(browser.phase==='blocked')return {label:'Intervention nécessaire sur Shein',active:false}
+  if(!browser.enabled)return {label:'Import en pause',active:false}
+  if(browser.retryAt)return {label:'Connexion interrompue · nouvelle tentative automatique',active:false}
+  const seen=typeof browser.lastContactAt==='number'?browser.lastContactAt:Date.parse(browser.lastContactAt)
+  if(!Number.isFinite(seen)||now-seen>=120000||seen-now>60000)return {label:'Connexion au serveur à vérifier',active:false}
+  return {label:browser.job?'Récupération Shein en cours':'Connecté · en attente de ventes à traiter',active:true}
 }

@@ -19,7 +19,10 @@ export function money(value, currency = 'EUR') {
 }
 export function skuOf(line) { return (line.sku_override ?? line.source?.sku ?? '').trim() }
 export function productOf(line, catalog = []) { return catalog.find(p => p.sku === skuOf(line)) }
-export function supplierOf(line, catalog = []) { return safeUrl(productOf(line, catalog)?.supplier_url || line.source?.supplier_link) }
+export function supplierOf(line, catalog = []) {
+  const sameSource = line.sku_override == null || line.sku_override.trim() === (line.source?.sku||'').trim()
+  return safeUrl(productOf(line, catalog)?.supplier_url || (sameSource ? line.source?.supplier_link : null))
+}
 export function stageOf(line) { return REMOTE_SHIPPED.includes(line.order?.status) ? 'shipped' : line.stage }
 export function blocked(line) { return BLOCKED.includes(line.order?.status) || !line.order?.status }
 export function needsReference(line, catalog) { return !skuOf(line) || !supplierOf(line, catalog) }

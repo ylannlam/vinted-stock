@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import ResourceDialog from './ResourceDialog'
+import SaleDetails, {SheinStatus} from './SaleDetails'
 import {ErrorNotice,Pagination,fieldClass,buttonClass,primaryClass} from './WorkspaceUI'
 import {commonNextStage} from '../lib/workspace'
 import CollectionManager from './CollectionManager'
@@ -16,6 +17,7 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
   useEffect(()=>{const timer=setTimeout(()=>{setQuery(search);setPage(0)},300);return()=>clearTimeout(timer)},[search])
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
   const [editing, setEditing] = useState(null)
+  const [detailCatalog,setDetailCatalog]=useState([]),[detailNotice,setDetailNotice]=useState('')
   const [skuEditing, setSkuEditing] = useState(null)
   const loading=useRef(false),activationAttempted=useRef(false)
   async function load(force=false) {
@@ -51,10 +53,28 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
   const scoped=data.lines, visible=data.lines
   const selectedLines=data.lines.filter(l=>selected.includes(l.id)),batchTarget=commonNextStage(selectedLines)
   const selectable=data.lines.filter(l=>!blocked(l)&&nextStage(l))
-  function edit(line) {
-    setSkuEditing(null); setError('')
-    const product = data.catalog.find(p => p.sku === skuOf(line))
-    setEditing({ ...line, sku: skuOf(line), supplier_url: supplierOf(line, data.catalog) || '', variant: product?.variant || '', actual_cost: line.actual_cost ?? '',fees_amount:line.fees_amount??0,refund_amount:line.refund_amount??0,finance_confirmed:line.finance_confirmed===true })
+  function showDetail(line,catalog) {
+    setSkuEditing(null);setError('');setDetailNotice('');setDetailCatalog(catalog)
+    const product=catalog.find(p=>p.sku===skuOf(line))
+    setEditing({...line,sku:skuOf(line),supplier_url:supplierOf(line,catalog)||'',variant:product?.variant||'',supplier_size:line.supplier_size||'',supplier_color:line.supplier_color||'',actual_cost:line.actual_cost??'',fees_amount:line.fees_amount??0,refund_amount:line.refund_amount??0,finance_confirmed:line.finance_confirmed===true})
+  }
+  async function openDetail(id) {
+    const result=await request('GET',undefined,'?'+new URLSearchParams({view:'detail',id}))
+    showDetail(result.line,result.catalog)
+  }
+  function edit(line){run(()=>openDetail(line.id))}
+  useEffect(()=>{if(initialFilters.line)run(()=>openDetail(initialFilters.line))},[initialFilters.line])
+  async function retryDetail(){
+    const send=collectorRequest||((...args)=>import('../lib/api').then(m=>m.collectorRequest(...args)))
+    const result=await send('POST',{action:'enqueue',references:editing.sku})
+    await openDetail(editing.id)
+    setDetailNotice(result.queued?'Demande enregistrée. Le navigateur connecté récupérera cette fiche ; les relevés existants restent conservés.':'Cette fiche est déjà à jour ou en attente de récupération.')
+  }
+  async function advanceDetail(){
+    const stage=nextStage(editing)
+    if(stage==='shipped'&&!window.confirm('Confirmer que cet article a été déposé auprès du transporteur ?'))return
+    await request('PATCH',{action:'advance',id:editing.id,updated_at:editing.updated_at,stage})
+    await openDetail(editing.id);await load(true);setDetailNotice('Étape de préparation enregistrée.')
   }
   function editSku(line) {
     setError(''); setNotice('')
@@ -78,9 +98,9 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
       {data.tracking&&<p className="text-xs text-gray-500">Suivi depuis le {new Date(data.tracking.starts_at).toLocaleDateString('fr-FR',{timeZone:'Europe/Paris'})} · heure de Paris.</p>}
       {data.automation?.last_received_at&&<p className="text-xs text-gray-500">Dernière réception : {new Date(data.automation.last_received_at).toLocaleString('fr-FR')}</p>}
       {isAdmin&&!data.automation?.enabled&&<button disabled={busy||!data.connected} className={buttonClass} onClick={()=>run(async()=>{await request('POST',{action:'automation'});await load(true)})}>Activer la réception automatique</button>}
-      <CollectionManager compact isAdmin={isAdmin} request={collectorRequest} bridge={collectorBridge} onCollected={()=>load(true)} />
       </div>
     </details>
+    <CollectionManager compact isAdmin={isAdmin} request={collectorRequest} bridge={collectorBridge} onCollected={()=>load(true)} />
     <ErrorNotice error={!skuEditing&&!editing&&!batch?error:null} retry={()=>run(()=>load(true))} busy={busy}/>
     {notice && <p role="status" className="text-sm text-teal-800">{notice}</p>}
     {data.setup_required ? <div className="bg-amber-50 border border-amber-200 rounded-lg p-4"><h2 className="font-semibold">Activation du suivi nécessaire</h2><p className="text-sm mt-1">La nouvelle structure de données doit être installée avant le premier import. Le stock existant reste disponible dans les autres onglets.</p></div> : data.connected === false && <p className="bg-amber-50 p-3 rounded-lg text-sm">La connexion Dotb n’est pas encore activée. Les ventes déjà importées restent consultables.</p>}
@@ -106,11 +126,13 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
         <td className="p-3"><div>{line.order.account_login || 'Compte inconnu'}</div><div>{money(line.source.selling_price,line.order.currency)}</div><small className="text-gray-500">{ORDER_LABELS[line.order.status] || 'Statut à vérifier'}</small></td>
         <td className="p-3 min-w-48">
           {supplier&&<a className="text-teal-700 underline" href={supplier} target="_blank" rel="noreferrer">Ouvrir la fiche Shein</a>}
-          {product?.price!=null?<><div className="font-semibold mt-1">{money(product.price,product.currency)}</div><p className="text-xs text-gray-500">Prix relevé{product.color?` · ${product.color}`:''} · hors coupons</p><p className="text-xs text-gray-500">Relevé le {new Date(product.observed_at).toLocaleString('fr-FR')}</p></>:<p className="text-xs text-gray-500 mt-1">{!skuOf(line)?'Ajoute le SKU Shein pour retrouver la fiche.':product?.retrieval_status==='running'?'Récupération Shein en cours…':product?.retrieval_status==='queued'?'En attente du navigateur Shein.':['blocked','failed'].includes(product?.retrieval_status)?product.retrieval_message||'Fiche à vérifier dans la Bibliothèque.':'Recherche Shein prévue automatiquement.'}</p>}
+          {product?.price!=null&&<><div className="font-semibold mt-1">{money(product.price,product.currency)}</div><p className="text-xs text-gray-500">Prix relevé{product.color?` · ${product.color}`:''} · hors coupons</p><p className="text-xs text-gray-500">Relevé le {new Date(product.observed_at).toLocaleString('fr-FR')}</p></>}
+          <SheinStatus sku={skuOf(line)} product={product}/>
+          {(line.supplier_size||line.supplier_color)&&<p className="text-xs text-slate-600 mt-2">À acheter : {[line.supplier_size,line.supplier_color].filter(Boolean).join(' · ')}</p>}
         </td>
         <td className="p-3"><span className="bg-teal-50 text-teal-800 rounded px-2 py-1 text-xs">{STAGES.find(s=>s.id===stage)?.label}</span><div className="text-xs text-gray-500 mt-2">{line.supplier_order_ref || 'Commande Shein non renseignée'}</div>{line.location && <small>Emplacement : {line.location}</small>}</td>
         <td className={`p-3 whitespace-nowrap ${due?.urgent?'text-red-700':'text-gray-500'}`}>{due?.text || '—'}</td>
-        <td className="p-3"><div className="flex flex-col items-start gap-2"><button disabled={busy} onClick={()=>edit(line)} className={buttonClass}>Renseigner</button>{isAdmin&&onPreparePhoto&&<button className={buttonClass} onClick={()=>onPreparePhoto({type:'sale',id:line.id,title:line.source.title,photo_url:line.source.thumbnail_url||product?.photo_url,account_login:line.order.account_login,sku:skuOf(line)})}>Préparer les photos</button>}
+        <td className="p-3"><div className="flex flex-col items-start gap-2"><button disabled={busy} onClick={()=>edit(line)} className={buttonClass}>Ouvrir la vente</button>{isAdmin&&onPreparePhoto&&<button className={buttonClass} onClick={()=>onPreparePhoto({type:'sale',id:line.id,title:line.source.title,photo_url:line.source.thumbnail_url||product?.photo_url,account_login:line.order.account_login,sku:skuOf(line)})}>Préparer les photos</button>}
           {!blocked(line) && nextStage(line) && <button disabled={busy} onClick={()=>run(async()=>{ if(nextStage(line)==='shipped' && !window.confirm('Confirmer que cet article a été déposé auprès du transporteur ?')) return; await request('PATCH',{action:'advance',id:line.id,updated_at:line.updated_at,stage:nextStage(line)}); await load() })} className="border rounded px-2 py-1 text-xs">{STAGES.find(s=>s.id===stage)?.action} →</button>}
           {line.order.label_url && <a href={line.order.label_url} target="_blank" rel="noreferrer" className="text-xs underline">Bordereau</a>}</div></td>
       </tr>})}
@@ -118,15 +140,7 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
     </tbody></table></div>
     <Pagination page={page} count={data.count} onChange={setPage} busy={busy}/>
     <p className="text-xs text-gray-500">Dernier import complet : {data.last_sync ? new Date(data.last_sync).toLocaleString('fr-FR') : 'aucun'} · Les étapes de préparation sont propres à votre site. Les prix fournisseurs sont consultables dans le Catalogue.</p>
-    {editing && <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto p-4 flex items-start justify-center" onKeyDown={e=>{if(e.key==='Escape'&&!busy)setEditing(null)}}>
-      <form role="dialog" aria-modal="true" aria-label="Renseigner la vente" onSubmit={e=>{e.preventDefault();run(async()=>{await request('PATCH',{...editing,action:'edit'});setEditing(null);await load()})}} className="bg-white rounded-xl p-5 max-w-xl w-full my-8 space-y-3">
-        <div className="flex justify-between"><h2 className="font-bold">Renseigner la vente</h2><button type="button" disabled={busy} onClick={()=>setEditing(null)}>Fermer</button></div>
-        <p className="text-xs text-gray-500">Le lien fournisseur sera partagé avec les autres ventes de ce SKU. Le coût payé reste propre à cet article.</p>
-        {[['sku','SKU / référence et variante'],['supplier_url','Lien fournisseur HTTPS'],['variant','Taille / couleur'],['supplier_order_ref','Numéro de commande Shein'],['supplier_tracking','Suivi du colis fournisseur'],['actual_cost',`Coût réellement payé (${editing.order.currency || 'devise à vérifier'})`],['fees_amount','Frais affectés à cet article'],['refund_amount','Montant remboursé au client'],['location','Emplacement'],['notes','Notes']].map(([key,label])=><label className="block text-xs text-gray-600" key={key}>{label}<input autoFocus={key==='sku'} className={input} value={editing[key]??''} maxLength={key==='notes'?1000:key==='supplier_url'?2000:200} onChange={e=>setEditing({...editing,[key]:e.target.value,finance_confirmed:false})}/></label>)}
-        <label className="flex gap-2 items-start text-sm bg-slate-50 rounded-xl p-3"><input type="checkbox" checked={editing.finance_confirmed} onChange={e=>setEditing({...editing,finance_confirmed:e.target.checked})}/>J’ai vérifié le coût payé, les frais et les remboursements pour calculer la marge confirmée.</label>
-        {error && <p role="alert" className="text-sm text-red-700">{error}</p>}<button disabled={busy} className="bg-teal-700 text-white px-4 py-2 rounded-lg">{busy?'Enregistrement…':'Enregistrer'}</button>
-      </form>
-    </div>}
+    {editing&&<SaleDetails key={editing.id+editing.updated_at} value={editing} onChange={setEditing} product={detailCatalog.find(p=>p.sku===editing.sku)} isAdmin={isAdmin} busy={busy} error={error} notice={detailNotice} onClose={()=>{setEditing(null);setError('')}} onRefresh={()=>run(()=>openDetail(editing.id))} onRetry={()=>run(retryDetail)} onAdvance={()=>run(advanceDetail)} onSave={()=>run(async()=>{await request('PATCH',{...editing,action:'edit'});setEditing(null);await load(true);setNotice('Vente enregistrée. Les tailles, couleurs et coûts sont conservés pour cet article.');})}/>}
     {batch&&<ResourceDialog title={batch==='order_ref'?'Associer une commande Shein':'Confirmer la préparation'} busy={busy} onClose={()=>setBatch(null)}><form className="space-y-4" onSubmit={e=>{e.preventDefault();run(async()=>{await request('PATCH',{action:'batch',operation:batch,value:batchValue,lines:selectedLines.map(l=>({id:l.id,updated_at:l.updated_at}))});setBatch(null);setSelected([]);await load(true);setNotice('Les ventes sélectionnées ont été mises à jour ensemble.')})}}><p className="text-sm">{selectedLines.length} vente(s). L’ensemble est enregistré uniquement si toutes sont encore à jour.</p>{batch==='order_ref'?<label className="block text-sm">Numéro de commande Shein<input required maxLength={200} className={fieldClass+' mt-2'} value={batchValue} onChange={e=>setBatchValue(e.target.value)}/></label>:<><p className="font-semibold">Nouvelle étape : {STAGES.find(s=>s.id===batchValue)?.label}</p><label className="flex items-start gap-2 text-sm"><input type="checkbox" required checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/>{batchValue==='shipped'?'Je confirme que les colis ont été déposés auprès du transporteur.':'Je confirme que cette étape a été réalisée pour tous les articles sélectionnés.'}</label></>}<ErrorNotice error={error}/><button className={primaryClass} disabled={busy||!selectedLines.length}>{busy?'Enregistrement…':'Enregistrer'}</button></form></ResourceDialog>}
   </main>
 }

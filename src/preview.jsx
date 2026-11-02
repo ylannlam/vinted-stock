@@ -17,9 +17,10 @@ import React, {useState} from 'react'
 import { createRoot } from 'react-dom/client'
 import SalesTab from './components/SalesTab'
 import { validateEdit, validateSaleSku } from '../server/dotb'
+import {saleVariant} from '../server/workspace'
 import { nextStage, blocked, supplierOf, skuOf } from './lib/fulfillment'
 import './index.css'
-const catalog = [{sku:'DEMO-100-M',supplier_url:'https://fr.shein.com/Demo-p-123456.html',price:12.50,currency:'EUR',color:'Beige',observed_at:new Date().toISOString()},
+const catalog = [{sku:'DEMO-100-M',supplier_url:'https://fr.shein.com/Demo-p-123456.html',price:12.50,currency:'EUR',color:'Beige',sizes:[{size:'M',availability:'available'},{size:'L',availability:'unavailable'}],retrieval_status:'failed',retrieval_message:'Connexion interrompue. Le dernier relevé reste conservé.',observed_at:new Date().toISOString()},
   {sku:'DEMO-101-M',retrieval_status:'queued'}]
 const lines = ['to_order','ordered','in_transit','received','prepared','shipped'].map((stage,i)=>({
   id:`demo-${i}`,updated_at:new Date().toISOString(),stage,
@@ -27,9 +28,17 @@ const lines = ['to_order','ordered','in_transit','received','prepared','shipped'
   supplier_order_ref:i?'DEMO-COMMANDE-01':null,
   order:{id:`vente-${i}`,account_login:`Compte démo ${i%2+1}`,currency:'EUR',status:'label_sent',deadline:new Date(Date.now()+(i+1)*86400000).toISOString()},
 }))
+async function previewWorkspace(view='overview',query={},body){
+ if(view!=='actions')return workspacePreview(view,query,body)
+ let rows=lines.filter(l=>l.stage!=='shipped').map(l=>({...l,title:l.source.title,account_login:l.order.account_login,deadline_at:l.order.deadline,sku:skuOf(l),action:({ordered:'receive',in_transit:'receive',received:'prepare',prepared:'ship'})[l.stage]||(!skuOf(l)?'missing_sku':'purchase')}))
+ const counts={all:rows.length};for(const l of rows)counts[l.action]=(counts[l.action]||0)+1
+ if(query.category&&query.category!=='all')rows=rows.filter(l=>l.action===query.category)
+ return {rows:structuredClone(rows),count:rows.length,page:0,page_size:20,counts}
+}
 async function request(method='GET',body,query='') {
   if(method==='GET'){
     const q=new URLSearchParams(query.replace(/^\?/,''));let filtered=structuredClone(lines)
+    if(q.get('view')==='detail'){const line=filtered.find(l=>l.id===q.get('id'));if(!line)throw Error('Vente introuvable');return {line,catalog:structuredClone(catalog)}}
     if(q.get('account'))filtered=filtered.filter(l=>l.order.account_login===q.get('account'))
     if(q.get('search'))filtered=filtered.filter(l=>`${l.source.title} ${l.source.sku||''} ${l.supplier_order_ref||''}`.toLowerCase().includes(q.get('search').toLowerCase()))
     if(q.get('urgent')==='true')filtered=filtered.filter(l=>l.stage!=='shipped'&&Date.parse(l.order.deadline)<Date.now()+48*3600000)
@@ -48,7 +57,7 @@ async function request(method='GET',body,query='') {
     line.sku_override=validateSaleSku(body)
     if(!catalog.some(p=>p.sku===line.sku_override))catalog.push({sku:line.sku_override,retrieval_status:'queued'})
   } else if(body.action==='edit') {
-    const {edit,product}=validateEdit(body);Object.assign(line,edit,{fees_amount:body.fees_amount,refund_amount:body.refund_amount,finance_confirmed:body.finance_confirmed})
+    if(body.updated_at!==line.updated_at)throw Error('Cette vente a changé. Recharge la vente.');const {edit,product}=validateEdit(body),variant=saleVariant(body);Object.assign(line,edit,{supplier_size:variant.size,supplier_color:variant.color},{fees_amount:body.fees_amount,refund_amount:body.refund_amount,finance_confirmed:body.finance_confirmed})
     if(product){const old=catalog.find(p=>p.sku===product.sku);if(old)Object.assign(old,product);else catalog.push(product)}
   } else {
     if(blocked(line)||nextStage(line)!==body.stage)throw Error('Étape indisponible.')
@@ -83,6 +92,6 @@ const demoClient={from(table){
 function PreviewApp(){
  const [photo,setPhoto]=useState(null),[filters,setFilters]=useState({});const navigate=(id,opts={})=>{setFilters(opts);setTab(id)}
  const [tab,setTab]=useState(location.hash==='#accueil'?TAB_HOME:location.hash==='#ressources'?TAB_RESOURCES:location.hash==='#catalogue'?TAB_CATALOG:location.hash==='#suivi'?TAB_BUDGET:location.hash==='#comptes'?TAB_COMPTES_VINTED:TAB_SALES)
- return <div className="min-h-screen bg-gray-50"><div className="bg-amber-100 text-amber-900 px-4 py-2 text-sm font-medium">DÉMO · Données fictives · Réinitialisée à chaque rechargement</div><header className="bg-white px-4 py-3 font-bold text-teal-700">Stock Vinted</header><CategoryTabs active={tab} onChange={navigate} items={[]} commandes={[]} userRole="admin"/>{tab===TAB_HOME?<HomeTab isAdmin request={workspacePreview} onNavigate={navigate}/>:tab===TAB_HISTORY?<HistoryTab isAdmin request={workspacePreview}/>:tab===TAB_RESOURCES?<ResourcesTab request={resourcesPreview} upload={resourcesPreviewUpload} accountsRequest={creativeAccountsPreview}/>:tab===TAB_CATALOG?<CatalogueTab isAdmin request={catalogPreview} collectorRequest={collectorPreview} collectorBridge={collectorBridgePreview}/>:tab===TAB_BUDGET?<BudgetTab request={trackerRequest} financeRequest={workspacePreview} onOpenSale={row=>navigate(TAB_SALES,{search:row.title})}/>:tab===TAB_COMPTES_VINTED?<VintedAccountsTab client={demoClient}/>:<SalesTab key={JSON.stringify(filters)} initialFilters={filters} onPreparePhoto={setPhoto} isAdmin request={request} collectorRequest={collectorPreview} collectorBridge={collectorBridgePreview}/>}{photo&&<PhotoPreparation article={photo} onClose={()=>setPhoto(null)} accountsRequest={creativeAccountsPreview} resourcesRequest={resourcesPreview}/>}</div>
+ return <div className="min-h-screen bg-gray-50"><div className="bg-amber-100 text-amber-900 px-4 py-2 text-sm font-medium">DÉMO · Données fictives · Réinitialisée à chaque rechargement</div><header className="bg-white px-4 py-3 font-bold text-teal-700">Stock Vinted</header><CategoryTabs active={tab} onChange={navigate} items={[]} commandes={[]} userRole="admin"/>{tab===TAB_HOME?<HomeTab isAdmin request={previewWorkspace} onNavigate={navigate}/>:tab===TAB_HISTORY?<HistoryTab isAdmin request={workspacePreview}/>:tab===TAB_RESOURCES?<ResourcesTab request={resourcesPreview} upload={resourcesPreviewUpload} accountsRequest={creativeAccountsPreview}/>:tab===TAB_CATALOG?<CatalogueTab isAdmin request={catalogPreview} collectorRequest={collectorPreview} collectorBridge={collectorBridgePreview}/>:tab===TAB_BUDGET?<BudgetTab request={trackerRequest} financeRequest={workspacePreview} onOpenSale={row=>navigate(TAB_SALES,{line:row.id})}/>:tab===TAB_COMPTES_VINTED?<VintedAccountsTab client={demoClient}/>:<SalesTab key={JSON.stringify(filters)} initialFilters={filters} onPreparePhoto={setPhoto} isAdmin request={request} collectorRequest={collectorPreview} collectorBridge={collectorBridgePreview}/>}{photo&&<PhotoPreparation article={photo} onClose={()=>setPhoto(null)} accountsRequest={creativeAccountsPreview} resourcesRequest={resourcesPreview}/>}</div>
 }
 createRoot(document.getElementById('root')).render(<PreviewApp/>)

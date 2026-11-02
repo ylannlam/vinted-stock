@@ -521,7 +521,7 @@ export default function App() {
       <Suspense fallback={<p role="status" className="p-8 text-center text-gray-500">Chargement de l’écran…</p>}><PageBoundary key={activeTab}>
       {activeTab===TAB_HOME&&<HomeTab isAdmin={isAdmin} onNavigate={setActiveTab}/>}
       {activeTab===TAB_HISTORY&&<HistoryTab isAdmin={isAdmin} onRestored={()=>{fetchItems();fetchCommandes()}}/>}
-      {activeTab === TAB_BUDGET && isAdmin && <BudgetTab onOpenSale={row=>setActiveTab(TAB_SALES,{search:(row.title||row.account_login||'').slice(0,200)})} />}
+      {activeTab === TAB_BUDGET && isAdmin && <BudgetTab onOpenSale={row=>setActiveTab(TAB_SALES,{line:row.id})} />}
       {activeTab === TAB_RESOURCES && isAdmin && <ResourcesTab key={JSON.stringify(navigationFilters)} initialSection={navigationFilters.section} />}
       {activeTab === TAB_SALES && <SalesTab key={JSON.stringify(navigationFilters)} isAdmin={isAdmin} initialFilters={navigationFilters} onPreparePhoto={setPhotoArticle} />}
       {activeTab === TAB_CATALOG && (userRole==='admin'||userRole==='stock') && <CatalogueTab isAdmin={isAdmin} onPreparePhoto={isAdmin?setPhotoArticle:undefined} />}

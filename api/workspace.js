@@ -28,6 +28,11 @@ export function workspaceHandler(authorizer=authorize) {
     if(role!=='admin')delete data.directions
     return res.json(data)
    }
+   if(view==='actions'){
+    const category=req.query?.category||'all',page=Number(req.query?.page||0)
+    if(!['all','missing_sku','shein','purchase','receive','prepare','ship','review'].includes(category)||!Number.isSafeInteger(page)||page<0||page>20000)throw new AppError('Filtre invalide.')
+    return res.json(check(await db.rpc('workspace_actions',{p_category:category,p_page:page})))
+   }
    if(view==='finance'){
     if(role!=='admin')throw new AppError('Action réservée aux administrateurs.',403)
     const month=req.query?.month||'',page=Number(req.query?.page||0)

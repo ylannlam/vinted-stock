@@ -25,6 +25,14 @@ export function financeValues(body) {
   if(body.finance_confirmed&&(body.actual_cost==null||body.actual_cost===''))throw new AppError('Renseigne le coût payé avant de confirmer la marge.')
   return {fees:amount(body.fees_amount,'Frais'),refund:amount(body.refund_amount,'Remboursement'),confirmed:body.finance_confirmed===true}
 }
+export function saleVariant(body) {
+  const text=value=>{
+    if(value==null)return null
+    if(typeof value!=='string'||value.length>80)throw new AppError('Taille ou couleur invalide (80 caractères maximum).')
+    return value.trim()||null
+  }
+  return {size:text(body.supplier_size),color:text(body.supplier_color)}
+}
 export function batchValues(body) {
   if(!Array.isArray(body.lines)||!body.lines.length||body.lines.length>100)throw new AppError('Sélectionne entre 1 et 100 ventes.')
   const ids=new Set()

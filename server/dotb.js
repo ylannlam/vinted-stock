@@ -81,6 +81,7 @@ export function validateEdit(body) {
     supplier_tracking: text(body.supplier_tracking, 200, 'Suivi fournisseur'), location: text(body.location, 100, 'Emplacement'),
     notes: text(body.notes, 1000, 'Note'), actual_cost: null,
   }
+  if(edit.sku_override&&!/^[A-Za-z0-9_-]{1,200}$/.test(edit.sku_override))throw new AppError('Colle le SKU Shein seul, sans lien ni espaces.')
   if (body.actual_cost != null && body.actual_cost !== '') {
     if (!/^(\d{1,7})(\.\d{1,2})?$/.test(String(body.actual_cost))) throw new AppError('Le coût doit être positif, avec deux décimales maximum.')
     edit.actual_cost = String(body.actual_cost)
