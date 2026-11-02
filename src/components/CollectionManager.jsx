@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react'
-import {collectionLabels,collectorOnline,latestCollections} from '../lib/collector'
+import {collectionLabels,collectorOnline,latestCollections,collectorConnectionState} from '../lib/collector'
 import {collectorBridge} from '../lib/collectorBridge'
 import CollectorConnection from './CollectorConnection'
 import {sheinProduct,sheinSearchUrl} from '../lib/catalog'
@@ -8,7 +8,7 @@ const button='rounded-lg border px-3 py-2 text-sm bg-white hover:bg-gray-50 disa
 const primary='rounded-lg px-4 py-2 text-sm font-medium bg-teal-700 text-white hover:bg-teal-800 disabled:opacity-40'
 const date=value=>value?new Date(value).toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short'}):'Pas encore lancé'
 
-export default function CollectionManager({isAdmin,full=false,compact=false,request=defaultRequest,bridge=collectorBridge,onCollected,onManage}) {
+export default function CollectionManager({isAdmin,full=false,compact=false,disclosure=false,request=defaultRequest,bridge=collectorBridge,onCollected,onManage}) {
   const [state,setState]=useState({devices:[],jobs:[],pending:0}),[browser,setBrowser]=useState(null)
   const [error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false)
   const [filter,setFilter]=useState('pending'),[showAll,setShowAll]=useState(false)
@@ -59,7 +59,7 @@ export default function CollectionManager({isAdmin,full=false,compact=false,requ
   const recent=latestCollections(state.jobs)
   const buckets={pending:recent.filter(j=>['queued','running'].includes(j.status)),review:recent.filter(j=>['blocked','failed'].includes(j.status)),done:recent.filter(j=>j.status==='completed')}
   const visible=buckets[filter]||[]
-  return <section className="space-y-3">
+  const content=<section className="space-y-3">
     {!compact&&<div className="rounded-xl border border-teal-200 bg-teal-50/60 p-4 text-sm"><p className="font-semibold">Récupération automatique après chaque vente</p><p className="mt-1 text-teal-900">Dotb transmet la vente, puis le navigateur recherche son SKU sur Shein. Aucun article non vendu n’est ajouté. Les demandes attendent le retour du navigateur s’il est fermé.</p></div>}
     <CollectorConnection devices={state.devices} browser={browser} busy={busy} isAdmin={isAdmin} onCommand={a=>perform(()=>command(a))} onConnect={()=>perform(connect)}/>
     {error&&<p role="alert" className="text-sm text-red-800 bg-red-50 rounded-lg p-3">{error}</p>}
@@ -78,6 +78,12 @@ export default function CollectionManager({isAdmin,full=false,compact=false,requ
       </div>)}{!visible.length&&<p className="p-5 text-sm text-gray-500">{filter==='pending'?'Aucun article en attente.':filter==='review'?'Aucun article à vérifier dans les demandes récentes.':'Les fiches importées apparaîtront ici et dans la bibliothèque.'}</p>}</div>
       {filter!=='review'&&!full&&!showAll&&visible.length>3&&<button className="text-sm text-teal-700 p-3 w-full border-t" onClick={()=>setShowAll(true)}>Afficher les {visible.length} demandes</button>}
     </div>}
-    {compact?<p className="text-xs text-gray-500">{state.pending} fiche(s) en attente ou en cours · {buckets.review.length} à vérifier. Les détails sont dans Catalogue → Récupération.</p>:full?<details className="rounded-xl border bg-white p-4 text-sm"><summary className="cursor-pointer text-gray-500">Appareils et réglages</summary><div className="space-y-3 mt-4"><p className="text-xs text-gray-500">Les prix sont revérifiés après 6 h quand le navigateur est disponible. Les vérifications Shein nécessitent ton intervention.</p>{state.devices.map(d=><div key={d.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3"><div>{d.name}<span className="ml-2 text-xs text-gray-500">{Date.parse(d.expires_at)<Date.now()?'Expiré':!d.enabled?'Désactivé':collectorOnline(d)?'Joignable':'Hors ligne'}</span></div>{isAdmin&&<div className="flex gap-2"><button className={button} disabled={busy} onClick={()=>perform(()=>action({action:'pause_device',id:d.id,enabled:!d.enabled}))}>{d.enabled?'Désactiver':'Réactiver'}</button><button className={`${button} text-rose-700`} disabled={busy} onClick={()=>perform(()=>action({action:'revoke_device',id:d.id}))}>Déconnecter</button></div>}</div>)}</div></details>:<button className="text-xs text-gray-500 underline" onClick={onManage}>Appareils et réglages</button>}
+    {compact?<p className="text-xs text-gray-500">{state.pending} fiche(s) en attente ou en cours · {buckets.review.length} à vérifier. Les détails sont dans Produits Shein → Outils → Connexion Shein.</p>:full||disclosure?<details className="rounded-xl border bg-white p-4 text-sm"><summary className="cursor-pointer text-gray-500">Appareils et réglages</summary><div className="space-y-3 mt-4"><p className="text-xs text-gray-500">Les prix sont revérifiés après 6 h quand le navigateur est disponible. Les vérifications Shein nécessitent ton intervention.</p>{state.devices.map(d=><div key={d.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3"><div>{d.name}<span className="ml-2 text-xs text-gray-500">{Date.parse(d.expires_at)<Date.now()?'Expiré':!d.enabled?'Désactivé':collectorOnline(d)?'Joignable':'Hors ligne'}</span></div>{isAdmin&&<div className="flex gap-2"><button className={button} disabled={busy} onClick={()=>perform(()=>action({action:'pause_device',id:d.id,enabled:!d.enabled}))}>{d.enabled?'Désactiver':'Réactiver'}</button><button className={`${button} text-rose-700`} disabled={busy} onClick={()=>perform(()=>action({action:'revoke_device',id:d.id}))}>Déconnecter</button></div>}</div>)}</div></details>:<button className="text-xs text-gray-500 underline" onClick={onManage}>Appareils et réglages</button>}
   </section>
+  if(!disclosure)return content
+  const connection=collectorConnectionState(browser,state.devices)
+  return <details className="rounded-xl border bg-white text-sm">
+    <summary className="cursor-pointer px-4 py-3 text-slate-600"><span className="font-medium">Connexion Shein</span><span className="ml-2 text-xs">{error?'À vérifier':connection.label}{state.pending?' · '+state.pending+' en attente':''}{buckets.review.length?' · '+buckets.review.length+' à vérifier':''}</span></summary>
+    <div className="px-4 pb-4">{content}</div>
+  </details>
 }

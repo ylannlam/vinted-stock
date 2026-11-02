@@ -5,7 +5,7 @@ export default function CategoryTabs({active,onChange,items=[],commandes=[],user
  useEffect(()=>setMenu(false),[active])
  if(userRole==='employe')return null
  const admin=userRole==='admin',stockTabs=[TAB_TOUT,TAB_A_RECEVOIR,TAB_A_ENVOYER,TAB_A_ENVOYER_LOT,TAB_ENVOYES]
- const primary=[[TAB_HOME,'Accueil'],[TAB_SALES,'Ventes'],[TAB_TOUT,'Stock'],[TAB_CATALOG,'Catalogue'],...(admin?[[TAB_RESOURCES,'Atelier photo'],[TAB_BUDGET,'Budget']]:[])]
+ const primary=[[TAB_HOME,'Accueil'],[TAB_SALES,'Ventes'],[TAB_TOUT,'Stock'],[TAB_CATALOG,'Produits Shein'],...(admin?[[TAB_RESOURCES,'Atelier photo'],[TAB_BUDGET,'Budget']]:[])]
  const other=[...(admin?[[TAB_COMPTES_VINTED,'Comptes']]:[]),[TAB_HISTORY,'Historique & corbeille']]
  const tabClass=id=>`px-3 py-3 text-sm font-medium rounded-lg transition ${active===id||(id===TAB_TOUT&&stockTabs.includes(active))?'bg-teal-50 text-teal-800':'text-slate-500 hover:bg-slate-50'}`
  const sold=items.filter(i=>i.status==='vendu'),groups=sold.reduce((a,i)=>{if(i.bordereau_url)a[i.bordereau_url]=(a[i.bordereau_url]||0)+1;return a},{})

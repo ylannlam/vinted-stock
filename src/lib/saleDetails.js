@@ -1,4 +1,31 @@
+import {blocked, stageOf, skuOf, supplierOf, STAGES} from './fulfillment.js'
 const normalized = value => String(value || '').trim().toLocaleLowerCase('fr-FR')
+
+export function nextSaleAction(line, catalog=[]) {
+  if(blocked(line))return {kind:'details',label:'Vérifier la vente'}
+  const stage=stageOf(line)
+  if(stage==='shipped')return null
+  if(stage==='to_order') {
+    if(!skuOf(line))return {kind:'sku',label:'Ajouter le SKU Shein'}
+    if(!supplierOf(line,catalog))return {kind:'details',label:'Vérifier la fiche Shein'}
+    if(!line.supplier_order_ref)return {kind:'order',label:'Commande passée'}
+  }
+  const current=STAGES.find(s=>s.id===stage)
+  return current?.action?{kind:'advance',label:current.action}:null
+}
+
+export async function confirmPurchase(request,line,reference) {
+  const value=reference.trim()
+  if(!value)throw Error('Renseigne le numéro de commande Shein.')
+  await request('PATCH',{action:'batch',operation:'order_ref',value,lines:[{id:line.id,updated_at:line.updated_at}]})
+  try {
+    const result=await request('GET',undefined,'?'+new URLSearchParams({view:'detail',id:line.id}))
+    if(blocked(result.line)||stageOf(result.line)!=='to_order'||result.line.supplier_order_ref!==value)throw Error('La vente a changé.')
+    await request('PATCH',{action:'advance',id:line.id,updated_at:result.line.updated_at,stage:'ordered'})
+  } catch {
+    throw Error('Le numéro de commande a été enregistré, mais le changement d’étape n’a pas pu être confirmé. Ferme cette fenêtre, actualise et vérifie la vente avant de continuer.')
+  }
+}
 
 export function retrievalState(sku, product) {
   if (!sku) return {label:'SKU à renseigner', tone:'amber', retry:false}
