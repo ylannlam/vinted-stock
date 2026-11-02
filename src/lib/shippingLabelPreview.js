@@ -1,4 +1,4 @@
-import {previewImage} from './shippingLabelPreviewImage'
+import {previewImage} from './shippingLabelPreviewImage.js'
 export async function shippingLabelPreview(){
   const {PDFDocument,rgb,PrintScaling}=await import('pdf-lib')
   const pdf=await PDFDocument.create(),page=pdf.addPage([100*72/25.4,150*72/25.4])
