@@ -79,14 +79,22 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
     await openDetail(editing.id);await load(true);setDetailNotice('Étape de préparation enregistrée.')
   }
   function editSku(line) {
-    setError(''); setNotice('')
+    setEditing(null); setError(''); setNotice('')
     setSkuEditing({id:line.id,updated_at:line.updated_at,sku:skuOf(line)})
   }
-  async function saveSku() {
-    await request('PATCH',{action:'sku',...skuEditing})
+  async function saveSku(value=skuEditing) {
+    if(!/^[A-Za-z0-9_-]{1,200}$/.test(value.sku.trim()))throw new Error('Colle uniquement le SKU, sans lien ni espaces.')
+    await request('PATCH',{action:'sku',...value,sku:value.sku.trim()})
     setSkuEditing(null)
-    await load()
-    setNotice('SKU enregistré. La fiche Shein est reliée ou sera récupérée automatiquement par le navigateur connecté.')
+    setNotice('SKU enregistré. La récupération Shein continue en arrière-plan.')
+    await load(true)
+  }
+  function pasteSku(event) {
+    event.preventDefault()
+    if(busy||mutation.current)return
+    const value={...skuEditing,sku:event.clipboardData.getData('text/plain').trim()}
+    setSkuEditing(value)
+    run(()=>saveSku(value))
   }
   const input = 'border border-gray-300 rounded-md px-3 py-2 text-sm w-full focus:outline-teal-600'
   return <main className="max-w-screen-2xl mx-auto p-4 space-y-4">
@@ -121,8 +129,8 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
       {visible.map(line => { const due=deadline(line), stage=stageOf(line), supplier=supplierOf(line,data.catalog),product=productOf(line,data.catalog); return <tr key={line.id} className="border-t hover:bg-gray-50">
         <td className="p-3 min-w-48"><div className="flex gap-3"><input type="checkbox" aria-label={`Sélectionner ${line.source.title||'cet article'}`} className="self-start mt-1" disabled={busy||blocked(line)||!nextStage(line)} checked={selected.includes(line.id)} onChange={e=>setSelected(old=>e.target.checked?[...old,line.id]:old.filter(id=>id!==line.id))}/>{(line.source.thumbnail_url||product?.photo_url)&&<img src={line.source.thumbnail_url||product.photo_url} alt="" className="w-12 h-16 rounded object-cover" loading="lazy"/>}<div className="min-w-0"><div className="font-medium">{line.source.title || 'Article sans titre'}</div>
           {skuEditing?.id===line.id?<form className="mt-2 space-y-2 min-w-52 max-w-sm" aria-label={`SKU de ${line.source.title||'cet article'}`} onSubmit={e=>{e.preventDefault();run(saveSku)}} onKeyDown={e=>{if(e.key==='Escape'&&!busy){setSkuEditing(null);setError('')}}}>
-            <label className="block text-xs text-gray-600">SKU Shein<input autoFocus required disabled={busy} autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={200} placeholder="Ex. sz25052272411726746" className={`${input} mt-1`} value={skuEditing.sku} onChange={e=>setSkuEditing({...skuEditing,sku:e.target.value})}/></label>
-            <p className="text-xs text-gray-500">Colle la référence de l’article Shein. La recherche démarrera automatiquement.</p>
+            <label className="block text-xs text-gray-600">SKU Shein<input autoFocus required disabled={busy} autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={200} placeholder="Colle le SKU ici" className={`${input} mt-1`} value={skuEditing.sku} onPaste={pasteSku} onChange={e=>setSkuEditing({...skuEditing,sku:e.target.value})}/></label>
+            <p className="text-xs text-gray-500">{busy?'Enregistrement…':'Colle le SKU : il s’enregistre automatiquement. Si tu le tapes, appuie sur Entrée.'}</p>
             {error&&<p role="alert" className="text-xs text-red-700">{error}</p>}
             <div className="flex flex-wrap gap-2"><button disabled={busy||!skuEditing.sku.trim()} className="rounded-md bg-teal-700 text-white px-3 py-2 text-xs disabled:opacity-40">{busy?'Enregistrement…':'Enregistrer le SKU'}</button><button type="button" disabled={busy} onClick={()=>{setSkuEditing(null);setError('')}} className="text-xs px-2 py-2">Annuler</button></div>
           </form>:<><div className={skuOf(line)?'text-gray-500 text-xs break-all':'text-amber-700 text-xs'}>{skuOf(line)||'SKU à renseigner'}</div>{!blocked(line)&&<button disabled={busy} onClick={()=>editSku(line)} className={`mt-2 text-xs ${skuOf(line)?'text-teal-700 underline':'rounded-md bg-teal-700 text-white px-3 py-2'}`}>{skuOf(line)?'Modifier le SKU':'Ajouter le SKU Shein'}</button>}</>}
