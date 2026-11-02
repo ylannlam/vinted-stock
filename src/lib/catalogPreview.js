@@ -1,6 +1,7 @@
 import { validateObservation, validateSupplierAssociation } from '../../server/catalog'
 import { collectionReferences,latestCollections } from './collector'
 import {previewPhotos} from './previewPhotos'
+import {sheinBridgePreview} from './sheinOrdersPreview'
 const product={id:'11111111-1111-4111-8111-111111111111',supplier_id:'123456',supplier_url:'https://fr.shein.com/Demo-p-123456.html',title:'Robe midi à fleurs · exemple',supplier_sku:'sz-DEMO',price:18.08,previous_price:19.90,size:'M',color:'Nude',availability:'available',observed_at:new Date().toISOString(),linked_skus:1}
 const products=[product],items=[{id:'demo-item',sku:'sz-DEMO',title:'Robe midi · taille M',supplier_url:product.supplier_url}],links=[{sku:'sz-DEMO',product_id:product.id,updated_at:new Date().toISOString()}]
 const observations=[{id:crypto.randomUUID(),product_id:product.id,price:18.08,currency:'EUR',size:'M',color:'Nude',availability:'available',observed_at:new Date().toISOString()},{id:crypto.randomUUID(),product_id:product.id,price:19.90,currency:'EUR',size:'M',color:'Nude',availability:'available',observed_at:new Date(Date.now()-86400000).toISOString()}]
@@ -19,7 +20,7 @@ export async function collectorBridgePreview(action='status') {
   if(action==='connect')browserState={...browserState,connected:true,device_id:devices.at(-1)?.id}
   if(action==='start'||action==='resume')browserState={...browserState,enabled:true,phase:'idle',message:'En attente de tes liens ou SKU.'}
   if(action==='pause')browserState={...browserState,enabled:false,message:'Import en pause.'}
-  return structuredClone({...browserState,lastContactAt:Date.now()})
+  return structuredClone({...browserState,version:'0.6.0',orders:sheinBridgePreview(action),lastContactAt:Date.now()})
 }
 export async function collectorPreview(method='GET',body) {
   if(method==='GET'){

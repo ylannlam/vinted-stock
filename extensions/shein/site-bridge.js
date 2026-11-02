@@ -1,7 +1,7 @@
 // This script runs only on the Stock Vinted origin, in Chrome's isolated world.
 (() => {
   const origin='https://vinted-stock.vercel.app'
-  const commands=new Set(['status','connect','start','pause','resume','open'])
+  const commands=new Set(['status','connect','start','pause','resume','open','orders_start','orders_pause','orders_resume','orders_open'])
   if(location.origin!==origin||window.top!==window)return
   window.addEventListener('message',async event=>{
     const m=event.data

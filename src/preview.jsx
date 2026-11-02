@@ -1,5 +1,6 @@
 import Header from './components/Header'
 import {newestSalesFirst} from './lib/salesOrder'
+import {sheinOrdersPreview} from './lib/sheinOrdersPreview'
 import {previewPhotos} from './lib/previewPhotos'
 import HomeTab from './components/HomeTab'
 import HistoryTab from './components/HistoryTab'
@@ -45,9 +46,11 @@ async function previewWorkspace(view='overview',query={},body){
  return {rows:structuredClone(rows),count:rows.length,page:0,page_size:20,counts}
 }
 async function request(method='GET',body,query='') {
+  if(body?.action==='shein_review')return sheinOrdersPreview(lines,body)
   if(method==='POST'&&body?.action==='shipping_label')return (await import('./lib/shippingLabelPreview')).shippingLabelPreview()
   if(method==='GET'){
     const q=new URLSearchParams(query.replace(/^\?/,''));let filtered=structuredClone(lines).sort(newestSalesFirst)
+    if(q.get('view')==='shein_orders')return sheinOrdersPreview(lines)
     const shipRows=parcels.filter(p=>p.line_ids.length).map(p=>({...p,lines:p.line_ids.map(id=>{const l=lines.find(x=>x.id===id);return {id,title:l.source.title,account:l.order.account_login,size:l.supplier_size,updated_at:l.updated_at}})}))
     if(q.get('view')==='shipments')return {shipments:structuredClone(shipRows),count:shipRows.length,page:0}
     if(q.get('view')==='detail'){const line=filtered.find(l=>l.id===q.get('id'));if(!line)throw Error('Vente introuvable');return {line:{...line,shipments:structuredClone(shipRows.filter(p=>p.line_ids.includes(line.id)))},catalog:structuredClone(catalog)}}

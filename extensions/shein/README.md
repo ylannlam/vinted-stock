@@ -1,13 +1,23 @@
-# Assistant Shein — 0.5.0
+# Assistant Shein — 0.6.0
 
-Les commandes se trouvent dans **Catalogue**, sur https://vinted-stock.vercel.app. L’extension récupère les articles dans un onglet séparé de ton navigateur habituel.
+Les fiches se pilotent dans **Catalogue**, et les achats dans **Ventes → Mes commandes Shein**, sur https://vinted-stock.vercel.app. L’extension utilise ses propres onglets.
+
+## Commandes Shein
+- Dans **Ventes → Mes commandes Shein**, clique sur **Activer la synchronisation**. L’extension lit les commandes récentes depuis le début du suivi, puis leurs lignes détaillées, toutes les 10 minutes lorsque le navigateur reste ouvert.
+- SKU, lien, photo, taille, couleur, quantité, montant et état affichés sont enregistrés. Les adresses, moyens de paiement et cookies ne sont pas récupérés.
+- L’association automatique exige un SKU exact, une taille et une couleur concordantes, assez d’exemplaires et aucune commande concurrente. Les autres cas se choisissent avec **Associer une vente**.
+- Une commande en préparation passe la vente à **Commandé**. Les articles expédiés passent à **En transit**. Un article livré nécessite **J’ai reçu cet article** ; aucune réception n’est confirmée sur Shein.
+- Les prix unitaires ne sont repris que lorsqu’ils sont connus et que le coût de la vente n’a pas été renseigné. Les frais de livraison ne sont pas répartis automatiquement.
+- Une annulation, un retour, une disparition d’article ou une baisse de quantité reste visible à vérifier. **Dissocier** restaure les informations d’avant association seulement si elles n’ont pas été modifiées depuis.
+- Le numéro de suivi et l’affectation à des colis séparés restent disponibles dans **Mes colis Shein** ; leur récupération automatique depuis Shein n’est pas encore activée.
+- La lecture s’arrête en cas de connexion ou vérification Shein requise. **Ouvrir Shein**, puis **Reprendre** permet de continuer. Aucun achat, retour ou annulation n’est déclenché par l’extension.
 
 ## Installation unique
 1. Décompresse le dossier et conserve-le sur le PC.
 2. Dans `edge://extensions` ou `chrome://extensions`, active le mode développeur et charge ce dossier comme extension non empaquetée.
 3. Actualise le catalogue puis clique sur **Connecter et démarrer**. Aucun code à copier.
 
-Déjà associé en 0.3.0 ou 0.4.0 ? Mets les imports en pause, remplace les fichiers dans le même dossier, recharge l’extension puis la page du catalogue. Reprends les imports. L’association existante est conservée. L’extension ne demande aucun domaine ou type de permission supplémentaire.
+Déjà associé en 0.3.0, 0.4.0 ou 0.5.0 ? Mets les imports en pause, remplace les fichiers dans le même dossier, recharge l’extension puis la page du catalogue. Reprends les imports. L’association existante est conservée. L’extension ne demande aucun domaine ou type de permission supplémentaire.
 
 ## Nouveau tableau de bord
 - État distinct : connecté, en pause, en cours, reconnexion ou intervention Shein.

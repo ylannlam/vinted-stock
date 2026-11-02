@@ -18,6 +18,6 @@ test('diagnostic never exports credentials, references, article titles or histor
   assert.equal(result.includes('SECRET'),false);assert.equal(result.includes('PRIVATE'),false)
 })
 test('update notice compares full numeric versions and leaves newer builds alone',()=>{
-  for(const version of ['0.4.0','0.3.9',undefined,'invalid'])assert.equal(extensionNeedsUpdate(version),true)
-  for(const version of ['0.5.0','0.5.1','0.10.0','1.0.0'])assert.equal(extensionNeedsUpdate(version),false)
+  for(const version of ['0.5.0','0.4.0','0.3.9',undefined,'invalid'])assert.equal(extensionNeedsUpdate(version),true)
+  for(const version of ['0.6.0','0.6.1','0.10.0','1.0.0'])assert.equal(extensionNeedsUpdate(version),false)
 })

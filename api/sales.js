@@ -10,10 +10,18 @@ import {enrichSoldSizes} from '../server/sold-sizes.js'
 import {readShipments,saveShipment,refreshShipment} from '../server/supplier-shipments.js'
 import {isId} from '../server/dotb.js'
 import {shippingLabel} from '../server/shipping-labels.js'
+import {readSheinOrders,reviewSheinOrder} from '../server/shein-orders.js'
 
 export const config = { maxDuration: 60 }
 const fail = error => { if (error) throw error }
 const errorMessages = {
+  shein_item_unavailable:'Cet article Shein est annulé, non payé ou à vérifier. Aucune vente n’a été modifiée.',
+  shein_quantity_used:'Tous les exemplaires de cet article sont déjà associés à des ventes.',
+  shein_already_linked:'Cette vente est déjà associée à une commande Shein.',
+  shein_already_ordered:'Cette vente porte déjà un autre numéro de commande. Corrige sa fiche avant de l’associer.',
+  shein_sale_mismatch:'Le SKU ne correspond pas ou la vente n’est plus disponible pour cet achat.',
+  shein_link_missing:'Cette association n’existe plus. Actualise la liste.',
+  shein_link_changed:'La fiche a été modifiée ou préparée depuis l’association. Vérifie ses informations avant de corriger la commande.',
   stale_version: 'Cet article a changé. Actualisez la liste avant de recommencer.',
   order_blocked: 'Cette vente est annulée, en retour, suspendue ou déjà expédiée. Actualisez la liste.',
   invalid_transition: 'Cette étape n’est plus disponible. Actualisez la liste.',
@@ -30,6 +38,7 @@ export default async function handler(req, res) {
     if (!auth) return
     const { db, role, user } = auth
     if (req.method === 'GET') {
+      if(req.query?.view==='shein_orders')return res.json(await readSheinOrders(db,req.query))
       if(req.query?.view==='shipments')return res.json(await readShipments(db,req.query))
       if(req.query?.view==='detail'){
         const id=req.query.id
@@ -101,6 +110,7 @@ export default async function handler(req, res) {
     }
     const body = req.body
     if (!body || typeof body !== 'object') throw new AppError('Formulaire invalide.')
+    if(body.action==='shein_review')return res.json(await reviewSheinOrder(db,body,user.id))
     if(body.action==='shipment')return res.json(await saveShipment(db,body,user.id))
     if(body.action==='shipment_unlink'){
       if(!isId(body.id)||typeof body.line!=='string'||body.line.length>80||!Number.isFinite(Date.parse(body.updated_at)))throw new AppError('Association invalide.')

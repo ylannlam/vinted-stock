@@ -4,7 +4,7 @@ export function trustedSender(sender,message,runtime) {
   if(sender.url===runtime.getURL('popup.html'))return true
   try {
     return message.fromSite===true&&sender.frameId===0&&new URL(sender.url).origin===SITE
-      &&new URL(sender.tab?.url).origin===SITE&&['status','connect','start','pause','resume','open'].includes(message.action)
+      &&new URL(sender.tab?.url).origin===SITE&&['status','connect','start','pause','resume','open','orders_start','orders_pause','orders_resume','orders_open'].includes(message.action)
   } catch{return false}
 }
 export function publicState(state,token,version) {
