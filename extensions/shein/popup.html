@@ -4,6 +4,10 @@
 <body>
   <header class="header"><div class="brand-mark" aria-hidden="true">S</div><div><span class="eyebrow">STOCK VINTED</span><h1>Assistant Shein</h1></div><span id="version" class="version"></span></header>
   <main>
+    <button id="sidepanel" class="secondary">Garder l’assistant ouvert sur le côté</button>
+    <p id="error" role="alert" hidden></p>
+    <nav class="tabs" aria-label="Assistant Shein"><button data-panel="products" aria-pressed="true">Fiches</button><button data-panel="orders" aria-pressed="false">Commandes</button><button data-panel="shopping" aria-pressed="false">Achats & alertes</button></nav>
+    <div id="panel-products">
     <section id="overview" class="status-card" aria-label="État de la récupération">
       <div class="status-line"><span class="status-dot" aria-hidden="true"></span><strong id="state-label">Connexion à l’extension…</strong><span id="live-label" class="live-label">EN DIRECT</span></div>
       <p id="status" role="status" aria-live="polite">Lecture de l’état du navigateur.</p>
@@ -11,13 +15,23 @@
       <div id="controls" class="actions" hidden><button id="start">Reprendre les imports</button><button id="pause" class="secondary">Mettre en pause</button><button id="resume" hidden>J’ai vérifié · reprendre</button><button id="open" class="secondary" hidden>Ouvrir la fiche Shein</button><button id="skip" class="quiet" hidden>Laisser à vérifier et continuer</button></div>
       <div id="onboarding" hidden><button id="connect-site">Connecter depuis mon catalogue</button><p class="small">Sur le site, clique sur « Connecter et démarrer ». Une seule fois pour ce navigateur.</p></div>
     </section>
-    <p id="error" role="alert" hidden></p>
+
     <div id="dashboard" hidden>
       <div class="stats"><div><strong id="completed">0</strong><span>fiches ajoutées</span></div><div><strong id="reviewed">0</strong><span>laissées à vérifier</span></div></div>
       <p class="stats-caption">Depuis l’association de ce navigateur</p>
       <section id="current" class="card" hidden><div class="section-heading"><h2>Article en cours</h2><span id="step-label" class="small"></span></div><p id="reference" class="reference"></p><ol id="steps" class="steps" aria-label="Étapes de récupération"><li>Recherche</li><li>Lecture</li><li>Contrôle</li><li>Ajout</li></ol></section>
       <section class="card"><div class="section-heading"><h2>Activité récente</h2><span class="small">12 dernières fiches</span></div><p id="empty-history" class="small">Les prochaines fiches traitées apparaîtront ici.</p><ul id="history" class="history"></ul></section>
     </div>
+    </div>
+    <section id="panel-orders" hidden>
+      <div class="card"><h2>Mes commandes Shein</h2><p id="orders-status" role="status">Lecture de l’état…</p><p id="orders-counts" class="small"></p>
+      <div class="actions"><button id="orders-start">Synchroniser</button><button id="orders-full" class="secondary">Vérification complète</button><button id="orders-pause" class="secondary">Pause</button><button id="orders-resume" hidden>J’ai vérifié · reprendre</button><button id="orders-open" class="secondary">Ouvrir Shein</button></div>
+      <form id="find-order"><label for="order-reference">Retrouver une commande</label><input id="order-reference" maxlength="300" placeholder="Numéro G… ou lien de commande" required><button>Retrouver</button></form>
+      <ul id="orders-errors" class="history"></ul></div>
+    </section>
+    <section id="panel-shopping" hidden>
+      <div class="card"><h2>Ma liste d’achats</h2><p class="small">Ventes du jour et ventes plus anciennes restant à traiter. Vérifie le total, la taille et la couleur sur Shein.</p><button id="shopping-refresh" class="secondary">Actualiser ma liste</button><p id="shopping-status" role="status"></p><ul id="shopping-alerts" class="history"></ul><div id="shopping-items"></div></div>
+    </section>
     <button id="site" class="catalogue-button">Ouvrir mon catalogue <span aria-hidden="true">↗</span></button>
     <details class="help"><summary>Aide et connexion</summary><p>Garde ce navigateur ouvert et le PC éveillé. Si Shein demande une vérification, ouvre la fiche, termine-la toi-même, puis reprends ici.</p><p id="contact" class="small"></p><button id="diagnostic" class="secondary">Exporter le diagnostic</button><p class="small">État et compteurs uniquement, sans code d’association ni données des articles.</p><form id="connect" hidden><label for="code">Connexion manuelle de secours</label><input id="code" type="password" autocomplete="off" required placeholder="Code d’association du site"><button class="secondary">Associer ce navigateur</button></form><button id="disconnect" class="quiet" hidden>Déconnecter cette extension</button></details>
   </main>

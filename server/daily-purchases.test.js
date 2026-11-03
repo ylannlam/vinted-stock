@@ -52,6 +52,6 @@ test('API validates date, uses one consistent snapshot and preserves read failur
   for(const invalid of ['2026-02-31','2026-11-04','bad',['2026-11-03']])await assert.rejects(()=>readDailyPurchases(db,{day:invalid},now))
   assert.equal(calls.length,0)
   assert.equal((await readDailyPurchases(db,{},now)).counts.ready,1)
-  assert.deepEqual(calls,[['daily_purchase_context',{p_day:day}]])
+  assert.deepEqual(calls,[['daily_purchase_context_v2',{p_day:day,p_include_earlier:false}]])
   await assert.rejects(()=>readDailyPurchases({rpc:async()=>({error:Error('offline')})},{day},now),/offline/)
 })

@@ -187,7 +187,7 @@ test('URLs, manifest permissions and API credential destination remain constrain
     assert.equal(target,'https://vinted-stock.vercel.app/api/collector');assert.equal(options.redirect,'error');assert.equal(options.credentials,'omit');assert.equal(options.headers.Authorization,'Bearer test-only');return {ok:true,json:async()=>({job:null})}
   })
   const manifest=JSON.parse(readFileSync(new URL('../extensions/shein/manifest.json',import.meta.url)))
-  assert.deepEqual(manifest.permissions,['storage','alarms','scripting'])
+  assert.deepEqual(manifest.permissions,['storage','alarms','scripting','sidePanel'])
   assert.deepEqual(manifest.host_permissions,['https://fr.shein.com/*','https://www.shein.com/*','https://vinted-stock.vercel.app/*'])
   assert.equal(manifest.externally_connectable,undefined)
   assert.equal(readFileSync(new URL('../extensions/shein/extract.mjs',import.meta.url),'utf8'),readFileSync(new URL('../tools/shein-collector/extract.mjs',import.meta.url),'utf8'))

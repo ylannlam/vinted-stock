@@ -3,11 +3,11 @@ import { AppError, isId } from '../server/dotb.js'
 import { authorizeCollector, newCollectorToken, validateCollection, resumeOpenCollection, retryCollections } from '../server/collector.js'
 import { collectionReferences } from '../src/lib/collector.js'
 import {importSheinOrder} from '../server/shein-orders.js'
-import {readTrackingPeriod} from '../server/tracking.js'
+import {sheinSyncContext,reportSheinSync,finishSheinSync,assistantSummary} from '../server/shein-assistant.js'
 
 export const config={maxDuration:30}
 const check=error=>{if(error)throw error}
-const deviceActions=new Set(['claim','heartbeat','complete','fail','resume_blocked','orders_context','orders_import','orders_finish'])
+const deviceActions=new Set(['claim','heartbeat','complete','fail','resume_blocked','orders_context','orders_import','orders_finish','orders_report','assistant_summary'])
 
 export default async function handler(req,res) {
   res.setHeader('Cache-Control','no-store')
@@ -21,16 +21,12 @@ export default async function handler(req,res) {
         return res.json(data)
       }
       const seen=await db.from('catalog_collectors').update({last_seen_at:new Date().toISOString()}).eq('id',device.id);check(seen.error)
-      if(body.action==='orders_context') {
-        const tracking=await readTrackingPeriod(db)
-        const since_date=new Intl.DateTimeFormat('en-CA',{timeZone:tracking.time_zone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(tracking.starts_at))
-        return res.json({enabled:device.enabled,since_date})
-      }
+      if(body.action==='orders_context')return res.json(await sheinSyncContext(db,device,body))
+      if(body.action==='orders_report')return res.json(await reportSheinSync(db,device,body))
+      if(body.action==='assistant_summary')return res.json(await assistantSummary(db,{day:body.day,include_earlier:body.include_earlier}))
       if(body.action==='orders_import')return res.json(await importSheinOrder(db,device,body.order))
       if(body.action==='orders_finish') {
-        if(!Number.isInteger(body.count)||body.count<0||body.count>200)throw new AppError('Nombre de commandes invalide.')
-        const r=await db.rpc('finish_shein_sync',{p_device:device.id,p_count:body.count});check(r.error)
-        return res.json({linked:r.data})
+        return res.json(await finishSheinSync(db,device,body))
       }
       if(body.action==='heartbeat') {
         if(body.job_id) {

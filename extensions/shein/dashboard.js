@@ -15,5 +15,6 @@ export function stepFor(s) {
 }
 export function diagnostic(s,now=new Date().toISOString()) {
   return {generatedAt:now,version:s.version,connected:!!s.connected,enabled:!!s.enabled,phase:s.phase,blockedCode:s.blockedCode||null,
-    completed:s.completed||0,reviewed:s.reviewed||0,lastContactAt:s.lastContactAt||null,retryAt:s.retryAt||null,hasTab:!!s.hasTab}
+    completed:s.completed||0,reviewed:s.reviewed||0,lastContactAt:s.lastContactAt||null,retryAt:s.retryAt||null,hasTab:!!s.hasTab,
+    orders:{enabled:!!s.orders?.enabled,phase:s.orders?.phase||'idle',done:s.orders?.done||0,total:s.orders?.total||0,errors:s.orders?.errors?.length||0,lastCompletedAt:s.orders?.lastCompletedAt||null}}
 }

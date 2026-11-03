@@ -9,7 +9,9 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       const { data, error } = await auth.db.from('drop_tracker').select('payload,revision').eq('id', true).single()
       if (error) throw error
-      return res.json(data)
+      const automatic=await auth.db.rpc('shein_budget_expenses')
+      if(automatic.error)throw automatic.error
+      return res.json({...data,automatic_expenses:automatic.data||[]})
     }
     const { revision, payload } = req.body || {}
     if (!Number.isSafeInteger(revision) || revision < 0) return res.status(400).json({error: 'Version invalide.'})

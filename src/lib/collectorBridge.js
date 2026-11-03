@@ -7,8 +7,8 @@ export function collectorBridge(action='status',payload={},host=window) {
       if(event.source!==host||event.origin!==origin||event.data?.channel!=='stock-vinted-response'||event.data.id!==id)return
       event.data.ok?finish(null,event.data.state):finish(Error(event.data.error||'Connexion au navigateur indisponible.'))
     }
-    const timer=host.setTimeout(()=>finish(Error('Extension non détectée dans ce navigateur.')),action==='status'?1200:30000)
+    const timer=host.setTimeout(()=>finish(Error('Extension non détectée ou occupée dans ce navigateur. Recharge la page si tu viens de la mettre à jour.')),action==='status'?3500:45000)
     host.addEventListener('message',receive)
-    host.postMessage({channel:'stock-vinted-request',id,action,...(action==='connect'?{token:payload.token}:{})},origin)
+    host.postMessage({channel:'stock-vinted-request',id,action,...(action==='connect'?{token:payload.token}:action==='orders_start'?{options:payload}:action==='assistant_summary'?{day:payload.day}:{})},origin)
   })
 }

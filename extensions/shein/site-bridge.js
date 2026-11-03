@@ -8,6 +8,7 @@
     if(event.source!==window||event.origin!==origin||m?.channel!=='stock-vinted-request'||!commands.has(m.action)
       ||typeof m.id!=='string'||m.id.length>80)return
     const message={action:m.action,fromSite:true}
+    if(m.action==='orders_start')message.options={mode:m.options?.mode,reference:m.options?.reference,from_date:m.options?.from_date,to_date:m.options?.to_date}
     if(m.action==='connect') {
       if(typeof m.token!=='string'||m.token.length>120)return
       message.token=m.token

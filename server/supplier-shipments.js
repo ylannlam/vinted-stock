@@ -38,7 +38,8 @@ export async function readShipments(db,query={}){
   let q=db.from('workspace_supplier_shipments').select('*',{count:'exact'}).order('created_at',{ascending:false}).order('id')
   if(query.line)q=q.contains('line_ids',[query.line])
   const r=await q.range(page*30,page*30+29);fail(r.error)
-  return {shipments:r.data,count:r.count,page,page_size:30}
+  const shein=query.line?{data:[],count:0}:await db.from('shein_orders').select('ref,shipment_observations',{count:'exact'}).neq('shipment_observations','[]').order('order_date',{ascending:false}).range(page*30,page*30+29);fail(shein.error)
+  return {shipments:r.data,count:Math.max(r.count,shein.count||0),page,page_size:30,shein_orders:shein.data}
 }
 export async function saveShipment(db,body,user){
   let fields;try{fields=shipmentInput(body)}catch(e){throw new AppError(e.message)}

@@ -12,18 +12,26 @@ const ready=(async()=>{
 let chain=Promise.resolve()
 const serial=work=>{const next=chain.then(()=>ready).then(work);chain=next.catch(()=>{});return next}
 const state=async()=>({...initialState(),...(await chrome.storage.local.get('state')).state})
-const orders=async()=>({...orderState(),...(await chrome.storage.local.get('orders')).orders})
+const orders=async()=>{const saved=(await chrome.storage.local.get('orders')).orders||{};return {...orderState(),...saved,cursor:saved.cursor??saved.done??0}}
+const humanHold=s=>s.phase==='blocked'&&['human_check','login_required'].includes(s.blockedCode)
+async function badge() {
+  const [s,o]=await Promise.all([state(),orders()])
+  const warning=s.needsConnection||o.needsConnection||s.phase==='blocked'||o.phase==='blocked'||o.phase==='partial'
+  await chrome.action.setBadgeText({text:warning?'!':s.retryAt||o.retryAt?'…':s.enabled||o.enabled?'ON':''})
+  await chrome.action.setBadgeBackgroundColor({color:warning?'#b45309':'#0f766e'})
+}
+async function tickBoth(){if(!humanHold(await orders()))await engine.tick();if(!humanHold(await state()))await orderEngine.tick()}
 const view=async()=>{
   const o=await orders()
   const safe=publicState(await state(),(await chrome.storage.local.get('token')).token,chrome.runtime.getManifest().version)
   return {...safe,connected:safe.connected&&!o.needsConnection,
-    orders:{enabled:o.enabled,phase:o.phase,message:o.message,done:o.done,total:o.total,lastCompletedAt:o.lastCompletedAt,hasTab:o.tabId!=null}}
+    orders:{enabled:o.enabled,phase:o.phase,message:o.message,done:o.done,total:o.total,cursor:o.cursor,errors:o.errors||[],mode:o.mode,retryAt:o.retryAt,blockedCode:o.blockedCode,lastCompletedAt:o.lastCompletedAt,lastFullAt:o.lastFullAt,hasTab:o.tabId!=null}}
 }
 async function ownedOrdersTab(id) {
   if(id==null||(await chrome.storage.session.get('ownedOrdersTabId')).ownedOrdersTabId!==id)return null
   try{return await chrome.tabs.get(id)}catch{return null}
 }
-const orderEngine=createOrderEngine({load:orders,save:s=>chrome.storage.local.set({orders:s}),now:()=>Date.now(),tab:ownedOrdersTab,
+const orderEngine=createOrderEngine({load:orders,save:async s=>{await chrome.storage.local.set({orders:s});await badge()},now:()=>Date.now(),tab:ownedOrdersTab,
   createTab:async()=>{const tab=await chrome.tabs.create({url:'about:blank',active:false});await chrome.storage.session.set({ownedOrdersTabId:tab.id});return tab.id},
   navigate:async(id,url)=>{if(!await ownedOrdersTab(id)||!allowedPage(url))throw Error('Onglet des commandes indisponible.');await chrome.tabs.update(id,{url})},
   read:async(id,action='read')=>{
@@ -50,8 +58,7 @@ async function read(id,kind) {
 }
 const engine=createEngine({load:state,save:async s=>{
   await chrome.storage.local.set({state:s})
-  await chrome.action.setBadgeText({text:s.needsConnection?'?':s.phase==='blocked'?'!':s.retryAt?'…':s.enabled?'ON':''})
-  await chrome.action.setBadgeBackgroundColor({color:s.phase==='blocked'||s.retryAt||s.needsConnection?'#b45309':'#0f766e'})
+  await badge()
 },now:()=>Date.now(),api:async body=>{
   const {token}=await chrome.storage.local.get('token');return callApi(token,body)
 },tab:ownedTab,createTab,navigate:async(id,url)=>{
@@ -75,10 +82,10 @@ const engine=createEngine({load:state,save:async s=>{
 }})
 
 // Register all listeners synchronously so they wake a suspended service worker.
-chrome.alarms.onAlarm.addListener(a=>{if(a.name==='collect')serial(async()=>{await engine.tick();await orderEngine.tick()}).catch(()=>{})})
+chrome.alarms.onAlarm.addListener(a=>{if(a.name==='collect')serial(tickBoth).catch(()=>{})})
 chrome.tabs.onUpdated.addListener((id,change)=>{if(change.status==='complete')serial(async()=>{
-  const s=await state();if(s.tabId===id&&s.job&&s.enabled&&s.phase!=='blocked')await engine.tick()
-  const o=await orders();if(o.tabId===id)await orderEngine.tick()
+  const s=await state(),o=await orders();if(s.tabId===id&&s.job&&s.enabled&&s.phase!=='blocked'&&!humanHold(o))await engine.tick()
+  if(o.tabId===id&&!humanHold(await state()))await orderEngine.tick()
 }).catch(()=>{})})
 chrome.runtime.onStartup.addListener(()=>serial(async()=>{
   const s=await state()
@@ -86,9 +93,8 @@ chrome.runtime.onStartup.addListener(()=>serial(async()=>{
   const patch=s.outbox||s.phase==='blocked'?{}:{job:null,phase:'idle'}
   await chrome.storage.local.set({state:{...s,...patch,tabId:null}})
   const o=await orders()
-  await chrome.storage.local.set({orders:{...o,tabId:null,...(o.outbox||o.phase==='blocked'?{}:{phase:'idle'})}})
-  if(s.enabled)await engine.tick()
-  if(o.enabled)await orderEngine.tick()
+  await chrome.storage.local.set({orders:{...o,tabId:null}})
+  await tickBoth()
 }).catch(()=>{}))
 chrome.runtime.onInstalled.addListener(()=>serial(async()=>{
   const s=await state()
@@ -97,6 +103,10 @@ chrome.runtime.onInstalled.addListener(()=>serial(async()=>{
 }).catch(()=>{}))
 chrome.runtime.onMessage.addListener((message,sender,respond)=>{
   if(!trustedSender(sender,message,chrome.runtime))return false
+  if(message.action==='assistant_summary'){
+    ready.then(async()=>callApi((await chrome.storage.local.get('token')).token,{action:'assistant_summary',day:message.day,include_earlier:true})).then(assistant=>respond({ok:true,assistant})).catch(e=>respond({ok:false,error:e.message||'Panier indisponible.'}))
+    return true
+  }
   if(message.action==='status') {
     ready.then(view).then(s=>respond({ok:true,state:s})).catch(()=>respond({ok:false,error:'Connexion indisponible.'}))
     return true
@@ -111,12 +121,17 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
       if(!reply.enabled)throw Error('Cet appareil est en pause sur le site. Réactive-le avant de l’associer.')
       await chrome.storage.local.set({token,state:{...initialState(),lastContactAt:Date.now(),message:'Navigateur connecté. Tu peux démarrer les imports.'}})
       await chrome.storage.local.set({orders:orderState()})
-    } else if(['orders_start','orders_pause','orders_resume'].includes(message.action))await orderEngine.command(message.action.slice(7))
+    } else if(['orders_start','orders_pause','orders_resume'].includes(message.action)){
+      if(['orders_start','orders_resume'].includes(message.action)&&humanHold(await state()))throw Error('Une fiche Shein attend ta vérification. Reprends-la depuis Fiches avant de lancer les commandes.')
+      await orderEngine.command(message.action.slice(7),message.options||{})
+    }
     else if(message.action==='orders_open') {
       const o=await orders(),tab=await ownedOrdersTab(o.tabId)
       if(!tab)throw Error('Lance d’abord la lecture des commandes.')
       await chrome.tabs.update(tab.id,{active:true});await chrome.windows.update(tab.windowId,{focused:true})
-    } else if(['start','pause','resume','skip'].includes(message.action))await engine.command(message.action)
+    } else if(['start','pause','resume','skip'].includes(message.action)){
+      if(['start','resume','skip'].includes(message.action)&&humanHold(await orders()))throw Error('Les commandes Shein attendent ta vérification. Reprends-les avant les fiches.');await engine.command(message.action)
+    }
     else if(message.action==='open') {
       const s=await state();let tab=await ownedTab(s.tabId)
       if(!tab&&s.job){const id=await createTab();await chrome.storage.local.set({state:{...s,tabId:id}});await chrome.tabs.update(id,{url:jobUrl(s.job)});tab=await chrome.tabs.get(id)}

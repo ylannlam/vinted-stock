@@ -1,4 +1,4 @@
-# Assistant Shein — 0.6.0
+# Assistant Shein — 0.7.0
 
 Les fiches se pilotent dans **Catalogue**, et les achats dans **Ventes → Mes commandes Shein**, sur https://vinted-stock.vercel.app. L’extension utilise ses propres onglets.
 
@@ -9,7 +9,7 @@ Les fiches se pilotent dans **Catalogue**, et les achats dans **Ventes → Mes c
 - Une commande en préparation passe la vente à **Commandé**. Les articles expédiés passent à **En transit**. Un article livré nécessite **J’ai reçu cet article** ; aucune réception n’est confirmée sur Shein.
 - Les prix unitaires ne sont repris que lorsqu’ils sont connus et que le coût de la vente n’a pas été renseigné. Les frais de livraison ne sont pas répartis automatiquement.
 - Une annulation, un retour, une disparition d’article ou une baisse de quantité reste visible à vérifier. **Dissocier** restaure les informations d’avant association seulement si elles n’ont pas été modifiées depuis.
-- Le numéro de suivi et l’affectation à des colis séparés restent disponibles dans **Mes colis Shein** ; leur récupération automatique depuis Shein n’est pas encore activée.
+- Les numéros de suivi explicitement affichés sur la commande apparaissent dans **Mes colis Shein**. Les colis saisis à la main restent disponibles. Les exemplaires ne sont jamais attribués à un colis sans preuve.
 - La lecture s’arrête en cas de connexion ou vérification Shein requise. **Ouvrir Shein**, puis **Reprendre** permet de continuer. Aucun achat, retour ou annulation n’est déclenché par l’extension.
 
 ## Installation unique
@@ -17,7 +17,7 @@ Les fiches se pilotent dans **Catalogue**, et les achats dans **Ventes → Mes c
 2. Dans `edge://extensions` ou `chrome://extensions`, active le mode développeur et charge ce dossier comme extension non empaquetée.
 3. Actualise le catalogue puis clique sur **Connecter et démarrer**. Aucun code à copier.
 
-Déjà associé en 0.3.0, 0.4.0 ou 0.5.0 ? Mets les imports en pause, remplace les fichiers dans le même dossier, recharge l’extension puis la page du catalogue. Reprends les imports. L’association existante est conservée. L’extension ne demande aucun domaine ou type de permission supplémentaire.
+Déjà associé en 0.3.0, 0.4.0 ou 0.5.0 ? Mets les imports en pause, remplace les fichiers dans le même dossier, recharge l’extension puis la page du catalogue. Reprends les imports. L’association existante est conservée. Les domaines autorisés restent identiques. La permission « sidePanel » permet de garder le tableau de bord ouvert à côté de Shein.
 
 ## Nouveau tableau de bord
 - État distinct : connecté, en pause, en cours, reconnexion ou intervention Shein.
@@ -45,3 +45,12 @@ Chrome ou Edge 120+. Seuls fr.shein.com, www.shein.com et vinted-stock.vercel.ap
 Le code d’association reste dans le stockage local protégé de l’extension, expire après 90 jours et peut être révoqué depuis le catalogue. Les requêtes authentifiées vont uniquement au point d’accès fixe `/api/collector` de ton site, sans redirection ni cookies. Aucun mot de passe, clé Dotb, historique de navigation ou cookie n’est lu. Aucun achat ni changement d’annonce n’est effectué.
 
 L’accès à Shein dépend de ta session et des contrôles du fournisseur. Une connexion réussie ne garantit pas que toutes les fiches seront accessibles.
+
+## Nouveautés 0.7.0
+- Lecture rapide des nouvelles commandes et des achats encore en cours toutes les 10 minutes ; vérification complète quotidienne. Une commande illisible est signalée et les autres continuent.
+- Reprise de la file après fermeture, bilan détaillé, import par numéro ou lien et par période sur le site.
+- Trois onglets : fiches, commandes, achats et alertes. Le bouton de panneau latéral garde ces informations visibles.
+- Le panier inclut les ventes plus anciennes encore à acheter, les échéances proches, les hausses de prix et les relevés de plus de 6 heures à actualiser.
+- Le total réellement payé, livraison incluse, est ajouté une seule fois au Budget après lecture d’une commande payée. Une référence déjà présente dans une dépense manuelle est signalée et seule la dépense manuelle est comptée. Les remboursements restent à saisir séparément.
+- La colonne « Montant » de la commande est le prix final de l’article après remises SHEIN. Il n’y a aucune répartition du total, des remises ou du port. Une ligne de quantité multiple dont le prix individuel n’est pas explicite reste à vérifier ; des prix différents pour une même variante sont conservés sans moyenne ni attribution arbitraire à une vente.
+- Les coûts saisis manuellement sont préservés. Un coût importé peut suivre un nouveau relevé exact ; la marge reste à vérifier avant confirmation financière.

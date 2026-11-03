@@ -4,6 +4,7 @@ let busy=false,polling=false,currentState=null,historyKey='',request=0
 const time=value=>new Date(value).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})
 function showError(message='') {$('error').textContent=message;$('error').hidden=!message}
 function render(s) {
+  renderOrders(s.orders)
   currentState=s
   const view=presentation(s),connected=s.connected,blocked=s.phase==='blocked'
   $('version').textContent=`v${s.version||chrome.runtime.getManifest().version}`
@@ -64,3 +65,43 @@ $('diagnostic').addEventListener('click',()=>{
 })
 act('status')
 setInterval(async()=>{if(busy||polling||document.hidden)return;polling=true;try{await send('status')}catch(e){showError(e.message)}finally{polling=false}},2000)
+
+function renderOrders(o={}) {
+  $('orders-status').textContent=o.message||'Active la synchronisation depuis ton site.'
+  $('orders-counts').textContent=`${o.done||0} enregistrée(s) / ${o.total||0} à lire · ${(o.errors||[]).length} à vérifier`
+  $('orders-resume').hidden=o.phase!=='blocked';$('orders-open').hidden=!o.hasTab
+  $('orders-pause').hidden=!o.enabled
+  $('orders-errors').replaceChildren()
+  for(const e of o.errors||[]){const li=document.createElement('li');li.textContent=(e.ref?e.ref+' · ':'')+e.message;li.className='warning';$('orders-errors').append(li)}
+}
+for(const button of document.querySelectorAll('[data-panel]'))button.addEventListener('click',()=>{
+  for(const other of document.querySelectorAll('[data-panel]')){const selected=button===other;other.setAttribute('aria-pressed',String(selected));$('panel-'+other.dataset.panel).hidden=!selected}
+  if(button.dataset.panel==='shopping')loadShopping()
+})
+for(const action of ['start','pause','resume','open'])$('orders-'+action).addEventListener('click',()=>act('orders_'+action))
+$('orders-full').addEventListener('click',()=>act('orders_start',{options:{mode:'full'}}))
+$('find-order').addEventListener('submit',e=>{e.preventDefault();act('orders_start',{options:{mode:'targeted',reference:$('order-reference').value}})})
+$('sidepanel').hidden=!chrome.sidePanel?.open
+$('sidepanel').addEventListener('click',async()=>{try{const w=await chrome.windows.getCurrent();await chrome.sidePanel.open({windowId:w.id})}catch{showError('Ouvre le panneau latéral depuis le menu de ton navigateur.')}})
+let shoppingBusy=false
+async function loadShopping(){
+  if(shoppingBusy)return;shoppingBusy=true;$('shopping-status').textContent='Chargement…'
+  try{
+    const r=await chrome.runtime.sendMessage({action:'assistant_summary'})
+    if(!r?.ok)throw Error(r?.error||'Panier indisponible.')
+    const {cart,alerts}=r.assistant
+    $('shopping-status').textContent=`${cart.counts.ready} article(s) prêts · ${cart.counts.attention} à vérifier`
+    $('shopping-alerts').replaceChildren();$('shopping-items').replaceChildren()
+    for(const alert of alerts){const li=document.createElement('li');li.className='warning';li.textContent=alert.text;$('shopping-alerts').append(li)}
+    for(const g of cart.groups){
+      const row=document.createElement('article');row.className='shop-item'
+      if(g.photos?.[0]){const img=document.createElement('img');img.src=g.photos[0];img.alt='';img.referrerPolicy='no-referrer';row.append(img)}
+      const copy=document.createElement('div'),title=document.createElement('strong'),variant=document.createElement('p'),note=document.createElement('p')
+      title.textContent=g.title;variant.textContent=`${g.quantity} × ${g.size||'Taille à préciser'} · ${g.color||'Couleur à préciser'}`;note.textContent=g.state==='ready'&&g.price!=null?'Prix estimé : '+(g.price*g.quantity).toLocaleString('fr-FR',{style:'currency',currency:'EUR'}):g.price==null&&g.state==='ready'?'Prix non relevé':g.message
+      copy.append(title,variant,note)
+      if(g.url){const a=document.createElement('a');a.href=g.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent='Voir sur Shein ↗';copy.append(a)}
+      row.append(copy);$('shopping-items').append(row)
+    }
+  }catch(e){$('shopping-status').textContent=e.message}finally{shoppingBusy=false}
+}
+$('shopping-refresh').addEventListener('click',loadShopping)

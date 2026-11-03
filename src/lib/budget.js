@@ -19,3 +19,10 @@ export function mergeExpenses(existing, incoming) {
   }
   return [...merged.values()]
 }
+// Automatic rows remain outside the editable payload. A reread is the same order,
+// not another expense. Exact references also surface pre-existing manual entries.
+export function combinedBudgetRows(manual=[],automatic=[]) {
+  const refs=new Set(manual.filter(r=>r.type==='out').flatMap(r=>r.label.toUpperCase().match(/\bG[A-Z0-9]{7,39}\b/g)||[]))
+  const deduped=[...new Map(automatic.map(r=>[r.order_ref,r])).values()]
+  return {rows:[...manual,...deduped.filter(r=>!refs.has(r.order_ref))],duplicates:deduped.filter(r=>refs.has(r.order_ref))}
+}

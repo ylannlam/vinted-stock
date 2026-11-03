@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react'
 import ResourceDialog from './ResourceDialog'
+import SheinParcels from './SheinParcels'
 import {ErrorNotice,Pagination,fieldClass,buttonClass,primaryClass} from './WorkspaceUI'
 import {SHIPMENT_STATES,shipmentState,shipmentLink,shipmentInput} from '../lib/shipments'
 
@@ -42,7 +43,8 @@ export default function SupplierShipments({request,onOpenSale,onChanged}){
   useEffect(()=>{if(editing)return;const timer=setInterval(()=>{if(document.visibilityState==='visible')run(async()=>{await refreshDue(current.current.shipments);await load()})},60000);return()=>clearInterval(timer)},[editing,page])
   return <section className="space-y-4"><div className="flex flex-wrap justify-between gap-3"><div><h2 className="text-lg font-semibold">Colis Shein · livraison chez toi</h2><p className="text-sm text-slate-500">Sélectionne les ventes d’un même colis puis « Associer un colis ».</p></div><button className={buttonClass} disabled={busy} onClick={()=>run(async()=>{await refreshDue(data.shipments);await load();setNotice('Liste actualisée. GOFO est interrogé au maximum une fois toutes les 15 minutes par colis.')})}>{busy?'Vérification…':'Actualiser les colis'}</button></div>
     <ErrorNotice error={error}/>{notice&&<p role="status" className="text-sm text-teal-700">{notice}</p>}
-    {!data.count&&!busy&&<div className="rounded-xl border bg-white p-8 text-center text-slate-500">Aucun colis associé. Retourne aux ventes et sélectionne les articles de ta commande Shein.</div>}
+    <SheinParcels orders={data.shein_orders||[]}/>
+    {!data.count&&!data.shein_orders?.length&&!busy&&<div className="rounded-xl border bg-white p-8 text-center text-slate-500">Aucun colis associé. Retourne aux ventes et sélectionne les articles de ta commande Shein.</div>}
     <div className="grid lg:grid-cols-2 gap-4">{data.shipments.map(s=><article key={s.id} className="rounded-xl border bg-white p-4 space-y-4"><ShipmentSummary parcel={s}/><div className="border-t pt-3 space-y-3"><h3 className="text-sm font-semibold">Articles du colis ({s.lines.length})</h3>{s.lines.map(l=><div key={l.id} className="flex items-start gap-3">{l.photo&&<img src={l.photo} alt="" className="w-10 h-14 rounded object-cover"/>}<div className="min-w-0 flex-1"><button className="text-left text-sm text-teal-800 underline" onClick={()=>onOpenSale(l.id)}>{l.title}</button><p className="text-xs text-slate-500">{l.account} · {l.size||'Taille à vérifier'}</p></div><button className="text-xs text-slate-500 underline" disabled={busy} onClick={()=>{if(window.confirm('Détacher cet article du colis ? La vente reste conservée.'))run(async()=>{await request('PATCH',{action:'shipment_unlink',id:s.id,line:l.id,updated_at:l.updated_at});await load();onChanged?.()})}}>Détacher</button></div>)}</div><button className={buttonClass} disabled={busy} onClick={()=>setEditing(s)}>Modifier le colis</button></article>)}</div>
     <Pagination page={page} count={data.count} size={30} onChange={setPage} busy={busy}/>
     {editing&&<ShipmentForm parcel={editing} request={request} onClose={()=>setEditing(null)} onSaved={async()=>{setEditing(null);await load();onChanged?.()}}/>}

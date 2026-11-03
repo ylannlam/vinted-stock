@@ -5,6 +5,7 @@ import {parseHTML} from 'linkedom'
 import {readSheinOrders} from '../extensions/shein/orders-dom.js'
 import {createOrderEngine,orderState} from '../extensions/shein/orders-engine.js'
 import {validateSheinOrder,orderStatus} from './shein-orders.js'
+import {combinedBudgetRows,budgetTotals} from '../src/lib/budget.js'
 
 function fixture(index=0) {
   const oldDoc=globalThis.document,oldLocation=globalThis.location
@@ -36,6 +37,32 @@ test('invalid quantities, destinations, dates and stale snapshots are rejected',
     const order=fixture();mutate(order);assert.throws(()=>validateSheinOrder(order))
   }
   const order=fixture();order.items[0].photo='https://attacker.invalid/p.jpg';assert.equal(validateSheinOrder(order).items[0].photo,null)
+})
+test('final item prices are kept as observed; differing units are never averaged',()=>{
+  const input=fixture();input.items[1].unit_price=6.15
+  const item=validateSheinOrder(input).items[0]
+  assert.equal(item.unit_price,null);assert.deepEqual(item.paid_amounts,[8.57,6.15])
+  input.items[0].quantity=2
+  assert.deepEqual(validateSheinOrder(input).items[0].paid_amounts,[null,null,6.15])
+})
+test('an exact order summary reads total including delivery; unpaid and unclear totals never enter Budget',()=>{
+  const oldDoc=globalThis.document,oldLocation=globalThis.location
+  try{
+    globalThis.document=parseHTML(readFileSync(new URL('../tests/fixtures/shein-order-1.html',import.meta.url),'utf8')+'<ul><li>Subtotal:27,60€</li><li>Frais de livraison:3,90€</li><li>Total31,50€</li></ul>').document
+    globalThis.location={href:'https://fr.shein.com/user/orders/detail/GTEST000001'}
+    const input=readSheinOrders(),order=validateSheinOrder(input)
+    assert.equal(order.payment.paid_total,31.5);assert.equal(order.payment.shipping,3.9)
+    assert.deepEqual(order.items.map(i=>i.unit_price),[20.05,7.55])
+    input.items[0].status_text='En attente de paiement';assert.equal(validateSheinOrder(input).payment,null)
+    document.body.insertAdjacentHTML('beforeend','<ul><li>Total999,00€</li></ul>');assert.equal(readSheinOrders().payment,null)
+  }finally{globalThis.document=oldDoc;globalThis.location=oldLocation}
+})
+test('Budget includes each order once, detects exact references already entered manually, and preserves manual totals',()=>{
+  const auto={id:'shein-GTEST000001',order_ref:'GTEST000001',source:'shein',type:'out',cat:'Stock Shein',label:'Commande GTEST000001',amount:31.5}
+  assert.equal(budgetTotals(combinedBudgetRows([],[auto,auto]).rows).expenses,31.5)
+  const manual={id:'manual',type:'out',cat:'Stock Shein',label:'Achat GTEST000001',amount:30}
+  const result=combinedBudgetRows([manual],[auto]);assert.equal(result.duplicates.length,1);assert.equal(budgetTotals(result.rows).expenses,30)
+  assert.equal(combinedBudgetRows([{...manual,label:'Autre achat'}],[auto]).rows.length,2)
 })
 function harness() {
   let saved=orderState(),now=Date.now(),tab=null,result,error=null
@@ -75,7 +102,7 @@ test('human check stops navigation and import until explicit resume; pause persi
 test('an order reference mismatch never reaches the server',async()=>{
   const h=harness(),engine=createOrderEngine(h.port)
   await engine.command('start');h.setResult(list);await engine.tick();h.setResult({...fixture(),ref:'GWRONG000000'});await engine.tick()
-  assert.equal(h.state.phase,'blocked');assert.ok(h.calls.every(c=>c.action!=='orders_import'))
+  assert.equal(h.state.phase,'partial');assert.equal(h.state.errors[0].code,'reference_mismatch');assert.ok(h.calls.every(c=>c.action!=='orders_import'))
 })
 test('pagination waits for new contents, then reads details once all recent pages are found',async()=>{
   const h=harness(),engine=createOrderEngine(h.port)

@@ -1,10 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Stock Vinted — bibliothèque Shein",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "minimum_chrome_version": "120",
   "description": "Récupérer les fiches et commandes Shein pour suivre les achats de tes ventes Stock Vinted.",
-  "permissions": ["storage", "alarms", "scripting"],
+  "permissions": ["storage", "alarms", "scripting", "sidePanel"],
+  "side_panel": { "default_path": "popup.html" },
   "host_permissions": ["https://fr.shein.com/*", "https://www.shein.com/*", "https://vinted-stock.vercel.app/*"],
   "background": { "service_worker": "worker.js", "type": "module" },
   "content_scripts": [{ "matches": ["https://vinted-stock.vercel.app/*"], "js": ["site-bridge.js"], "run_at": "document_idle" }],
