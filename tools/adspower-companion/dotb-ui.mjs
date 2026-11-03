@@ -2,7 +2,7 @@ import {LocalError} from './adspower.mjs'
 
 // Inspect only the visible DOM. Dotb renders it in a closed shadow root.
 // No extension storage, cookies, conversations or React state are accessed.
-function inspectDOM({features,start,pause,stop,action='read',id}){
+export function inspectDOM({features,start,pause,stop,action='read',id}){
   const visible=e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'&&s.opacity!=='0'}
   const all=(selector,parent=this)=>[...parent.querySelectorAll(selector)].filter(visible)
   const text=e=>(e.innerText||e.textContent||'').trim().replace(/\s+/g,' ')
@@ -39,21 +39,36 @@ function inspectDOM({features,start,pause,stop,action='read',id}){
   const r=target.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2
   const hit=this.elementFromPoint?.(x,y)
   if(!hit||!(target===hit||target.contains(hit)))return {error:'Une fenêtre masque la commande Dotb. Ferme-la puis réessaie.'}
-  if(action==='start'){target.click();return {clicked:true}}
-  return {x,y}
+  // AdsPower can ignore CDP pointer input. Dispatch to the actual visible DOM
+  // control instead; Radix menu/select triggers listen on pointerdown/up.
+  if(action==='range'||action==='twelveHours'){
+    const key=action==='range'?'ArrowDown':'Enter'
+    target.focus()
+    target.dispatchEvent(new KeyboardEvent('keydown',{key,code:key,bubbles:true,cancelable:true,composed:true}))
+    target.dispatchEvent(new KeyboardEvent('keyup',{key,code:key,bubbles:true,cancelable:true,composed:true}))
+    return {clicked:true}
+  }
+  if(action==='launcher'){
+    target.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,cancelable:true,composed:true,pointerType:'mouse',pointerId:1,button:0,buttons:1,clientX:x,clientY:y}))
+    target.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,cancelable:true,composed:true,pointerType:'mouse',pointerId:1,button:0,buttons:0,clientX:x,clientY:y}))
+  }
+  target.click()
+  return {clicked:true}
 }
 export class DotbUI{
   constructor(page,session,settings){this.page=page;this.session=session;this.settings=settings;this.objects=new Set()}
   static async create(page,settings){return new DotbUI(page,await page.context().newCDPSession(page),settings)}
   async inspect(){
-    const {root}=await this.session.send('DOM.getDocument',{depth:3,pierce:true}),nodes=[root]
+    if(this.page.isClosed())return []
+    let document;try{document=await this.session.send('DOM.getDocument',{depth:3,pierce:true})}catch{return []}
+    const {root}=document,nodes=[root]
     function collect(n){for(const s of n.shadowRoots||[]){nodes.push(s);collect(s)}for(const child of n.children||[])collect(child)}collect(root)
     const results=[]
     for(const node of nodes){try{const {object}=await this.session.send('DOM.resolveNode',{nodeId:node.nodeId});const root={objectId:object.objectId};this.objects.add(root.objectId);const value=await this.read(root);if(value.cards.length||value.menu||value.launcher)results.push({objectId:root.objectId,value})}catch{}}
     return results
   }
   async call(root,action='read',id){
-    const result=await this.session.send('Runtime.callFunctionOn',{objectId:root.objectId,functionDeclaration:inspectDOM.toString(),arguments:[{value:{...this.settings,action,id}}],returnByValue:true})
+    const result=await this.session.send('Runtime.callFunctionOn',{objectId:root.objectId,functionDeclaration:inspectDOM.toString(),arguments:[{value:{...this.settings,action,id}}],returnByValue:true,userGesture:action!=='read'})
     if(result.exceptionDetails||!result.result.value)throw new LocalError('Le panneau Dotb a changé. Actualise le profil et réessaie.')
     return result.result.value
   }
@@ -62,9 +77,6 @@ export class DotbUI{
     await this.page.bringToFront()
     const point=await this.call(root,action,id);if(point.error)throw new LocalError(point.error)
     if(point.clicked)return
-    await this.session.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:point.x,y:point.y})
-    await this.session.send('Input.dispatchMouseEvent',{type:'mousePressed',x:point.x,y:point.y,button:'left',clickCount:1})
-    await this.session.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:point.x,y:point.y,button:'left',clickCount:1})
   }
   async close(){for(const objectId of this.objects)await this.session.send('Runtime.releaseObject',{objectId}).catch(()=>{});await this.session.detach().catch(()=>{})}
 }

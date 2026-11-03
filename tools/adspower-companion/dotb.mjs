@@ -39,14 +39,21 @@ export async function startDotb(profile,update,ads,{connect}={}){
     let panel=await findPanel(uis)
     if(!panel){
       let target
-      for(let i=0;i<20&&!target;i++){
+      for(let i=0;i<50&&!target;i++){
+        await syncPages()
         for(const ui of uis){const roots=await ui.inspect();const root=roots.find(r=>r.value.menu||r.value.launcher);if(root){target={ui,root};break}}
         if(!target)await delay(600)
       }
       if(!target)throw new LocalError('Dotb n’est pas visible. Vérifie que l’extension est installée et connectée dans ce profil.')
-      if(!target.root.value.menu){await target.ui.click(target.root,'launcher');await delay(300)}
+      if(!target.root.value.menu){
+        await target.ui.click(target.root,'launcher')
+        let menuRoot
+        for(let i=0;i<20&&!menuRoot;i++){await delay(150);menuRoot=(await target.ui.inspect()).find(r=>r.value.menu)}
+        if(!menuRoot)throw new LocalError('Le menu Dotb ne s’est pas ouvert. Vérifie ce profil puis réessaie.')
+        target.root=menuRoot
+      }
       await target.ui.click(target.root,'menu')
-      for(let i=0;i<25&&!panel;i++){await delay(600);await syncPages();panel=await findPanel(uis)}
+      for(let i=0;i<50&&!panel;i++){await delay(600);await syncPages();panel=await findPanel(uis)}
       if(!panel)throw new LocalError('Le panneau Dotb ne s’est pas chargé. Ouvre « Automatisations » dans ce profil puis réessaie.')
     }
     const {ui,root}=panel
