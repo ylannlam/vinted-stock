@@ -7,9 +7,10 @@ export const config={maxDuration:30}
 export function adsPowerHandler(authorizer=authorize,key=()=>process.env.SUPABASE_SERVICE_ROLE_KEY,publications=handlePublications){
   return async(req,res)=>{
     res.setHeader('Cache-Control','no-store')
+    const action=req.query?.action||req.body?.action
+    const isPublication=typeof action==='string'&&(action==='publications'||action.startsWith('publication-'))
     try{
-      const action=req.query?.action||req.body?.action
-      if(typeof action==='string'&&(action==='publications'||action.startsWith('publication-'))){
+      if(isPublication){
         const auth=await authorizer(req,res,['admin']);if(!auth)return
         return res.json(await publications(req,auth))
       }
@@ -22,7 +23,10 @@ export function adsPowerHandler(authorizer=authorize,key=()=>process.env.SUPABAS
         return res.json(verifyAdsPowerTicket(req.body.ticket,key()))
       }
       res.setHeader('Allow','GET, POST');return res.status(405).json({error:'Méthode non autorisée.'})
-    }catch(error){return res.status(error.status||500).json({error:error.status?error.message:'La connexion AdsPower est indisponible.'})}
+    }catch(error){
+      if(isPublication&&!error.status)console.error('Publication request failed',{code:/^[A-Z0-9]{5,12}$/.test(error.code||'')?error.code:'unknown'})
+      return res.status(error.status||500).json({error:error.status?error.message:isPublication?'Le suivi des annonces est indisponible. Réessaie d’actualiser les comptes.':'La connexion AdsPower est indisponible.'})
+    }
   }
 }
 export default adsPowerHandler()

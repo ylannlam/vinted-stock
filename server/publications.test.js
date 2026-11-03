@@ -62,3 +62,16 @@ test('Dotb access is read-only, does not follow redirects and respects retry del
   await assert.rejects(()=>readPublicationSource('accounts',{token:'test',fetcher:async(url,o)=>{options=o;return {ok:false,status:429,headers:{get:()=>120}}}}),e=>e.status===429&&e.retrySeconds===120)
   assert.equal(options.redirect,'error');assert.equal(options.method,undefined)
 })
+test('failed directory saves release the lease and report a publication error without exposing database details',async()=>{
+  const calls=[],logs=[]
+  const db={rpc:async name=>{calls.push(name);return name==='publication_save_directory'?{error:{code:'21000',message:'UPDATE requires a WHERE clause',details:'private SQL'}}:{data:true}}}
+  const handler=adsPowerHandler(async()=>({db,user:{id:account}}),()=>'',(req,auth)=>handlePublications(req,auth,{read:async()=>({data:[{id:account,login:'romane'}]})}))
+  let status,result
+  const res={setHeader(){},status(value){status=value;return this},json(value){result=value;return this}}
+  const original=console.error;console.error=(...args)=>logs.push(args)
+  try{await handler({method:'POST',body:{action:'publication-accounts'}},res)}finally{console.error=original}
+  assert.equal(status,500);assert.match(result.error,/suivi des annonces/)
+  assert.doesNotMatch(JSON.stringify(result),/UPDATE|private SQL|21000/)
+  assert.deepEqual(calls,['publication_claim_directory','publication_save_directory','publication_fail_directory'])
+  assert.deepEqual(logs,[['Publication request failed',{code:'21000'}]])
+})

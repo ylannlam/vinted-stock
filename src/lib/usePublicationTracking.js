@@ -10,6 +10,7 @@ export async function publicationRequest(action,query={},body){
 }
 export function usePublicationTracking(profiles,request=publicationRequest){
   const [day,setDayValue]=useState(parisDay),[data,setData]=useState(null),[error,setError]=useState(''),[loading,setLoading]=useState(true),[syncing,setSyncing]=useState(null),[notice,setNotice]=useState('')
+  const [directoryError,setDirectoryError]=useState(''),[refreshing,setRefreshing]=useState(false)
   const alive=useRef(true),pending=useRef(false),current=useRef({}),today=useRef(true),generation=useRef(0)
   current.current={profiles,day,data}
   const setDay=value=>{today.current=value===parisDay();setDayValue(value)}
@@ -21,10 +22,10 @@ export function usePublicationTracking(profiles,request=publicationRequest){
   },[request])
   async function refresh(){
     if(pending.current)return
-    pending.current=true
-    try{await request('publication-accounts',{},{});await load()}
-    catch(e){if(alive.current)setError(e.message)}
-    finally{pending.current=false}
+    pending.current=true;setRefreshing(true)
+    try{const result=await request('publication-accounts',{},{});if(alive.current&&result.refreshed)setDirectoryError('');await load()}
+    catch(e){if(alive.current)setDirectoryError(e.message)}
+    finally{pending.current=false;if(alive.current)setRefreshing(false)}
   }
   async function sync(account,force=false){
     if(pending.current||!account)return
@@ -51,6 +52,6 @@ export function usePublicationTracking(profiles,request=publicationRequest){
   },[request])
   useEffect(()=>{setLoading(true);load()},[day,load])
   const ready=data?.date===day
-  return {day,setDay,data,accounts:data?.accounts||[],links:data?.links||[],error,notice,loading:loading||!ready,syncing,refresh,sync,load,request,
+  return {day,setDay,data,accounts:data?.accounts||[],links:data?.links||[],error:directoryError||error,notice,loading:loading||!ready,refreshing,syncing,refresh,sync,load,request,
     account:profile=>publicationAccount(profile,data?.accounts||[],data?.links||[])}
 }
