@@ -5,7 +5,7 @@ const small='rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-
 const time=value=>value?new Date(value).toLocaleString('fr-FR',{timeZone:'Europe/Paris',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'Jamais relevé'
 const count=(account,key,loading)=>loading||!account?.last_checked_at?'—':Number(account[key]||0)
 export function PublicationSummary({tracking,profiles}){
-  const unique=new Map((profiles.length?profiles.map(tracking.account).filter(Boolean):tracking.accounts).map(a=>[a.id,a]))
+  const unique=new Map((profiles?profiles.map(tracking.account).filter(Boolean):tracking.accounts).map(a=>[a.id,a]))
   const known=[...unique.values()],checked=known.filter(a=>a.last_checked_at),total=key=>tracking.loading?'—':checked.length?checked.reduce((sum,a)=>sum+Number(a[key]||0),0):'—'
   return <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6" aria-label="Publications par compte">
     <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-widest text-teal-700">Suivi des annonces</p><h2 className="mt-1 text-xl font-bold">Tes publications, jour après jour</h2><p className="mt-1 text-sm text-slate-500">Clique sur le compteur d’un compte pour retrouver ses annonces.</p></div>
