@@ -13,7 +13,7 @@ export default function AdsPowerTab({request=adsPowerRequest,owner='preview',pub
   const [profiles,setProfiles]=useState([]),[state,setState]=useState(null),[connected,setConnected]=useState(false)
   const [shownIds,setShownIds]=useState(()=>readProfileVisibility(localStorage,visibilityKey)),[chooseVisible,setChooseVisible]=useState(false)
   const displayed=displayedProfiles(profiles,shownIds)
-  const tracking=usePublicationTracking(profiles,publications)
+  const tracking=usePublicationTracking(displayed,publications)
   const [publicationProfile,setPublicationProfile]=useState(null)
   const [selected,setSelected]=useState(()=>{try{const ids=JSON.parse(localStorage.getItem(storageKey)||'[]');return Array.isArray(ids)?ids.filter(id=>typeof id==='string').slice(0,100):[]}catch{return []}})
   const [search,setSearch]=useState(''),[group,setGroup]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[readError,setReadError]=useState('')
