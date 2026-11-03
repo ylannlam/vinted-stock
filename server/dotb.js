@@ -7,6 +7,7 @@ export class AppError extends Error {
 }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export const isId = value => typeof value === 'string' && uuid.test(value)
+export const vintedId = value => (typeof value === 'string' && /^[1-9]\d{0,17}$/.test(value)) || (Number.isSafeInteger(value) && value > 0) ? String(value) : null
 const str = (value, max = 500) => typeof value === 'string' ? value.slice(0, max) : null
 const date = value => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null
 
@@ -32,6 +33,7 @@ export function normalizeOrders(data, now = new Date().toISOString()) {
         title: str(item.title), sku: str(item.sku, 200), supplier_link: safeUrl(item.supplier_link),
         shein_id:shein?.supplier_id||null,shein_url:shein?.supplier_url||null,
         dotb_listing_id: isId(item.vinted_item_id) ? item.vinted_item_id : null,
+        vinted_id: vintedId(item.vinted_id),
         thumbnail_url: safeUrl(item.thumbnail_url), selling_price: decimal(item.selling_price),
         purchase_price: decimal(item.purchase_price), location: str(item.location, 100),
         size:titleSize,size_label:titleSize,size_origin:titleSize?'title':null,

@@ -11,6 +11,7 @@ import {readShipments,saveShipment,refreshShipment} from '../server/supplier-shi
 import {isId} from '../server/dotb.js'
 import {shippingLabel} from '../server/shipping-labels.js'
 import {readSheinOrders,reviewSheinOrder} from '../server/shein-orders.js'
+import {refreshSalePhotos} from '../server/sale-photos.js'
 
 export const config = { maxDuration: 60 }
 const fail = error => { if (error) throw error }
@@ -71,7 +72,7 @@ export default async function handler(req, res) {
       const { data: state, error: stateError } = await db.from('dotb_sync_state').select('cursor,last_completed_at,processed').eq('id',true).single()
       if (stateError && !['42P01','PGRST205'].includes(stateError.code)) throw stateError
       if (stateError) return res.json({ setup_required: true, connected: !!process.env.DOTB_API_TOKEN, lines: [], catalog: [], count: 0 })
-      const [linesPage,catalogPage,tracking]=await Promise.all([readPage(head => db.from('sales_lines_in_period')
+      const [linesPage,catalogPage,tracking]=await Promise.all([readPage(head => db.from('workspace_sales')
         .select('*', { count: 'exact', head })
         .eq('source_active', true).order('id'), offset),
         readPage(head => db.from('sales_supplier_details').select('*', { count: 'exact', head }).order('sku'), offset),readTrackingPeriod(db)])
@@ -80,6 +81,7 @@ export default async function handler(req, res) {
         last_sync: state.last_completed_at, resume: !!state.cursor, processed: state.processed })
     }
     if (req.method === 'POST') {
+      if(req.body?.action==='refresh_photos')return res.json(await refreshSalePhotos(db,req.body.ids))
       if(req.body?.action==='shipping_label')return res.json(await shippingLabel(db,req.body.id))
       if(req.body?.action==='shipment_refresh')return res.json(await refreshShipment(db,req.body.id))
       if (role !== 'admin') throw new AppError('Seul un administrateur peut importer les ventes.',403)

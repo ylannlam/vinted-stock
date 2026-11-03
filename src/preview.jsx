@@ -31,10 +31,11 @@ import { nextStage, blocked, supplierOf, skuOf } from './lib/fulfillment'
 import './index.css'
 import './workspace.css'
 const catalog = [{sku:'DEMO-100-M',photo_url:previewPhotos[0][1],supplier_url:'https://fr.shein.com/Demo-p-123456.html',price:12.50,currency:'EUR',color:'Beige',sizes:[{size:'M',availability:'available'},{size:'L',availability:'unavailable'}],retrieval_status:'failed',retrieval_message:'Connexion interrompue. Le dernier relevé reste conservé.',observed_at:new Date().toISOString()},
-  {sku:'DEMO-101-M',retrieval_status:'queued'}]
+  {sku:'DEMO-101-M',photo_url:previewPhotos[1][1],retrieval_status:'queued'}]
 const lines = ['to_order','ordered','in_transit','received','prepared','shipped'].map((stage,i)=>({
   id:`demo-${i}`,updated_at:new Date().toISOString(),stage,
   sale_date:new Date(Date.now()-i*3*3600000).toISOString(),
+  listing_photo_url:i<3?previewPhotos[i%3][0]:null,
   source:{title:['Body à manches longues','Robe à épaules dénudées','Combinaison côtelée','Body noir','Robe de soirée','Combinaison noire'][i],thumbnail_url:previewPhotos[i%3][0],sku:i===0||i===2?null:`DEMO-${100+i}-M`,selling_price:'24.90',supplier_link:'https://fr.shein.com/'},
   supplier_size:i%2?'S':'M',supplier_size_manual:false,
   supplier_order_ref:i?'DEMO-COMMANDE-01':null,
@@ -49,6 +50,7 @@ async function previewWorkspace(view='overview',query={},body){
  return {rows:structuredClone(rows),count:rows.length,page:0,page_size:20,counts}
 }
 async function request(method='GET',body,query='') {
+  if(body?.action==='refresh_photos')return {updated:false}
   if(body?.action==='shein_review')return sheinOrdersPreview(lines,body)
   if(method==='POST'&&body?.action==='shipping_label')return (await import('./lib/shippingLabelPreview')).shippingLabelPreview()
   if(method==='GET'){

@@ -47,6 +47,21 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
     const timer=setInterval(()=>{if(document.visibilityState==='visible')load().catch(e=>setError(e.message))},15000)
     return ()=>clearInterval(timer)
   },[busy,editing,labelLine,skuEditing,batch,purchaseLine,parcelLines,showShipments,showOrders,selected.length,filterKey])
+  // Enrich after the sales have rendered. One bounded background request, with
+  // a server lease shared by tabs, keeps Dotb latency out of the list loading.
+  const photoIds=JSON.stringify(data.lines.filter(l=>!l.listing_photo_url).map(l=>l.id))
+  useEffect(()=>{
+    if(busy||editing||showShipments||showOrders||photoIds==='[]')return
+    let active=true,timer
+    const tick=async()=>{
+      if(document.visibilityState==='visible'){
+        try{const result=await request('POST',{action:'refresh_photos',ids:JSON.parse(photoIds)});if(active&&result.updated)await load(true)}catch{/* Keep the available photo and retry later. */}
+      }
+      if(active)timer=setTimeout(tick,20000)
+    }
+    timer=setTimeout(tick,1000)
+    return()=>{active=false;clearTimeout(timer)}
+  },[photoIds,busy,editing,showShipments,showOrders,filterKey,request])
   const detailId=editing?.id,detailSku=editing?.sku?.trim(),savedDetailSku=editing?skuOf(editing):null
   useEffect(()=>{
     if(busy||!detailId||!detailSku||detailSku!==savedDetailSku)return

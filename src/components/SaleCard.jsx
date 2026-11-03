@@ -1,5 +1,5 @@
 import ArticlePhotos from './ArticlePhotos'
-import {productOf,photoOf,stageOf,blocked,deadline,money,nextStage,ORDER_LABELS,STAGES} from '../lib/fulfillment'
+import {productOf,salePhotos,stageOf,blocked,deadline,money,nextStage,ORDER_LABELS,STAGES} from '../lib/fulfillment'
 import {nextSaleAction} from '../lib/saleDetails'
 import {saleDateOf,saleDateLabel} from '../lib/salesOrder'
 import {primaryClass,buttonClass,fieldClass} from './WorkspaceUI'
@@ -8,11 +8,11 @@ export default function SaleCard({line,catalog,busy,selecting,selected,onSelect,
   const product=productOf(line,catalog),due=deadline(line),stage=stageOf(line),action=nextSaleAction(line,catalog)
   const isBlocked=blocked(line),isEditing=skuEditing?.id===line.id
   const title=line.source.title||'Article sans titre'
-  const photo=photoOf(line,catalog)
+  const photos=salePhotos(line,catalog)
   const soldAt=saleDateOf(line)
   const status=isBlocked?ORDER_LABELS[line.order.status]||'À vérifier':STAGES.find(s=>s.id===stage)?.label
   return <article className={`sale-card ${selected?'is-selected':''}`}>
-    <div className="relative"><ArticlePhotos photos={[photo]} title={title} onOpen={onDetails}/><span className={`sale-stage ${isBlocked?'sale-stage-warning':''}`}>{status}</span>{selecting&&<label className="sale-select"><input type="checkbox" aria-label={`Sélectionner ${title}`} disabled={busy||isBlocked||!nextStage(line)} checked={selected} onChange={e=>onSelect(e.target.checked)}/></label>}</div>
+    <div className="relative"><ArticlePhotos photos={photos.slice(0,1)} fallbacks={photos.slice(1)} title={title} onOpen={onDetails}/><span className={`sale-stage ${isBlocked?'sale-stage-warning':''}`}>{status}</span>{selecting&&<label className="sale-select"><input type="checkbox" aria-label={`Sélectionner ${title}`} disabled={busy||isBlocked||!nextStage(line)} checked={selected} onChange={e=>onSelect(e.target.checked)}/></label>}</div>
     <div className="sale-card-body">
       <div className="sale-card-meta"><span>{line.order.account_login||'Compte inconnu'}</span><strong className="sale-price">{money(line.source.selling_price,line.order.currency)}</strong></div>
       <button className="article-title-button" onClick={onDetails}><h2 className="article-title">{title}</h2></button>
