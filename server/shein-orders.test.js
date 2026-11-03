@@ -27,6 +27,7 @@ test('separate merchant tables retain their own variants, prices and shipped sta
 test('only explicit paid/shipped states advance; a receipt button or return policy is not a status',()=>{
   for(const text of ['Déjà reçu','Suivre','Retour uniquement par rétractation','livraison prévue'])assert.equal(orderStatus(text),'unknown')
   assert.equal(orderStatus('Annulée'),'exception');assert.equal(orderStatus('En attente de paiement'),'unpaid')
+  assert.equal(orderStatus('En cours de traitement'),'processing')
   const order=fixture();order.items[1].status_text='Expédiés'
   assert.equal(validateSheinOrder(order).items[0].status,'processing')
   order.items[1].status_text='Remboursé';assert.equal(validateSheinOrder(order).items[0].status,'exception')

@@ -10,7 +10,7 @@ export const orderStatus=value=>{
   if(/non pay|attente de paiement|a payer/.test(s))return 'unpaid'
   if(/^(livre[es]*|recu[es]*|livraison effectuee|delivered)$/.test(s))return 'delivered'
   if(/^(expedie[es]*|en transit|shipped)$/.test(s))return 'shipped'
-  if(/^(emballage|en traitement|traitement|en preparation|paye[es]*)$/.test(s))return 'processing'
+  if(/^(emballage|en traitement|en cours de traitement|traitement|en preparation|paye[es]*)$/.test(s))return 'processing'
   return 'unknown'
 }
 export function validateSheinOrder(body,now=Date.now()) {
