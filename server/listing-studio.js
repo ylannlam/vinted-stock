@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto'
 import {AppError,isId} from './dotb.js'
 import {ASSET_BUCKET,uploadTarget,ensureAssetBucket} from './resources.js'
 import {validateListingPhoto} from '../src/lib/listingStudio.js'
-import {check,listingFields,verifiedPhotos,dotbListingRequest,listingMetadata,listingAccounts,listingPayload,validateRemoteItem,scheduleResult,generateListingText} from './listing-studio-core.js'
+import {check,listingFields,verifiedPhotos,dotbListingRequest,listingMetadata,listingAccounts,listingPayload,validateRemoteItem,scheduleResult,generateListingText,listingAiToken} from './listing-studio-core.js'
 
 const TABLE='listing_drafts',now=()=>new Date().toISOString()
 const pending=row=>row.lease&&Date.parse(row.lease_until)>Date.now()
@@ -154,7 +154,7 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
   try{
    const [catalogs,colors,signed]=await Promise.all([listingMetadata('catalogs?country=FR&depth=6',read),listingMetadata('colors?country=FR',read),db.storage.from(ASSET_BUCKET).createSignedUrls(row.photos.slice(0,4).map(p=>p.path),180)])
    const urls=check(signed).map(x=>x.signedUrl);if(urls.some(u=>!u))throw new AppError('Une photo est indisponible. Ajoute-la à nouveau.')
-   const result=await generate(row,urls,catalogs.data,colors.data)
+   const result=await generate(row,urls,catalogs.data,colors.data,{token:listingAiToken(req)})
    row=await updateListing(db,row,{fields:{...row.fields,title:result.title,description:result.description,catalog_id:result.catalog_id,color_ids:result.color_ids,size_id:null,status_id:null,package_size_id:null,item_attributes:[]},message:result.review_notes||null,last_error:null,inflight:null,lease:null,lease_until:null})
   }catch(error){const message=error instanceof AppError?error.message:'Le texte n’a pas pu être préparé.';row=await updateListing(db,row,{message,last_error:message,inflight:null,lease:null,lease_until:null})}
  }else if(action==='publish'){

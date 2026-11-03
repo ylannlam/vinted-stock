@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {AppError} from './dotb.js'
 import {handleListingStudio,listingStep} from './listing-studio.js'
-import {listingFields,verifiedPhotos,listingPayload,scheduleResult,generateListingText,dotbListingRequest} from './listing-studio-core.js'
+import {listingFields,verifiedPhotos,listingPayload,scheduleResult,generateListingText,dotbListingRequest,listingAiToken} from './listing-studio-core.js'
 import {matchingSize,catalogChoices} from '../src/lib/listingStudio.js'
 const owner='11111111-1111-4111-8111-111111111111',id='22222222-2222-4222-8222-222222222222',account='33333333-3333-4333-8333-333333333333',remoteId='44444444-4444-4444-8444-444444444444'
 const photo={path:`${owner}/55555555-5555-4555-8555-555555555555.png`,type:'image/png',size:10}
@@ -104,6 +104,15 @@ test('AI output cannot inject unsupported category/color IDs; image request excl
  const value=await generateListingText(base(),['https://example.test/photo'],[{id:10,title:'Robes'}],[{id:1,title:'Noir'}],{fetcher,token:'test-only',model:'openai/gpt-4.1-mini'})
  assert.equal(value.catalog_id,null);assert.deepEqual(value.color_ids,[1]);assert.equal(sent.response_format.json_schema.strict,true);assert.equal(sent.messages[1].content[1].image_url.url,'https://example.test/photo')
  assert.equal(JSON.stringify(sent).includes('sku-test'),false)
+})
+test('AI authentication uses each Vercel request token and ignores caller headers outside Vercel',()=>{
+ const req={headers:{'x-vercel-oidc-token':'runtime-token'}}
+ assert.equal(listingAiToken(req,{VERCEL:'1'}),'runtime-token')
+ assert.equal(listingAiToken({headers:{'x-vercel-oidc-token':'rotated-token'}},{VERCEL:'1',VERCEL_OIDC_TOKEN:'old-build-token'}),'rotated-token')
+ assert.equal(listingAiToken(req,{}),undefined)
+ assert.equal(listingAiToken(req,{VERCEL_OIDC_TOKEN:'local-token'}),'local-token')
+ assert.equal(listingAiToken(req,{VERCEL:'1',AI_GATEWAY_API_KEY:'configured-key'}),'configured-key')
+ assert.equal(listingAiToken({headers:{'x-vercel-oidc-token':['invalid']}},{VERCEL:'1'}),undefined)
 })
 test('AI failures release the draft lock and preserve the sellers text',async()=>{
  const db=database(),s=source()

@@ -74,6 +74,11 @@ export function scheduleResult(schedule,row){
  if(['waiting','running','retrying'].includes(schedule.status))return {state:'scheduled',message:schedule.status==='running'?'Dotb publie l’annonce sur Vinted…':schedule.status==='retrying'?'Dotb va réessayer la publication.':'Annonce transmise. Garde le profil et le Bridge Dotb ouverts.'}
  return null
 }
+export function listingAiToken(req,env=process.env){
+ // Vercel Functions receive the rotating token on the request, not in env.
+ const runtime=env.VERCEL==='1'&&req.headers?.['x-vercel-oidc-token']
+ return env.AI_GATEWAY_API_KEY||(typeof runtime==='string'?runtime:null)||env.VERCEL_OIDC_TOKEN
+}
 export async function generateListingText(row,urls,catalogs,colors,{fetcher=fetch,token=process.env.AI_GATEWAY_API_KEY||process.env.VERCEL_OIDC_TOKEN,model=process.env.AI_GATEWAY_MODEL||'openai/gpt-4.1-mini'}={}){
  if(!token)throw new AppError('La rédaction automatique reste à connecter. Tu peux déjà préparer et enregistrer ta fiche.',503)
  const choices=catalogChoices(catalogs).slice(0,1800)
