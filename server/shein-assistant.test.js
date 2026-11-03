@@ -59,3 +59,21 @@ test('report validates boundaries, trims messages and never accepts foreign orde
   assert.equal(syncReport(base).errors[0].message.length,300)
   assert.throws(()=>syncReport({...base,discovered:0}));assert.throws(()=>syncReport({...base,errors:[{ref:'invalid'}]}))
 })
+test('split orders read every parcel tab before importing once, including after worker suspension',async()=>{
+  const h=harness(),e=createOrderEngine(h.port),sections=['En cours de traitement','Colis1']
+  let selected=sections[0]
+  h.port.read=async(id,action)=>{if(action?.section){selected=action.section;return {clicked:true}}return {kind:'detail',ref:'GTEST000001',sections,section:selected,items:[{sku:selected}],parcels:[],observed_at:'2026-11-03T12:00:00Z'}}
+  await e.command('start',{mode:'targeted',reference:'GTEST000001'});await e.tick()
+  assert.equal(h.state.phase,'sections');assert.equal(h.calls.filter(c=>c.action==='orders_import').length,0)
+  await createOrderEngine(h.port).tick();assert.equal(h.state.sectionIndex,1)
+  assert.equal(h.calls.filter(c=>c.action==='orders_import').length,0)
+  await createOrderEngine(h.port).tick()
+  const imports=h.calls.filter(c=>c.action==='orders_import');assert.equal(imports.length,1)
+  assert.deepEqual(imports[0].order.items.map(i=>i.sku),sections);assert.equal(h.state.phase,'done')
+})
+test('an unreadable parcel tab never replaces a complete order with only its first group',async()=>{
+  const h=harness(),e=createOrderEngine(h.port),sections=['En cours de traitement','Colis1']
+  h.port.read=async(id,action)=>action?.section?{clicked:true}:{kind:'detail',ref:'GTEST000001',sections,section:sections[0],items:[{sku:'a'}]}
+  await e.command('start',{mode:'targeted',reference:'GTEST000001'});await e.tick();await e.tick();h.advance();await e.tick()
+  assert.equal(h.calls.filter(c=>c.action==='orders_import').length,0);assert.equal(h.state.phase,'partial')
+})

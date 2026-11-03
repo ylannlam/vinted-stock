@@ -1,4 +1,4 @@
-# Assistant Shein — 0.7.0
+# Assistant Shein — 0.7.1
 
 Les fiches se pilotent dans **Catalogue**, et les achats dans **Ventes → Mes commandes Shein**, sur https://vinted-stock.vercel.app. L’extension utilise ses propres onglets.
 
@@ -46,7 +46,8 @@ Le code d’association reste dans le stockage local protégé de l’extension,
 
 L’accès à Shein dépend de ta session et des contrôles du fournisseur. Une connexion réussie ne garantit pas que toutes les fiches seront accessibles.
 
-## Nouveautés 0.7.0
+## Nouveautés 0.7.1
+- Les onglets « En cours de traitement » et « Colis » d’une même commande sont tous parcourus avant son enregistrement. Un onglet illisible conserve le relevé précédent et signale la commande.
 - Lecture rapide des nouvelles commandes et des achats encore en cours toutes les 10 minutes ; vérification complète quotidienne. Une commande illisible est signalée et les autres continuent.
 - Reprise de la file après fermeture, bilan détaillé, import par numéro ou lien et par période sur le site.
 - Trois onglets : fiches, commandes, achats et alertes. Le bouton de panneau latéral garde ces informations visibles.

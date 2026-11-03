@@ -38,6 +38,15 @@ export function readSheinOrders(action='read') {
   if(!ref)return {error:'page_unavailable'}
   const shownRef=text(document.querySelector('.order-info-billno .order-info-title'))
   if(shownRef!==ref)return {error:'page_unavailable'}
+  const sectionTabs=[...document.querySelectorAll('[role="tablist"] [role="tab"]')].filter(n=>visible(n)&&/^(en cours de traitement|colis\s*\d+)$/i.test(text(n)))
+  const sections=sectionTabs.map(n=>text(n))
+  const selected=sectionTabs.filter(n=>n.getAttribute('aria-selected')==='true'||/(?:^|[-_\s])active(?:$|[-_\s])/.test(n.className||''))
+  const section=selected.length===1?text(selected[0]):null
+  if(action&&typeof action==='object'&&typeof action.section==='string'){
+    const matches=sectionTabs.filter(n=>text(n)===action.section)
+    if(matches.length!==1)return {error:'order_unreadable'}
+    matches[0].click();return {clicked:true}
+  }
   if(action==='tracking') {
     const root=document.querySelector('main')||document.querySelector('[role="main"]')
     const target=[...(root||document).querySelectorAll('button,a[role="button"]')].find(n=>visible(n)&&text(n)==='Suivre')
@@ -46,6 +55,7 @@ export function readSheinOrders(action='read') {
   }
   const items=[]
   for(const table of document.querySelectorAll('table.new-order-table')) {
+    if(!visible(table))continue
     // Shein uses rowspan for status: subsequent identical rows are real quantities.
     let inheritedStatus=''
     for(const row of table.querySelectorAll('tbody > tr')) {
@@ -89,5 +99,5 @@ export function readSheinOrders(action='read') {
   const total=summaryAmount(/^Total\s*:?[\s\d,.€]+$/i)
   const shipping=summaryAmount(/^Frais de livraison\s*:[\s\d,.€]+$/i)
   const payment=total==null?null:{paid_total:total,shipping,currency:'EUR',source:'order_summary'}
-  return {kind:'detail',ref,order_date,items,parcels,payment,observed_at}
+  return {kind:'detail',ref,order_date,items,parcels,payment,sections,section,observed_at}
 }

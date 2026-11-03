@@ -40,7 +40,7 @@ export function createOrderEngine(port) {
     }
   }
   async function skip(code,message) {
-    const ref=['detail','sending'].includes(s.phase)?s.queue[s.cursor]:null
+    const ref=['detail','sections','section_click','sending'].includes(s.phase)?s.queue[s.cursor]:null
     const entry={ref:ref||null,code,message:message||errors[code]||'Lecture à vérifier.'}
     await save({errors:[...s.errors.filter(e=>e.ref!==entry.ref),entry].slice(-200),outbox:null,...(ref?{cursor:s.cursor+1}:{listComplete:false}),retryAt:0,phase:'advance',reportPending:true})
     await report();await save({reportPending:false});await nextOrder()
@@ -50,6 +50,14 @@ export function createOrderEngine(port) {
     await save({outbox:null,done:s.done+1,cursor:s.cursor+1,retryAt:0,failures:0,phase:'advance'})
     await nextOrder()
   }
+  async function selectSection(){
+    const clicked=await port.read(s.tabId,{section:s.sectionLabels[s.sectionIndex]})
+    if(['human_check','login_required'].includes(clicked?.error)){
+      await save({phase:'blocked',blockedCode:clicked.error,resumePhase:'section_click',message:errors[clicked.error]});await report('blocked');return
+    }
+    if(!clicked?.clicked)return skip('order_unreadable','Impossible de lire tous les groupes d’articles. Le relevé précédent est conservé.')
+    await save({phase:'sections',since:port.now()})
+  }
   async function step() {
     if(s.outbox)return deliver()
     if(s.phase==='advance'){if(s.reportPending){await report();await save({reportPending:false})}return nextOrder()}
@@ -57,7 +65,8 @@ export function createOrderEngine(port) {
     if(s.phase==='finish')return nextOrder()
     if(s.phase==='navigate')return navigate(s.target,s.nextPhase)
     const tab=await port.tab(s.tabId)
-    if(!tab)return navigate(s.target||ORDER_LIST,s.phase==='detail'?'detail':'list')
+    if(!tab)return navigate(s.target||ORDER_LIST,['detail','sections','section_click'].includes(s.phase)?'detail':'list')
+    if(s.phase==='section_click')return selectSection()
     if(tab.status!=='complete'){if(port.now()-s.since>90000)return skip('page_unavailable');return}
     const result=await port.read(s.tabId)
     if(result?.error) {
@@ -90,7 +99,19 @@ export function createOrderEngine(port) {
       } else await nextOrder()
     } else if(s.phase==='detail') {
       if(result.kind!=='detail'||result.ref!==s.queue[s.cursor])return skip('reference_mismatch')
+      if(result.sections?.length>1){
+        if(result.sections.length>30||new Set(result.sections).size!==result.sections.length)return skip('order_unreadable')
+        await save({sectionLabels:result.sections,sectionIndex:0,detailParts:[],phase:'section_click'});return selectSection()
+      }
       await save({outbox:result,phase:'sending'});await deliver()
+    } else if(s.phase==='sections') {
+      if(result.kind!=='detail'||result.ref!==s.queue[s.cursor])return skip('reference_mismatch')
+      if(result.section!==s.sectionLabels[s.sectionIndex]){if(port.now()-s.since>45000)return skip('order_unreadable','Un groupe de la commande reste illisible. Aucun article n’a été retiré du relevé précédent.');return}
+      if(JSON.stringify(result.sections)!==JSON.stringify(s.sectionLabels))return skip('order_unreadable','Les groupes de la commande ont changé pendant la lecture. Relance cette commande.')
+      const parts=[...s.detailParts,result]
+      if(parts.length<s.sectionLabels.length){await save({detailParts:parts,sectionIndex:s.sectionIndex+1,phase:'section_click'});return selectSection()}
+      const merged={...parts[0],items:parts.flatMap(p=>p.items),parcels:parts.flatMap(p=>p.parcels||[]),payment:parts.find(p=>p.payment)?.payment||null,observed_at:result.observed_at,sections_read:s.sectionLabels}
+      await save({outbox:merged,phase:'sending',detailParts:null,sectionLabels:null});await deliver()
     }
   }
   async function tick() {
