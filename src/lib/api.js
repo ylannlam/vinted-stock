@@ -60,6 +60,19 @@ export async function resourcesRequest(method='GET',body,query='') {
   return result
 }
 
+export async function listingStudioRequest(method='GET',body,query='') {
+  const response=await authenticatedFetch(`/api/resources?scope=listings${query?`&${query.replace(/^\?/, '')}`:''}`,{method,...(body===undefined?{}:{body:JSON.stringify(body)})})
+  const result=await response.json().catch(()=>({}))
+  if(!response.ok)throw new Error(result.error||'L’annonce n’a pas pu être préparée. Ton brouillon est conservé.')
+  return result
+}
+export async function uploadListingPhoto(file) {
+  const ticket=await listingStudioRequest('POST',{action:'upload',type:file.type,size:file.size})
+  const {error}=await supabase.storage.from('creative-assets').uploadToSignedUrl(ticket.path,ticket.token,file,{contentType:file.type})
+  if(error)throw new Error('La photo n’a pas pu être envoyée. Réessaie.')
+  return {path:ticket.path,type:file.type,size:file.size}
+}
+
 export async function creativeAccountsRequest(method='GET',body,query='') {
   const response=await authenticatedFetch(`/api/creative-accounts${query}`,{method,...(body===undefined?{}:{body:JSON.stringify(body)})})
   const result=await response.json().catch(()=>({}))

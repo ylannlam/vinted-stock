@@ -2,7 +2,8 @@ import {authorize} from '../server/auth.js'
 import {AppError,isId} from '../server/dotb.js'
 import {resourceValue,uploadTarget,ownedAsset,checkAssetInfo,ensureAssetBucket,attachImages,ASSET_BUCKET} from '../server/resources.js'
 import {readPage} from '../server/pagination.js'
-export const config={maxDuration:30}
+import {handleListingStudio} from '../server/listing-studio.js'
+export const config={maxDuration:60}
 const check=e=>{if(e)throw e}
 export function resourcesHandler(authorizer=authorize) {
 return async function handler(req,res) {
@@ -11,6 +12,7 @@ return async function handler(req,res) {
   try {
     const auth=await authorizer(req,res,['admin']);if(!auth)return
     const {db,user}=auth
+    if(req.query?.scope==='listings')return res.json(await handleListingStudio(req,auth))
     if(req.method==='GET') {
       const offset=Number(req.query?.offset||0)
       if(!Number.isSafeInteger(offset)||offset<0||offset>100000)throw new AppError('Page invalide.')
