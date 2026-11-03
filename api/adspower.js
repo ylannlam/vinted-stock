@@ -1,6 +1,7 @@
 import {authorize} from '../server/auth.js'
 import {issueAdsPowerTicket,verifyAdsPowerTicket} from '../server/adspower-ticket.js'
 import {handlePublications} from '../server/publications.js'
+import {handleProfileSelection} from '../server/adspower-selection.js'
 export const config={maxDuration:30}
 
 // The PC receives a short-lived capability, never the user's Supabase session.
@@ -10,6 +11,10 @@ export function adsPowerHandler(authorizer=authorize,key=()=>process.env.SUPABAS
     const action=req.query?.action||req.body?.action
     const isPublication=typeof action==='string'&&(action==='publications'||action.startsWith('publication-'))
     try{
+      if(action==='profile-selection'){
+        const auth=await authorizer(req,res,['admin']);if(!auth)return
+        return res.json(await handleProfileSelection(req,auth))
+      }
       if(isPublication){
         const auth=await authorizer(req,res,['admin']);if(!auth)return
         return res.json(await publications(req,auth))

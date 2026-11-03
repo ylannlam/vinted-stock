@@ -1,3 +1,4 @@
+import {selectedListingAccounts,requireSelectedAccount} from './adspower-selection.js'
 import {randomUUID} from 'node:crypto'
 import {AppError,isId} from './dotb.js'
 import {ASSET_BUCKET,uploadTarget,ensureAssetBucket} from './resources.js'
@@ -70,7 +71,7 @@ export async function listingStep(db,row,{read=dotbListingRequest}={}){
    await read(`items/${current.dotb_item_id}/photos`,{method:'POST',body:form})
    return updateListing(db,current,{uploaded:current.uploaded+1,inflight:null,lease:null,lease_until:null})
   }
-  const account=listingAccounts(await read('accounts')).find(a=>a.id===current.fields.account_id)
+  const account=await requireSelectedAccount(db,current.owner_id,current.fields.account_id,listingAccounts(await read('accounts')))
   if(!account?.connected)throw new AppError('Ouvre ce compte dans AdsPower et active le Bridge Dotb, puis reprends l’envoi.',409)
   current=await updateListing(db,current,{inflight:'schedule',message:'Demande de publication sur Vinted…'})
   const result=await read(`items/${current.dotb_item_id}/schedule`,{method:'POST',body:{scheduled_at:now(),publish:true}})
@@ -95,7 +96,8 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
   if(action==='metadata'){
    const [accounts,catalogs,colors]=await Promise.all([read('accounts'),listingMetadata('catalogs?country=FR&depth=6',read),listingMetadata('colors?country=FR',read)])
    if(!Array.isArray(catalogs.data)||!Array.isArray(colors.data))throw new AppError('Les catégories Vinted sont indisponibles.',502)
-   return {accounts:listingAccounts(accounts),catalogs:catalogs.data,colors:colors.data}
+   const selected=await selectedListingAccounts(db,user.id,listingAccounts(accounts))
+   return {accounts:selected.accounts,selected_profiles:selected.selection?.profiles||[],selection_configured:!!selected.selection,catalogs:catalogs.data,colors:colors.data,ai_ready:!!listingAiToken(req)}
   }
   if(action==='options'){
    const id=Number(req.query.catalog_id);if(!Number.isSafeInteger(id)||id<1)throw new AppError('Catégorie invalide.')
@@ -129,7 +131,8 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
  let row=check(await db.from(TABLE).select('*').eq('owner_id',user.id).eq('id',body.id).maybeSingle())
  if(action==='create'){
   if(row)return {draft:await expose(db,row)}
-  row=check(await db.from(TABLE).insert({id:body.id,owner_id:user.id,fields:listingFields()}).select().single())
+  if(body.account_id)await requireSelectedAccount(db,user.id,body.account_id,listingAccounts(await read('accounts')))
+  row=check(await db.from(TABLE).insert({id:body.id,owner_id:user.id,fields:listingFields({account_id:body.account_id||''})}).select().single())
   return {draft:await expose(db,row)}
  }
  if(!row)throw new AppError('Brouillon introuvable.',404)
@@ -159,7 +162,7 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
   }catch(error){const message=error instanceof AppError?error.message:'Le texte n’a pas pu être préparé.';row=await updateListing(db,row,{message,last_error:message,inflight:null,lease:null,lease_until:null})}
  }else if(action==='publish'){
   if(body.confirmation_account_id!==row.fields.account_id)throw new AppError('Vérifie le compte ciblé avant de publier.')
-  const accounts=listingAccounts(await read('accounts')),account=accounts.find(a=>a.id===row.fields.account_id)
+  const accounts=listingAccounts(await read('accounts')),account=await requireSelectedAccount(db,user.id,row.fields.account_id,accounts)
   if(!account?.connected)throw new AppError('Ouvre ce compte dans AdsPower et active son Bridge Dotb avant de publier.',409)
   const [options,colors,photos]=await Promise.all([listingMetadata(`catalogs/${row.fields.catalog_id}/options?country=FR&locale=fr`,read),listingMetadata('colors?country=FR',read),verifiedPhotos(db,user.id,row.photos)])
   const payload=listingPayload(row.fields,photos,options,colors.data,account)

@@ -35,8 +35,9 @@ export function PublicationBadge({profile,tracking,onOpen}){
     {account&&<span className="block text-[10px] text-slate-400 mt-1">{account.last_error?'Relevé à reprendre':account.scan_page>1?`Relevé partiel · page ${account.scan_page}`:account.last_checked_at?`Relevé ${time(account.last_checked_at)}`:'Premier relevé en attente'}</span>}
   </button>
 }
-export function PublicationOfflineList({tracking,onOpen}){
-  return tracking.accounts.length>0&&<section className="rounded-2xl border bg-white p-5"><h2 className="font-semibold mb-4">Historique des comptes Vinted</h2><p className="text-xs text-slate-500 mb-4">Le dernier relevé reste consultable même quand le connecteur AdsPower est fermé.</p><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{tracking.accounts.map(a=><button key={a.id} className="rounded-xl border p-4 text-left hover:bg-teal-50" onClick={()=>onOpen({id:`account:${a.id}`,name:a.login,accountId:a.id})}><span className="font-semibold">{a.login}</span><span className="float-right text-teal-800 font-bold">{count(a,'day_count',tracking.loading)} annonces</span><span className="block mt-2 text-xs text-slate-500">{time(a.last_checked_at)} · date estimée</span></button>)}</div></section>
+export function PublicationOfflineList({tracking,onOpen,profiles=[]}){
+  const accounts=[...new Map(profiles.map(tracking.account).filter(Boolean).map(a=>[a.id,a])).values()]
+  return accounts.length>0&&<section className="rounded-2xl border bg-white p-5"><h2 className="font-semibold mb-4">Historique des comptes Vinted</h2><p className="text-xs text-slate-500 mb-4">Le dernier relevé reste consultable même quand le connecteur AdsPower est fermé.</p><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{accounts.map(a=><button key={a.id} className="rounded-xl border p-4 text-left hover:bg-teal-50" onClick={()=>onOpen({id:`account:${a.id}`,name:a.login,accountId:a.id})}><span className="font-semibold">{a.login}</span><span className="float-right text-teal-800 font-bold">{count(a,'day_count',tracking.loading)} annonces</span><span className="block mt-2 text-xs text-slate-500">{time(a.last_checked_at)} · date estimée</span></button>)}</div></section>
 }
 export function PublicationDetails({profile,tracking,onClose}){
   const account=profile.accountId?tracking.accounts.find(a=>a.id===profile.accountId):tracking.account(profile)

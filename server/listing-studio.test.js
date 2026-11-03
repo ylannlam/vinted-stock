@@ -11,8 +11,8 @@ const fields=()=>listingFields({account_id:account,sku:'sku-test',price:'12,50',
 const base=(patch={})=>({id,owner_id:owner,state:'draft',version:1,fields:fields(),photos:[photo],uploaded:0,ai_count:0,lease:null,lease_until:null,inflight:null,dotb_item_id:null,created_at:new Date().toISOString(),updated_at:new Date().toISOString(),...patch})
 function database(row=base()){
  const rows=[structuredClone(row)]
- return {rows,from(){let filters=[],patch,insert,single=false,head=false,start=0,end=Infinity
-  const run=()=>{let data=rows.filter(r=>filters.every(([k,v])=>r[k]===v));if(insert){if(rows.some(r=>r.id===insert.id))return {error:{code:'23505'}};const created=base({...insert,photos:[],fields:insert.fields});rows.push(created);data=[created]}if(patch)data.forEach(r=>Object.assign(r,patch));const count=data.length;data=data.slice(start,end+1);return {data:head?null:structuredClone(single?data[0]||null:data),count,error:null}}
+ return {rows,selection:[{owner_id:owner,version:1,profiles:[{id:'test-profile',number:'77',name:'compte-test',group:''}]}],from(table){let filters=[],patch,insert,single=false,head=false,start=0,end=Infinity
+  const run=()=>{const sourceRows=table==='adspower_preferences'?this.selection:table==='publication_profile_links'?[{owner_id:owner,profile_id:'test-profile',account_id:account}]:rows;let data=sourceRows.filter(r=>filters.every(([k,v])=>r[k]===v));if(insert){if(rows.some(r=>r.id===insert.id))return {error:{code:'23505'}};const created=base({...insert,photos:[],fields:insert.fields});rows.push(created);data=[created]}if(patch)data.forEach(r=>Object.assign(r,patch));const count=data.length;data=data.slice(start,end+1);return {data:head?null:structuredClone(single?data[0]||null:data),count,error:null}}
   const q={select(_s,o={}){head=!!o.head;return q},eq(k,v){filters.push([k,v]);return q},order(){return q},range(a,b){start=a;end=b;return q},insert(p){insert=p;return q},update(p){patch=p;return q},maybeSingle(){single=true;return Promise.resolve(run())},single(){return q.maybeSingle()},then(resolve,reject){return Promise.resolve(run()).then(resolve,reject)}};return q
  },storage:{from:()=>({info:async()=>({data:{contentType:'image/png',size:10}}),download:async()=>({data:new Blob(['test-image'],{type:'image/png'})}),createSignedUrls:async paths=>({data:paths.map(path=>({path,signedUrl:`https://example.test/${path}`}))})})}}
 }
@@ -100,20 +100,27 @@ test('orphaned Vinted drafts and failed schedules are not labelled as published'
 })
 test('AI output cannot inject unsupported category/color IDs; image request excludes secrets and private SKU',async()=>{
  let sent
- const fetcher=async(url,request)=>{assert.equal(url,'https://ai-gateway.vercel.sh/v1/chat/completions');sent=JSON.parse(request.body);return {ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({title:'Robe noire courte',description:'Robe noire à manches courtes.',catalog_id:999,color_ids:[99,1,1],review_notes:'Vérifier la longueur.'})}}]})}}
- const value=await generateListingText(base(),['https://example.test/photo'],[{id:10,title:'Robes'}],[{id:1,title:'Noir'}],{fetcher,token:'test-only',model:'openai/gpt-4.1-mini'})
+ const fetcher=async(url,request)=>{assert.equal(url,'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');sent=JSON.parse(request.body);return {ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({title:'Robe noire courte',description:'Robe noire à manches courtes.',catalog_id:999,color_ids:[99,1,1],review_notes:'Vérifier la longueur.'})}}]})}}
+ const value=await generateListingText(base(),['https://example.test/photo'],[{id:10,title:'Robes'}],[{id:1,title:'Noir'}],{fetcher,token:'test-only',model:'gemini-3.5-flash-lite'})
  assert.equal(value.catalog_id,null);assert.deepEqual(value.color_ids,[1]);assert.equal(sent.response_format.json_schema.strict,true);assert.equal(sent.messages[1].content[1].image_url.url,'https://example.test/photo')
  assert.equal(JSON.stringify(sent).includes('sku-test'),false)
 })
-test('AI authentication uses each Vercel request token and ignores caller headers outside Vercel',()=>{
- const req={headers:{'x-vercel-oidc-token':'runtime-token'}}
- assert.equal(listingAiToken(req,{VERCEL:'1'}),'runtime-token')
- assert.equal(listingAiToken({headers:{'x-vercel-oidc-token':'rotated-token'}},{VERCEL:'1',VERCEL_OIDC_TOKEN:'old-build-token'}),'rotated-token')
- assert.equal(listingAiToken(req,{}),undefined)
- assert.equal(listingAiToken(req,{VERCEL_OIDC_TOKEN:'local-token'}),'local-token')
- assert.equal(listingAiToken(req,{VERCEL:'1',AI_GATEWAY_API_KEY:'configured-key'}),'configured-key')
- assert.equal(listingAiToken({headers:{'x-vercel-oidc-token':['invalid']}},{VERCEL:'1'}),undefined)
+test('Gemini uses only the server credential, never request headers or old gateway tokens',()=>{
+ const req={headers:{'x-vercel-oidc-token':'caller-token'}}
+ assert.equal(listingAiToken(req,{GEMINI_API_KEY:'server-key'}),'server-key')
+ assert.equal(listingAiToken(req,{Gemini:'saved-key'}),'saved-key')
+ assert.equal(listingAiToken(req,{AI_GATEWAY_API_KEY:'old',VERCEL:'1'}),undefined)
 })
+test('a removed AdsPower account cannot publish or schedule a prepared listing',async()=>{
+ const db=database(),s=source();db.selection[0].profiles=[]
+ await assert.rejects(call(db,{action:'publish',id,version:1,confirmation_account_id:account},s),/comptes AdsPower/)
+ assert.equal(s.calls.some(([,m])=>m==='POST'),false)
+ const db2=database(base({state:'preparing',dotb_item_id:remoteId,uploaded:1}));db2.selection[0].profiles=[];s.item.photos=[{}]
+ const result=await listingStep(db2,db2.rows[0],{read:s.read})
+ assert.match(result.last_error,/comptes AdsPower/)
+ assert.equal(s.calls.some(([p])=>p.endsWith('/schedule')),false)
+})
+
 test('AI failures release the draft lock and preserve the sellers text',async()=>{
  const db=database(),s=source()
  const result=await handleListingStudio({method:'POST',body:{action:'generate',id,version:1}},{db,user:{id:owner}},{read:s.read,generate:async()=>{throw new AppError('Crédit indisponible',503)}})
