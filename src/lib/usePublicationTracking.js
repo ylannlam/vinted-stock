@@ -1,0 +1,56 @@
+import {useCallback,useEffect,useRef,useState} from 'react'
+import {authenticatedFetch} from './api'
+import {parisDay,publicationAccount} from './publications'
+
+export async function publicationRequest(action,query={},body){
+  const response=await authenticatedFetch(`/api/adspower?${new URLSearchParams({action,...query})}`,body?{method:'POST',body:JSON.stringify({action,...body})}:{})
+  const data=await response.json().catch(()=>({}))
+  if(!response.ok)throw Error(data.error||'Le suivi des annonces est indisponible. Le dernier relevé est conservé.')
+  return data
+}
+export function usePublicationTracking(profiles,request=publicationRequest){
+  const [day,setDayValue]=useState(parisDay),[data,setData]=useState(null),[error,setError]=useState(''),[loading,setLoading]=useState(true),[syncing,setSyncing]=useState(null),[notice,setNotice]=useState('')
+  const alive=useRef(true),pending=useRef(false),current=useRef({}),today=useRef(true),generation=useRef(0)
+  current.current={profiles,day,data}
+  const setDay=value=>{today.current=value===parisDay();setDayValue(value)}
+  const load=useCallback(async()=>{
+    const version=++generation.current,selected=current.current.day
+    try{const next=await request('publications',{date:selected});if(alive.current&&version===generation.current){setData(next);setError('')}}
+    catch(e){if(alive.current&&version===generation.current)setError(e.message)}
+    finally{if(alive.current&&version===generation.current)setLoading(false)}
+  },[request])
+  async function refresh(){
+    if(pending.current)return
+    pending.current=true
+    try{await request('publication-accounts',{},{});await load()}
+    catch(e){if(alive.current)setError(e.message)}
+    finally{pending.current=false}
+  }
+  async function sync(account,force=false){
+    if(pending.current||!account)return
+    pending.current=true;setSyncing(account.id);setNotice('')
+    try{const result=await request('publication-sync',{}, {account_id:account.id,force});await load();if(force&&alive.current)setNotice(result.waiting?'Un relevé est déjà en cours ou vient d’être effectué. Patiente quelques instants.':result.complete?'Relevé enregistré.':'Cette page est enregistrée. Les suivantes seront relevées automatiquement.')}
+    catch(e){await load();if(alive.current)setError(e.message)}
+    finally{pending.current=false;if(alive.current)setSyncing(null)}
+  }
+  useEffect(()=>{
+    alive.current=true;load();refresh()
+    const tick=async()=>{
+      if(document.visibilityState!=='visible'||pending.current)return
+      if(today.current&&current.current.day!==parisDay())setDayValue(parisDay())
+      const state=current.current.data
+      if(!state?.directory_checked_at||Date.now()-Date.parse(state.directory_checked_at)>125000){await refresh();return}
+      const accounts=current.current.profiles.length?current.current.profiles.map(p=>publicationAccount(p,state.accounts,state.links)).filter(Boolean):state.accounts
+      const candidate=accounts.filter(a=>a.source_present&&a.bridge_connected&&(!a.next_scan_at||Date.parse(a.next_scan_at)<=Date.now()))
+        .sort((a,b)=>(Date.parse(a.last_checked_at)||0)-(Date.parse(b.last_checked_at)||0))[0]
+      if(candidate)await sync(candidate)
+    }
+    const timer=setInterval(tick,15000)
+    document.addEventListener('visibilitychange',tick)
+    return()=>{alive.current=false;generation.current++;clearInterval(timer);document.removeEventListener('visibilitychange',tick)}
+  },[request])
+  useEffect(()=>{setLoading(true);load()},[day,load])
+  const ready=data?.date===day
+  return {day,setDay,data,accounts:data?.accounts||[],links:data?.links||[],error,notice,loading:loading||!ready,syncing,refresh,sync,load,request,
+    account:profile=>publicationAccount(profile,data?.accounts||[],data?.links||[])}
+}
