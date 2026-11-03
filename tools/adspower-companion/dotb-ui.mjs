@@ -1,4 +1,18 @@
-import {LocalError} from './adspower.mjs'
+import {LocalError,delay} from './adspower.mjs'
+
+// The launcher can render before Dotb attaches its event handlers. Retry only
+// while it is closed, resolving the live root again after each render.
+export async function openDotbMenu(ui,{wait=delay}={}){
+  for(let i=0;i<60;i++){
+    const roots=await ui.inspect(),menus=roots.filter(r=>r.value.menu)
+    if(menus.length===1)return menus[0]
+    const launchers=roots.filter(r=>r.value.launcher)
+    if(menus.length>1||launchers.length>1)throw new LocalError('Plusieurs menus Dotb sont visibles dans cet onglet.')
+    if(launchers.length===1&&!launchers[0].value.launcherExpanded&&i%4===0)await ui.click(launchers[0],'launcher')
+    await wait(250)
+  }
+  throw new LocalError('Le menu Dotb ne s’est pas ouvert. Vérifie ce profil puis réessaie.')
+}
 
 // Inspect only the visible DOM. Dotb renders it in a closed shadow root.
 // No extension storage, cookies, conversations or React state are accessed.
@@ -27,7 +41,7 @@ export function inspectDOM({features,start,pause,stop,action='read',id}){
   const menus=all('button,a,[role="menuitem"]').filter(e=>/^(?:Automatisations?|Automations?)$/i.test(text(e)))
   const launchers=all('button[aria-haspopup="menu"]').filter(e=>e.querySelector('svg.lucide-bot'))
   const twelveOptions=all('[role="option"]').filter(e=>/^(?:Traiter les 12 dernières heures|Process (?:the )?last 12 hours)$/i.test(text(e)))
-  if(action==='read')return {cards:cards.map(({launch,range,...c})=>c),twelveOption:twelveOptions.length===1,menu:menus.length===1,launcher:launchers.length===1,notices:all('[role="status"][data-state="open"],[role="alert"]').map(text).filter(t=>/configuration requise|veuillez configurer|erreur|error|configuration required/i.test(t)).map(t=>t.slice(0,300))}
+  if(action==='read')return {cards:cards.map(({launch,range,...c})=>c),twelveOption:twelveOptions.length===1,menu:menus.length===1,launcher:launchers.length===1,launcherExpanded:launchers.length===1&&launchers[0].getAttribute('aria-expanded')==='true',notices:all('[role="status"][data-state="open"],[role="alert"]').map(text).filter(t=>/configuration requise|veuillez configurer|erreur|error|configuration required/i.test(t)).map(t=>t.slice(0,300))}
   let choices=[]
   if(action==='launcher')choices=launchers
   if(action==='menu')choices=menus
@@ -50,8 +64,10 @@ export function inspectDOM({features,start,pause,stop,action='read',id}){
     return {clicked:true}
   }
   if(action==='launcher'){
+    if(target.getAttribute('aria-expanded')==='true')return {clicked:true}
     target.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,cancelable:true,composed:true,pointerType:'mouse',pointerId:1,button:0,buttons:1,clientX:x,clientY:y}))
     target.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,cancelable:true,composed:true,pointerType:'mouse',pointerId:1,button:0,buttons:0,clientX:x,clientY:y}))
+    return {clicked:true}
   }
   target.click()
   return {clicked:true}

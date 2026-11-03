@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {runInNewContext} from 'node:vm'
 import {parseHTML} from 'linkedom'
-import {inspectDOM} from './dotb-ui.mjs'
+import {inspectDOM,openDotbMenu} from './dotb-ui.mjs'
 import {FEATURES,START,PAUSE,STOP} from './dotb.mjs'
 
 function fixture(){
@@ -56,4 +56,25 @@ test('ambiguous automation cards never receive a start click',()=>{
   for(const e of [duplicate,...duplicate.querySelectorAll('*')])e.getBoundingClientRect=()=>({x:0,y:0,width:10,height:10})
   assert.equal(f.call('start','likes').error,'La commande Dotb est absente ou ambiguë.')
   assert.equal(f.counts().launches,0)
+})
+
+test('retries an ignored startup click using fresh roots, then waits without closing an opening menu',async()=>{
+  let now=0,openedAt=null,clicks=0,revision=0
+  const ui={inspect:async()=>[{revision:++revision,value:{launcher:true,launcherExpanded:openedAt!==null,menu:openedAt!==null&&now-openedAt>=1500}}],click:async(root,action)=>{
+    assert.equal(root.revision,revision);assert.equal(action,'launcher');assert.equal(openedAt,null,'Must not toggle a menu already opening')
+    clicks++;if(now>=2000)openedAt=now
+  }}
+  const root=await openDotbMenu(ui,{wait:async ms=>{now+=ms}})
+  assert.equal(root.value.menu,true);assert.equal(clicks,3);assert.ok(now>=3500)
+})
+
+test('an already visible menu is reused without clicking its launcher',async()=>{
+  const root={value:{launcher:true,menu:true}}
+  assert.equal(await openDotbMenu({inspect:async()=>[root],click:async()=>assert.fail('Already open')}),root)
+})
+
+test('a launcher that never responds reports failure without clicking Automatisations or Start',async()=>{
+  const actions=[]
+  await assert.rejects(openDotbMenu({inspect:async()=>[{value:{launcher:true,menu:false}}],click:async(root,action)=>actions.push(action)},{wait:async()=>{}}),/menu Dotb ne s’est pas ouvert/)
+  assert.equal(actions.length,15);assert.ok(actions.every(a=>a==='launcher'))
 })

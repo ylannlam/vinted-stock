@@ -1,5 +1,5 @@
 import {LocalError,delay} from './adspower.mjs'
-import {DotbUI} from './dotb-ui.mjs'
+import {DotbUI,openDotbMenu} from './dotb-ui.mjs'
 import {setTwelveHours} from './lookback.mjs'
 
 export const FEATURES=[
@@ -47,12 +47,10 @@ export async function startDotb(profile,update,ads,{connect}={}){
       }
       if(!target)throw new LocalError('Dotb n’est pas visible. Vérifie que l’extension est installée et connectée dans ce profil.')
       if(!target.root.value.menu){
-        await target.ui.click(target.root,'launcher')
-        let menuRoot
-        for(let i=0;i<20&&!menuRoot;i++){await delay(150);menuRoot=(await target.ui.inspect()).find(r=>r.value.menu)}
-        if(!menuRoot)throw new LocalError('Le menu Dotb ne s’est pas ouvert. Vérifie ce profil puis réessaie.')
-        target.root=menuRoot
+        update({message:'Ouverture du menu Dotb en bas à gauche'})
+        target.root=await openDotbMenu(target.ui)
       }
+      update({message:'Ouverture de la page Automatisations'})
       await target.ui.click(target.root,'menu')
       for(let i=0;i<50&&!panel;i++){await delay(600);await syncPages();panel=await findPanel(uis)}
       if(!panel)throw new LocalError('Le panneau Dotb ne s’est pas chargé. Ouvre « Automatisations » dans ce profil puis réessaie.')
