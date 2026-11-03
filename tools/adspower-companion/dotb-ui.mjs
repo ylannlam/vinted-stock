@@ -75,13 +75,13 @@ export function inspectDOM({features,start,pause,stop,action='read',id}){
 export class DotbUI{
   constructor(page,session,settings){this.page=page;this.session=session;this.settings=settings;this.objects=new Set()}
   static async create(page,settings){return new DotbUI(page,await page.context().newCDPSession(page),settings)}
-  async inspect(){
+  async inspect({strict=false}={}){
     if(this.page.isClosed())return []
-    let document;try{document=await this.session.send('DOM.getDocument',{depth:3,pierce:true})}catch{return []}
+    let document;try{document=await this.session.send('DOM.getDocument',{depth:3,pierce:true})}catch(error){if(strict)throw error;return []}
     const {root}=document,nodes=[root]
     function collect(n){for(const s of n.shadowRoots||[]){nodes.push(s);collect(s)}for(const child of n.children||[])collect(child)}collect(root)
     const results=[]
-    for(const node of nodes){try{const {object}=await this.session.send('DOM.resolveNode',{nodeId:node.nodeId});const root={objectId:object.objectId};this.objects.add(root.objectId);const value=await this.read(root);if(value.cards.length||value.menu||value.launcher)results.push({objectId:root.objectId,value})}catch{}}
+    for(const node of nodes){try{const {object}=await this.session.send('DOM.resolveNode',{nodeId:node.nodeId});const root={objectId:object.objectId};this.objects.add(root.objectId);const value=await this.read(root);if(value.cards.length||value.menu||value.launcher)results.push({objectId:root.objectId,value})}catch(error){if(strict)throw error}}
     return results
   }
   async call(root,action='read',id){

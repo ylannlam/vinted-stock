@@ -18,5 +18,4 @@ export async function adsPowerRequest(path='/state',body){
   if(!response.ok){if(response.status===401)capability=null;throw Error(result.error||'La connexion AdsPower a été interrompue.')}
   return result
 }
-export const launchStates={queued:'En attente',opening:'Ouverture',vinted:'Vinted',dotb:'Démarrage Dotb',started:'Dotb démarré',attention:'À vérifier',cancelled:'Annulé'}
-export const isLaunching=job=>['queued','opening','vinted','dotb'].includes(job?.state)
+export {launchStates,isLaunching} from './adspowerStatus'

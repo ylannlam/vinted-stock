@@ -6,6 +6,7 @@ import {AdsPowerClient,LocalError} from './adspower.mjs'
 import {readConfig,saveConfig} from './storage.mjs'
 import {LaunchQueue} from './queue.mjs'
 import {startDotb} from './dotb.mjs'
+import {RuntimeMonitor} from './monitor.mjs'
 
 export const PORT=17442,SITE='https://vinted-stock.vercel.app',LOCAL=`http://127.0.0.1:${PORT}`
 const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
@@ -18,10 +19,11 @@ export async function verifyTicket(ticket,fetcher=fetch){
   const result=await response.json().catch(()=>({}));if(!response.ok||!result.user_id||!(result.expires_at>Date.now()))throw new LocalError('Autorisation expirée. Actualise le site.',401)
   return result
 }
-export async function createCompanion({dataDir,verify=verifyTicket,clientFactory=c=>new AdsPowerClient(c),runner=startDotb,load=readConfig,save=saveConfig}={}){
+export async function createCompanion({dataDir,verify=verifyTicket,clientFactory=c=>new AdsPowerClient(c),runner=startDotb,load=readConfig,save=saveConfig,monitorOptions={}}={}){
   let config=await load(dataDir).catch(()=>null),ads=config?clientFactory(config):null,profiles=[],listAt=0,loadingList=null,settingUp=false
   const tickets=new Map(),csrf=new Map()
   const queue=new LaunchQueue({run:(profile,update)=>runner(profile,update,ads)})
+  const monitor=new RuntimeMonitor({...monitorOptions,getClient:()=>ads})
   async function refresh(){
     if(!ads)throw new LocalError('Ajoute ta clé AdsPower dans les réglages du connecteur.',409)
     if(!loadingList)loadingList=(async()=>{const rows=await ads.profiles(),open=await ads.opened();profiles=rows.map(p=>({...p,opened:open.has(p.id)}));listAt=Date.now();return profiles})().finally(()=>{loadingList=null})
@@ -61,7 +63,10 @@ export async function createCompanion({dataDir,verify=verifyTicket,clientFactory
       if(!cached||cached.until<Date.now()){
         const auth=await verify(ticket);tickets.set(ticket,{until:Math.min(auth.expires_at,Date.now()+10000)});if(tickets.size>20)tickets.delete(tickets.keys().next().value)
       }
-      if(req.method==='GET'&&url.pathname==='/state'){json(res,200,{version:'1.0.3',configured:!!config,jobs:queue.snapshot(),list_at:listAt});return}
+      if(req.method==='GET'&&url.pathname==='/state'){
+        void monitor.refresh(profiles,queue.snapshot())
+        json(res,200,{version:'1.0.4',configured:!!config,jobs:queue.snapshot(),list_at:listAt,...monitor.snapshot()});return
+      }
       if(req.method==='GET'&&url.pathname==='/profiles'){json(res,200,{profiles:await refresh()});return}
       if(req.method==='POST'){
         if(!req.headers['content-type']?.startsWith('application/json'))throw new LocalError('Format de demande invalide.',415)

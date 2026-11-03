@@ -24,8 +24,10 @@ Un captcha ou une déconnexion demande une intervention dans le profil concerné
 Les ouvertures sont espacées et limitées à 3 en préparation en parallèle.
 Les profils déjà lancés continuent ensuite à fonctionner ensemble.
 
-La mention « Dotb démarré » est une confirmation au moment du lancement,
-pas une surveillance continue. Garde le PC éveillé et les pages Dotb ouvertes.
+L’onglet AdsPower vérifie régulièrement les profils et les quatre blocs Dotb.
+Fermer le profil ou la page Automatisations met le statut à jour automatiquement.
+Les contrôles se font sans ouvrir de page ni relancer une automatisation.
+Garde le PC éveillé et les pages Dotb ouvertes pour qu’elles continuent à travailler.
 Fermer le connecteur ne ferme pas les profils et n'arrête pas leurs automatisations.
 « Annuler l'attente » annule uniquement les profils pas encore lancés.
 

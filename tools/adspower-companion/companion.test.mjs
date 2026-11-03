@@ -57,8 +57,8 @@ test('queue deduplicates clicks, limits concurrent launches, and cancellation le
 })
 test('local service checks host, origin, admin ticket, JSON, and setup CSRF before any launch',async t=>{
   let saved=0,started=0
-  const client={call:async()=>({list:[]}),profiles:async()=>[{id:'a',name:'A'}],opened:async()=>new Set()}
-  const {server}=await createCompanion({dataDir:'unused',load:async()=>({apiKey:'sensitive',port:50325}),save:async()=>{saved++},verify:async ticket=>{if(ticket!=='test-admin')throw new LocalError('Denied',401);return {user_id:'admin',expires_at:Date.now()+90000}},clientFactory:()=>client,runner:async()=>{started++;return {features:['likes','agent']}}})
+  const client={call:async()=>({list:[]}),profiles:async()=>[{id:'a',name:'A'}],opened:async()=>new Set(),openConnections:async()=>new Map()}
+  const {server}=await createCompanion({monitorOptions:{interval:0},dataDir:'unused',load:async()=>({apiKey:'sensitive',port:50325}),save:async()=>{saved++},verify:async ticket=>{if(ticket!=='test-admin')throw new LocalError('Denied',401);return {user_id:'admin',expires_at:Date.now()+90000}},clientFactory:()=>client,runner:async()=>{started++;return {features:['likes','agent']}}})
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>server.close())
   const base=`http://127.0.0.1:${server.address().port}`,headers={Origin:SITE,Authorization:'Bearer test-admin','Content-Type':'application/json'}
   assert.equal((await fetch(base+'/profiles',{headers:{Origin:'https://evil.test'}})).status,403)
@@ -72,4 +72,11 @@ test('local service checks host, origin, admin ticket, JSON, and setup CSRF befo
   const set=await fetch(base+'/setup',{method:'POST',redirect:'manual',headers:{Origin:base,'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({apiKey:'secret123',port:'50325',csrf})});assert.equal(set.status,303);assert.equal(saved,1);assert.equal(started,0)
   const launch=await fetch(base+'/launch',{method:'POST',headers,body:JSON.stringify({ids:['a'],requestId:'00000000-0000-4000-8000-000000000001'})});assert.equal(launch.status,202)
   await new Promise(resolve=>setImmediate(resolve));assert.equal(started,1)
+  // A later state read reports the actual closed browser, not the old success.
+  await fetch(base+'/state',{headers})
+  await new Promise(resolve=>setImmediate(resolve))
+  const live=await(await fetch(base+'/state',{headers})).json()
+  assert.equal(live.monitoring,true)
+  assert.equal(live.runtime.find(r=>r.profile_id==='a')?.status,'closed')
+  assert.equal(started,1,'Polling must never relaunch a closed profile')
 })

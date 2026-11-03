@@ -39,7 +39,12 @@ export class AdsPowerClient{
     }
     throw new LocalError('La liste dépasse 10 000 profils. Réduis les profils accessibles à cette clé.')
   }
-  async opened(){const data=await this.call('/api/v1/browser/local-active');return new Set((data.list||[]).map(p=>p.user_id))}
+  async openConnections(){
+    const data=await this.call('/api/v1/browser/local-active')
+    if(!Array.isArray(data.list)||data.list.some(p=>!validProfile(p.user_id)))throw new LocalError('L’état des profils AdsPower est indisponible.',502)
+    return new Map(data.list.map(p=>{let address=null;try{address=debugAddress(p.ws?.puppeteer)}catch{}return [p.user_id,address]}))
+  }
+  async opened(){return new Set((await this.openConnections()).keys())}
   async start(id){
     if(!validProfile(id))throw new LocalError('Profil invalide.')
     const state=await this.call(`/api/v1/browser/active?user_id=${encodeURIComponent(id)}`)
