@@ -19,20 +19,21 @@ export function inspectDOM({features,start,pause,stop,action='read',id}){
       const buttons=all('button',container),names=buttons.map(text),status=state(names)
       if(status!=='unknown'){
         const launch=buttons.filter(b=>matches(start,text(b))),ranges=all('[role="combobox"],select',container)
-        found={id:feature.id,state:status,disabled:launch.some(b=>b.disabled||b.getAttribute('aria-disabled')==='true'),twelveHours:ranges.length===1&&/^(?:Traiter les 12 dernières heures|Process (?:the )?last 12 hours)$/i.test(text(ranges[0])),launch:launch[0],range:ranges.length===1?ranges[0]:null};break
+        found={id:feature.id,state:status,disabled:launch.some(b=>b.disabled||b.getAttribute('aria-disabled')==='true'),rangeExpanded:ranges.length===1&&ranges[0].getAttribute('aria-expanded')==='true',twelveHours:ranges.length===1&&/^(?:Traiter les 12 dernières heures|Process (?:the )?last 12 hours)$/i.test(text(ranges[0])),launch:launch[0],range:ranges.length===1?ranges[0]:null};break
       }
     }
     if(found)cards.push(found)
   }
   const menus=all('button,a,[role="menuitem"]').filter(e=>/^(?:Automatisations?|Automations?)$/i.test(text(e)))
   const launchers=all('button[aria-haspopup="menu"]').filter(e=>e.querySelector('svg.lucide-bot'))
-  if(action==='read')return {cards:cards.map(({launch,range,...c})=>c),menu:menus.length===1,launcher:launchers.length===1,notices:all('[role="status"][data-state="open"],[role="alert"]').map(text).filter(t=>/configuration requise|veuillez configurer|erreur|error|configuration required/i.test(t)).map(t=>t.slice(0,300))}
+  const twelveOptions=all('[role="option"]').filter(e=>/^(?:Traiter les 12 dernières heures|Process (?:the )?last 12 hours)$/i.test(text(e)))
+  if(action==='read')return {cards:cards.map(({launch,range,...c})=>c),twelveOption:twelveOptions.length===1,menu:menus.length===1,launcher:launchers.length===1,notices:all('[role="status"][data-state="open"],[role="alert"]').map(text).filter(t=>/configuration requise|veuillez configurer|erreur|error|configuration required/i.test(t)).map(t=>t.slice(0,300))}
   let choices=[]
   if(action==='launcher')choices=launchers
   if(action==='menu')choices=menus
   if(action==='start')choices=cards.filter(c=>c.id===id&&c.state==='ready'&&!c.disabled).map(c=>c.launch)
   if(action==='range')choices=cards.filter(c=>c.id===id&&c.state==='ready').map(c=>c.range).filter(Boolean)
-  if(action==='twelveHours')choices=all('[role="option"]').filter(e=>/^(?:Traiter les 12 dernières heures|Process (?:the )?last 12 hours)$/i.test(text(e)))
+  if(action==='twelveHours')choices=twelveOptions
   if(choices.length!==1)return {error:'La commande Dotb est absente ou ambiguë.'}
   const target=choices[0];if(target.disabled||target.getAttribute('aria-disabled')==='true')return {error:'Cette commande Dotb est désactivée.'}
   target.scrollIntoView({block:'nearest',inline:'nearest'})

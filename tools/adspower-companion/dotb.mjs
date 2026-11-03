@@ -1,5 +1,6 @@
 import {LocalError,delay} from './adspower.mjs'
 import {DotbUI} from './dotb-ui.mjs'
+import {setTwelveHours} from './lookback.mjs'
 
 export const FEATURES=[
   {id:'likes',label:'Messages aux likes',titles:['Automatisation des messages aux likes','Item Likes','Messages aux likes','Messages to Likes'],lookback:true},
@@ -61,15 +62,11 @@ export async function startDotb(profile,update,ads,{connect}={}){
     let snapshot=await ui.read(root)
     for(const feature of FEATURES){const card=snapshot.cards.find(c=>c.id===feature.id);if(!card||card.state==='unknown'||card.disabled)throw new LocalError('Vérifie la configuration de « '+feature.label+' » dans Dotb.')}
     for(const feature of FEATURES.filter(f=>f.lookback)){
-      const card=snapshot.cards.find(c=>c.id===feature.id)
-      if(card.state==='running')continue
-      if(!card.twelveHours){
-        await ui.click(root,'range',feature.id);await delay(200)
-        await ui.click(root,'twelveHours',feature.id);await delay(200)
-        snapshot=await ui.read(root)
-        if(!snapshot.cards.find(c=>c.id===feature.id)?.twelveHours)throw new LocalError('Le choix des 12 dernières heures n’a pas été confirmé pour « '+feature.label+' ».')
-      }
+      update({message:'Réglage des 12 dernières heures : '+feature.label})
+      await setTwelveHours(ui,root,feature)
     }
+    snapshot=await ui.read(root)
+    if(FEATURES.filter(f=>f.lookback).some(f=>{const c=snapshot.cards.find(c=>c.id===f.id);return !c||c.state!=='running'&&!c.twelveHours}))throw new LocalError('Dotb a réinitialisé une plage horaire. Réessaie le lancement.')
     const completed=[],failures=[]
     for(const feature of FEATURES){
       const before=await ui.read(root),current=before.cards.find(c=>c.id===feature.id)

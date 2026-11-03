@@ -61,7 +61,7 @@ export async function createCompanion({dataDir,verify=verifyTicket,clientFactory
       if(!cached||cached.until<Date.now()){
         const auth=await verify(ticket);tickets.set(ticket,{until:Math.min(auth.expires_at,Date.now()+10000)});if(tickets.size>20)tickets.delete(tickets.keys().next().value)
       }
-      if(req.method==='GET'&&url.pathname==='/state'){json(res,200,{version:'1.0.1',configured:!!config,jobs:queue.snapshot(),list_at:listAt});return}
+      if(req.method==='GET'&&url.pathname==='/state'){json(res,200,{version:'1.0.2',configured:!!config,jobs:queue.snapshot(),list_at:listAt});return}
       if(req.method==='GET'&&url.pathname==='/profiles'){json(res,200,{profiles:await refresh()});return}
       if(req.method==='POST'){
         if(!req.headers['content-type']?.startsWith('application/json'))throw new LocalError('Format de demande invalide.',415)
