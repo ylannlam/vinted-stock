@@ -19,10 +19,14 @@ export function mergeExpenses(existing, incoming) {
   }
   return [...merged.values()]
 }
-// Automatic rows remain outside the editable payload. A reread is the same order,
-// not another expense. Exact references also surface pre-existing manual entries.
-export function combinedBudgetRows(manual=[],automatic=[]) {
-  const refs=new Set(manual.filter(r=>r.type==='out').flatMap(r=>r.label.toUpperCase().match(/\bG[A-Z0-9]{7,39}\b/g)||[]))
-  const deduped=[...new Map(automatic.map(r=>[r.order_ref,r])).values()]
-  return {rows:[...manual,...deduped.filter(r=>!refs.has(r.order_ref))],duplicates:deduped.filter(r=>refs.has(r.order_ref))}
+// Automatic rows remain outside the editable payload and keep a stable identity.
+export function combinedBudgetRows(manual=[],automatic=[],income=[]) {
+  const refs=new Set(manual.filter(r=>r.type==='out').flatMap(r=>(r.label||'').toUpperCase().match(/\bG[A-Z0-9]{7,39}\b/g)||[]))
+  const expenses=[...new Map(automatic.map(r=>[r.order_ref,r])).values()]
+  const sales=[...new Map(income.map(r=>[r.line_id,r])).values()]
+  const incomeDuplicates=sales.filter(r=>manual.some(m=>m.type===r.type&&(m.label||'').includes(r.line_id)))
+  const duplicateIds=new Set(incomeDuplicates.map(r=>r.id))
+  return {rows:[...manual,...expenses.filter(r=>!refs.has(r.order_ref)),...sales.filter(r=>!duplicateIds.has(r.id))],
+    duplicates:expenses.filter(r=>refs.has(r.order_ref)),incomeDuplicates}
 }
+export const budgetPeriodRows=(rows,month='')=>rows.filter(row=>!month||row.date.startsWith(month))

@@ -95,7 +95,7 @@ async function request(method='GET',body,query='') {
   }
   line.updated_at=new Date().toISOString();return {saved:true}
 }
-let tracker = {revision:0,automatic_expenses:[{id:'shein-GDEMO000001',order_ref:'GDEMO000001',source:'shein',date:new Date().toISOString().slice(0,10),type:'out',cat:'Stock Shein',label:'Commande Shein GDEMO000001',amount:41.09}],payload:{accounts:[{id:'demo1',pseudo:'Compte démo',email:'demo@example.com',phone:'',browser:'Chrome',createdAt:Date.now(),stage:'post1',nextAt:Date.now()+86400000,notes:''}],expenses:[{id:'expense1',date:'2026-10-30',type:'out',cat:'Emballage',label:'Exemple',amount:12}],settings:{budget:100}}}
+let tracker = {revision:0,automatic_income:[{id:'vinted-demo-0',line_id:'demo-0',source:'vinted',date:new Date().toISOString().slice(0,10),type:'in',cat:'Ventes Vinted',label:'Vente de démonstration',amount:35},{id:'vinted-demo-1',line_id:'demo-1',source:'vinted',date:'2026-10-31',type:'in',cat:'Ventes Vinted',label:'Vente du mois précédent',amount:30}],automatic_expenses:[{id:'shein-GDEMO000001',order_ref:'GDEMO000001',source:'shein',date:new Date().toISOString().slice(0,10),type:'out',cat:'Stock Shein',label:'Commande Shein GDEMO000001',amount:41.09}],payload:{accounts:[{id:'demo1',pseudo:'Compte démo',email:'demo@example.com',phone:'',browser:'Chrome',createdAt:Date.now(),stage:'post1',nextAt:Date.now()+86400000,notes:''}],expenses:[{id:'expense1',date:'2026-10-30',type:'out',cat:'Emballage',label:'Exemple',amount:12}],settings:{budget:100}}}
 async function trackerRequest(url, options) {
   if(options?.method==='PUT') {
     const body=JSON.parse(options.body)

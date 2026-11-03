@@ -1,7 +1,7 @@
 export const paidStates=new Set(['processing','shipped','delivered'])
 const norm=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f\s]/g,'').toLowerCase()
 const size=v=>norm(String(v||'').replace(/^\s*\d+\s*\(([^)]+)\)\s*$/,'$1'))
-export function associationReasons(item,line,order,competing=[]) {
+export function associationReasons(item,line,order) {
   const reasons=[]
   if(!item.present||!paidStates.has(item.status))reasons.push('Paiement ou état de l’achat à vérifier')
   if(line.blocked)reasons.push('Vente annulée, suspendue ou en retour')
@@ -13,7 +13,6 @@ export function associationReasons(item,line,order,competing=[]) {
   else if(norm(line.color)!==norm(item.color))reasons.push('Couleur différente')
   if(line.sale_date&&new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Paris'}).format(new Date(line.sale_date))>order.order_date)reasons.push('Achat antérieur à la vente')
   if((item.links?.length||0)>=item.quantity)reasons.push('Tous les exemplaires sont déjà associés')
-  if(competing.some(i=>i.id!==item.id&&i.remaining>0&&norm(i.sku)===norm(item.sku)&&size(i.size)===size(item.size)&&norm(i.color)===norm(item.color)))reasons.push('Plusieurs achats possibles pour cette variante')
   return reasons.length?reasons:['Correspondance à confirmer : la quantité disponible ou une exclusion manuelle peut empêcher l’association automatique']
 }
 export function sheinAlerts({cart,runs=[],now=Date.now()}) {

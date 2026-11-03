@@ -24,7 +24,8 @@ begin
  payload:=jsonb_build_object('ref',ref,'order_date','2099-01-02','observed_at',now(),'items',jsonb_build_array(jsonb_build_object('id',item,'sku',sku,'supplier_id','123','product_url','https://fr.shein.com/Test-p-123.html','title','Test','size','M','color','Noir','quantity',2,'unit_price',8.57,'status','processing')));
  perform public.import_shein_order(payload,dev);
  n:=public.reconcile_shein_orders(u);
- if exists(select 1 from public.shein_order_links where item_id=item) then raise exception 'two units allocated among three ambiguous sales';end if;
+ if (select count(*) from public.shein_order_links where item_id=item)<>2 then raise exception 'available units not allocated to oldest sales';end if;
+ if exists(select 1 from public.shein_order_links where line_id=c) then raise exception 'newest sale consumed stock before older sales';end if;
  payload:=jsonb_set(jsonb_set(payload,'{items,0,quantity}','3'),'{observed_at}',to_jsonb(now()+interval '1 second'));
  perform public.import_shein_order(payload,dev);perform public.reconcile_shein_orders(u);
  if (select count(*) from public.shein_order_links where item_id=item)<>3 then raise exception 'exact variant group not matched';end if;
