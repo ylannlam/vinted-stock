@@ -7,3 +7,4 @@ dist
 
 supabase/.temp/
 tools/shein-collector/.data/
+tools/adspower-companion/.data/

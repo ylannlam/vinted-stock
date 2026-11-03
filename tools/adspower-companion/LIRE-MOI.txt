@@ -1,0 +1,35 @@
+STOCK VINTED — CONNECTEUR ADSPOWER
+
+1. Garde AdsPower ouvert et connecté à ton compte.
+2. Lance run.bat. Au premier lancement, les dépendances sont installées depuis npm.
+3. Ouvre http://127.0.0.1:17442/setup sur ce PC.
+4. Dans AdsPower → Automatisation → API, copie ta clé existante dans cette page.
+   Elle est enregistrée uniquement sur ce PC et protégée par ton compte Windows.
+5. Sur https://vinted-stock.vercel.app/#adspower, clique Actualiser, sélectionne
+   tes profils puis « Lancer Vinted + Dotb ».
+   Si le navigateur demande l'accès au réseau local, autorise-le pour ce site.
+
+Le connecteur ouvre les profils avec l'API locale AdsPower, puis utilise leur
+connexion navigateur officielle. Il ouvre Automatisations, sélectionne les
+12 dernières heures pour les messages aux likes et Smart Agent v2, puis démarre
+les 4 blocs : messages aux likes, Smart Agent v2, flux de commandes et Bridge.
+Les 12 heures désignent l'historique à traiter, pas une durée avant arrêt.
+Les textes et remises déjà configurés dans Dotb sont conservés. Une automatisation
+déjà démarrée n'est pas arrêtée ni relancée : sa plage en cours est conservée.
+Si un bloc exige une configuration, les autres sont lancés et le site le signale.
+
+Dotb doit être installé et connecté dans chaque profil. Si son panneau n'est
+pas reconnu, le profil reste ouvert et le site indique quoi vérifier.
+Un captcha ou une déconnexion demande une intervention dans le profil concerné.
+Les ouvertures sont espacées et limitées à 3 en préparation en parallèle.
+Les profils déjà lancés continuent ensuite à fonctionner ensemble.
+
+La mention « Dotb démarré » est une confirmation au moment du lancement,
+pas une surveillance continue. Garde le PC éveillé et les pages Dotb ouvertes.
+Fermer le connecteur ne ferme pas les profils et n'arrête pas leurs automatisations.
+« Annuler l'attente » annule uniquement les profils pas encore lancés.
+
+Ne partage pas le dossier .data : il contient ta connexion locale.
+Le programme n'est accessible que depuis ce PC et exige une autorisation
+administrateur temporaire émise par Stock Vinted. La clé AdsPower, les cookies
+et les conversations ne sont pas envoyés au site.

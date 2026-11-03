@@ -1,3 +1,5 @@
+import AdsPowerTab from './components/AdsPowerTab'
+import {adsPowerPreview} from './lib/adspowerPreview'
 import Header from './components/Header'
 import {newestSalesFirst} from './lib/salesOrder'
 import {sheinOrdersPreview} from './lib/sheinOrdersPreview'
@@ -9,7 +11,7 @@ import {workspacePreview} from './lib/workspacePreview'
 import {TAB_HOME,TAB_HISTORY} from './constants'
 import VintedAccountsTab from './components/VintedAccountsTab'
 import CategoryTabs from './components/CategoryTabs'
-import { TAB_SALES, TAB_BUDGET, TAB_COMPTES_VINTED, TAB_CATALOG, TAB_RESOURCES } from './constants'
+import { TAB_ADSPOWER, TAB_SALES, TAB_BUDGET, TAB_COMPTES_VINTED, TAB_CATALOG, TAB_RESOURCES } from './constants'
 import ResourcesTab from './components/ResourcesTab'
 import {resourcesPreview,resourcesPreviewUpload} from './lib/resourcesPreview'
 import {creativeAccountsPreview} from './lib/creativeAccountsPreview'
@@ -109,8 +111,8 @@ const demoClient={from(table){
 }}
 function PreviewApp(){
  const [photo,setPhoto]=useState(null),[filters,setFilters]=useState(()=>Object.fromEntries(new URLSearchParams(location.hash.split('?')[1]||'')));const navigate=(id,opts={})=>{setFilters(opts);setTab(id)}
- const [tab,setTab]=useState(location.hash==='#accueil'?TAB_HOME:['#ressources','#atelier'].includes(location.hash)?TAB_RESOURCES:location.hash==='#catalogue'?TAB_CATALOG:['#suivi','#budget'].includes(location.hash)?TAB_BUDGET:location.hash==='#comptes'?TAB_COMPTES_VINTED:TAB_SALES)
+ const [tab,setTab]=useState(location.hash==='#adspower'?TAB_ADSPOWER:location.hash==='#accueil'?TAB_HOME:['#ressources','#atelier'].includes(location.hash)?TAB_RESOURCES:location.hash==='#catalogue'?TAB_CATALOG:['#suivi','#budget'].includes(location.hash)?TAB_BUDGET:location.hash==='#comptes'?TAB_COMPTES_VINTED:TAB_SALES)
  useEffect(()=>{const go=()=>{if(location.hash.startsWith('#ventes'))navigate(TAB_SALES,Object.fromEntries(new URLSearchParams(location.hash.split('?')[1]||'')))};window.addEventListener('hashchange',go);return()=>window.removeEventListener('hashchange',go)},[])
- return <div className="min-h-screen workspace-shell"><div className="preview-notice">DÉMO · Données fictives · Réinitialisée à chaque rechargement</div><Header profile={{pseudo:'Mon atelier',role:'admin'}}/><CategoryTabs active={tab} onChange={navigate} items={[]} commandes={[]} userRole="admin"/>{tab===TAB_HOME?<HomeTab isAdmin request={previewWorkspace} onNavigate={navigate}/>:tab===TAB_HISTORY?<HistoryTab isAdmin request={workspacePreview}/>:tab===TAB_RESOURCES?<ResourcesTab request={resourcesPreview} upload={resourcesPreviewUpload} accountsRequest={creativeAccountsPreview}/>:tab===TAB_CATALOG?<CatalogueTab isAdmin request={catalogPreview} collectorRequest={collectorPreview} collectorBridge={collectorBridgePreview}/>:tab===TAB_BUDGET?<BudgetTab request={trackerRequest} financeRequest={workspacePreview} onOpenSale={row=>navigate(TAB_SALES,{line:row.id})}/>:tab===TAB_COMPTES_VINTED?<VintedAccountsTab client={demoClient}/>:<SalesTab key={JSON.stringify(filters)} initialFilters={filters} onPreparePhoto={setPhoto} isAdmin request={request} collectorRequest={collectorPreview} collectorBridge={collectorBridgePreview}/>}{photo&&<PhotoPreparation article={photo} onClose={()=>setPhoto(null)} accountsRequest={creativeAccountsPreview} resourcesRequest={resourcesPreview}/>}</div>
+ return <div className="min-h-screen workspace-shell"><div className="preview-notice">DÉMO · Données fictives · Réinitialisée à chaque rechargement</div><Header profile={{pseudo:'Mon atelier',role:'admin'}}/><CategoryTabs active={tab} onChange={navigate} items={[]} commandes={[]} userRole="admin"/>{tab===TAB_ADSPOWER?<AdsPowerTab request={adsPowerPreview}/>:tab===TAB_HOME?<HomeTab isAdmin request={previewWorkspace} onNavigate={navigate}/>:tab===TAB_HISTORY?<HistoryTab isAdmin request={workspacePreview}/>:tab===TAB_RESOURCES?<ResourcesTab request={resourcesPreview} upload={resourcesPreviewUpload} accountsRequest={creativeAccountsPreview}/>:tab===TAB_CATALOG?<CatalogueTab isAdmin request={catalogPreview} collectorRequest={collectorPreview} collectorBridge={collectorBridgePreview}/>:tab===TAB_BUDGET?<BudgetTab request={trackerRequest} financeRequest={workspacePreview} onOpenSale={row=>navigate(TAB_SALES,{line:row.id})}/>:tab===TAB_COMPTES_VINTED?<VintedAccountsTab client={demoClient}/>:<SalesTab key={JSON.stringify(filters)} initialFilters={filters} onPreparePhoto={setPhoto} isAdmin request={request} collectorRequest={collectorPreview} collectorBridge={collectorBridgePreview}/>}{photo&&<PhotoPreparation article={photo} onClose={()=>setPhoto(null)} accountsRequest={creativeAccountsPreview} resourcesRequest={resourcesPreview}/>}</div>
 }
 createRoot(document.getElementById('root')).render(<PreviewApp/>)

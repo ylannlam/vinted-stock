@@ -1,0 +1,9 @@
+{
+  "name":"stock-vinted-adspower",
+  "version":"1.0.0",
+  "private":true,
+  "type":"module",
+  "engines":{"node":">=22"},
+  "scripts":{"start":"node companion.mjs","test":"node --test *.test.mjs"},
+  "dependencies":{"playwright-core":"1.64.1"}
+}
