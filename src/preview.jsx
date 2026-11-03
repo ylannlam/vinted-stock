@@ -1,4 +1,5 @@
 import {publicationPreview} from './lib/publicationPreview'
+import {dailyCartDemo,dailyCartPreview} from './lib/dailyCartPreview'
 import AdsPowerTab from './components/AdsPowerTab'
 import {adsPowerPreview} from './lib/adspowerPreview'
 import Header from './components/Header'
@@ -42,6 +43,9 @@ const lines = ['to_order','ordered','in_transit','received','prepared','shipped'
   order:{id:`vente-${i}`,account_login:`Compte démo ${i%2+1}`,currency:'EUR',status:'label_sent',deadline:new Date(Date.now()+(i+1)*86400000).toISOString()},
 }))
 const parcels=[]
+if(new URLSearchParams(location.hash.split('?')[1]||'').get('view')==='cart'){
+  const demo=dailyCartDemo();lines.push(...demo.lines);catalog.push(...demo.catalog)
+}
 async function previewWorkspace(view='overview',query={},body){
  if(view!=='actions')return workspacePreview(view,query,body)
  let rows=lines.filter(l=>l.stage!=='shipped').map(l=>({...l,title:l.source.title,account_login:l.order.account_login,deadline_at:l.order.deadline,sku:skuOf(l),action:({ordered:'receive',in_transit:'receive',received:'prepare',prepared:'ship'})[l.stage]||(!skuOf(l)?'missing_sku':'purchase')}))
@@ -55,6 +59,7 @@ async function request(method='GET',body,query='') {
   if(method==='POST'&&body?.action==='shipping_label')return (await import('./lib/shippingLabelPreview')).shippingLabelPreview()
   if(method==='GET'){
     const q=new URLSearchParams(query.replace(/^\?/,''));let filtered=structuredClone(lines).sort(newestSalesFirst)
+    if(q.get('view')==='daily_cart')return dailyCartPreview(lines,catalog,q.get('day'))
     if(q.get('view')==='shein_orders')return sheinOrdersPreview(lines)
     const shipRows=parcels.filter(p=>p.line_ids.length).map(p=>({...p,lines:p.line_ids.map(id=>{const l=lines.find(x=>x.id===id);return {id,title:l.source.title,account:l.order.account_login,size:l.supplier_size,updated_at:l.updated_at}})}))
     if(q.get('view')==='shipments')return {shipments:structuredClone(shipRows),count:shipRows.length,page:0}

@@ -12,6 +12,7 @@ import {isId} from '../server/dotb.js'
 import {shippingLabel} from '../server/shipping-labels.js'
 import {readSheinOrders,reviewSheinOrder} from '../server/shein-orders.js'
 import {refreshSalePhotos} from '../server/sale-photos.js'
+import {readDailyPurchases} from '../server/daily-purchases.js'
 
 export const config = { maxDuration: 60 }
 const fail = error => { if (error) throw error }
@@ -39,6 +40,7 @@ export default async function handler(req, res) {
     if (!auth) return
     const { db, role, user } = auth
     if (req.method === 'GET') {
+      if(req.query?.view==='daily_cart')return res.json(await readDailyPurchases(db,req.query))
       if(req.query?.view==='shein_orders')return res.json(await readSheinOrders(db,req.query))
       if(req.query?.view==='shipments')return res.json(await readShipments(db,req.query))
       if(req.query?.view==='detail'){

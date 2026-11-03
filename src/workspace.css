@@ -147,3 +147,25 @@ input[type='checkbox'] { accent-color: var(--workspace-green); width: 16px; heig
   .workspace-empty { padding: 42px 20px; }
 }
 @media (prefers-reduced-motion: reduce) { button, a { transition: none; } }
+
+.daily-cart-hero { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:24px; padding:26px; border:1px solid #dce8de; border-radius:20px; background:linear-gradient(115deg,#eff7f1,#fffdf8); }
+.daily-cart-eyebrow { font-size:10px; font-weight:600; letter-spacing:.15em; color:#087a5a; }
+.daily-cart-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+.daily-cart-stats > div { padding:18px 20px; border:1px solid var(--workspace-line); border-radius:16px; background:white; }
+.daily-cart-stats span { display:block; color:#6f7e76; font-size:12px; }
+.daily-cart-stats strong { display:block; color:#173f32; font-size:27px; margin-top:8px; }
+.daily-cart-stats small { font-size:12px; font-weight:400; color:#7f8b84; }
+.daily-cart-stats p { color:#89938b; font-size:11px; margin-top:3px; }
+.daily-cart-reminder { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; padding:13px 18px; border-radius:14px; background:#f3f3ed; color:#5f6a61; font-size:13px; }
+.daily-cart-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.daily-cart-item { display:flex; align-items:stretch; border:1px solid var(--workspace-line); border-radius:18px; background:white; overflow:hidden; min-width:0; }
+.daily-cart-photo { width:34%; max-width:190px; min-height:250px; flex-shrink:0; object-fit:cover; background:#f0eee8; }
+.daily-cart-placeholder { display:flex; align-items:center; justify-content:center; font-size:36px; color:#bdc8bd; }
+.daily-cart-item-content { padding:20px; flex:1; min-width:0; }
+.daily-cart-state { font-size:10px; font-weight:600; border-radius:20px; padding:5px 9px; }
+.daily-cart-state.is-ready { background:#eaf5ee; color:#087553; }
+.daily-cart-state.is-attention { background:#fff4df; color:#89621b; }
+.daily-cart-quantity { color:#173f32; font-size:23px; line-height:1; }
+.daily-cart-item-actions { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; margin-top:18px; }
+@media(max-width:1100px) { .daily-cart-grid { grid-template-columns:minmax(0,1fr); } .daily-cart-photo { max-width:170px; } }
+@media(max-width:600px) { .daily-cart-hero { padding:20px; } .daily-cart-stats { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; } .daily-cart-stats > div { padding:14px; } .daily-cart-stats strong { font-size:23px; } .daily-cart-item { flex-direction:column; } .daily-cart-photo { width:100%; max-width:none; height:220px; min-height:0; object-position:center 35%; } .daily-cart-item-content { padding:18px; } }

@@ -10,6 +10,7 @@ import {confirmPurchase,draftSupplierUrl} from '../lib/saleDetails'
 import {commonNextStage} from '../lib/workspace'
 import CollectionManager from './CollectionManager'
 const SheinOrders=lazy(()=>import('./SheinOrders'))
+const DailyPurchaseCart=lazy(()=>import('./DailyPurchaseCart'))
 const defaultRequest = (...args) => import('../lib/api').then(m => m.salesRequest(...args))
 import { STAGES, skuOf, photoOf, blocked, nextStage } from '../lib/fulfillment'
 
@@ -24,8 +25,8 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
   const [editing, setEditing] = useState(null)
   const [labelLine,setLabelLine]=useState(null)
-  const [view,setView]=useState('sales'),[parcelLines,setParcelLines]=useState(null)
-  const showShipments=view==='shipments',showOrders=view==='orders',setShowShipments=value=>setView(value?'shipments':'sales')
+  const [view,setView]=useState(initialFilters.view==='cart'?'cart':'sales'),[parcelLines,setParcelLines]=useState(null)
+  const showShipments=view==='shipments',showOrders=view==='orders',showCart=view==='cart',setShowShipments=value=>setView(value?'shipments':'sales')
   const [detailCatalog,setDetailCatalog]=useState([]),[detailNotice,setDetailNotice]=useState('')
   const [skuEditing, setSkuEditing] = useState(null)
   const [purchaseLine,setPurchaseLine]=useState(null),[purchaseReference,setPurchaseReference]=useState('')
@@ -43,15 +44,15 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
   async function run(fn) { if(mutation.current)return;mutation.current=true;setBusy(true);setError('');try{await fn()}catch(e){setError(e.message)}finally{mutation.current=false;setBusy(false)} }
   useEffect(()=>{let active=true;revision.current=null;setSelected([]);setBusy(true);load(true).catch(e=>{if(active)setError(e.message)}).finally(()=>{if(active)setBusy(false)});return()=>{active=false;sequence.current++}},[filterKey])
   useEffect(()=>{
-    if(busy||editing||labelLine||skuEditing||batch||purchaseLine||parcelLines||showShipments||showOrders||selected.length)return
+    if(busy||editing||labelLine||skuEditing||batch||purchaseLine||parcelLines||showShipments||showOrders||showCart||selected.length)return
     const timer=setInterval(()=>{if(document.visibilityState==='visible')load().catch(e=>setError(e.message))},15000)
     return ()=>clearInterval(timer)
-  },[busy,editing,labelLine,skuEditing,batch,purchaseLine,parcelLines,showShipments,showOrders,selected.length,filterKey])
+  },[busy,editing,labelLine,skuEditing,batch,purchaseLine,parcelLines,showShipments,showOrders,showCart,selected.length,filterKey])
   // Enrich after the sales have rendered. One bounded background request, with
   // a server lease shared by tabs, keeps Dotb latency out of the list loading.
   const photoIds=JSON.stringify(data.lines.filter(l=>!l.listing_photo_url).map(l=>l.id))
   useEffect(()=>{
-    if(busy||editing||showShipments||showOrders||photoIds==='[]')return
+    if(busy||editing||showShipments||showOrders||showCart||photoIds==='[]')return
     let active=true,timer
     const tick=async()=>{
       if(document.visibilityState==='visible'){
@@ -61,7 +62,7 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
     }
     timer=setTimeout(tick,1000)
     return()=>{active=false;clearTimeout(timer)}
-  },[photoIds,busy,editing,showShipments,showOrders,filterKey,request])
+  },[photoIds,busy,editing,showShipments,showOrders,showCart,filterKey,request])
   const detailId=editing?.id,detailSku=editing?.sku?.trim(),savedDetailSku=editing?skuOf(editing):null
   useEffect(()=>{
     if(busy||!detailId||!detailSku||detailSku!==savedDetailSku)return
@@ -163,8 +164,8 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
     <ErrorNotice error={!skuEditing&&!editing&&!batch&&!purchaseLine?error:null} retry={()=>run(()=>load(true))} busy={busy}/>
     {notice&&<p role="status" className="rounded-xl bg-teal-50 px-4 py-3 text-sm text-teal-800">{notice}</p>}
     {data.setup_required?<p className="bg-amber-50 p-3 rounded-lg text-sm">Le suivi doit être activé avant le premier import.</p>:data.connected===false&&<p className="bg-amber-50 p-3 rounded-lg text-sm">La connexion Dotb n’est pas encore activée. Les ventes déjà importées restent consultables.</p>}
-    <nav aria-label="Ventes, commandes ou colis" className="workspace-view-tabs"><button className={'pb-3 text-sm font-semibold border-b-2 '+(view==='sales'?'border-teal-700 text-teal-800':'border-transparent text-slate-500')} onClick={()=>setShowShipments(false)}>Mes ventes</button><button className={'pb-3 text-sm font-semibold border-b-2 '+(showOrders?'border-teal-700 text-teal-800':'border-transparent text-slate-500')} onClick={()=>setView('orders')}>Mes commandes Shein</button><button className={'pb-3 text-sm font-semibold border-b-2 '+(showShipments?'border-teal-700 text-teal-800':'border-transparent text-slate-500')} onClick={()=>setShowShipments(true)}>Mes colis Shein</button></nav>
-    {showOrders?<Suspense fallback={<p className="text-sm text-slate-500">Chargement des commandes…</p>}><SheinOrders request={request} bridge={collectorBridge} isAdmin={isAdmin} onOpenSale={id=>run(()=>openDetail(id))} onChanged={()=>load(true)}/></Suspense>:showShipments?<SupplierShipments request={request} onOpenSale={id=>run(()=>openDetail(id))} onChanged={()=>load(true)}/>:<>
+    <nav aria-label="Ventes, panier, commandes ou colis" className="workspace-view-tabs"><button className={'pb-3 text-sm font-semibold border-b-2 '+(view==='sales'?'border-teal-700 text-teal-800':'border-transparent text-slate-500')} onClick={()=>setShowShipments(false)}>Mes ventes</button><button className={'pb-3 text-sm font-semibold border-b-2 '+(showCart?'border-teal-700 text-teal-800':'border-transparent text-slate-500')} onClick={()=>setView('cart')}>Panier du jour</button><button className={'pb-3 text-sm font-semibold border-b-2 '+(showOrders?'border-teal-700 text-teal-800':'border-transparent text-slate-500')} onClick={()=>setView('orders')}>Mes commandes Shein</button><button className={'pb-3 text-sm font-semibold border-b-2 '+(showShipments?'border-teal-700 text-teal-800':'border-transparent text-slate-500')} onClick={()=>setShowShipments(true)}>Mes colis Shein</button></nav>
+    {showCart?<Suspense fallback={<p className="text-sm text-slate-500">Préparation du panier…</p>}><DailyPurchaseCart request={request} collectorRequest={collectorRequest} bridge={collectorBridge} isAdmin={isAdmin} onOpenSale={id=>run(()=>openDetail(id))} onOrders={()=>setView('orders')} onChanged={()=>load(true)}/></Suspense>:showOrders?<Suspense fallback={<p className="text-sm text-slate-500">Chargement des commandes…</p>}><SheinOrders request={request} bridge={collectorBridge} isAdmin={isAdmin} onOpenSale={id=>run(()=>openDetail(id))} onChanged={()=>load(true)}/></Suspense>:showShipments?<SupplierShipments request={request} onOpenSale={id=>run(()=>openDetail(id))} onChanged={()=>load(true)}/>:<>
     <section aria-label="Liste des ventes" className="space-y-4">
       <div className="workspace-filter-pills">
         {stages.map(s=><button key={s.id} disabled={busy} aria-pressed={filter===s.id} onClick={()=>chooseStage(s.id)} className={'rounded-full px-4 py-2 text-sm '+(filter===s.id?'bg-teal-800 text-white':'bg-white border text-slate-600 hover:bg-slate-50')}>{s.label} <span className="ml-1 opacity-70">{data.counts?.[s.id]||0}</span></button>)}
