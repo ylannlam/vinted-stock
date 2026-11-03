@@ -8,7 +8,7 @@ const base={id:'22222222-2222-4222-8222-222222222222',state:'draft',version:1,fi
 const rows=[structuredClone(base)],images=new Map()
 export async function listingStudioPreview(method='GET',body,query=''){
  const q=new URLSearchParams(query),action=q.get('action')||body?.action||'list'
- if(action==='metadata')return {...structuredClone(metadata),selected_profiles:previewSelection.profiles,accounts:metadata.accounts.filter(a=>previewSelection.profiles.some(p=>p.id===a.profile_id))}
+ if(action==='metadata'||action==='accounts')return {...structuredClone(metadata),selected_profiles:previewSelection.profiles,accounts:metadata.accounts.filter(a=>previewSelection.profiles.some(p=>p.id===a.profile_id))}
  if(action==='options')return {...structuredClone(options),catalog:{id:Number(q.get('catalog_id'))}}
  if(action==='brands')return {data:[{id:99,title:'Shein'}]}
  if(action==='list')return {drafts:structuredClone(rows),count:rows.length}

@@ -19,20 +19,32 @@ export function catalogChoices(rows){
   return {...row,label:trail.join(' › ')}
  })
 }
-export function missingListingFields(f,photos,options){
+export function listingIssues(f,photos,options){
  const missing=[]
- if(!photos?.length)missing.push('au moins une photo')
- if(!f.account_id)missing.push('le compte')
- if(!f.sku?.trim())missing.push('le SKU')
- if(!/^\d{1,5}([.,]\d{1,2})?$/.test(String(f.price))||Number(String(f.price).replace(',','.'))<=0)missing.push('le prix')
- if(!f.title?.trim()||f.title.trim().length<5||f.title.length>100)missing.push('un titre de 5 à 100 caractères')
- if(!f.description?.trim()||f.description.trim().length<5||f.description.length>2000)missing.push('une description de 5 à 2 000 caractères')
- if(!f.catalog_id||!options||options.catalog?.id!==Number(f.catalog_id))missing.push('la catégorie')
- if(!f.brand_id)missing.push('la marque ou « Sans marque »')
- if(options?.conditions?.length&&!f.status_id)missing.push('l’état')
- if(listingSizes(options).length&&!f.size_id)missing.push('la taille Vinted')
- if(options?.package_sizes?.length&&!f.package_size_id)missing.push('le format du colis')
- if(options?.parcel_measurements)missing.push('les dimensions du colis (à renseigner dans Dotb pour cette catégorie)')
- for(const a of options?.attributes||[])if(a.required&&!f.item_attributes?.find(v=>v.code===a.code)?.ids?.length)missing.push(a.title)
+ const add=(key,label,step='review')=>missing.push({key,label,step})
+ if(!photos?.length)add('photos','au moins une photo','product')
+ if(!f.account_id)add('account','le compte')
+ if(!f.sku?.trim())add('sku','le SKU','product')
+ if(!/^\d{1,5}([.,]\d{1,2})?$/.test(String(f.price))||Number(String(f.price).replace(',','.'))<=0)add('price','le prix','product')
+ if(!f.title?.trim()||f.title.trim().length<5||f.title.length>100)add('title','un titre de 5 à 100 caractères')
+ if(!f.description?.trim()||f.description.trim().length<5||f.description.length>2000)add('description','une description de 5 à 2 000 caractères')
+ if(!f.catalog_id||!options||options.catalog?.id!==Number(f.catalog_id))add('category','la catégorie et ses options')
+ if(!f.brand_id)add('brand','la marque ou « Sans marque »')
+ const has=(rows,id)=>(rows||[]).some(row=>row.id===id)
+ if(options?.conditions?.length&&!has(options.conditions,f.status_id))add('condition','l’état réel de l’article')
+ if(listingSizes(options).length&&!has(listingSizes(options),f.size_id))add('size','la taille Vinted')
+ if(options?.package_sizes?.length&&!has(options.package_sizes,f.package_size_id))add('package','le format du colis')
+ if(options?.parcel_measurements)add('package','les dimensions du colis (à renseigner dans Dotb pour cette catégorie)')
+ for(const a of options?.attributes||[]){
+  const ids=f.item_attributes?.find(v=>v.code===a.code)?.ids||[]
+  if(a.required&&!ids.length||ids.some(id=>!has(a.options,id))||ids.length>(a.selection_limit||1))add(`attribute-${a.code}`,a.title)
+ }
  return missing
+}
+export const missingListingFields=(...args)=>listingIssues(...args).map(issue=>issue.label)
+
+export function generationIssues(fields,photos){
+ const issues=listingIssues(fields,photos,null).filter(issue=>['photos','account','sku','price'].includes(issue.key))
+ if(!fields.size_text?.trim())issues.push({key:'size-text',label:'la taille de l’article',step:'product'})
+ return issues
 }

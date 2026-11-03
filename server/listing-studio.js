@@ -93,6 +93,10 @@ export async function listingStep(db,row,{read=dotbListingRequest}={}){
 export async function handleListingStudio(req,{db,user},{read=dotbListingRequest,generate=generateListingText}={}){
  const action=req.query?.action||req.body?.action||'list',body=req.body||{}
  if(req.method==='GET'){
+  if(action==='accounts'){
+   const selected=await selectedListingAccounts(db,user.id,listingAccounts(await read('accounts')))
+   return {accounts:selected.accounts,selected_profiles:selected.selection?.profiles||[],selection_configured:!!selected.selection}
+  }
   if(action==='metadata'){
    const [accounts,catalogs,colors]=await Promise.all([read('accounts'),listingMetadata('catalogs?country=FR&depth=6',read),listingMetadata('colors?country=FR',read)])
    if(!Array.isArray(catalogs.data)||!Array.isArray(colors.data))throw new AppError('Les catégories Vinted sont indisponibles.',502)

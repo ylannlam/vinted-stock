@@ -45,6 +45,16 @@ test('saving and reading a draft never create a remote listing',async()=>{
  const other={db,user:{id:account}}
  await assert.rejects(handleListingStudio({method:'GET',query:{action:'draft',id}},other,{read:s.read}),/introuvable/)
 })
+test('connection refresh returns only selected accounts without loading catalogs or changing drafts',async()=>{
+ const db=database(),s=source()
+ const result=await call(db,null,s,'GET',{action:'accounts'})
+ assert.equal(result.accounts[0].id,account)
+ assert.equal(result.accounts[0].connected,true)
+ assert.deepEqual(s.calls,[['accounts','GET']])
+ assert.equal(db.rows[0].version,1)
+ db.selection[0].profiles=[]
+ assert.deepEqual((await call(db,null,s,'GET',{action:'accounts'})).accounts,[])
+})
 test('offline or mismatched account cannot create a remote item',async()=>{
  const db=database(),s=source()
  await assert.rejects(call(db,{action:'publish',id,version:1,confirmation_account_id:owner},s),/compte/)
