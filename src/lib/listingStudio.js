@@ -8,8 +8,14 @@ export function validateListingPhoto(file){
 export const listingSizes=options=>(options?.size_groups||[]).flatMap(g=>g.sizes||[])
 const normalized=value=>String(value||'').trim().toLowerCase().replace(/\s+/g,' ')
 export function matchingSize(text,options){
- const rows=listingSizes(options).filter(x=>normalized(x.title)===normalized(text)||String(x.title).split('/').some(t=>normalized(t)===normalized(text)))
- return rows.length===1?rows[0].id:null
+ const target=normalized(text)
+ if(!target)return null
+ const sizes=listingSizes(options),exact=sizes.filter(x=>normalized(x.title)===target)
+ // Vinted peut proposer « M » et « M / 38 / 10 » dans la même catégorie.
+ // Un libellé exact est prioritaire ; les correspondances ambiguës restent à choisir.
+ const rows=exact.length?exact:sizes.filter(x=>String(x.title).split('/').some(t=>normalized(t)===target))
+ const ids=[...new Set(rows.map(x=>x.id))]
+ return ids.length===1?ids[0]:null
 }
 export function catalogChoices(rows){
  const map=new Map(rows.map(r=>[r.id,r])),parents=new Set(rows.map(r=>r.parent_id))

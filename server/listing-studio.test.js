@@ -38,6 +38,19 @@ test('publishing uses exact category options, target and required attributes',()
  assert.equal(matchingSize('M',opts),4);assert.equal(matchingSize('S',opts),null)
  assert.deepEqual(catalogChoices([{id:1,title:'Femmes'},{id:2,parent_id:1,title:'Robes'}]).map(c=>c.label),['Femmes › Robes'])
 })
+test('size matching prefers an exact label across Vinted size systems without guessing ambiguous sizes',()=>{
+ const options={size_groups:[{sizes:[{id:4,title:'M / 38 / 10'},{id:1,title:'XXXS / 30 / 2'}]},{sizes:[{id:1739,title:'M'}]},{sizes:[{id:99,title:'UK 10'}]}]}
+ assert.equal(matchingSize(' M ',options),1739)
+ assert.equal(matchingSize('M / 38 / 10',options),4)
+ assert.equal(matchingSize('38',options),4)
+ assert.equal(matchingSize('uk 10',options),99)
+ assert.equal(matchingSize('',options),null)
+ assert.equal(matchingSize('S',options),null)
+ assert.equal(matchingSize('M',{size_groups:[{sizes:[{id:4,title:'M / 38'},{id:5,title:'M / 40'}]}]}),null)
+ assert.equal(matchingSize('M',{size_groups:[{sizes:[{id:4,title:'M'},{id:5,title:'M'}]}]}),null)
+ assert.equal(matchingSize('M',{size_groups:[{sizes:[{id:4,title:'M'}]},{sizes:[{id:4,title:'M'}]}]}),4)
+})
+
 test('saving and reading a draft never create a remote listing',async()=>{
  const db=database(),s=source()
  await call(db,{action:'save',id,version:1,fields:fields(),photos:[photo]},s)
