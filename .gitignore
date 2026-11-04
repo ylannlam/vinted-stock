@@ -8,3 +8,7 @@ dist
 supabase/.temp/
 tools/shein-collector/.data/
 tools/adspower-companion/.data/
+
+# Local database exports must never enter this public repository.
+/backup-private/
+*.tar.gz.gpg

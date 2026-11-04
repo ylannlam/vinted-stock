@@ -1,0 +1,76 @@
+name: Sauvegarde de la base
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: sauvegarde-base
+  cancel-in-progress: false
+jobs:
+  sauvegarde:
+    # Manual runs check the secrets; the nightly schedule requires activation.
+    if: vars.BACKUPS_ENABLED == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Vérifier la configuration
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ] || [ "${#BACKUP_PASSPHRASE}" -lt 16 ]; then
+            echo '::error::Configurer SUPABASE_DB_URL et BACKUP_PASSPHRASE (16 caractères minimum).'
+            exit 1
+          fi
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1
+        with:
+          version: 2.108.0
+      - name: Exporter la base
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/dumps"
+          exec 2>"$RUNNER_TEMP/backup-export.log"
+          trap 'echo "::error::Export interrompu ; aucune copie partielle publiée."' ERR
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f "$RUNNER_TEMP/dumps/roles.sql" --role-only
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f "$RUNNER_TEMP/dumps/schema.sql"
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f "$RUNNER_TEMP/dumps/data.sql" --data-only --use-copy \
+            -x 'storage.buckets_vectors,storage.vector_indexes'
+          supabase db dump --db-url "$SUPABASE_DB_URL" --schema supabase_migrations -f "$RUNNER_TEMP/dumps/migrations-schema.sql"
+          supabase db dump --db-url "$SUPABASE_DB_URL" --schema supabase_migrations --data-only --use-copy -f "$RUNNER_TEMP/dumps/migrations-data.sql"
+          PGDATABASE="$SUPABASE_DB_URL" psql -X -qAt --no-password --set ON_ERROR_STOP=1 --file tools/sauvegarde/policies.sql > "$RUNNER_TEMP/dumps/policies.sql"
+      - name: Chiffrer et relire la copie
+        id: encryption
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          echo "FICHIER=sauvegarde-$(date -u +%Y-%m-%d)-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.tar.gz.gpg" >> "$GITHUB_ENV"
+          bash tools/sauvegarde/chiffrer.sh "$RUNNER_TEMP/dumps" "$RUNNER_TEMP/backup.tar.gz.gpg"
+          bash tools/sauvegarde/dechiffrer.sh "$RUNNER_TEMP/backup.tar.gz.gpg" "$RUNNER_TEMP/restore-input"
+      - name: Conserver la copie chiffrée 30 jours
+        if: ${{ !cancelled() && steps.encryption.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ env.FICHIER }}
+          path: ${{ runner.temp }}/backup.tar.gz.gpg
+          retention-days: 30
+          compression-level: 0
+          if-no-files-found: error
+      - name: Vérifier la restauration dans une base jetable
+        run: |
+          supabase init --workdir "$RUNNER_TEMP/restore-check"
+          supabase db start --workdir "$RUNNER_TEMP/restore-check"
+          bash tools/sauvegarde/restaurer.sh "$RUNNER_TEMP/restore-input" 'postgresql://postgres:postgres@127.0.0.1:54322/postgres'
+          echo 'Copie chiffrée, déchiffrée et restaurée avec succès.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Effacer les fichiers temporaires
+        if: always()
+        run: |
+          rm -rf -- "$RUNNER_TEMP/dumps" "$RUNNER_TEMP/restore-input"
+          rm -f -- "$RUNNER_TEMP/backup-export.log"
