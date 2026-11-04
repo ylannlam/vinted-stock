@@ -3,7 +3,7 @@ import {randomUUID} from 'node:crypto'
 import {AppError,isId} from './dotb.js'
 import {ASSET_BUCKET,uploadTarget,ensureAssetBucket} from './resources.js'
 import {validateListingPhoto} from '../src/lib/listingStudio.js'
-import {readTeamBoard,markPublished} from './team-board.js'
+import {readTeamBoard,markPublished,vintedItemId} from './team-board.js'
 import {check,listingFields,verifiedPhotos,dotbListingRequest,listingMetadata,listingAccounts,listingPayload,validateRemoteItem,scheduleResult,generateListingText,listingAiToken} from './listing-studio-core.js'
 
 const TABLE='listing_drafts',now=()=>new Date().toISOString()
@@ -159,6 +159,8 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
   if(['scheduled','attention'].includes(row.state))row=await inspectPublish(db,row,read)
   return {draft:await expose(db,row)}
  }
+ // A retry after a lost reply returns the same recorded publication, without a second write.
+ if(action==='mark_published'&&row.state==='published'&&!row.dotb_item_id&&vintedItemId(body.url)===row.vinted_id)return {draft:await expose(db,row)}
  if(action==='publish'&&!allowDotb)throw new AppError(manualPublishingMessage,409)
  if(action==='publish'&&row.state!=='draft')return {draft:await expose(db,row)}
  if(body.version!==row.version||pending(row))throw new AppError('Cette fiche est en cours de traitement ou a changé. Rouvre le brouillon.',409)

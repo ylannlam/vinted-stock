@@ -46,5 +46,5 @@ jobs:
           --file tests/team-board.fixture.sql
           --file supabase/migrations/20261103112015_publication_history.sql
           --file supabase/migrations/20261103164009_listing_studio.sql
-          --file supabase/migrations/20261104173000_team_board.sql
+          --file supabase/migrations/20261104163052_team_board.sql
           --file tests/team-board.integration.sql

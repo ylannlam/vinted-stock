@@ -28,6 +28,7 @@ const tables=()=>({
   publication_profile_links:[{owner_id:ylann,profile_id:'p-a-ylann',account_id:A},{owner_id:me,profile_id:'p-a-me',account_id:A},{owner_id:ylann,profile_id:'p-b',account_id:B}],
   adspower_preferences:[{owner_id:me,profiles:[{id:'p-a-me',number:'12',name:'Body Paris'}]},{owner_id:ylann,profiles:[{id:'p-a-ylann',number:'99'},{id:'p-b',number:'7',name:'Lyon'}]}],
   creative_accounts:[{id:A,enabled:true,background_id:'bg',prompt_front:'Face',prompt_back:''},{id:B,enabled:false,background_id:null,prompt_front:'',prompt_back:''}],
+  creative_resources:[{id:'bg',kind:'background',archived_at:null,content:'Fond avant',content_back:'Fond arrière'}],
   vinted_accounts:[{pseudo:'autre',ads_power_num:'12',statut:'actif',creation_stage:'ready',is_ready:true,deleted_at:null},{pseudo:'OLD.ACCOUNT',ads_power_num:null,statut:'banni_temp',deleted_at:null}],
   profiles:[{id:me,pseudo:'Alicia'},{id:ylann,pseudo:'Ylann'}],
   listing_drafts:[{id:draftId,owner_id:me,state:'draft',dotb_item_id:null,version:3,fields:{account_id:A,title:'Body noir'},updated_at:'2026-11-04T10:00:00Z'},
@@ -48,7 +49,7 @@ test('the board joins each account to its AdsPower profile, status, style, count
   const [a,b,c]=['body.paris','mode.lyon','old.account'].map(l=>board.accounts.find(r=>r.login===l))
   assert.deepEqual(a.profile,{id:'p-a-me',number:'12',name:'Body Paris'},'the signed-in member’s own profile comes first')
   assert.equal(a.vinted.creation_stage,'ready','status matched by AdsPower number');assert.equal('ads_power_num' in a.vinted,false)
-  assert.deepEqual(a.style,{ready:true,background:true,front:true,back:false})
+  assert.deepEqual(a.style,{ready:false,background:true,front:true,back:false})
   assert.equal(a.can_create,true);assert.equal(b.can_create,false);assert.equal(c.can_create,false);assert.equal(a.today,2);assert.equal(a.week,5);assert.equal(a.drafts,2)
   assert.deepEqual(a.mine.map(d=>d.id),[draftId],'only my own drafts can be marked as published')
   assert.deepEqual(a.recent,[{id:'r1',title:'Robe',url:'https://www.vinted.fr/items/123456',published_at:'2026-11-04T09:30:00Z',author:'Ylann',mine:false}])
@@ -64,6 +65,7 @@ test('marking a draft as published needs a Vinted link, the current version, and
   await assert.rejects(call({action:'mark_published',id:draftId,version:3,url:'https://www.vinted.fr/items/999'}),/déjà enregistré/)
   const {draft}=await call({action:'mark_published',id:draftId,version:3,url:'https://www.vinted.fr/items/42-body'})
   assert.equal(draft.state,'published');assert.equal(draft.url,'https://www.vinted.fr/items/42');assert.equal(draft.message,'Publiée à la main sur Vinted.')
+  const again=await call({action:'mark_published',id:draftId,version:3,url:'https://www.vinted.fr/items/00042-body'});assert.equal(again.draft.version,4,'retry after a lost reply never writes again')
   const saved=db.tables.listing_drafts.find(d=>d.id===draftId);assert.equal(saved.vinted_id,'42');assert.ok(saved.published_at);assert.equal(saved.version,4)
   await assert.rejects(call({action:'mark_published',id:draftId,version:4,url:'https://www.vinted.fr/items/43'}),/déjà été transmise/)
   await assert.rejects(handleListingStudio({method:'POST',body:{action:'mark_published',id:draftId,version:4,url:'https://www.vinted.fr/items/1'},query:{}},{db,user:{id:ylann}},{allowDotb:false}),/introuvable/,'someone else’s draft')
@@ -148,4 +150,11 @@ test('publication rejects missing accounts, links on another account, and a simu
  await assert.rejects(markPublished(db,row,'42',async()=>{}),/autre compte/)
  t.publication_items=[]
  await assert.rejects(markPublished(db,row,'42',async()=>{throw {code:'23505'}}),/déjà enregistré/)
+})
+
+test('style readiness follows inherited prompts and rejects archived backgrounds or missing backs',async()=>{
+ const t=tables();t.creative_accounts[0].prompt_front=null;t.creative_accounts[0].prompt_back=null
+ let board=await readTeamBoard(database(t),{id:me});assert.equal(board.accounts[0].style.ready,true)
+ t.creative_resources[0].archived_at='2026-11-04';board=await readTeamBoard(database(t),{id:me});assert.equal(board.accounts[0].style.ready,false)
+ t.creative_resources[0].archived_at=null;t.creative_accounts[0].prompt_back='';board=await readTeamBoard(database(t),{id:me});assert.equal(board.accounts[0].style.ready,false)
 })

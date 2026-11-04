@@ -1,4 +1,5 @@
 import {AppError,isId} from './dotb.js'
+import {directionReady} from '../src/lib/workspace.js'
 import {parisDay,publicationAccount} from '../src/lib/publications.js'
 
 const check=result=>{if(result.error)throw result.error;return result.data}
@@ -29,7 +30,7 @@ export const vintedItemUrl=id=>/^\d{1,18}$/.test(id||'')?`https://www.vinted.fr/
 // où poster. Aucun appel à Dotb ni à AdsPower : uniquement ce qui est déjà enregistré.
 export async function readTeamBoard(db,user,{now=new Date()}={}) {
   const day=parisDay(now)
-  const [accounts,links,prefs,styles,vinted,people,counts,mine]=await Promise.all([
+  const [accounts,links,prefs,styles,vinted,people,counts,mine,backgrounds]=await Promise.all([
     readBoardRows(()=>db.from('publication_accounts').select('id,login,source_present',{count:'exact'}).eq('source_present',true).order('login').order('id')),
     readBoardRows(()=>db.from('publication_profile_links').select('owner_id,profile_id,account_id',{count:'exact'}).order('owner_id').order('profile_id')),
     readBoardRows(()=>db.from('adspower_preferences').select('owner_id,profiles',{count:'exact'}).order('owner_id')),
@@ -37,9 +38,10 @@ export async function readTeamBoard(db,user,{now=new Date()}={}) {
     readBoardRows(()=>db.from('vinted_accounts').select('id,pseudo,statut,creation_stage,creation_next_at,is_ready,is_shadowbanned,deleted_at,blocked_at,ready_at,password_changed_at,ads_power_num',{count:'exact'}).order('id')),
     readBoardRows(()=>db.from('profiles').select('id,pseudo',{count:'exact'}).order('id')),
     db.rpc('team_board_counts',{p_day:day}),
-    readBoardRows(()=>db.from('listing_drafts').select('id,version,fields,updated_at',{count:'exact'}).eq('owner_id',user.id).eq('state','draft').is('dotb_item_id',null).order('updated_at',{ascending:false}).order('id'))
+    readBoardRows(()=>db.from('listing_drafts').select('id,version,fields,updated_at',{count:'exact'}).eq('owner_id',user.id).eq('state','draft').is('dotb_item_id',null).order('updated_at',{ascending:false}).order('id')),
+    readBoardRows(()=>db.from('creative_resources').select('id,content,content_back,archived_at',{count:'exact'}).eq('kind','background').order('id'))
   ])
-  const data={accounts,links,prefs,styles,vinted,people,counts:check(counts)||{},mine}
+  const data={accounts,links,prefs,styles,vinted,people,counts:check(counts)||{},mine,backgrounds}
   const names=new Map(data.people.map(p=>[p.id,p.pseudo||'Quelqu’un']))
   const matches=new Map()
   for(const pref of [...data.prefs].sort((a,b)=>(b.owner_id===user.id)-(a.owner_id===user.id))){
@@ -49,7 +51,7 @@ export async function readTeamBoard(db,user,{now=new Date()}={}) {
     }
   }
   const byKey=(rows,key)=>new Map((rows||[]).map(r=>[r[key],r]))
-  const stats=byKey(data.counts.stats,'account_id'),drafts=byKey(data.counts.drafts,'account_id'),recent=byKey(data.counts.recent,'account_id'),style=byKey(data.styles,'id')
+  const stats=byKey(data.counts.stats,'account_id'),drafts=byKey(data.counts.drafts,'account_id'),recent=byKey(data.counts.recent,'account_id'),style=byKey(data.styles,'id'),background=byKey(data.backgrounds,'id')
   const vintedByNumber=new Map(),vintedByPseudo=new Map()
   // Prefer a live record if an older archived record uses the same name/number.
   for(const v of [...data.vinted].sort((a,b)=>Number(!!b.deleted_at)-Number(!!a.deleted_at))){if(String(v.ads_power_num??'').trim())vintedByNumber.set(String(v.ads_power_num).trim(),v);if(lower(v.pseudo))vintedByPseudo.set(lower(v.pseudo),v)}
@@ -58,13 +60,13 @@ export async function readTeamBoard(db,user,{now=new Date()}={}) {
     const match=matches.get(account.id),profile=match?.profile||null
     const number=String(profile?.number??'').trim()
     const vintedAccount=(number&&vintedByNumber.get(number))||vintedByPseudo.get(lower(account.login))||null
-    const s=style.get(account.id),stat=stats.get(account.id)
+    const s=style.get(account.id),bg=background.get(s?.background_id),stat=stats.get(account.id)
     return {
       account_id:account.id,login:account.login,
       profile:profile?{id:profile.id,number:number||null,name:profile.name||null}:null,
       can_create:!!match?.own,
       vinted:vintedAccount?(({ads_power_num,...rest})=>rest)(vintedAccount):null,
-      style:s?{ready:!!(s.enabled&&s.background_id&&s.prompt_front?.trim()),background:!!s.background_id,front:!!s.prompt_front?.trim(),back:!!s.prompt_back?.trim()}:null,
+      style:s?{ready:!!(s.enabled&&directionReady(s,bg)),background:!!bg&&!bg.archived_at,front:!!(s.prompt_front??bg?.content)?.trim(),back:!!(s.prompt_back??bg?.content_back)?.trim()}:null,
       today:Number(stat?.today||0),week:Number(stat?.week||0),last_at:stat?.last_at||null,
       drafts:Number(drafts.get(account.id)?.drafts||0),
       recent:(recent.get(account.id)?.items||[]).map(r=>({id:r.id,title:r.title,url:vintedItemUrl(r.vinted_id),published_at:r.published_at,author:names.get(r.owner_id)||'Quelqu’un',mine:r.owner_id===user.id})),

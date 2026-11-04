@@ -22,7 +22,7 @@ function AccountCard({row,section,busy,onCreate,onStyles,onProfiles,onPublished}
       <span className={`rounded-full border px-3 py-1 text-xs font-medium ${tones[section]}`}>{stateLabel(row)}</span>
     </div>
     <dl className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-      {[["Aujourd’hui",row.today],['7 jours',row.week],['Dernière',sinceLabel(row.last_at)],['Fiches en cours',row.drafts]].map(([label,value])=><div key={label} className="rounded-xl bg-slate-50 p-3"><dt className="text-xs text-slate-500">{label}</dt><dd className="font-semibold mt-1">{value}</dd></div>)}
+      {[["Aujourd’hui",row.today],['7 jours',row.week],['Dernière',row.last_at?sinceLabel(row.last_at):'Non renseignée'],['Fiches en cours',row.drafts]].map(([label,value])=><div key={label} className="rounded-xl bg-slate-50 p-3"><dt className="text-xs text-slate-500">{label}</dt><dd className="font-semibold mt-1">{value}</dd></div>)}
     </dl>
     <div className="flex flex-wrap items-center gap-2">
       {['now','feed'].includes(section)?row.can_create&&row.profile?<button className={primaryClass} disabled={busy} onClick={()=>onCreate(row.profile.id)}>Créer une annonce</button>:<button className={buttonClass} disabled={busy} onClick={onProfiles}>Choisir ce compte dans AdsPower</button>:<span className="text-sm text-slate-500">{section==='rest'?'Rien à publier aujourd’hui sur ce compte.':'Ne rien publier sur ce compte.'}</span>}
@@ -46,7 +46,7 @@ export default function TeamBoardTab({request=defaultRequest,onCreateListing,onS
   }
   const rows=data?.accounts||[],sections=groupBoard(rows,{search}),today=rows.reduce((n,r)=>n+r.today,0)
   return <main className="workspace-page max-w-screen-2xl mx-auto p-4 sm:p-6 space-y-5 text-slate-800">
-    <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-widest text-teal-700">Poste de travail d’Alicia</p><h1 className="text-2xl font-bold mt-1">Comptes à alimenter</h1><p className="text-sm text-slate-500 mt-1">Commence par le haut. Rien n’est publié automatiquement : publie à la main sur Vinted, puis colle le lien ici.</p></div><button className={buttonClass} disabled={busy} onClick={load}>Actualiser</button></header>
+    <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-widest text-teal-700">Poste de travail d’Alicia</p><h1 className="text-2xl font-bold mt-1">Comptes à alimenter</h1><p className="text-sm text-slate-500 mt-1">Commence par le haut. Rien n’est publié automatiquement : publie à la main sur Vinted, puis colle le lien ici.</p><p className="text-xs text-slate-500 mt-2">Les compteurs regroupent les publications déjà relevées et les liens ajoutés ici. Les comptes sans historique restent à vérifier.</p></div><button className={buttonClass} disabled={busy} onClick={load}>Actualiser</button></header>
     <ErrorNotice error={error} retry={load} busy={busy}/>
     {notice&&<p role="status" className="rounded-xl bg-teal-50 p-3 text-sm text-teal-900">{notice}</p>}
     {data&&<div className="flex flex-wrap items-center gap-3"><p className="text-sm"><strong>{today}</strong> annonce{today>1?'s':''} publiée{today>1?'s':''} aujourd’hui sur {rows.filter(r=>r.today).length} compte{rows.filter(r=>r.today).length>1?'s':''}</p><input aria-label="Chercher un compte" className={`${fieldClass} sm:w-72 ml-auto`} placeholder="Chercher un compte ou un n° de profil" value={search} onChange={e=>setSearch(e.target.value)}/></div>}
