@@ -35,5 +35,5 @@ jobs:
           --file tests/team-board.fixture.sql
           --file tests/incomplete-orders.fixture.sql
           --file supabase/migrations/20261029174512_dotb_fulfillment.sql
-          --file supabase/migrations/20261104180106_incomplete_sales_orders.sql
+          --file supabase/migrations/20261104181022_incomplete_sales_orders.sql
           --file tests/incomplete-orders.integration.sql
