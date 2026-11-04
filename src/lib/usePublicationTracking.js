@@ -49,7 +49,8 @@ export function usePublicationTracking(profiles,request=publicationRequest){
     finally{pending.current=false;if(batchController.current===controller)batchController.current=null}
   }
   useEffect(()=>{
-    alive.current=true;load();refresh()
+    // The first load comes from the [day] effect below; loading here too sent it twice.
+    alive.current=true;refresh()
     const tick=async()=>{
       if(pending.current)return
       if(today.current&&current.current.day!==parisDay())setDayValue(parisDay())

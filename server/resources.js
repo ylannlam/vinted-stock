@@ -43,14 +43,28 @@ export async function ensureAssetBucket(db) {
   if(found.error)throw found.error
   if(found.data.public)throw new AppError('Le stockage des images doit être privé avant l’envoi.',503)
 }
+// Light preview stored next to the original (never replacing it), in the private bucket.
+// Its path is derived from the original, so no database column is needed: a missing
+// thumbnail simply signs to null and the screens fall back to the full image.
+export const THUMB_MAX=720
+export const thumbPath=(bucket,path)=>`thumbs/v1/${bucket}/${path}.webp`
 export async function attachImages(db,rows) {
   const urls=new Map()
-  await Promise.all([ASSET_BUCKET,'fonds'].map(async bucket=>{
+  const thumbs=[...new Set(rows.filter(r=>r.image_bucket&&r.image_path).map(r=>thumbPath(r.image_bucket,r.image_path)))]
+  await Promise.all([...[ASSET_BUCKET,'fonds'].map(async bucket=>{
     const paths=[...new Set(rows.filter(r=>r.image_bucket===bucket&&r.image_path).map(r=>r.image_path))]
     if(!paths.length)return
     const {data,error}=await db.storage.from(bucket).createSignedUrls(paths,3600)
     if(error)return
     for(const asset of data||[])if(asset.signedUrl)urls.set(`${bucket}/${asset.path}`,asset.signedUrl)
-  }))
-  return rows.map(r=>({...r,image_url:urls.get(`${r.image_bucket}/${r.image_path}`)||null}))
+  }),(async()=>{
+    if(!thumbs.length)return
+    const {data,error}=await db.storage.from(ASSET_BUCKET).createSignedUrls(thumbs,3600)
+    if(error)return
+    for(const asset of data||[])if(asset.signedUrl)urls.set(`thumb:${asset.path}`,asset.signedUrl)
+  })()])
+  return rows.map(r=>{
+    const thumb=r.image_bucket&&r.image_path?thumbPath(r.image_bucket,r.image_path):null,thumbUrl=thumb&&urls.get(`thumb:${thumb}`)
+    return {...r,image_url:urls.get(`${r.image_bucket}/${r.image_path}`)||null,thumb_url:thumbUrl||null,thumb_path:thumbUrl?thumb:null}
+  })
 }

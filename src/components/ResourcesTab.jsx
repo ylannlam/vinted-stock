@@ -3,6 +3,7 @@ import {lazy,Suspense,useEffect,useRef,useState} from 'react'
 import ResourceDialog from './ResourceDialog'
 import CreativeAccounts from './CreativeAccounts'
 import {filterResources,validateImage} from '../lib/resources'
+import {stableThumbs,missingThumbs,thumbOf,resourceImageKey,mergeThumbnails} from '../lib/resourceThumbs'
 const ListingStudio=lazy(()=>import('./ListingStudio'))
 
 const defaultRequest=(...args)=>import('../lib/api').then(m=>m.resourcesRequest(...args))
@@ -51,14 +52,15 @@ export default function ResourcesTab({request=defaultRequest,upload=defaultUploa
   const [search,setSearch]=useState(''),[category,setCategory]=useState(''),[favorites,setFavorites]=useState(false),[sort,setSort]=useState('recent'),[limit,setLimit]=useState(24)
   const [editing,setEditing]=useState(null),[file,setFile]=useState(null),[dirty,setDirty]=useState(false),[detailId,setDetailId]=useState(null)
   const [download,setDownload]=useState(null),[savingLabel,setSavingLabel]=useState('')
-  const alive=useRef(true),operation=useRef(false),uploadCache=useRef(null)
+  const alive=useRef(true),operation=useRef(false),uploadCache=useRef(null),thumbing=useRef(false)
+  const [thumbRound,setThumbRound]=useState(0)
   const active=rows.filter(r=>!r.archived_at),detail=rows.find(r=>r.id===detailId)
   const categories=[...new Set(rows.map(r=>r.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'fr'))
   const visible=filterResources(rows,{tab,search,category,favorites,sort})
   async function load() {
     const first=await request(),all=[...first.resources],size=first.page_size||250
     for(let offset=size;offset<first.count;offset+=size){if(!alive.current)return;const next=await request('GET',undefined,`?offset=${offset}`);all.push(...next.resources)}
-    if(alive.current)setRows([...new Map(all.map(r=>[r.id,r])).values()])
+    if(alive.current)setRows(stableThumbs([...new Map(all.map(r=>[r.id,r])).values()]))
   }
   async function run(action) {
     if(operation.current)return
@@ -67,6 +69,16 @@ export default function ResourcesTab({request=defaultRequest,upload=defaultUploa
     finally{operation.current=false;if(alive.current){setBusy(false);setLoading(false);setSavingLabel('')}}
   }
   useEffect(()=>{alive.current=true;run(load);return()=>{alive.current=false}},[request])
+  // Images saved before previews existed get one in the background, four at a time.
+  useEffect(()=>{
+    if(loading||thumbing.current||section==='listings')return
+    const ids=missingThumbs(rows);if(!ids.length)return
+    const requested=new Map(rows.filter(row=>ids.includes(row.id)).map(row=>[row.id,resourceImageKey(row)]))
+    thumbing.current=true
+    request('POST',{action:'thumbnails',ids}).then(result=>{
+      if(alive.current&&result.thumbnails?.length)setRows(old=>mergeThumbnails(old,result.thumbnails,requested))
+    }).catch(()=>{/* The full image stays displayed; nothing to do. */}).finally(()=>{thumbing.current=false;if(alive.current)setThumbRound(n=>n+1)})
+  },[rows,loading,request,thumbRound,section])
   useEffect(()=>setLimit(24),[tab,search,category,favorites,sort])
   useEffect(()=>{if(!dirty)return;const warn=e=>{e.preventDefault();e.returnValue=''};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn)},[dirty])
   function update(patch){setEditing(e=>({...e,...patch}));setDirty(true)}
@@ -82,7 +94,7 @@ export default function ResourcesTab({request=defaultRequest,upload=defaultUploa
     try{validateImage(value);setFile(value);uploadCache.current=null;setDirty(true);setError('')}
     catch(e){setError(e.message)}
   }
-  function merge(row){setRows(old=>[row,...old.filter(r=>r.id!==row.id)])}
+  function merge(row){setRows(old=>[...stableThumbs([row]),...old.filter(r=>r.id!==row.id)])}
   async function save() {
     if(!editing.title.trim())throw Error('Donne un titre à cette ressource.')
     if(editing.kind==='prompt'&&!editing.content.trim())throw Error('Ajoute le texte du prompt.')
@@ -131,7 +143,7 @@ export default function ResourcesTab({request=defaultRequest,upload=defaultUploa
     {loading&&!rows.length?<p role="status" className="py-12 text-center text-gray-500">Chargement de ta bibliothèque…</p>:<>
       <div className="article-grid resource-grid">{visible.slice(0,limit).map(row=><article key={row.id} className="bg-white border rounded-2xl overflow-hidden flex flex-col">
         <button className="w-full text-left relative" onClick={()=>{setDetailId(row.id);setError('');setDownload(null)}} aria-label={`Ouvrir ${row.title}`}>
-          {row.image_path?<ResourceImage url={row.image_url} title={row.title} className="w-full h-72 sm:h-80 object-contain bg-stone-100 p-2"/>:<div className="h-72 sm:h-80 p-6 bg-gradient-to-br from-teal-50 to-slate-100 overflow-hidden"><span className="text-4xl leading-none text-teal-600" aria-hidden="true">“</span><p className="text-sm leading-relaxed text-slate-700 line-clamp-6 whitespace-pre-wrap">{row.content}</p></div>}
+          {row.image_path?<ResourceImage url={thumbOf(row)} title={row.title} className="w-full h-72 sm:h-80 object-contain bg-stone-100 p-2"/>:<div className="h-72 sm:h-80 p-6 bg-gradient-to-br from-teal-50 to-slate-100 overflow-hidden"><span className="text-4xl leading-none text-teal-600" aria-hidden="true">“</span><p className="text-sm leading-relaxed text-slate-700 line-clamp-6 whitespace-pre-wrap">{row.content}</p></div>}
           <span className="absolute top-3 left-3 bg-white/95 border rounded-full px-2.5 py-1 text-xs">{row.kind==='background'?'Fond':'Prompt'}</span>
           {row.image_path&&<span className="absolute bottom-3 right-3 bg-white/95 border rounded-full px-3 py-1 text-xs">Voir en grand ↗</span>}
         </button>

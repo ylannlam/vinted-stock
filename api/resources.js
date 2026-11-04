@@ -27,6 +27,8 @@ return async function handler(req,res) {
       const r=await db.storage.from(ASSET_BUCKET).createSignedUploadUrl(path);check(r.error)
       return res.json({path,token:r.data.token})
     }
+    // Kept in this function: the Vercel plan allows 12 functions and all 12 are used.
+    if(body.action==='thumbnails'&&req.method==='POST'){const {generateThumbnails}=await import('../server/resource-thumbnails.js');return res.json(await generateThumbnails(db,body.ids))}
     if(!isId(body.id))throw new AppError('Ressource invalide.')
     const existing=await db.from('creative_resources').select('*').eq('id',body.id).maybeSingle();check(existing.error)
     const current=existing.data

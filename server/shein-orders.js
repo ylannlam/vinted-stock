@@ -69,11 +69,18 @@ export async function readSheinOrders(db,query={}) {
     db.from('dotb_tracking_period').select('starts_at,time_zone').limit(1).single()
   ]);[orders,meta,runs,tracking].forEach(r=>check(r.error))
   const ids=orders.data.flatMap(o=>o.shein_order_items.map(i=>i.id))
-  const links=ids.length?await db.from('shein_order_links').select('line_id,item_id,origin,created_at').in('item_id',ids):{data:[]};check(links.error)
   const skus=[...new Set(orders.data.flatMap(o=>o.shein_order_items.map(i=>i.sku.toLowerCase())))].slice(0,200)
-  const lines=skus.length?await db.rpc('shein_sale_choices',{p_skus:skus}):{data:[]};check(lines.error)
-  const lineIds=(lines.data||[]).map(l=>l.id)
-  const finances=lineIds.length?await db.from('workspace_sales').select('id,currency,actual_cost,fees_amount,refund_amount,source,supplier_order_ref').in('id',lineIds):{data:[]};check(finances.error)
+  // Links and sale choices only depend on the orders: read them at the same time,
+  // and fetch the finances as soon as the sale choices are known.
+  const [links,{lines,finances}]=await Promise.all([
+    ids.length?db.from('shein_order_links').select('line_id,item_id,origin,created_at').in('item_id',ids):{data:[]},
+    (async()=>{
+      const lines=skus.length?await db.rpc('shein_sale_choices',{p_skus:skus}):{data:[]};check(lines.error)
+      const lineIds=(lines.data||[]).map(l=>l.id)
+      const finances=lineIds.length?await db.from('workspace_sales').select('id,currency,actual_cost,fees_amount,refund_amount,source,supplier_order_ref').in('id',lineIds):{data:[]};check(finances.error)
+      return {lines,finances}
+    })()
+  ]);check(links.error)
   return {orders:orders.data.map(({shein_order_items,...o})=>({...o,items:shein_order_items.map(item=>({...item,links:links.data.filter(l=>l.item_id===item.id)}))})),lines:(lines.data||[]).map(l=>{const f=finances.data.find(f=>f.id===l.id);return {...l,order_ref:f?.supplier_order_ref,currency:f?.currency,actual_cost:f?.actual_cost,selling_price:f?.source?.selling_price,fees_amount:f?.fees_amount,refund_amount:f?.refund_amount}}),count:orders.count,sync:meta.data,runs:runs.data,tracking:tracking.data}
 }
 export async function reviewSheinOrder(db,body,user) {

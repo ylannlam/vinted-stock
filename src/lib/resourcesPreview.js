@@ -7,6 +7,8 @@ const rows=[
 const images=new Map()
 export async function resourcesPreview(method='GET',body) {
   if(method==='GET')return {resources:structuredClone(rows),count:rows.length}
+  // The demo images are already light: report that no preview could be made.
+  if(body?.action==='thumbnails')return {thumbnails:[],failed:body.ids}
   const old=rows.find(r=>r.id===body.id)
   if(body.action==='download')return {url:old.image_url}
   if(old&&old.version!==body.version)throw Error('Cette ressource a changé. Actualise la bibliothèque.')
