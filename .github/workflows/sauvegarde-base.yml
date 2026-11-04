@@ -45,7 +45,7 @@ jobs:
             -x 'storage.buckets_vectors,storage.vector_indexes'
           supabase db dump --db-url "$SUPABASE_DB_URL" --schema supabase_migrations -f "$RUNNER_TEMP/dumps/migrations-schema.sql"
           supabase db dump --db-url "$SUPABASE_DB_URL" --schema supabase_migrations --data-only --use-copy -f "$RUNNER_TEMP/dumps/migrations-data.sql"
-          PGDATABASE="$SUPABASE_DB_URL" psql -X -qAt --no-password --set ON_ERROR_STOP=1 --file tools/sauvegarde/policies.sql > "$RUNNER_TEMP/dumps/policies.sql"
+          psql --dbname "$SUPABASE_DB_URL" -X -qAt --no-password --set ON_ERROR_STOP=1 --file tools/sauvegarde/policies.sql > "$RUNNER_TEMP/dumps/policies.sql"
       - name: Chiffrer et relire la copie
         id: encryption
         env:

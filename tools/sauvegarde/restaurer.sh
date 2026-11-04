@@ -23,11 +23,11 @@ if { [ -f "$src/migrations-schema.sql" ] && [ ! -f "$src/migrations-data.sql" ];
 fi
 tmp=$(mktemp -d); trap 'rm -rf -- "$tmp"' EXIT
 # SQL/COPY errors can contain private rows. Never print them in public CI logs.
-if ! count=$(psql -X -At --no-password --set ON_ERROR_STOP=1 --command "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind IN ('r','p') AND n.nspname IN ('public','app_private') AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.deptype='e');" 2>"$tmp/error.log"); then
+if ! count=$(psql --dbname "$PGDATABASE" -X -At --no-password --set ON_ERROR_STOP=1 --command "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind IN ('r','p') AND n.nspname IN ('public','app_private') AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.deptype='e');" 2>"$tmp/error.log"); then
   echo 'Connexion ou contrôle de la base cible impossible.' >&2; exit 1
 fi
 [ "$count" = 0 ] || { echo 'Restauration refusée : la base contient déjà des tables applicatives.' >&2; exit 1; }
-if ! psql -X --quiet --no-password --set ON_ERROR_STOP=1 >"$tmp/check.log" 2>"$tmp/error.log" <<'SQL'
+if ! psql --dbname "$PGDATABASE" -X --quiet --no-password --set ON_ERROR_STOP=1 >"$tmp/check.log" 2>"$tmp/error.log" <<'SQL'
 DO $$ DECLARE target text; occupied boolean; BEGIN
   FOREACH target IN ARRAY ARRAY['auth.users','storage.objects','storage.buckets'] LOOP
     IF to_regclass(target) IS NOT NULL THEN
@@ -45,7 +45,7 @@ if [ -f "$src/migrations-schema.sql" ] && [ -f "$src/migrations-data.sql" ]; the
   args+=(--file "$src/migrations-schema.sql" --file "$src/migrations-data.sql")
 fi
 if [ -f "$src/policies.sql" ]; then args+=(--file "$src/policies.sql"); fi
-if ! psql -X --quiet --no-password --single-transaction --set ON_ERROR_STOP=1 "${args[@]}" >"$tmp/restore.log" 2>"$tmp/error.log"; then
+if ! psql --dbname "$PGDATABASE" -X --quiet --no-password --single-transaction --set ON_ERROR_STOP=1 "${args[@]}" >"$tmp/restore.log" 2>"$tmp/error.log"; then
   echo 'Restauration échouée et annulée. Vérifier les versions, extensions et fichiers dans un environnement privé.' >&2; exit 1
 fi
 echo 'Restauration terminée en une transaction.'
