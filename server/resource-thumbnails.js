@@ -1,10 +1,26 @@
 import {AppError,isId} from './dotb.js'
 import {ASSET_BUCKET,MAX_ASSET_BYTES,THUMB_MAX,thumbPath,attachImages,ensureAssetBucket} from './resources.js'
 
+// Some PNG provenance manifests contain an embedded SVG. The native decoder
+// mistakes that metadata for the image itself. Remove only that ancillary chunk
+// from the temporary decoding buffer; the stored original is never rewritten.
+function pngDecodeBuffer(bytes) {
+  if(!bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])))return bytes
+  const parts=[bytes.subarray(0,8)];let offset=8,changed=false
+  while(offset+12<=bytes.length){
+    const end=offset+12+bytes.readUInt32BE(offset)
+    if(end>bytes.length)return bytes
+    if(bytes.toString('ascii',offset+4,offset+8)==='caBX')changed=true
+    else parts.push(bytes.subarray(offset,end))
+    offset=end
+  }
+  return changed&&offset===bytes.length?Buffer.concat(parts):bytes
+}
+
 // Loaded on demand so the native image library only starts when thumbnails are made.
 export async function makeThumbnail(bytes,max=THUMB_MAX) {
   const {createCanvas,loadImage}=await import('@napi-rs/canvas')
-  const image=await loadImage(Buffer.from(bytes))
+  const image=await loadImage(pngDecodeBuffer(Buffer.from(bytes)))
   if(!image.width||!image.height)throw new AppError('Image illisible.')
   const scale=Math.min(1,max/Math.max(image.width,image.height))
   const width=Math.max(1,Math.round(image.width*scale)),height=Math.max(1,Math.round(image.height*scale))

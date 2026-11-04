@@ -76,6 +76,18 @@ test('the Atelier API exposes thumbnail creation to administrators only, inside 
  out=res();await resourcesHandler(async(req,r)=>{r.status(401).json({error:'Connectez-vous'});return null})({method:'POST',body:{action:'thumbnails',ids:[a]},query:{},headers:{}},out)
  assert.equal(out.code,401);assert.equal(db.store.calls.some(c=>c[0]==='upload'),false)
 })
+test('PNG provenance with an embedded SVG does not break the preview or change the original',async()=>{
+ const {createCanvas,loadImage}=await import('@napi-rs/canvas')
+ const png=await createCanvas(80,60).encode('png')
+ const metadata=Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><text>Provenance test</text></svg>')
+ const chunk=Buffer.alloc(metadata.length+12);chunk.writeUInt32BE(metadata.length);chunk.write('caBX',4);metadata.copy(chunk,8)
+ let crc=0xffffffff
+ for(const byte of chunk.subarray(4,-4)){crc^=byte;for(let bit=0;bit<8;bit++)crc=crc&1?0xedb88320^(crc>>>1):crc>>>1}
+ chunk.writeUInt32BE((crc^0xffffffff)>>>0,chunk.length-4)
+ const source=Buffer.concat([png.subarray(0,33),chunk,png.subarray(33)]),original=Buffer.from(source)
+ const image=await loadImage(await makeThumbnail(source))
+ assert.deepEqual([image.width,image.height],[80,60]);assert.deepEqual(source,original)
+})
 test('preview links are reused for 50 minutes so the browser cache works, and each resource is asked once',()=>{
  resetThumbCache()
  const row={id:a,image_path:original,thumb_path:'thumbs/x.webp',thumb_url:'https://example.test/x?token=1'}
