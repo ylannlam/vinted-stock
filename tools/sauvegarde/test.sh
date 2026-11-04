@@ -30,6 +30,24 @@ if [ -n "${TEST_DATABASE_URL:-}" ]; then
   # This variable must point to a disposable database created by the CI service.
   export PGDATABASE="$TEST_DATABASE_URL"
   psql -X -q --set ON_ERROR_STOP=1 --command 'CREATE ROLE anon; CREATE ROLE authenticated;'
+  # Model a managed storage table and a policy calling an application function.
+  # Its exported expression must still resolve after pg_dump empties search_path.
+  psql -X -q --set ON_ERROR_STOP=1 <<'SQL'
+CREATE SCHEMA storage;
+CREATE TABLE storage.objects(id integer, bucket_id text);
+ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+CREATE FUNCTION public.backup_allowed(text) RETURNS boolean LANGUAGE sql AS 'SELECT $1 = ''fixture''';
+CREATE POLICY fixture_policy ON storage.objects FOR SELECT TO authenticated USING (public.backup_allowed(bucket_id));
+SQL
+  psql -X -qAt --set ON_ERROR_STOP=1 --file "$root/policies.sql" > "$tmp/source/policies.sql"
+  psql -X -q --set ON_ERROR_STOP=1 --command 'DROP FUNCTION public.backup_allowed(text) CASCADE;'
+  cat >> "$tmp/source/schema.sql" <<'SQL'
+CREATE FUNCTION public.backup_allowed(text) RETURNS boolean LANGUAGE sql AS 'SELECT $1 = ''fixture''';
+SET search_path = '';
+SQL
+  echo "INSERT INTO storage.objects VALUES (1, 'fixture');" >> "$tmp/source/data.sql"
+  echo 'CREATE SCHEMA supabase_migrations; CREATE TABLE supabase_migrations.schema_migrations(version text);' > "$tmp/source/migrations-schema.sql"
+  echo "INSERT INTO supabase_migrations.schema_migrations VALUES ('test-only');" > "$tmp/source/migrations-data.sql"
   # A failure halfway through must roll back the preceding CREATE and INSERT.
   cp "$tmp/source/data.sql" "$tmp/data-good.sql"
   echo 'INSERT INTO table_that_does_not_exist VALUES (1);' >> "$tmp/source/data.sql"
@@ -39,9 +57,11 @@ if [ -n "${TEST_DATABASE_URL:-}" ]; then
   bash "$root/restaurer.sh" "$tmp/source" "$TEST_DATABASE_URL"
   [ "$(psql -X -At --command 'SELECT count(*) FROM public.backup_fixture;')" = 1 ]
   [ "$(psql -X -At --command "SELECT has_table_privilege('anon','public.backup_fixture','SELECT');")" = f ]
+  [ "$(psql -X -At --command 'SELECT count(*) FROM supabase_migrations.schema_migrations;')" = 1 ]
+  [ "$(psql -X -At --command "SELECT count(*) FROM pg_policies WHERE schemaname='storage' AND policyname='fixture_policy';")" = 1 ]
   reject bash "$root/restaurer.sh" "$tmp/source" "$TEST_DATABASE_URL"
   [ "$(psql -X -At --command 'SELECT count(*) FROM public.backup_fixture;')" = 1 ]
-  echo 'PASS: PostgreSQL restore, transaction rollback, restricted grants and refusal of nonempty targets.'
+  echo 'PASS: PostgreSQL restore, rollback, grants, migrations, managed-schema policies and refusal of nonempty targets.'
 else
   echo 'SKIP: PostgreSQL restore tests require TEST_DATABASE_URL (provided in CI).'
 fi
