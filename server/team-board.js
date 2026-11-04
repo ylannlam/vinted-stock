@@ -35,7 +35,7 @@ export async function readTeamBoard(db,user,{now=new Date()}={}) {
     readBoardRows(()=>db.from('publication_profile_links').select('owner_id,profile_id,account_id',{count:'exact'}).order('owner_id').order('profile_id')),
     readBoardRows(()=>db.from('adspower_preferences').select('owner_id,profiles',{count:'exact'}).order('owner_id')),
     readBoardRows(()=>db.from('creative_accounts').select('id,enabled,background_id,prompt_front,prompt_back',{count:'exact'}).order('id')),
-    readBoardRows(()=>db.from('vinted_accounts').select('id,pseudo,statut,creation_stage,creation_next_at,is_ready,is_shadowbanned,deleted_at,blocked_at,ready_at,password_changed_at,ads_power_num',{count:'exact'}).order('id')),
+    readBoardRows(()=>db.from('vinted_accounts').select('id,pseudo,statut,creation_stage,creation_next_at,is_ready,is_shadowbanned,deleted_at,blocked_at,deban_at,ready_at,password_changed_at,ads_power_num',{count:'exact'}).order('id')),
     readBoardRows(()=>db.from('profiles').select('id,pseudo',{count:'exact'}).order('id')),
     db.rpc('team_board_counts',{p_day:day}),
     readBoardRows(()=>db.from('listing_drafts').select('id,version,fields,updated_at',{count:'exact'}).eq('owner_id',user.id).eq('state','draft').is('dotb_item_id',null).order('updated_at',{ascending:false}).order('id')),

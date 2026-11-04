@@ -12,6 +12,7 @@ return async function handler(req,res) {
   try {
     const auth=await authorizer(req,res,['admin']);if(!auth)return
     const {db,user}=auth
+    if(req.query?.scope==='health'){const {handleAccountHealth}=await import('../server/account-health.js');return res.json(await handleAccountHealth(req,auth))}
     if(req.query?.scope==='listings')return res.json(await handleListingStudio(req,auth))
     if(req.method==='GET') {
       const offset=Number(req.query?.offset||0)

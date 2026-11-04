@@ -1,4 +1,8 @@
 import {useEffect,useRef,useState} from 'react'
+import {useAccountHealth} from '../lib/useAccountHealth'
+import {healthView} from '../lib/accountHealth'
+import {publicationAccount} from '../lib/publications'
+import {HealthSummary,HealthDialog} from './AccountHealth'
 import {adsPowerRequest,COMPANION,isLaunching} from '../lib/adspower'
 import {activityView,freshCheck} from '../lib/adspowerStatus'
 import {usePublicationTracking,publicationRequest} from '../lib/usePublicationTracking'
@@ -10,13 +14,17 @@ import {useAdsPowerSelection} from '../lib/useAdsPowerSelection'
 
 const secondary='rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40'
 const primary='rounded-xl bg-teal-700 px-5 py-3 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-40'
-export default function AdsPowerTab({request=adsPowerRequest,owner='preview',publications=publicationRequest,onCreateListing}){
+export default function AdsPowerTab({request=adsPowerRequest,owner='preview',publications=publicationRequest,onCreateListing,healthRequest}){
+  const health=useAccountHealth(healthRequest),[healthEntry,setHealthEntry]=useState(null)
   const storageKey=`adspower-selection:${owner}`
   const [profiles,setProfiles]=useState([]),[state,setState]=useState(null),[connected,setConnected]=useState(false)
   const [chooseVisible,setChooseVisible]=useState(false),[profilesLoaded,setProfilesLoaded]=useState(false)
   const selection=useAdsPowerSelection(owner,profiles,profilesLoaded,publications)
   const displayed=selection.displayed,shownIds=displayed.map(p=>p.id)
   const tracking=usePublicationTracking(displayed,publications)
+  const healthAccount=p=>publicationAccount(p,health.data?.accounts||[],tracking.data?.links||[])
+  const healthIds=displayed.map(p=>healthAccount(p)?.id).filter(Boolean)
+  const blockedIds=new Set(displayed.filter(p=>{const a=healthAccount(p);return a&&healthView(a,health.now).attention}).map(p=>p.id))
   const [publicationProfile,setPublicationProfile]=useState(null)
   const [selected,setSelected]=useState(()=>{try{const ids=JSON.parse(localStorage.getItem(storageKey)||'[]');return Array.isArray(ids)?ids.filter(id=>typeof id==='string').slice(0,100):[]}catch{return []}})
   const [search,setSearch]=useState(''),[group,setGroup]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[readError,setReadError]=useState('')
@@ -62,9 +70,11 @@ export default function AdsPowerTab({request=adsPowerRequest,owner='preview',pub
     await launch(ids)
   }
   async function launch(ids=selected){
-    ids=visibleLaunchIds(profiles,shownIds,ids)
+    const excluded=ids.filter(id=>blockedIds.has(id))
+    ids=visibleLaunchIds(profiles,shownIds,ids).filter(id=>!blockedIds.has(id))
+    if(excluded.length)setError(`${excluded.length} compte(s) en alerte écarté(s) du lancement. Vérifie leur accès dans Vinted.`)
     if(busy||!ids.length)return
-    setBusy(true);setError('');setNotice('')
+    setBusy(true);if(!excluded.length)setError('');setNotice('')
     const fingerprint=JSON.stringify([...ids].sort())
     if(submission.current?.fingerprint!==fingerprint)submission.current={fingerprint,requestId:crypto.randomUUID()}
     try{
@@ -78,6 +88,8 @@ export default function AdsPowerTab({request=adsPowerRequest,owner='preview',pub
     <header className="flex flex-wrap items-center justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-widest text-teal-700">Tes comptes, au même endroit</p><h1 className="mt-1 text-3xl font-bold tracking-tight">AdsPower</h1><p className="mt-2 text-sm text-slate-500">Ouvre Vinted et démarre les messages Dotb sur les profils de ton choix.</p></div><div className="flex items-center gap-2"><span className={`rounded-full px-3 py-2 text-xs font-semibold ${connected?'bg-teal-50 text-teal-800':'bg-slate-100 text-slate-500'}`}>{loading?'Connexion…':connected?'● Ce PC est connecté':'○ Connecteur fermé'}</span><button disabled={loading||busy} className={secondary} onClick={()=>{setLoading(true);refresh(true);selection.refresh()}}>Actualiser</button></div></header>
     {(error||readError||selection.error)&&<p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{error||readError||selection.error}</p>}
     {notice&&<p role="status" className="text-sm text-teal-800">{notice}</p>}
+    <HealthSummary tracker={health} ids={healthIds} onEdit={setHealthEntry} showList/>
+    {healthEntry&&<HealthDialog key={healthEntry.id} entry={healthEntry} tracker={health} onClose={()=>setHealthEntry(null)}/>}
     <PublicationSummary tracking={tracking} profiles={displayed}/>
     {chooseVisible&&<AdsPowerVisibility profiles={profiles} value={shownIds} busy={selection.saving} error={selection.error} onSave={saveVisibility} onClose={()=>setChooseVisible(false)}/>}
     {(!connected||!state?.configured)&&<PublicationOfflineList profiles={displayed} tracking={tracking} onOpen={setPublicationProfile}/>}
@@ -89,7 +101,7 @@ export default function AdsPowerTab({request=adsPowerRequest,owner='preview',pub
       {!!jobs.length&&<section aria-label="Progression du lancement" className="rounded-2xl border bg-white p-5"><div className="flex flex-wrap justify-between gap-3 text-sm"><p><strong>{running?`${running} démarrage${running>1?'s':''} en cours`:'Suivi des profils'}</strong><span className="text-slate-400 ml-3">{done} actif{done>1?'s':''} · {stopped} arrêté{stopped>1?'s':''} · {attention} à vérifier</span></p><div className="flex gap-3">{retryIds.length>0&&<button className="text-amber-800 underline" disabled={busy} onClick={()=>launch(retryIds)}>Réessayer les erreurs</button>}{jobs.some(j=>j.state==='queued')&&<button className="text-slate-500 underline" disabled={busy} onClick={cancel}>Annuler l’attente</button>}</div></div><progress className="mt-4 w-full h-2 accent-teal-600" max="100" value={percent} aria-label="Profils traités"/><p className="text-xs text-slate-400 mt-2">{complete} / {jobs.length} profils traités. L’état des profils et de Dotb est vérifié automatiquement pendant que cet onglet est ouvert.</p></section>}
       <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-slate-500">{displayed.length} / {profiles.length} comptes affichés</p><button className={secondary} onClick={()=>setChooseVisible(true)}>Mes comptes</button></div>
       <section className="rounded-2xl border bg-white overflow-hidden"><div className="p-4 flex flex-wrap items-center gap-3 border-b"><input aria-label="Rechercher un profil" className="min-w-0 flex-1 rounded-xl border px-4 py-2.5 text-sm" placeholder="Rechercher un numéro, un profil…" value={search} onChange={e=>setSearch(e.target.value)}/><select aria-label="Groupe AdsPower" className="max-w-full rounded-xl border px-3 py-2.5 text-sm" value={group} onChange={e=>setGroup(e.target.value)}><option value="">Tous les groupes</option>{groups.map(g=><option key={g}>{g}</option>)}</select><button className="text-xs font-semibold text-teal-700" onClick={()=>{setSelected(visible.slice(0,100).map(p=>p.id));submission.current=null}}>Sélectionner la liste</button><button className="text-xs text-slate-500" onClick={()=>{setSelected([]);submission.current=null}}>Effacer</button></div>
-        <div className="divide-y">{visible.map(p=>{const job=latest.get(p.id),view=viewFor(p.id),chosen=selected.includes(p.id);return <div key={p.id} className={`px-4 py-4 sm:px-5 flex flex-wrap items-center gap-4 ${chosen?'bg-teal-50/40':''}`}><label className="flex flex-1 min-w-0 items-center gap-4 cursor-pointer"><input type="checkbox" aria-label={`Sélectionner le profil ${p.number} ${p.name}`} className="h-4 w-4 accent-teal-700 shrink-0" checked={chosen} onChange={()=>toggle(p.id)}/><span className="flex h-11 min-w-11 items-center justify-center rounded-xl border bg-white text-sm font-bold text-teal-800 px-2">#{p.number}</span><span className="min-w-0"><span className="block font-semibold truncate">{p.name}</span><span className="block text-xs text-slate-400 mt-1">{p.group}{opened?.has(p.id)?' · Navigateur ouvert':''}</span></span></label><PublicationBadge profile={p} tracking={tracking} onOpen={setPublicationProfile}/>{onCreateListing&&<button className={secondary} onClick={()=>onCreateListing(p)}>Créer une annonce</button>}<div className="w-full sm:w-auto sm:max-w-sm pl-8 sm:pl-0 sm:text-right"><span className={`inline-block rounded-full px-3 py-1.5 text-xs font-semibold ${view.state==='running'?'text-teal-800 bg-teal-100':['attention','partial','unknown'].includes(view.state)?'text-amber-800 bg-amber-100':isLaunching(job)?'text-blue-700 bg-blue-50':'text-slate-500 bg-slate-100'}`}>{view.label}</span>{view.message&&<p className="text-xs text-slate-500 mt-2">{view.message}</p>}{view.checked_at&&<p className="text-[11px] text-slate-400 mt-1">Vérifié à {new Date(view.checked_at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</p>}</div></div>})}{!visible.length&&<p className="p-8 text-sm text-center text-slate-500">{profiles.length?(displayed.length?'Aucun profil ne correspond à ta recherche.':'Aucun compte affiché. Clique sur « Mes comptes » pour choisir ta liste.'):'Aucun profil disponible avec cette connexion AdsPower.'}</p>}</div>
+        <div className="divide-y">{visible.map(p=>{const job=latest.get(p.id),view=viewFor(p.id),chosen=selected.includes(p.id);return <div key={p.id} className={`px-4 py-4 sm:px-5 flex flex-wrap items-center gap-4 ${chosen?'bg-teal-50/40':''}`}><label className="flex flex-1 min-w-0 items-center gap-4 cursor-pointer"><input type="checkbox" aria-label={`Sélectionner le profil ${p.number} ${p.name}`} className="h-4 w-4 accent-teal-700 shrink-0" checked={chosen} onChange={()=>toggle(p.id)}/><span className="flex h-11 min-w-11 items-center justify-center rounded-xl border bg-white text-sm font-bold text-teal-800 px-2">#{p.number}</span><span className="min-w-0"><span className="block font-semibold truncate">{p.name}</span><span className="block text-xs text-slate-400 mt-1">{p.group}{opened?.has(p.id)?' · Navigateur ouvert':''}</span></span></label><PublicationBadge profile={p} tracking={tracking} onOpen={setPublicationProfile}/>{onCreateListing&&<button className={secondary} disabled={blockedIds.has(p.id)} onClick={()=>onCreateListing(p)}>Créer une annonce</button>}<div className="w-full sm:w-auto sm:max-w-sm pl-8 sm:pl-0 sm:text-right"><span className={`inline-block rounded-full px-3 py-1.5 text-xs font-semibold ${view.state==='running'?'text-teal-800 bg-teal-100':['attention','partial','unknown'].includes(view.state)?'text-amber-800 bg-amber-100':isLaunching(job)?'text-blue-700 bg-blue-50':'text-slate-500 bg-slate-100'}`}>{view.label}</span>{view.message&&<p className="text-xs text-slate-500 mt-2">{view.message}</p>}{view.checked_at&&<p className="text-[11px] text-slate-400 mt-1">Vérifié à {new Date(view.checked_at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</p>}</div></div>})}{!visible.length&&<p className="p-8 text-sm text-center text-slate-500">{profiles.length?(displayed.length?'Aucun profil ne correspond à ta recherche.':'Aucun compte affiché. Clique sur « Mes comptes » pour choisir ta liste.'):'Aucun profil disponible avec cette connexion AdsPower.'}</p>}</div>
       </section>
       <footer className="flex flex-wrap justify-between gap-2 text-xs text-slate-400"><span>{displayed.length} profils affichés · Sélection commune à AdsPower et à la création d’annonces · 100 profils maximum par lancement</span><a href={`${COMPANION}/setup`} target="_blank" rel="noreferrer" className="underline">Réglages de la connexion</a></footer>
     </>}

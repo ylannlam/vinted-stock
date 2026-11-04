@@ -7,6 +7,7 @@ import {accountGroup,nextAccountAction} from './accountOverview.js'
 // blocked : bloqué, banni, suspendu ou archivé (shadowban) : ne pas publier
 export function boardSection(row,now=Date.now()) {
   const v=row.vinted
+  if(row.health?.attention)return 'blocked'
   if(!v)return 'feed'
   if(v.deleted_at)return 'blocked'
   const group=accountGroup(v)
@@ -34,7 +35,7 @@ export function groupBoard(rows,{now=Date.now(),search=''}={}) {
   return BOARD_SECTIONS.map(s=>({...s,rows:sections[s.key]}))
 }
 // Libellé pensé pour publier : « Prêt à publier » plutôt que l'étape de préparation du compte.
-export const stateLabel=row=>!row.vinted?'À relier dans « Comptes »':row.vinted.deleted_at?'Archivé · ne plus utiliser':accountGroup(row.vinted)==='ready'?'Prêt à publier':accountGroup(row.vinted)==='isolation'&&['post1','post2'].includes(row.vinted.creation_stage)&&row.today?'Annonce du jour notée':nextAccountAction(row.vinted)
+export const stateLabel=row=>row.health?.attention?row.health.label:!row.vinted?'À relier dans « Comptes »':row.vinted.deleted_at?'Archivé · ne plus utiliser':accountGroup(row.vinted)==='ready'?'Prêt à publier':accountGroup(row.vinted)==='isolation'&&['post1','post2'].includes(row.vinted.creation_stage)&&row.today?'Annonce du jour notée':nextAccountAction(row.vinted)
 export function sinceLabel(value,now=Date.now()) {
   const t=time(value)
   if(t==null)return 'Jamais'

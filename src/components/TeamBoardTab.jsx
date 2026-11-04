@@ -1,4 +1,7 @@
 import {useEffect,useRef,useState} from 'react'
+import {useAccountHealth} from '../lib/useAccountHealth'
+import {healthView} from '../lib/accountHealth'
+import {HealthBadge,HealthDialog,HealthSummary} from './AccountHealth'
 import {groupBoard,stateLabel,sinceLabel} from '../lib/teamBoard'
 import {ErrorNotice,buttonClass,primaryClass,fieldClass} from './WorkspaceUI'
 
@@ -15,12 +18,13 @@ function PublishedLink({draft,busy,onSave}) {
   </form>
 }
 
-function AccountCard({row,section,busy,onCreate,onStyles,onProfiles,onPublished}) {
+function AccountCard({row,section,busy,onCreate,onStyles,onProfiles,onPublished,onHealth,healthNow}) {
   return <article className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0"><h3 className="font-semibold break-all">{row.login}</h3><p className="text-xs text-slate-500 mt-1">{row.profile?.number?`Profil AdsPower n°${row.profile.number}`:row.profile?'Profil AdsPower relié':'Aucun profil AdsPower relié'}{row.profile?.name&&row.profile.name!==row.login?` · ${row.profile.name}`:''}</p></div>
       <span className={`rounded-full border px-3 py-1 text-xs font-medium ${tones[section]}`}>{stateLabel(row)}</span>
     </div>
+    <HealthBadge entry={row.healthEntry?{...row.healthEntry,native:row.vinted||row.healthEntry.native}:{native:row.vinted}} now={healthNow} onEdit={row.healthEntry?()=>onHealth(row):undefined}/>
     <dl className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
       {[["Aujourd’hui",row.today],['7 jours',row.week],['Dernière',row.last_at?sinceLabel(row.last_at):'Non renseignée'],['Fiches en cours',row.drafts]].map(([label,value])=><div key={label} className="rounded-xl bg-slate-50 p-3"><dt className="text-xs text-slate-500">{label}</dt><dd className="font-semibold mt-1">{value}</dd></div>)}
     </dl>
@@ -33,7 +37,8 @@ function AccountCard({row,section,busy,onCreate,onStyles,onProfiles,onPublished}
   </article>
 }
 
-export default function TeamBoardTab({request=defaultRequest,onCreateListing,onStyles,onAccounts,onProfiles}) {
+export default function TeamBoardTab({request=defaultRequest,onCreateListing,onStyles,onAccounts,onProfiles,healthRequest}) {
+  const health=useAccountHealth(healthRequest),[healthEntry,setHealthEntry]=useState(null)
   const [data,setData]=useState(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false),[search,setSearch]=useState(''),[allAccounts,setAllAccounts]=useState(false)
   const alive=useRef(true),revision=useRef(0),saving=useRef(false)
   async function load(){const ticket=++revision.current;setBusy(true);try{const next=await request('GET',undefined,'action=board');if(alive.current&&ticket===revision.current){setData(next);setError('')}}catch(e){if(alive.current&&ticket===revision.current)setError(e.message)}finally{if(alive.current&&ticket===revision.current)setBusy(false)}}
@@ -44,9 +49,11 @@ export default function TeamBoardTab({request=defaultRequest,onCreateListing,onS
     try{await request('POST',{action:'mark_published',id:draft.id,version:draft.version,url});if(alive.current)setNotice(`« ${draft.title} » est notée comme publiée.`);if(alive.current)await load()}
     catch(e){if(alive.current){setError(e.message);setBusy(false)}}finally{saving.current=false}
   }
-  const allRows=data?.accounts||[],selectedRows=allRows.filter(r=>r.can_create),showAll=allAccounts||!selectedRows.length,rows=showAll?allRows:selectedRows,sections=groupBoard(rows,{search}),today=rows.reduce((n,r)=>n+r.today,0)
+  const allRows=(data?.accounts||[]).map(row=>{const entry=health.data?.accounts?.find(a=>a.id===row.account_id);return entry?{...row,healthEntry:entry,health:healthView({...entry,native:row.vinted||entry.native},health.now)}:row}),selectedRows=allRows.filter(r=>r.can_create),showAll=allAccounts||!selectedRows.length,rows=showAll?allRows:selectedRows,sections=groupBoard(rows,{search}),today=rows.reduce((n,r)=>n+r.today,0)
   return <main className="workspace-page max-w-screen-2xl mx-auto p-4 sm:p-6 space-y-5 text-slate-800">
     <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-widest text-teal-700">Poste de travail d’Alicia</p><h1 className="text-2xl font-bold mt-1">Comptes à alimenter</h1><p className="text-sm text-slate-500 mt-1">Commence par le haut. Rien n’est publié automatiquement : publie à la main sur Vinted, puis colle le lien ici.</p><p className="text-xs text-slate-500 mt-2">Les compteurs regroupent les publications déjà relevées et les liens ajoutés ici. Les comptes sans historique restent à vérifier.</p></div><button className={buttonClass} disabled={busy} onClick={load}>Actualiser</button></header>
+    <HealthSummary tracker={health} ids={rows.map(r=>r.account_id)} onEdit={setHealthEntry}/>
+    {healthEntry&&<HealthDialog key={healthEntry.id} entry={healthEntry} tracker={health} onClose={()=>setHealthEntry(null)}/>}
     <ErrorNotice error={error} retry={load} busy={busy}/>
     {notice&&<p role="status" className="rounded-xl bg-teal-50 p-3 text-sm text-teal-900">{notice}</p>}
     {data&&<nav aria-label="Comptes affichés" className="flex flex-wrap gap-2"><button className={showAll?buttonClass:primaryClass} aria-pressed={!showAll} disabled={!selectedRows.length} onClick={()=>setAllAccounts(false)}>Mes comptes choisis · {selectedRows.length}</button><button className={showAll?primaryClass:buttonClass} aria-pressed={showAll} onClick={()=>setAllAccounts(true)}>Tous les comptes · {allRows.length}</button></nav>}
@@ -56,9 +63,9 @@ export default function TeamBoardTab({request=defaultRequest,onCreateListing,onS
     {data&&!rows.length&&<p className="rounded-xl border bg-white p-6 text-sm text-slate-600">Aucun compte relié pour l’instant. Les comptes apparaissent ici une fois connectés dans l’onglet AdsPower.</p>}
     {data&&!!rows.length&&!sections.some(s=>s.rows.length)&&<p role="status" className="py-8 text-center text-slate-500">Aucun compte ne correspond à cette recherche.</p>}
     {sections.map(section=>section.rows.length?<section key={section.key} aria-label={section.title} className="space-y-3">
-      {section.key==='blocked'?<details><summary className="cursor-pointer font-semibold">{section.title} <span className="font-normal text-slate-400">· {section.rows.length}</span></summary><p className="text-sm text-slate-500 mt-1 mb-3">{section.hint} <button className="underline" onClick={onAccounts}>Voir dans « Comptes »</button></p><div className="grid gap-3 lg:grid-cols-2">{section.rows.map(row=><AccountCard key={row.account_id} row={row} section={section.key} busy={busy} onCreate={onCreateListing} onStyles={onStyles} onProfiles={onProfiles} onPublished={published}/>)}</div></details>:<>
+      {section.key==='blocked'?<details open={section.rows.some(r=>r.health?.attention)}><summary className="cursor-pointer font-semibold">{section.title} <span className="font-normal text-slate-400">· {section.rows.length}</span></summary><p className="text-sm text-slate-500 mt-1 mb-3">{section.hint} <button className="underline" onClick={onAccounts}>Voir dans « Comptes »</button></p><div className="grid gap-3 lg:grid-cols-2">{section.rows.map(row=><AccountCard key={row.account_id} row={row} section={section.key} busy={busy} onCreate={onCreateListing} onStyles={onStyles} onProfiles={onProfiles} onPublished={published} healthNow={health.now} onHealth={r=>{const entry=r.healthEntry;if(entry)setHealthEntry({...entry,native:r.vinted||entry.native})}}/>)}</div></details>:<>
         <div><h2 className="font-semibold text-lg">{section.title} <span className="font-normal text-slate-400">· {section.rows.length}</span></h2><p className="text-sm text-slate-500">{section.hint}</p></div>
-        <div className="grid gap-3 lg:grid-cols-2">{section.rows.map(row=><AccountCard key={row.account_id} row={row} section={section.key} busy={busy} onCreate={onCreateListing} onStyles={onStyles} onProfiles={onProfiles} onPublished={published}/>)}</div>
+        <div className="grid gap-3 lg:grid-cols-2">{section.rows.map(row=><AccountCard key={row.account_id} row={row} section={section.key} busy={busy} onCreate={onCreateListing} onStyles={onStyles} onProfiles={onProfiles} onPublished={published} healthNow={health.now} onHealth={r=>{const entry=r.healthEntry;if(entry)setHealthEntry({...entry,native:r.vinted||entry.native})}}/>)}</div>
       </>}
     </section>:null)}
   </main>

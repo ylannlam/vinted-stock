@@ -1,0 +1,40 @@
+name: Tests du suivi des blocages
+on:
+  push:
+    paths:
+      - 'server/account-health*'
+      - 'src/lib/accountHealth*'
+      - 'src/lib/useAccountHealth*'
+      - 'src/components/AccountHealth.jsx'
+      - 'supabase/migrations/*account_health.sql'
+      - 'tests/account-health.integration.sql'
+      - '.github/workflows/test-account-health.yml'
+permissions:
+  contents: read
+jobs:
+  account-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: test-only
+          POSTGRES_DB: account_health_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Vérifier les droits et les statuts dans PostgreSQL
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:test-only@127.0.0.1:5432/account_health_test
+        run: >-
+          psql --dbname "$TEST_DATABASE_URL" -X --set ON_ERROR_STOP=1
+          --file tests/team-board.fixture.sql
+          --file supabase/migrations/20261103112015_publication_history.sql
+          --file supabase/migrations/20261104172025_account_health.sql
+          --file tests/account-health.integration.sql
