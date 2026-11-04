@@ -6,6 +6,10 @@ import {validateListingPhoto} from '../src/lib/listingStudio.js'
 import {check,listingFields,verifiedPhotos,dotbListingRequest,listingMetadata,listingAccounts,listingPayload,validateRemoteItem,scheduleResult,generateListingText,listingAiToken} from './listing-studio-core.js'
 
 const TABLE='listing_drafts',now=()=>new Date().toISOString()
+export const manualPublishingMessage='L’envoi par Dotb est temporairement désactivé. Recharge l’atelier et utilise la publication manuelle après la fin du blocage Vinted.'
+export const manualRestoredMessage='L’envoi par Dotb est coupé et rien n’avait été transmis : la fiche est revenue en brouillon. Tu peux télécharger le dossier d’annonce.'
+export const manualSentMessage='L’envoi par Dotb est coupé, mais cette fiche a peut-être déjà été transmise à Dotb. Vérifie-la dans Dotb avant de la publier à la main, pour éviter un doublon.'
+export const dotbPublishingEnabled=(env=process.env)=>env.LISTING_DOTB_PUBLISH_ENABLED==='true'
 const pending=row=>row.lease&&Date.parse(row.lease_until)>Date.now()
 export async function updateListing(db,row,patch){
  const value=check(await db.from(TABLE).update({...patch,version:row.version+1,updated_at:now()}).eq('id',row.id).eq('owner_id',row.owner_id).eq('version',row.version).select().maybeSingle())
@@ -15,7 +19,7 @@ export async function updateListing(db,row,patch){
 async function expose(db,row){
  const paths=row.photos.map(p=>p.path),signed=paths.length?check(await db.storage.from(ASSET_BUCKET).createSignedUrls(paths,3600)):[]
  const urls=new Map(signed.map(x=>[x.path,x.signedUrl]))
- return {id:row.id,version:row.version,state:row.state,fields:row.fields,photos:row.photos.map(p=>({...p,url:urls.get(p.path)||null})),uploaded:row.uploaded,dotb_item_id:row.dotb_item_id,message:row.message,last_error:row.last_error,created_at:row.created_at,updated_at:row.updated_at,ai_updated_at:row.ai_updated_at,published_at:row.published_at,checked_at:row.checked_at,busy:!!pending(row),url:row.state==='published'&&/^\d{1,18}$/.test(row.vinted_id||'')?`https://www.vinted.fr/items/${row.vinted_id}`:null}
+ return {id:row.id,version:row.version,state:row.state,fields:row.fields,photos:row.photos.map(p=>({...p,url:urls.get(p.path)||null})),uploaded:row.uploaded,dotb_item_id:row.dotb_item_id,message:row.message,last_error:row.last_error,created_at:row.created_at,updated_at:row.updated_at,ai_updated_at:row.ai_updated_at,published_at:row.published_at,checked_at:row.checked_at,busy:!!pending(row),manual_recoverable:row.state==='preparing'&&!row.dotb_item_id&&!row.inflight,url:row.state==='published'&&/^\d{1,18}$/.test(row.vinted_id||'')?`https://www.vinted.fr/items/${row.vinted_id}`:null}
 }
 async function findSchedule(read,row){
  let cursor=''
@@ -34,8 +38,14 @@ async function inspectPublish(db,row,read){
  const patch=job&&scheduleResult(job,row)
  return updateListing(db,row,{...(patch||{...(row.state==='preparing'?{state:'attention'}:{}),message:'La publication n’est pas encore confirmée. Vérifie le suivi Dotb ; aucun nouvel envoi n’a été créé.'}),checked_at:now(),lease:null,lease_until:null,inflight:null,last_error:null})
 }
-export async function listingStep(db,row,{read=dotbListingRequest}={}){
+export async function listingStep(db,row,{read=dotbListingRequest,allowDotb=dotbPublishingEnabled()}={}){
  if(row.state!=='preparing'||pending(row))return row
+ if(!allowDotb){
+  // Nothing was ever sent: no Dotb item and no request whose outcome is unknown.
+  // Such a listing safely returns to an editable draft, ready for the manual export.
+  if(!row.dotb_item_id&&!row.inflight)return updateListing(db,row,{state:'draft',payload:null,lease:null,lease_until:null,last_error:null,message:manualRestoredMessage})
+  return row.last_error===manualSentMessage?row:updateListing(db,row,{last_error:manualSentMessage,message:manualSentMessage})
+ }
  // Claim the version before inspecting or sending anything. Every path releases it,
  // except abrupt termination, whose inflight marker is reconciled on the next call.
  let current=await updateListing(db,row,{lease:randomUUID(),lease_until:new Date(Date.now()+90000).toISOString(),last_error:null})
@@ -90,7 +100,7 @@ export async function listingStep(db,row,{read=dotbListingRequest}={}){
   return updateListing(db,current,patch)
  }
 }
-export async function handleListingStudio(req,{db,user},{read=dotbListingRequest,generate=generateListingText}={}){
+export async function handleListingStudio(req,{db,user},{read=dotbListingRequest,generate=generateListingText,allowDotb=dotbPublishingEnabled()}={}){
  const action=req.query?.action||req.body?.action||'list',body=req.body||{}
  if(req.method==='GET'){
   if(action==='accounts'){
@@ -101,7 +111,7 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
    const [accounts,catalogs,colors]=await Promise.all([read('accounts'),listingMetadata('catalogs?country=FR&depth=6',read),listingMetadata('colors?country=FR',read)])
    if(!Array.isArray(catalogs.data)||!Array.isArray(colors.data))throw new AppError('Les catégories Vinted sont indisponibles.',502)
    const selected=await selectedListingAccounts(db,user.id,listingAccounts(accounts))
-   return {accounts:selected.accounts,selected_profiles:selected.selection?.profiles||[],selection_configured:!!selected.selection,catalogs:catalogs.data,colors:colors.data,ai_ready:!!listingAiToken(req)}
+   return {accounts:selected.accounts,selected_profiles:selected.selection?.profiles||[],selection_configured:!!selected.selection,catalogs:catalogs.data,colors:colors.data,ai_ready:!!listingAiToken(req),dotb_publish_enabled:allowDotb}
   }
   if(action==='options'){
    const id=Number(req.query.catalog_id);if(!Number.isSafeInteger(id)||id<1)throw new AppError('Catégorie invalide.')
@@ -140,12 +150,13 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
   return {draft:await expose(db,row)}
  }
  if(!row)throw new AppError('Brouillon introuvable.',404)
- if(action==='step')return {draft:await expose(db,await listingStep(db,row,{read}))}
+ if(action==='step')return {draft:await expose(db,await listingStep(db,row,{read,allowDotb}))}
  if(action==='refresh'){
   if(!row.dotb_item_id||pending(row)||row.checked_at&&Date.parse(row.checked_at)>Date.now()-10000)return {draft:await expose(db,row)}
   if(['scheduled','attention'].includes(row.state))row=await inspectPublish(db,row,read)
   return {draft:await expose(db,row)}
  }
+ if(action==='publish'&&!allowDotb)throw new AppError(manualPublishingMessage,409)
  if(action==='publish'&&row.state!=='draft')return {draft:await expose(db,row)}
  if(body.version!==row.version||pending(row))throw new AppError('Cette fiche est en cours de traitement ou a changé. Rouvre le brouillon.',409)
  if(row.state!=='draft')throw new AppError('Cette annonce a déjà été transmise. Consulte son suivi.',409)

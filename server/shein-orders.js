@@ -43,7 +43,11 @@ export function validateSheinOrder(body,now=Date.now()) {
   const validMoney=n=>typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=100000&&Math.abs(n*100-Math.round(n*100))<1e-7
   const p=body.payment
   // A displayed total on an unpaid/unclear order is not evidence of payment.
-  const payment=p?.source==='order_summary'&&p.currency==='EUR'&&validMoney(p.paid_total)&&items.every(i=>['processing','shipped','delivered'].includes(i.status))?{paid_total:p.paid_total,shipping:validMoney(p.shipping)?p.shipping:null,currency:'EUR',source:'order_summary',observed_at:new Date(at).toISOString()}:null
+  // With cancelled/refunded items, the shown total may or may not include the refund:
+  // keep it visible for review, never as a Budget expense.
+  const paid=['processing','shipped','delivered'],readable=p?.source==='order_summary'&&p.currency==='EUR'&&validMoney(p.paid_total)
+  const source=!readable?null:items.every(i=>paid.includes(i.status))?'order_summary':items.every(i=>[...paid,'exception'].includes(i.status))?'order_summary_review':null
+  const payment=source?{paid_total:p.paid_total,shipping:validMoney(p.shipping)?p.shipping:null,currency:'EUR',source,observed_at:new Date(at).toISOString()}:null
   return {ref:body.ref,order_date:body.order_date,observed_at:new Date(at).toISOString(),items,parcels,payment}
 }
 export async function importSheinOrder(db,device,body) {
@@ -51,6 +55,7 @@ export async function importSheinOrder(db,device,body) {
   const order=validateSheinOrder(body)
   const r=await db.rpc('import_shein_order_v2',{p_order:order,p_device:device.id})
   if(r.error?.message?.includes('order_outside_period'))throw new AppError('Cette commande est antérieure au début de ton suivi.',409)
+  if(r.error?.message?.includes('shein_items_missing'))throw new AppError('Des articles déjà relevés manquent dans cette lecture (un colis n’a peut-être pas été lu). Le relevé précédent est conservé : vérifie la commande sur Shein puis relis-la.',409)
   check(r.error)
   return {saved:true}
 }

@@ -44,6 +44,29 @@ begin
  perform public.import_shein_order_v2(payload,dev);
  if (select actual_cost from public.sales_lines where id=b) is not null then raise exception 'ambiguous cost retained';end if;
  if (select actual_cost from public.sales_lines where id=a)<>11 then raise exception 'manual cost cleared';end if;
+ -- A reading that misses a parcel can never remove or shrink recorded units.
+ begin
+  perform public.import_shein_order_v2(jsonb_set(jsonb_set(payload,'{observed_at}',to_jsonb(now()+interval '3 second')),'{items,0,quantity}','1'),dev);
+  raise exception 'shrunk reading accepted';
+ exception when others then if sqlerrm<>'shein_items_missing' then raise;end if;end;
+ begin
+  perform public.import_shein_order_v2(jsonb_set(jsonb_set(payload,'{observed_at}',to_jsonb(now()+interval '3 second')),'{items,0,id}',to_jsonb(ref||':other')),dev);
+  raise exception 'reading without recorded item accepted';
+ exception when others then if sqlerrm<>'shein_items_missing' then raise;end if;end;
+ if (select quantity from public.shein_order_items where id=item and present)<>3 then raise exception 'recorded units lost';end if;
+ if (select count(*) from public.shein_order_links where item_id=item)<>3 then raise exception 'links lost';end if;
+ -- A total seen with a cancelled/refunded item never replaces a confirmed total nor enters Budget twice.
+ payload:=jsonb_set(payload,'{observed_at}',to_jsonb(now()+interval '4 second'));
+ perform public.import_shein_order_v2(jsonb_set(jsonb_set(payload,'{payment,source}','"order_summary_review"'),'{payment,paid_total}','20'),dev);
+ if (select payment->>'source' from public.shein_orders so where so.ref=payload->>'ref')<>'order_summary' then raise exception 'confirmed total replaced by review total';end if;
+ if (select (payment->'review'->>'paid_total')::numeric from public.shein_orders so where so.ref=payload->>'ref')<>20 then raise exception 'review amount not retained';end if;
+ if not exists(select 1 from jsonb_array_elements(public.shein_budget_expenses()) e where e->>'order_ref'=ref and e->>'review_required'='true') then raise exception 'refund warning missing from Budget';end if;
+ if not exists(select 1 from jsonb_array_elements(public.shein_budget_expenses()) e where e->>'order_ref'=ref and (e->>'amount')::numeric=27.90) then raise exception 'confirmed budget total lost';end if;
+ update public.shein_orders set payment=null where shein_orders.ref=payload->>'ref';
+ payload:=jsonb_set(payload,'{observed_at}',to_jsonb(now()+interval '5 second'));
+ perform public.import_shein_order_v2(jsonb_set(jsonb_set(payload,'{payment,source}','"order_summary_review"'),'{payment,paid_total}','20'),dev);
+ if (select payment->>'source' from public.shein_orders so where so.ref=payload->>'ref')<>'order_summary_review' then raise exception 'review total not kept';end if;
+ if exists(select 1 from jsonb_array_elements(public.shein_budget_expenses()) e where e->>'order_ref'=ref) then raise exception 'review total entered Budget';end if;
  -- Partial reads never claim a complete global synchronization.
  select last_completed_at into previous_sync from public.shein_sync_state where id;
  insert into public.shein_sync_runs(id,collector_id,mode,from_date,to_date) values(run,dev,'full','2099-01-01','2099-01-02');

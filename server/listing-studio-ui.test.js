@@ -98,3 +98,53 @@ test('listing editor guides missing fields, confirms saves, refreshes offline ac
   delete globalThis.window;delete globalThis.document;delete globalThis.IS_REACT_ACT_ENVIRONMENT
  }
 })
+
+test('with Dotb off, the last step downloads the listing folder and never asks Dotb to publish',async()=>{
+ const {window}=parseHTML('<html><body><div id="app"></div></body></html>')
+ globalThis.window=window;globalThis.document=window.document
+ globalThis.IS_REACT_ACT_ENVIRONMENT=true
+ const require=createRequire(import.meta.url),React=require('react'),{act}=React
+ const {createRoot}=require('react-dom/client')
+ const compiled=await build({entryPoints:[fileURLToPath(new URL('../src/components/ListingStudio.jsx',import.meta.url))],bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',packages:'external',external:['../lib/api']})
+ const mod=new Module(fileURLToPath(import.meta.url));mod.paths=Module._nodeModulePaths(fileURLToPath(new URL('..',import.meta.url)));mod._compile(compiled.outputFiles[0].text,fileURLToPath(import.meta.url))
+ const ListingStudio=mod.exports.default
+ const root=createRoot(document.getElementById('app'))
+ let row=base();const calls=[],fetched=[],downloads=[]
+ const request=async(method,body,query='')=>{
+  const action=body?.action||new URLSearchParams(query).get('action');calls.push(action)
+  if(action==='metadata'||action==='accounts')return {accounts:[account],catalogs:[{id:10,title:'Combinaisons'}],colors:[],ai_ready:true,dotb_publish_enabled:false}
+  if(action==='options')return options
+  if(action==='list')return {drafts:[structuredClone(row)],count:1}
+  if(action==='step')row={...row,state:'draft',last_error:null,manual_recoverable:false}
+  return {draft:structuredClone({...row,photos:[{path:'test/photo.png',url:'https://example.test/fresh-photo.png'}]})}
+ }
+ const oldFetch=globalThis.fetch,oldCreate=URL.createObjectURL
+ globalThis.fetch=async url=>{fetched.push(url);return {ok:true,blob:async()=>new Blob([new Uint8Array(64)],{type:'image/png'})}}
+ URL.createObjectURL=blob=>{downloads.push(blob);return 'blob:test'}
+ const button=text=>[...document.querySelectorAll('button')].find(b=>b.textContent===text)
+ try{
+  await act(async()=>root.render(React.createElement(ListingStudio,{request})))
+  await act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Combinaison noire M')).click())
+  await act(async()=>button('3. Publication').click())
+  assert.ok(document.body.textContent.includes('L’envoi automatique par Dotb est coupé'))
+  assert.equal([...document.querySelectorAll('button')].some(b=>b.textContent.startsWith('Publier sur')),false)
+  assert.equal(document.body.textContent.includes('Bridge Dotb'),false)
+  await act(async()=>button('Télécharger le dossier d’annonce').click())
+  assert.deepEqual(fetched,['https://example.test/fresh-photo.png'],'the photo link is reloaded before download')
+  assert.equal(downloads.length,1);assert.equal(downloads[0].type,'application/zip')
+  assert.ok(document.body.textContent.includes('Dossier téléchargé. Rien n’a été publié'))
+  assert.equal(calls.includes('publish'),false);assert.equal(calls.includes('step'),false)
+  // An old failed transfer that never reached Dotb recovers on open, even with last_error.
+  row={...row,state:'preparing',last_error:'Ancienne erreur',manual_recoverable:true}
+  await act(async()=>button('Mes brouillons et publications').click())
+  await act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Combinaison noire M')).click())
+  await act(async()=>new Promise(resolve=>setTimeout(resolve,650)))
+  assert.equal(calls.filter(a=>a==='step').length,1)
+  assert.ok(button('Télécharger le dossier d’annonce'))
+  assert.equal(calls.includes('publish'),false)
+ }finally{
+  await act(async()=>root.unmount())
+  globalThis.fetch=oldFetch;URL.createObjectURL=oldCreate
+  delete globalThis.window;delete globalThis.document;delete globalThis.IS_REACT_ACT_ENVIRONMENT
+ }
+})

@@ -11,35 +11,38 @@ export function ListingChecklist({issues,onFix,busy}){
  </div>
 }
 
-export default function ListingPublishPanel({account,issues,busy,dirty,error,notice,onFix,onPublish,onSave,onConnection,onAccounts}){
+export default function ListingPublishPanel({account,issues,busy,dirty,error,notice,onFix,onPublish,onSave,onConnection,onAccounts,manual=false,onExport}){
  return <section aria-label="Vérification avant publication" className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 space-y-5">
-  <div><p className="text-xs font-semibold uppercase tracking-widest text-teal-700">Dernière vérification</p><h2 className="mt-2 text-xl font-bold">Prêt à mettre ton article en vente ?</h2><p className="mt-2 text-sm text-slate-600">Le brouillon reste privé sur Stock Vinted jusqu’à ce que tu cliques sur « Publier ».</p></div>
+  <div><p className="text-xs font-semibold uppercase tracking-widest text-teal-700">Dernière vérification</p><h2 className="mt-2 text-xl font-bold">Prêt à mettre ton article en vente ?</h2><p className="mt-2 text-sm text-slate-600">{manual?'L’envoi automatique par Dotb est coupé. Télécharge le dossier (photos et fiche), puis publie toi-même l’annonce sur Vinted.':'Le brouillon reste privé sur Stock Vinted jusqu’à ce que tu cliques sur « Publier ».'}</p></div>
   <div className="rounded-xl bg-teal-50 p-4"><p className="text-xs text-teal-800">Compte de destination</p><p className="mt-1 text-lg font-bold text-teal-950">{account?`#${account.profile_number||'—'} · ${account.login}`:'Compte à choisir'}</p></div>
   {!!issues.length&&<ListingChecklist issues={issues} onFix={onFix} busy={!!busy}/>}
   {!issues.length&&<p className="rounded-xl bg-teal-50 p-4 font-medium text-teal-900">✓ Les informations obligatoires sont complètes.</p>}
-  <div className="rounded-xl border p-4 space-y-3">
+  {manual?<div className="rounded-xl border p-4 text-sm text-slate-600 space-y-2">
+   <p className="font-semibold text-slate-800">Publication manuelle</p>
+   <p>Attends la fin du blocage Vinted. Ouvre le compte indiqué ci-dessus, ajoute les photos dans l’ordre (01, 02…), puis copie le titre et la description de la fiche.</p>
+  </div>:<div className="rounded-xl border p-4 space-y-3">
    <p className="text-sm font-semibold">{account?.connected?'✓ Bridge Dotb connecté':'Connexion du compte à vérifier'}</p>
    {!account?.connected&&<p className="text-sm text-slate-600">Ouvre ce profil dans AdsPower et active son Bridge Dotb. Reviens ensuite vérifier la connexion.</p>}
    <div className="flex flex-wrap gap-3"><button type="button" className="text-sm font-semibold text-teal-800 underline" disabled={!!busy} onClick={onConnection}>Vérifier la connexion</button>{onAccounts&&<button type="button" className="text-sm text-teal-800 underline" disabled={!!busy} onClick={onAccounts}>Ouvrir AdsPower</button>}</div>
-  </div>
+  </div>}
   {error&&<p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{error}</p>}
   {notice&&<p role="status" className="rounded-xl bg-teal-50 p-3 text-sm text-teal-900">{notice}</p>}
-  <button type="button" className={`${primary} w-full`} disabled={!!busy} onClick={issues.length?()=>onFix(issues[0]):onPublish}>{busy|| (issues.length?'Compléter la fiche →':`Publier sur ${account?.login||'le compte choisi'}`)}</button>
+  <button type="button" className={`${primary} w-full`} disabled={!!busy} onClick={issues.length?()=>onFix(issues[0]):manual?onExport:onPublish}>{busy|| (issues.length?'Compléter la fiche →':manual?'Télécharger le dossier d’annonce':`Publier sur ${account?.login||'le compte choisi'}`)}</button>
   <button type="button" className={`${button} w-full`} disabled={!!busy} onClick={onSave}>Enregistrer le brouillon</button>
-  <p className="text-xs leading-relaxed text-slate-500">{dirty?'Modifications à enregistrer.':'Brouillon enregistré sur Stock Vinted.'} L’enregistrement du brouillon ne publie rien sur Vinted.</p>
+  <p className="text-xs leading-relaxed text-slate-500">{dirty?'Modifications à enregistrer.':'Brouillon enregistré sur Stock Vinted.'} {manual?'Le téléchargement ne publie rien : Stock Vinted ne saura pas si l’annonce est en ligne.':'L’enregistrement du brouillon ne publie rien sur Vinted.'}</p>
  </section>
 }
 
-export function ListingTransfer({draft,photos,busy,onResume,onRefresh}){
+export function ListingTransfer({draft,photos,busy,onResume,onRefresh,manual=false}){
  const interrupted=draft.state==='preparing'&&draft.last_error
  const stages=[['Fiche créée dans Dotb',!!draft.dotb_item_id],['Photos transmises',!!draft.dotb_item_id&&draft.uploaded===photos.length],['Publication demandée',['scheduled','published'].includes(draft.state)],['En ligne sur Vinted',draft.state==='published']]
  return <section id="listing-progress" aria-label="Suivi de la publication" className="scroll-mt-40 rounded-2xl border border-teal-200 bg-white p-5 sm:p-6">
   <h2 className="text-xl font-bold">{interrupted?'Envoi interrompu':listingStateLabels[draft.state]}</h2>
   <p role="status" className={`mt-3 rounded-xl p-4 text-sm ${draft.last_error||draft.state==='attention'?'bg-amber-50 text-amber-950':'bg-teal-50 text-teal-950'}`}>{draft.last_error||draft.message||listingStateLabels[draft.state]}</p>
   <ol className="my-5 grid gap-3 sm:grid-cols-2">{stages.map(([label,done],i)=><li key={label} className={`flex items-center gap-3 rounded-xl border p-3 text-sm ${done?'border-teal-200 text-teal-800':'border-slate-200 text-slate-500'}`}><span aria-hidden="true" className="font-bold">{done?'✓':i+1}</span>{label}</li>)}</ol>
-  {draft.state==='preparing'&&<><progress aria-label="Photos transmises" className="w-full accent-teal-700" max={Math.max(1,photos.length)} value={draft.uploaded}/><p className="mt-2 text-sm text-slate-600">{draft.uploaded} / {photos.length} photos transmises. Garde cette page ouverte pendant l’envoi. Si tu la quittes, rouvre ce brouillon pour reprendre.</p><button className={`${primary} mt-4`} disabled={!!busy} onClick={onResume}>{busy||'Reprendre / vérifier l’envoi'}</button></>}
-  {['scheduled','attention'].includes(draft.state)&&<><p className="text-sm text-slate-600">Garde le profil AdsPower et le Bridge ouverts. La mise en ligne sera confirmée ici par Dotb.</p><button className={`${button} mt-4`} disabled={!!busy} onClick={onRefresh}>{busy||'Vérifier la publication'}</button></>}
-  {draft.state==='attention'&&<a className={`${button} inline-block mt-4 ml-2`} href="https://dotb.io" target="_blank" rel="noreferrer">Ouvrir Dotb ↗</a>}
+  {draft.state==='preparing'&&<><progress aria-label="Photos transmises" className="w-full accent-teal-700" max={Math.max(1,photos.length)} value={draft.uploaded}/><p className="mt-2 text-sm text-slate-600">{draft.uploaded} / {photos.length} photos transmises. {manual?'Aucun nouvel envoi ne sera fait tant que Dotb est coupé.':'Garde cette page ouverte pendant l’envoi. Si tu la quittes, rouvre ce brouillon pour reprendre.'}</p><button className={`${primary} mt-4`} disabled={!!busy} onClick={onResume}>{busy||(manual?'Vérifier la fiche':'Reprendre / vérifier l’envoi')}</button></>}
+  {['scheduled','attention'].includes(draft.state)&&<><p className="text-sm text-slate-600">{manual?'Une demande peut déjà exister dans Dotb. Vérifie son résultat avant toute publication manuelle.':'Garde le profil AdsPower et le Bridge ouverts. La mise en ligne sera confirmée ici par Dotb.'}</p><button className={`${button} mt-4`} disabled={!!busy} onClick={onRefresh}>{busy||'Vérifier la publication'}</button></>}
+  {(draft.state==='attention'||manual&&draft.state==='preparing')&&<a className={`${button} inline-block mt-4 ml-2`} href="https://dotb.io" target="_blank" rel="noreferrer">Ouvrir Dotb ↗</a>}
   {draft.url&&<a className={`${primary} inline-block`} href={draft.url} target="_blank" rel="noreferrer">Voir l’annonce sur Vinted ↗</a>}
  </section>
 }

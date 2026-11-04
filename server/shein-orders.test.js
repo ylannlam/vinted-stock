@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs'
 import {parseHTML} from 'linkedom'
 import {readSheinOrders} from '../extensions/shein/orders-dom.js'
 import {createOrderEngine,orderState} from '../extensions/shein/orders-engine.js'
-import {validateSheinOrder,orderStatus} from './shein-orders.js'
+import {validateSheinOrder,orderStatus,importSheinOrder} from './shein-orders.js'
 import {combinedBudgetRows,budgetTotals} from '../src/lib/budget.js'
 
 function fixture(index=0) {
@@ -57,6 +57,36 @@ test('an exact order summary reads total including delivery; unpaid and unclear 
     input.items[0].status_text='En attente de paiement';assert.equal(validateSheinOrder(input).payment,null)
     document.body.insertAdjacentHTML('beforeend','<ul><li>Total999,00€</li></ul>');assert.equal(readSheinOrders().payment,null)
   }finally{globalThis.document=oldDoc;globalThis.location=oldLocation}
+})
+test('a total on an order with cancelled/refunded items is kept for review, never as a Budget expense',()=>{
+  const oldDoc=globalThis.document,oldLocation=globalThis.location
+  try{
+    globalThis.document=parseHTML(readFileSync(new URL('../tests/fixtures/shein-order-1.html',import.meta.url),'utf8')+'<ul><li>Frais de livraison:3,90€</li><li>Total31,50€</li></ul>').document
+    globalThis.location={href:'https://fr.shein.com/user/orders/detail/GTEST000001'}
+    const input=readSheinOrders()
+    assert.equal(validateSheinOrder(input).payment.source,'order_summary')
+    input.items[0].status_text='Remboursé'
+    const review=validateSheinOrder(input).payment
+    assert.equal(review.source,'order_summary_review');assert.equal(review.paid_total,31.5)
+    input.items[1].status_text='En attente de paiement';assert.equal(validateSheinOrder(input).payment,null)
+    input.items[1].status_text='Statut inconnu';assert.equal(validateSheinOrder(input).payment,null)
+  }finally{globalThis.document=oldDoc;globalThis.location=oldLocation}
+})
+test('a reading missing previously recorded items is rejected with a readable 409, so the extension keeps the previous snapshot',async()=>{
+  const order={...fixture(),ref:'GTEST000000',observed_at:new Date().toISOString()}
+  const db={rpc:async()=>({error:{message:'shein_items_missing'}})}
+  await assert.rejects(importSheinOrder(db,{enabled:true,id:'d'},order),e=>e.status===409&&/relevé précédent est conservé/.test(e.message))
+  const ok={rpc:async(name,args)=>{assert.equal(name,'import_shein_order_v2');assert.equal(args.p_order.ref,'GTEST000000');return {error:null}}}
+  assert.deepEqual(await importSheinOrder(ok,{enabled:true,id:'d'},order),{saved:true})
+})
+test('the extension records a rejected import as an error and moves on without sending it again',async()=>{
+  const h=harness(),engine=createOrderEngine(h.port)
+  await engine.command('start');h.setResult(list);await engine.tick()
+  const api=h.port.api;h.port.api=async body=>{if(body.action==='orders_import'){h.calls.push(body);throw Object.assign(Error('Des articles déjà relevés manquent'),{status:409})}return api(body)}
+  h.setResult({...fixture(),ref:'GTEST000000'});await engine.tick()
+  assert.equal(h.state.phase,'partial');assert.equal(h.state.outbox,null)
+  assert.equal(h.state.errors[0].code,'import_rejected');assert.equal(h.state.errors[0].ref,'GTEST000000')
+  assert.equal(h.calls.filter(c=>c.action==='orders_import').length,1)
 })
 test('Budget includes each order once, detects exact references already entered manually, and preserves manual totals',()=>{
   const auto={id:'shein-GTEST000001',order_ref:'GTEST000001',source:'shein',type:'out',cat:'Stock Shein',label:'Commande GTEST000001',amount:31.5}

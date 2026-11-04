@@ -25,7 +25,7 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
   const [editing, setEditing] = useState(null)
   const [labelLine,setLabelLine]=useState(null)
-  const [view,setView]=useState(initialFilters.view==='cart'?'cart':'sales'),[parcelLines,setParcelLines]=useState(null)
+  const [view,setView]=useState(['cart','orders','shipments'].includes(initialFilters.view)?initialFilters.view:'sales'),[parcelLines,setParcelLines]=useState(null)
   const showShipments=view==='shipments',showOrders=view==='orders',showCart=view==='cart',setShowShipments=value=>setView(value?'shipments':'sales')
   const [detailCatalog,setDetailCatalog]=useState([]),[detailNotice,setDetailNotice]=useState('')
   const [skuEditing, setSkuEditing] = useState(null)

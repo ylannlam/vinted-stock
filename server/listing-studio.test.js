@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {AppError} from './dotb.js'
-import {handleListingStudio,listingStep} from './listing-studio.js'
+import {handleListingStudio,listingStep,dotbPublishingEnabled,manualPublishingMessage,manualRestoredMessage,manualSentMessage} from './listing-studio.js'
 import {listingFields,verifiedPhotos,listingPayload,scheduleResult,generateListingText,dotbListingRequest,listingAiToken} from './listing-studio-core.js'
 import {matchingSize,catalogChoices} from '../src/lib/listingStudio.js'
 const owner='11111111-1111-4111-8111-111111111111',id='22222222-2222-4222-8222-222222222222',account='33333333-3333-4333-8333-333333333333',remoteId='44444444-4444-4444-8444-444444444444'
@@ -20,7 +20,7 @@ function source(){const calls=[],item={id:remoteId,vinted_account_id:account,sta
  const read=async(path,args={})=>{calls.push([path,args.method||'GET']);if(path==='accounts')return {data:[{id:account,login:'compte-test',country:'FR',bridge:{connected:true}}]};if(path.startsWith('catalogs/'))return opts;if(path.startsWith('catalogs?'))return {data:[{id:10,title:'Robes'}]};if(path.startsWith('colors'))return {data:[{id:1,title:'Noir'}]};if(path.startsWith('scheduled-publishes'))return {data:jobs,has_more:false};if(path===`items/${remoteId}/photos`){item.photos.push({image_no:item.photos.length+1,url:'https://example.test/photo'});return structuredClone(item)}if(path===`items/${remoteId}/schedule`){const job={item_id:remoteId,vinted_account_id:account,status:'waiting',publish:true};jobs.push(job);return {...job,status:'scheduled'}}if(path==='items'||path===`items/${remoteId}`)return structuredClone(item);throw Error(path)}
  return {read,calls,item,jobs}
 }
-const call=(db,body,source,method='POST',query={})=>handleListingStudio({method,body,query},{db,user:{id:owner}},{read:source.read})
+const call=(db,body,source,method='POST',query={})=>handleListingStudio({method,body,query},{db,user:{id:owner}},{read:source.read,allowDotb:true})
 
 test('field validation rejects unsafe IDs, duplicate attributes and foreign photo paths',async()=>{
  assert.equal(fields().price,'12.50')
@@ -79,26 +79,26 @@ test('one explicit publish creates one item, one photo and one schedule; it is n
 test('concurrent workers cannot send the same photo twice',async()=>{
  const db=database(base({state:'preparing',dotb_item_id:remoteId})),s=source()
  const snapshot=structuredClone(db.rows[0])
- const results=await Promise.allSettled([listingStep(db,structuredClone(snapshot),{read:s.read}),listingStep(db,structuredClone(snapshot),{read:s.read})])
+ const results=await Promise.allSettled([listingStep(db,structuredClone(snapshot),{read:s.read,allowDotb:true}),listingStep(db,structuredClone(snapshot),{read:s.read,allowDotb:true})])
  assert.equal(results.filter(r=>r.status==='fulfilled').length,1)
  assert.equal(s.calls.filter(([p])=>p.endsWith('/photos')).length,1)
 })
 test('lost creation response stops rather than silently creating a duplicate',async()=>{
  const db=database(base({state:'preparing',payload:{}})),s=source()
  const read=async(path,args)=>{if(path==='items'){const e=new AppError('timeout',504);e.uncertain=true;throw e}return s.read(path,args)}
- let row=await listingStep(db,db.rows[0],{read});assert.equal(row.state,'attention')
- row=await listingStep(db,row,{read});assert.equal(row.state,'attention')
+ let row=await listingStep(db,db.rows[0],{read,allowDotb:true});assert.equal(row.state,'attention')
+ row=await listingStep(db,row,{read,allowDotb:true});assert.equal(row.state,'attention')
  const stale=database(base({state:'preparing',inflight:'create',lease_until:'2020-01-01'}))
- assert.equal((await listingStep(stale,stale.rows[0],{read:s.read})).state,'attention');assert.equal(s.calls.length,0)
+ assert.equal((await listingStep(stale,stale.rows[0],{read:s.read,allowDotb:true})).state,'attention');assert.equal(s.calls.length,0)
 })
 test('lost photo response is reconciled before continuing, without uploading the image twice',async()=>{
  const db=database(base({state:'preparing',dotb_item_id:remoteId,inflight:'photo'})),s=source();s.item.photos=[{image_no:1}]
- const row=await listingStep(db,db.rows[0],{read:s.read})
+ const row=await listingStep(db,db.rows[0],{read:s.read,allowDotb:true})
  assert.equal(row.uploaded,1);assert.equal(row.state,'scheduled');assert.equal(s.calls.filter(([p])=>p.endsWith('/photos')).length,0)
 })
 test('uncertain schedule is reconciled and never enqueued again when history is missing',async()=>{
  const db=database(base({state:'preparing',dotb_item_id:remoteId,uploaded:1,inflight:'schedule'})),s=source()
- const row=await listingStep(db,db.rows[0],{read:s.read})
+ const row=await listingStep(db,db.rows[0],{read:s.read,allowDotb:true})
  assert.equal(row.state,'attention');assert.equal(s.calls.some(([,m])=>m==='POST'),false)
 })
 test('orphaned Vinted drafts and failed schedules are not labelled as published',()=>{
@@ -126,7 +126,7 @@ test('a removed AdsPower account cannot publish or schedule a prepared listing',
  await assert.rejects(call(db,{action:'publish',id,version:1,confirmation_account_id:account},s),/comptes AdsPower/)
  assert.equal(s.calls.some(([,m])=>m==='POST'),false)
  const db2=database(base({state:'preparing',dotb_item_id:remoteId,uploaded:1}));db2.selection[0].profiles=[];s.item.photos=[{}]
- const result=await listingStep(db2,db2.rows[0],{read:s.read})
+ const result=await listingStep(db2,db2.rows[0],{read:s.read,allowDotb:true})
  assert.match(result.last_error,/comptes AdsPower/)
  assert.equal(s.calls.some(([p])=>p.endsWith('/schedule')),false)
 })
@@ -141,4 +141,37 @@ test('AI failures release the draft lock and preserve the sellers text',async()=
 test('remote timeouts and ambiguous server failures are marked uncertain; rejected inputs are not',async()=>{
  for(const [status,uncertain] of [[422,false],[500,true],[403,false]])await assert.rejects(dotbListingRequest('items',{method:'POST',body:{},token:'test-only',fetcher:async()=>({ok:false,status,json:async()=>({error:{}})})}),e=>e.uncertain===uncertain)
  await assert.rejects(dotbListingRequest('items',{method:'POST',body:{},token:'test-only',fetcher:async()=>{throw Error('timeout')}}),e=>e.uncertain===true)
+})
+
+// Dotb is switched off by default while Vinted detects it: everything goes through the manual export.
+const manualCall=(db,body,source,method='POST',query={})=>handleListingStudio({method,body,query},{db,user:{id:owner}},{read:source.read,allowDotb:false})
+test('Dotb publishing is off unless explicitly enabled on the server',()=>{
+ assert.equal(dotbPublishingEnabled({}),false);assert.equal(dotbPublishingEnabled({LISTING_DOTB_PUBLISH_ENABLED:'1'}),false)
+ assert.equal(dotbPublishingEnabled({LISTING_DOTB_PUBLISH_ENABLED:'true'}),true)
+})
+test('with Dotb off, publish is refused without contacting Dotb and the screen is told to use the export',async()=>{
+ const db=database(),s=source()
+ await assert.rejects(manualCall(db,{action:'publish',id,version:1,confirmation_account_id:account},s),e=>e.status===409&&e.message===manualPublishingMessage)
+ assert.equal(db.rows[0].state,'draft');assert.equal(s.calls.length,0)
+ assert.equal((await manualCall(db,null,s,'GET',{action:'metadata'})).dotb_publish_enabled,false)
+})
+test('with Dotb off, a listing stuck before anything was sent returns to an editable draft',async()=>{
+ const db=database(base({state:'preparing',payload:{x:1},last_error:manualPublishingMessage})),s=source()
+ assert.equal((await manualCall(db,null,s,'GET',{action:'draft',id})).draft.manual_recoverable,true)
+ const {draft}=await manualCall(db,{action:'step',id},s)
+ assert.equal(draft.state,'draft');assert.equal(draft.message,manualRestoredMessage);assert.equal(draft.last_error,null)
+ assert.equal(draft.manual_recoverable,false)
+ assert.equal(db.rows[0].payload,null);assert.equal(s.calls.length,0)
+ await manualCall(db,{action:'save',id,version:db.rows[0].version,fields:fields(),photos:[photo]},s)
+ assert.equal(db.rows[0].state,'draft')
+})
+test('with Dotb off, a listing already sent to Dotb or with an unknown outcome stays blocked for a manual check',async()=>{
+ for(const patch of [{dotb_item_id:remoteId},{inflight:'create',lease_until:'2020-01-01'},{dotb_item_id:remoteId,inflight:'schedule'}]){
+  const db=database(base({state:'preparing',...patch})),s=source()
+  let {draft}=await manualCall(db,{action:'step',id},s)
+  assert.equal(draft.state,'preparing');assert.equal(draft.last_error,manualSentMessage)
+  assert.equal(draft.manual_recoverable,false)
+  const version=db.rows[0].version;({draft}=await manualCall(db,{action:'step',id},s))
+  assert.equal(db.rows[0].version,version,'repeated checks do not rewrite the row');assert.equal(s.calls.length,0)
+ }
 })
