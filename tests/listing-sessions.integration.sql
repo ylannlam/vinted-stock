@@ -44,7 +44,24 @@ begin
  update public.listing_drafts set state='published',published_at=first_slot where id=first_id;
  select planned_at into second_slot from public.reserve_listing_slot(second_id,member,1,'{}',30);
  if first_slot is null or second_slot<>first_slot+interval '30 minutes' then raise exception 'slots overlap';end if;
+ -- A finished Vinted draft also reserves its slot for the following article.
+ update public.listing_drafts set state='vinted_draft',dotb_publish=false where id=second_id;
+ insert into public.listing_drafts(id,owner_id,fields) values(gen_random_uuid(),member,jsonb_build_object('account_id',a)) returning id into second_id;
+ select planned_at into first_slot from public.reserve_listing_slot(second_id,member,1,'{}',30);
+ if first_slot<>second_slot+interval '30 minutes' then raise exception 'Vinted draft spacing ignored';end if;
  if exists(select 1 from public.reserve_listing_slot(second_id,member,1,'{}',30)) then raise exception 'stale version accepted';end if;
  if exists(select 1 from public.reserve_listing_slot(second_id,gen_random_uuid(),2,'{}',30)) then raise exception 'wrong owner accepted';end if;
+end $$;
+do $$
+declare member uuid; a uuid:=gen_random_uuid(); result jsonb;
+begin
+ select id into member from public.profiles limit 1;
+ insert into public.publication_accounts(id,login) values(a,'test-dotb-draft-'||a);
+ -- A Vinted draft created by Dotb, published by hand afterwards, counts once; a live Dotb listing still relies on the readings.
+ insert into public.listing_drafts(id,owner_id,state,fields,vinted_id,published_at,dotb_item_id,dotb_publish) values
+  (gen_random_uuid(),member,'published',jsonb_build_object('account_id',a,'title','Brouillon publié'),'990001',now(),gen_random_uuid(),false),
+  (gen_random_uuid(),member,'vinted_draft',jsonb_build_object('account_id',a,'title','Encore en brouillon'),'990002',null,gen_random_uuid(),false);
+ result:=public.team_board_counts((now() at time zone 'Europe/Paris')::date);
+ if (select (value->>'today')::int from jsonb_array_elements(result->'stats') where value->>'account_id'=a::text) is distinct from 1 then raise exception 'Vinted draft counts %',result->'stats';end if;
 end $$;
 rollback;

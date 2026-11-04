@@ -1,6 +1,6 @@
 export const MAX_LISTING_PHOTOS=20
 export const MAX_LISTING_PHOTO_BYTES=8_000_000
-export const listingStateLabels={draft:'Brouillon',preparing:'Envoi en cours',scheduled:'En attente de publication',published:'Publiée',attention:'À vérifier'}
+export const listingStateLabels={draft:'Brouillon',preparing:'Envoi en cours',scheduled:'En attente de publication',published:'Publiée',attention:'À vérifier',vinted_draft:'Brouillon sur Vinted'}
 export const emptyListing=()=>({account_id:'',sku:'',size_text:'',price:'',notes:'',title:'',description:'',catalog_id:null,size_id:null,status_id:null,brand_id:null,brand_title:'',color_ids:[],package_size_id:null,item_attributes:[]})
 export function validateListingPhoto(file){
  if(!file||!['image/jpeg','image/png','image/webp'].includes(file.type)||!Number.isInteger(file.size)||file.size<1||file.size>MAX_LISTING_PHOTO_BYTES)throw Error('Choisis une photo JPG, PNG ou WebP de moins de 8 Mo.')

@@ -85,9 +85,11 @@ export async function readTeamBoard(db,user,{now=new Date()}={}) {
 
 // Après une publication manuelle sur Vinted : la fiche passe « Publiée » avec son lien.
 export async function markPublished(db,row,url,update) {
-  if(row.state!=='draft'||row.dotb_item_id)throw new AppError('Cette fiche a déjà été transmise ou publiée.',409)
+  // Un brouillon créé sur Vinted par Dotb peut aussi être noté publié une fois mis en ligne à la main.
+  if(!(row.state==='draft'&&!row.dotb_item_id||row.state==='vinted_draft'))throw new AppError('Cette fiche a déjà été transmise ou publiée.',409)
   const id=vintedItemId(url)
   if(!id)throw new AppError('Colle le lien de l’annonce Vinted (il contient /items/ suivi d’un numéro).')
+  if(row.state==='vinted_draft'&&id!==row.vinted_id)throw new AppError('Ce lien ne correspond pas au brouillon créé sur Vinted. Ouvre ce brouillon, publie-le puis copie son lien.',409)
   if(!isId(row.fields?.account_id)||!check(await db.from('publication_accounts').select('id').eq('id',row.fields.account_id).maybeSingle()))throw new AppError('Choisis le compte de cette fiche avant de noter sa publication.')
   const otherAccount=check(await db.from('publication_items').select('account_id').eq('item_id',id).neq('account_id',row.fields.account_id).limit(1))
   if(otherAccount?.length)throw new AppError('Cette annonce est déjà connue sur un autre compte. Vérifie le lien et le compte choisi.',409)

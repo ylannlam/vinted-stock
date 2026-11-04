@@ -182,10 +182,11 @@ export default function ListingSession({request,upload,account,meta,onBack,onOpe
  }).catch(()=>{})
 
  // Dotb : création de la fiche, envoi des photos une par une, puis publication à l'heure prévue.
- async function sendDotb(card){
+ // mode : 'live' = en ligne directement, 'draft' = brouillon créé sur Vinted, publié ensuite à la main.
+ async function sendDotb(card,mode='live'){
   const issues=listingIssues(card.fields,card.photos,optionsFor(card.fields.catalog_id))
   if(issues.length)throw Error(`Complète ${issues.map(i=>i.label).join(', ')}.`)
-  let {draft}=await request('POST',{action:'publish',id:card.id,version:card.row.version,confirmation_account_id:account.id});accept(card,draft)
+  let {draft}=await request('POST',{action:'publish',id:card.id,version:card.row.version,confirmation_account_id:account.id,mode});accept(card,draft)
   for(let i=0;i<80&&draft.state==='preparing';i++){
    if(draft.last_error&&!draft.busy)throw Error(draft.last_error)
    await sleep(draft.busy?5000:300)
@@ -198,14 +199,14 @@ export default function ListingSession({request,upload,account,meta,onBack,onOpe
   if(!target)throw Error('Ce compte ne fait plus partie de ta sélection AdsPower.')
   if(!target.connected)throw Error('Ouvre ce compte dans AdsPower et active son Bridge Dotb, puis réessaie.')
  }
- const sendOne=card=>withBusy('Vérification du Bridge…',async()=>{await bridgeReady();await act(card,'Envoi à Dotb…',()=>sendDotb(card))})
- async function sendAll(){
+ const sendOne=(card,mode)=>withBusy('Vérification du Bridge…',async()=>{await bridgeReady();await act(card,'Envoi à Dotb…',()=>sendDotb(card,mode))})
+ async function sendAll(mode){
   const ready=list().filter(c=>cardStage(c,optionsFor(c.fields.catalog_id))==='ready')
   if(!ready.length)throw Error('Aucun article prêt à publier.')
   setBusy('Vérification du Bridge…');await bridgeReady()
   let done=0
-  for(let i=0;i<ready.length;i++){setBusy(`Envoi à Dotb ${i+1} sur ${ready.length}…`);try{await act(ready[i],'Envoi à Dotb…',()=>sendDotb(ready[i]));done++}catch{}}
-  setNotice(`${done} annonce${done>1?'s':''} transmise${done>1?'s':''} à Dotb sur ${ready.length}. Dotb les publie une par une, à l’heure indiquée sur chaque carte.`)
+  for(let i=0;i<ready.length;i++){setBusy(`Envoi à Dotb ${i+1} sur ${ready.length}…`);try{await act(ready[i],'Envoi à Dotb…',()=>sendDotb(ready[i],mode));done++}catch{}}
+  setNotice(`${done} annonce${done>1?'s':''} transmise${done>1?'s':''} à Dotb sur ${ready.length}. ${mode==='draft'?'Dotb crée les brouillons sur Vinted un par un, à l’heure indiquée sur chaque carte : il te restera à les publier depuis Vinted.':'Dotb les publie une par une, à l’heure indiquée sur chaque carte.'}`)
  }
  const refresh=card=>act(card,'Vérification…',async()=>accept(card,(await request('POST',{action:'refresh',id:card.id})).draft)).catch(()=>{})
  const discard=card=>act(card,'Retrait…',async()=>{await request('POST',{action:'discard',id:card.id,version:card.row.version});cards.current.delete(card.id);setOrder(old=>old.filter(id=>id!==card.id))}).catch(()=>{})
@@ -293,13 +294,13 @@ export default function ListingSession({request,upload,account,meta,onBack,onOpe
        <button className={button} disabled={locked} onClick={()=>copy(card,'title',f.title)}>{isCopied('title')?'Titre copié ✓':'Copier le titre'}</button>
        <button className={button} disabled={locked} onClick={()=>copy(card,'description',f.description)}>{isCopied('description')?'Description copiée ✓':'Copier la description'}</button>
        <button className={button} disabled={locked} onClick={()=>download(card)}>Photos (.zip)</button>
-       {dotb&&<button className={primary} disabled={locked||!!busy} onClick={()=>sendOne(card)}>Envoyer à Dotb</button>}
+       {dotb&&<><button className={button} disabled={locked||!!busy} onClick={()=>sendOne(card,'draft')}>Dotb : brouillon Vinted</button><button className={primary} disabled={locked||!!busy} onClick={()=>sendOne(card,'live')}>Dotb : en ligne</button></>}
       </>}
       {(stage==='review'||stage==='ready'||stage==='inputs')&&<button className={link} onClick={()=>setExpanded(open?null:card.id)}>{open?'Fermer les détails':'Modifier les détails'}</button>}
       {stage==='prepare'&&<button className={link} onClick={()=>setExpanded(open?null:card.id)}>{open?'Fermer':'Photos et détails'}</button>}
      </div>
      {stage==='ready'&&<form className="flex flex-wrap gap-2" onSubmit={e=>{e.preventDefault();if(card.link.trim())published(card)}}><input aria-label={`Lien Vinted de ${f.title}`} className={input+' flex-1 min-w-48'} inputMode="url" placeholder="Publiée sur Vinted ? Colle le lien de l’annonce" value={card.link} disabled={locked} onChange={e=>{card.link=e.target.value;render()}}/><button className={button} disabled={locked||!card.link.trim()}>Notée publiée</button></form>}
-     {stage==='dotb'&&<div className="space-y-2"><p className={`rounded-lg p-2.5 text-sm ${card.row.state==='attention'||card.row.last_error?'bg-amber-50 text-amber-950':'bg-blue-50 text-blue-950'}`}>{card.row.last_error||card.row.message}{card.row.state==='scheduled'&&card.row.scheduled_at?` · Prévue ${hour(card.row.scheduled_at)}`:''}</p><div className="flex flex-wrap gap-2">{card.row.state==='preparing'&&<button className={button} disabled={locked||!!busy} onClick={()=>act(card,'Reprise de l’envoi…',()=>sendDotb(card)).catch(()=>{})}>Reprendre l’envoi</button>}{['scheduled','attention'].includes(card.row.state)&&<button className={button} disabled={locked} onClick={()=>refresh(card)}>Vérifier maintenant</button>}{card.row.state==='attention'&&<a className={button} href="https://dotb.io" target="_blank" rel="noreferrer">Ouvrir Dotb ↗</a>}</div></div>}
+     {stage==='dotb'&&<div className="space-y-2"><p className={`rounded-lg p-2.5 text-sm ${card.row.state==='attention'||card.row.last_error?'bg-amber-50 text-amber-950':'bg-blue-50 text-blue-950'}`}>{card.row.last_error||card.row.message}{card.row.state==='scheduled'&&card.row.scheduled_at?` · Prévue ${hour(card.row.scheduled_at)}`:''}</p><div className="flex flex-wrap gap-2">{card.row.state==='preparing'&&<button className={button} disabled={locked||!!busy} onClick={()=>act(card,'Reprise de l’envoi…',()=>sendDotb(card,card.row.dotb_publish===false?'draft':'live')).catch(()=>{})}>Reprendre l’envoi</button>}{['scheduled','attention'].includes(card.row.state)&&<button className={button} disabled={locked} onClick={()=>refresh(card)}>Vérifier maintenant</button>}{card.row.state==='attention'&&<a className={button} href="https://dotb.io" target="_blank" rel="noreferrer">Ouvrir Dotb ↗</a>}</div>{card.row.state==='vinted_draft'&&<form className="flex flex-wrap gap-2" onSubmit={e=>{e.preventDefault();if(card.link.trim())published(card)}}><input aria-label={`Lien Vinted de ${f.title}`} className={input+' flex-1 min-w-48'} inputMode="url" placeholder="Brouillon publié sur Vinted ? Colle le lien de l’annonce" value={card.link} disabled={locked} onChange={e=>{card.link=e.target.value;render()}}/><button className={button} disabled={locked||!card.link.trim()}>Notée publiée</button></form>}</div>}
      {stage==='published'&&<p className="text-sm text-emerald-900">Publiée{card.row.published_at?` ${hour(card.row.published_at)}`:''}. {card.row.url&&<a className="underline underline-offset-4" href={card.row.url} target="_blank" rel="noopener noreferrer">Voir sur Vinted ↗</a>}</p>}
     </div>
    </div>
@@ -335,7 +336,7 @@ export default function ListingSession({request,upload,account,meta,onBack,onOpe
   {busy&&<p role="status" className="rounded-xl bg-slate-100 p-3 text-sm text-slate-700">{busy}</p>}
   {!loading&&!!active.length&&<div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white border p-3">
    <p className="text-sm text-slate-600">{[['inputs','à compléter'],['prepare','à préparer'],['review','à vérifier'],['ready','prêtes à publier'],['dotb','chez Dotb']].map(([k,l])=>count(k)?`${count(k)} ${l}`:null).filter(Boolean).join(' · ')||'—'}</p>
-   <div className="flex flex-wrap gap-2"><button className={primary} disabled={!!busy||!toPrepare} onClick={()=>withBusy('Rédaction…',prepareAll)}>Tout préparer avec l’IA{toPrepare?` (${toPrepare})`:''}</button>{dotb&&<button className={button} disabled={!!busy||!count('ready')} onClick={()=>withBusy('Envoi à Dotb…',sendAll)}>Tout envoyer à Dotb ({count('ready')})</button>}</div>
+   <div className="flex flex-wrap gap-2"><button className={primary} disabled={!!busy||!toPrepare} onClick={()=>withBusy('Rédaction…',prepareAll)}>Tout préparer avec l’IA{toPrepare?` (${toPrepare})`:''}</button>{dotb&&<><button className={button} disabled={!!busy||!count('ready')} onClick={()=>withBusy('Envoi à Dotb…',()=>sendAll('draft'))}>Tout en brouillon Vinted ({count('ready')})</button><button className={button} disabled={!!busy||!count('ready')} onClick={()=>withBusy('Envoi à Dotb…',()=>sendAll('live'))}>Tout publier en ligne via Dotb ({count('ready')})</button></>}</div>
   </div>}
   {loading?<p role="status" className="py-10 text-center text-slate-500">Chargement de la session…</p>:!rows.length?<p className="rounded-2xl border bg-white p-6 text-center text-sm text-slate-500">Aucun article en cours sur ce compte. Glisse des photos ci-dessus pour commencer.</p>:<div className="space-y-3">{active.map(([c,s])=>renderCard(c,s))}</div>}
   {!!done.length&&<details className="rounded-2xl border bg-white p-3 sm:p-4" open={!active.length}><summary className="cursor-pointer text-sm font-semibold">Publiées depuis hier · {done.length}</summary><div className="mt-3 space-y-3">{done.map(([c,s])=>renderCard(c,s))}</div></details>}

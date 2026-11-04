@@ -24,14 +24,14 @@ export async function updateListing(db,row,patch){
 async function expose(db,row){
  const paths=row.photos.map(p=>p.path),signed=paths.length?check(await db.storage.from(ASSET_BUCKET).createSignedUrls(paths,3600)):[]
  const urls=new Map(signed.map(x=>[x.path,x.signedUrl]))
- return {id:row.id,version:row.version,state:row.state,fields:row.fields,photos:row.photos.map(p=>({...p,url:urls.get(p.path)||null})),uploaded:row.uploaded,dotb_item_id:row.dotb_item_id,message:row.message,last_error:row.last_error,created_at:row.created_at,updated_at:row.updated_at,ai_updated_at:row.ai_updated_at,published_at:row.published_at,checked_at:row.checked_at,planned_at:row.planned_at||null,scheduled_at:row.scheduled_at||null,busy:!!pending(row),manual_recoverable:row.state==='preparing'&&!row.dotb_item_id&&!row.inflight,url:row.state==='published'&&/^\d{1,18}$/.test(row.vinted_id||'')?`https://www.vinted.fr/items/${row.vinted_id}`:null}
+ return {id:row.id,version:row.version,state:row.state,fields:row.fields,photos:row.photos.map(p=>({...p,url:urls.get(p.path)||null})),uploaded:row.uploaded,dotb_item_id:row.dotb_item_id,dotb_publish:row.dotb_publish!==false,message:row.message,last_error:row.last_error,created_at:row.created_at,updated_at:row.updated_at,ai_updated_at:row.ai_updated_at,published_at:row.published_at,checked_at:row.checked_at,planned_at:row.planned_at||null,scheduled_at:row.scheduled_at||null,busy:!!pending(row),manual_recoverable:row.state==='preparing'&&!row.dotb_item_id&&!row.inflight,url:row.state==='published'&&/^\d{1,18}$/.test(row.vinted_id||'')?`https://www.vinted.fr/items/${row.vinted_id}`:null}
 }
 async function findSchedule(read,row){
  let cursor=''
  for(let page=0;page<5;page++){
   const result=await read(`scheduled-publishes?limit=100${cursor?`&cursor=${encodeURIComponent(cursor)}`:''}`)
   if(!Array.isArray(result.data))throw new AppError('Le suivi Dotb est indisponible.',502)
-  const job=result.data.find(j=>j.item_id===row.dotb_item_id&&j.vinted_account_id?.toLowerCase()===row.fields.account_id)
+  const job=result.data.find(j=>j.item_id===row.dotb_item_id&&j.vinted_account_id?.toLowerCase()===row.fields.account_id&&j.publish===(row.dotb_publish!==false))
   if(job)return job
   if(!result.has_more||!result.next_cursor)return null
   cursor=result.next_cursor
@@ -91,10 +91,11 @@ export async function listingStep(db,row,{read=dotbListingRequest,allowDotb=dotb
   current=await updateListing(db,current,{inflight:'schedule',message:'Demande de publication sur Vinted…'})
   // Espacement choisi dans les réglages du compte : Dotb publie à l'heure prévue (ou tout de suite si elle est passée).
   const planned=Date.parse(current.planned_at)>Date.now()?new Date(current.planned_at).toISOString():now()
-  const result=await read(`items/${current.dotb_item_id}/schedule`,{method:'POST',body:{scheduled_at:planned,publish:true}})
-  if(result.item_id!==current.dotb_item_id||result.vinted_account_id?.toLowerCase()!==current.fields.account_id||result.status!=='scheduled'||result.publish!==true){const e=new AppError('Dotb n’a pas confirmé la publication de cette fiche.',502);e.uncertain=true;throw e}
+  const live=current.dotb_publish!==false
+  const result=await read(`items/${current.dotb_item_id}/schedule`,{method:'POST',body:{scheduled_at:planned,publish:live}})
+  if(result.item_id!==current.dotb_item_id||result.vinted_account_id?.toLowerCase()!==current.fields.account_id||result.status!=='scheduled'||result.publish!==live){const e=new AppError('Dotb n’a pas confirmé la publication de cette fiche.',502);e.uncertain=true;throw e}
   const at=Date.parse(result.scheduled_at)||Date.parse(planned),later=at>Date.now()+60000
-  return updateListing(db,current,{state:'scheduled',scheduled_at:new Date(at).toISOString(),inflight:null,lease:null,lease_until:null,message:later?`Annonce planifiée : Dotb la publiera vers ${parisTime(at)}. Le Bridge du compte devra être ouvert à ce moment-là, sinon Dotb attendra.`:'Annonce transmise. Garde le profil et le Bridge Dotb ouverts.'})
+  return updateListing(db,current,{state:'scheduled',scheduled_at:new Date(at).toISOString(),inflight:null,lease:null,lease_until:null,message:!live?(later?`Brouillon prévu : Dotb le créera sur Vinted vers ${parisTime(at)}. Le Bridge du compte devra être ouvert à ce moment-là, sinon Dotb attendra.`:'Brouillon transmis à Dotb. Garde le profil et le Bridge Dotb ouverts.'):later?`Annonce planifiée : Dotb la publiera vers ${parisTime(at)}. Le Bridge du compte devra être ouvert à ce moment-là, sinon Dotb attendra.`:'Annonce transmise. Garde le profil et le Bridge Dotb ouverts.'})
  }catch(error){
   // Unknown outcomes keep their marker; a later read reconciles the result.
   // Never repeat a creation or schedule solely because a network call failed.
@@ -179,7 +180,12 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
   return {draft:await expose(db,row)}
  }
  // A retry after a lost reply returns the same recorded publication, without a second write.
- if(action==='mark_published'&&row.state==='published'&&!row.dotb_item_id&&vintedItemId(body.url)===row.vinted_id)return {draft:await expose(db,row)}
+ if(action==='mark_published'&&row.state==='published'&&(!row.dotb_item_id||row.dotb_publish===false)&&vintedItemId(body.url)===row.vinted_id)return {draft:await expose(db,row)}
+ // Brouillon Vinted créé par Dotb puis publié à la main : on note le lien de l'annonce en ligne.
+ if(action==='mark_published'&&row.state==='vinted_draft'){
+  if(body.version!==row.version||pending(row))throw new AppError('Cette fiche a changé. Actualise la session.',409)
+  return {draft:await expose(db,await markPublished(db,row,body.url,updateListing))}
+ }
  if(action==='publish'&&!allowDotb)throw new AppError(manualPublishingMessage,409)
  if(action==='publish'&&row.state==='draft'&&!await dotbFor(row.fields.account_id))throw new AppError(accountManualMessage,409)
  if(action==='publish'&&row.state!=='draft')return {draft:await expose(db,row)}
@@ -222,6 +228,9 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
   const payload=listingPayload(row.fields,photos,options,colors.data,account)
   if(row.fields.brand_id!==1){const brands=await listingMetadata(`brands?q=${encodeURIComponent(row.fields.brand_title)}&limit=25`,read);if(!brands.data?.some(b=>b.id===row.fields.brand_id))throw new AppError('Sélectionne à nouveau la marque dans les résultats.')}
   if(row.dotb_item_id){const item=validateRemoteItem(await read(`items/${row.dotb_item_id}`),row);if(item.status!=='pending'||item.vinted_id||item.scheduled_publish_at)throw new AppError('Cette annonce est déjà en cours de publication. Consulte Dotb.',409)}
+  // Choix fait au moment de l'envoi : en ligne directement (par défaut) ou brouillon Vinted.
+  if(!['live','draft',undefined].includes(body.mode))throw new AppError('Choisis « en ligne » ou « brouillon Vinted ».')
+  if((body.mode!=='draft')!==(row.dotb_publish!==false))row=await updateListing(db,row,{dotb_publish:body.mode!=='draft'})
   row=await reserveListingSlot(db,row,payload,(await settings(db,row.fields.account_id)).effective.spacing_minutes)
  }else throw new AppError('Action inconnue.')
  return {draft:await expose(db,row)}

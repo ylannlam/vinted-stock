@@ -115,11 +115,11 @@ test('a session prepares several articles, then each is copied and noted as publ
   assert.equal(marked.body.url,'https://www.vinted.fr/items/42-body');assert.equal(typeof marked.body.version,'number')
   assert.ok(document.body.textContent.includes('Publiées depuis hier · 1'))
   assert.equal(s.calls.some(c=>c.action==='publish'),false,'never sent to Dotb when the account publishes by hand')
-  assert.equal(ui.button('Tout envoyer à Dotb (1)'),undefined)
+  assert.equal(ui.button('Tout publier en ligne via Dotb (1)'),undefined)
  }finally{await ui.unmount()}
 })
 
-test('with Dotb on for the account, ready articles are sent one by one after checking the Bridge',async()=>{
+for(const mode of ['draft','live'])test(`Dotb ${mode}: ready articles are sent one by one after checking the Bridge`,async()=>{
  const ui=await mount(),s=server({dotb:true})
  const ready={...emptyListing(),account_id:account.id,sku:'sku-a',size_text:'M',price:'19.90',title:'Body noir effet cuir décolleté V manches longues soirée taille M',description:'Body noir.',catalog_id:10,brand_id:1,brand_title:'Sans marque',size_id:4,status_id:2,package_size_id:1,color_ids:[1]}
  for(const id of ['aaaaaaaa-0000-4000-8000-000000000001','aaaaaaaa-0000-4000-8000-000000000002'])s.rows.set(id,{id,version:1,state:'draft',fields:{...ready},photos:[{path:`owner/${id}.png`}]})
@@ -127,14 +127,30 @@ test('with Dotb on for the account, ready articles are sent one by one after che
   await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request:s.request,upload:s.upload,account,meta:{...meta,dotb_publish_enabled:true},onBack(){},onOpenDraft(){}})))
   await ui.act(()=>wait(20))
   assert.ok(document.body.textContent.includes('une annonce toutes les 30 min'))
-  await ui.click('Tout envoyer à Dotb (2)')
+  await ui.click(mode==='draft'?'Tout en brouillon Vinted (2)':'Tout publier en ligne via Dotb (2)')
   await ui.act(()=>wait(1500))
   assert.equal(s.calls.filter(c=>c.action==='accounts').length,1,'Bridge checked once before the batch')
   assert.equal(s.calls.filter(c=>c.action==='publish').length,2)
-  assert.ok(s.calls.filter(c=>c.action==='publish').every(c=>c.body.confirmation_account_id===account.id))
+  assert.ok(s.calls.filter(c=>c.action==='publish').every(c=>c.body.confirmation_account_id===account.id&&c.body.mode===mode))
   assert.ok([...s.rows.values()].every(r=>r.state==='scheduled'))
-  assert.match(document.body.textContent,/2 annonces transmises à Dotb sur 2/)
+  assert.match(document.body.textContent,mode==='draft'?/2 annonces transmises à Dotb sur 2\. Dotb crée les brouillons/:/2 annonces transmises à Dotb sur 2\. Dotb les publie/)
   assert.match(document.body.textContent,/Prévue/)
+ }finally{await ui.unmount()}
+})
+
+test('a completed Vinted draft stays separate from published listings until its link is recorded',async()=>{
+ const ui=await mount(),s=server({dotb:true}),id=crypto.randomUUID()
+ s.rows.set(id,{id,version:3,state:'vinted_draft',dotb_publish:false,dotb_item_id:'remote',vinted_id:'42',fields:{...emptyListing(),account_id:account.id,sku:'test',title:'Robe test'},photos:[],message:'Brouillon créé sur Vinted.'})
+ try{
+  await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request:s.request,upload:s.upload,account,meta:{...meta,dotb_publish_enabled:true},onBack(){},onOpenDraft(){}})))
+  assert.match(document.body.textContent,/Brouillon créé sur Vinted/)
+  assert.doesNotMatch(document.body.textContent,/Publiées depuis hier/)
+  assert.equal(ui.button('Dotb : en ligne'),undefined)
+  const link=document.querySelector('input[aria-label="Lien Vinted de Robe test"]')
+  await ui.type(link,'https://www.vinted.fr/items/42-robe')
+  await ui.act(async()=>ui.props(document.querySelector('article form')).onSubmit({preventDefault(){}}))
+  assert.match(document.body.textContent,/Publiées depuis hier · 1/)
+  assert.equal(s.calls.some(c=>c.action==='publish'),false)
  }finally{await ui.unmount()}
 })
 

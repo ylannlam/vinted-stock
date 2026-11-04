@@ -67,7 +67,7 @@ export default function ListingSettingsPanel({settings,account,request,serverDot
   </fieldset>
   <fieldset className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 space-y-3" disabled={busy}>
    <legend className="text-sm font-semibold">Publication via Dotb · {account.login}</legend>
-   <Check label="Publier via Dotb sur ce compte" hint="Dotb crée l’annonce dans son espace (elle y reste sauvegardée), puis la publie à l’heure prévue." checked={dotb} onChange={setDotb}/>
+   <Check label="Publier via Dotb sur ce compte" hint="Dotb crée l’annonce dans son espace (elle y reste sauvegardée). À l’envoi, tu choisis : en ligne directement, ou brouillon sur Vinted à publier toi-même." checked={dotb} onChange={setDotb}/>
    <label className="block text-sm font-medium">Espacer les publications de<span className="flex items-center gap-2 mt-1.5"><input className={input+' !w-24'} inputMode="numeric" value={spacing} onChange={e=>setSpacing(e.target.value.replace(/\D/g,''))} aria-label="Minutes entre deux publications"/><span className="font-normal">minutes</span></span></label>
    <p className="text-xs text-amber-900">Vinted détecte l’automatisation de Dotb : des comptes ont déjà été bloqués 24 h. Active-le seulement sur les comptes où tu acceptes ce risque.</p>
    {!serverDotb&&<p className="text-xs text-amber-900 font-medium">L’envoi par Dotb est actuellement coupé pour tout le site. Ton choix sera appliqué quand il sera rallumé.</p>}

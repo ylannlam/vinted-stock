@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {handleListingStudio,accountManualMessage,manualRestoredMessage,listingStep} from './listing-studio.js'
-import {generateListingText,listingInstructions,listingFields} from './listing-studio-core.js'
+import {scheduleResult,generateListingText,listingInstructions,listingFields} from './listing-studio-core.js'
 import {readListingSettings,saveListingSettings,reserveListingSlot,listingTitleExamples} from './listing-settings.js'
 import {cleanListingSettings,effectiveListingSettings,applyListingPresets,tidyListingTitle,composeListingDescription,DEFAULT_LISTING_SETTINGS} from '../src/lib/listingSettings.js'
 import {listingIssues} from '../src/lib/listingStudio.js'
@@ -45,7 +45,7 @@ function dotb(){
   if(path.startsWith('catalogs/'))return options
   if(path.startsWith('catalogs?'))return {data:[{id:1,title:'Femmes'},{id:10,parent_id:1,title:'Bodies'}]}
   if(path.startsWith('colors'))return {data:[{id:1,title:'Noir'}]}
-  if(path===`items/${remoteId}/schedule`)return {item_id:remoteId,vinted_account_id:account,status:'scheduled',publish:true,scheduled_at:args.body.scheduled_at}
+  if(path===`items/${remoteId}/schedule`)return {item_id:remoteId,vinted_account_id:account,status:'scheduled',publish:args.body.publish,scheduled_at:args.body.scheduled_at}
   throw Error(`unexpected ${path}`)
  }
  return {read,calls,item}
@@ -214,4 +214,49 @@ test('before the migration, settings fall back to the defaults and Dotb stays of
  assert.equal(value.effective.condition,'Très bon état');assert.equal(value.effective.dotb,false)
  const broken={from:()=>{const q={select:()=>q,in:()=>q,then:(resolve,reject)=>Promise.resolve({data:null,error:{code:'57014',message:'timeout'}}).then(resolve,reject)};return q}}
  await assert.rejects(readListingSettings(broken,account),e=>e.code==='57014','other database errors are not hidden')
+})
+
+test('Dotb can create a Vinted draft instead of publishing, then the link is noted once it is online',async()=>{
+ const ready=fields({title:'Body noir effet cuir taille M',description:'Body noir effet cuir.',catalog_id:10,brand_id:1,brand_title:'Sans marque',size_id:4,status_id:2,package_size_id:1,color_ids:[1]})
+ const row=draft({fields:ready}),s=dotb()
+ const db=database({drafts:[row],settings:[{scope:account,settings:{dotb:true,spacing_minutes:0},version:1}]})
+ db.rpc=function(name,args){
+  // Same behaviour as reserve_listing_slot: version-checked switch to « preparing ».
+  if(name!=='reserve_listing_slot')return Promise.resolve({data:null,error:null})
+  const target=db.tables.listing_drafts.find(r=>r.id===args.p_id&&r.version===args.p_version&&r.state==='draft')
+  if(!target)return Promise.resolve({data:[],error:null})
+  Object.assign(target,{state:'preparing',payload:args.p_payload,planned_at:new Date().toISOString(),version:target.version+1})
+  return Promise.resolve({data:[structuredClone(target)],error:null})
+ }
+ await assert.rejects(handle(db,{method:'POST',body:{action:'publish',id:row.id,version:1,confirmation_account_id:account,mode:'autre'}},{read:s.read}),/brouillon Vinted/)
+ const {draft:sent}=await handle(db,{method:'POST',body:{action:'publish',id:row.id,version:1,confirmation_account_id:account,mode:'draft'}},{read:s.read})
+ assert.equal(sent.state,'preparing');assert.equal(sent.dotb_publish,false)
+ // The schedule asks Dotb for a Vinted draft (publish:false), not a live listing.
+ const stored=db.tables.listing_drafts[0]
+ Object.assign(stored,{dotb_item_id:remoteId,uploaded:1})
+ const read=async(path,args)=>path===`items/${remoteId}`?{...s.item,photos:[{}]}:s.read(path,args)
+ const scheduled=await listingStep(db,structuredClone(stored),{read,allowDotb:true})
+ assert.equal(s.calls.find(([p])=>p.endsWith('/schedule'))[2].publish,false)
+ assert.equal(scheduled.state,'scheduled');assert.match(scheduled.message,/Brouillon/)
+ // Done as a draft: never counted as published.
+ const job={item_id:remoteId,vinted_account_id:account,publish:false,status:'done',vinted_id:555}
+ assert.equal(scheduleResult(job,{...scheduled,dotb_item_id:remoteId}).state,'vinted_draft')
+ assert.equal(scheduleResult({...job,publish:true},{...scheduled,dotb_item_id:remoteId}),null,'a live job does not match a draft request')
+ assert.equal(scheduleResult({...job,publish:true},{...scheduled,dotb_item_id:remoteId,dotb_publish:true}).state,'published')
+ // A lost schedule reply is reconciled using the matching mode, never resubmitted.
+ Object.assign(db.tables.listing_drafts[0],{state:'preparing',inflight:'schedule'})
+ let scheduledWrites=0
+ const recovered=await listingStep(db,structuredClone(db.tables.listing_drafts[0]),{allowDotb:true,read:async(path,args)=>{
+  if(args?.method==='POST'){scheduledWrites++;throw Error('No second schedule expected')}
+  assert.ok(path.startsWith('scheduled-publishes?'))
+  return {data:[{...job,publish:true},job],has_more:false}
+ }})
+ assert.equal(recovered.state,'vinted_draft');assert.equal(recovered.vinted_id,'555');assert.equal(scheduledWrites,0)
+ db.tables.publication_accounts=[{id:account}];db.tables.publication_items=[]
+ const version=db.tables.listing_drafts[0].version
+ await assert.rejects(handle(db,{method:'POST',body:{action:'mark_published',id:row.id,version,url:'https://www.vinted.fr/items/777-autre'}}),/ne correspond pas/)
+ const {draft:online}=await handle(db,{method:'POST',body:{action:'mark_published',id:row.id,version,url:'https://www.vinted.fr/items/555-body'}})
+ assert.equal(online.state,'published');assert.equal(online.url,'https://www.vinted.fr/items/555')
+ const {draft:retried}=await handle(db,{method:'POST',body:{action:'mark_published',id:row.id,version,url:'https://www.vinted.fr/items/555-body'}})
+ assert.equal(retried.version,online.version);assert.equal(retried.published_at,online.published_at)
 })

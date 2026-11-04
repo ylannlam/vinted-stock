@@ -66,13 +66,16 @@ export function validateRemoteItem(item,row){
  return item
 }
 export function scheduleResult(schedule,row){
- if(schedule.item_id!==row.dotb_item_id||schedule.vinted_account_id?.toLowerCase()!==row.fields.account_id||schedule.publish!==true)return null
+ // « publish » : true = en ligne directement ; false = brouillon créé sur Vinted, à publier soi-même.
+ const live=row.dotb_publish!==false
+ if(schedule.item_id!==row.dotb_item_id||schedule.vinted_account_id?.toLowerCase()!==row.fields.account_id||schedule.publish!==live)return null
+ if(!live&&schedule.status==='done'&&/^\d{1,18}$/.test(String(schedule.vinted_id)))return {state:'vinted_draft',vinted_id:String(schedule.vinted_id),message:'Brouillon créé sur Vinted. Ouvre le compte, vérifie l’annonce dans tes brouillons Vinted et publie-la, puis colle son lien ici.'}
  if(schedule.status==='done'&&/^\d{1,18}$/.test(String(schedule.vinted_id)))return {state:'published',vinted_id:String(schedule.vinted_id),published_at:schedule.finished_at||new Date().toISOString(),message:'Annonce publiée sur Vinted.'}
  if(['failed','cancelled','draft_orphaned'].includes(schedule.status)){
   const reason={ai_photos:'Vinted a refusé les photos. Utilise des photos réelles de l’article.',missing_attributes:'Des caractéristiques manquent dans la fiche.',extension_offline:'Le Bridge du compte était déconnecté.',account_restricted:'Le compte Vinted est restreint.',validation:'Vinted a refusé certaines informations.',rejected:'Vinted a refusé la publication.'}[schedule.error?.code]
   return {state:'attention',message:reason||'La publication n’a pas abouti. Vérifie cette annonce dans Dotb avant de relancer.',vinted_id:schedule.vinted_id?String(schedule.vinted_id):null}
  }
- if(['waiting','running','retrying'].includes(schedule.status))return {state:'scheduled',message:schedule.status==='running'?'Dotb publie l’annonce sur Vinted…':schedule.status==='retrying'?'Dotb va réessayer la publication.':'Annonce transmise. Garde le profil et le Bridge Dotb ouverts.'}
+ if(['waiting','running','retrying'].includes(schedule.status))return {state:'scheduled',message:schedule.status==='running'?(live?'Dotb publie l’annonce sur Vinted…':'Dotb crée le brouillon sur Vinted…'):schedule.status==='retrying'?'Dotb va réessayer la publication.':'Annonce transmise. Garde le profil et le Bridge Dotb ouverts.'}
  return null
 }
 export function listingAiToken(_req,env=process.env){return env.GEMINI_API_KEY||env.gemini_vinted||env.Gemini}
