@@ -36,5 +36,5 @@ jobs:
         run: >-
           psql --dbname "$TEST_DATABASE_URL" -X --set ON_ERROR_STOP=1
           --file tests/coefficient.fixture.sql
-          --file supabase/migrations/20261104141001_finance_coefficient.sql
+          --file supabase/migrations/20261104142053_finance_coefficient.sql
           --file tests/coefficient.integration.sql
