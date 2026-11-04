@@ -116,8 +116,10 @@ test('with Dotb off, the last step downloads the listing folder and never asks D
   if(action==='options')return options
   if(action==='list')return {drafts:[structuredClone(row)],count:1}
   if(action==='step')row={...row,state:'draft',last_error:null,manual_recoverable:false}
+  if(action==='mark_published'){published.push(body);row={...row,state:'published',vinted_id:'42',url:'https://www.vinted.fr/items/42',message:'Publiée à la main sur Vinted.'}}
   return {draft:structuredClone({...row,photos:[{path:'test/photo.png',url:'https://example.test/fresh-photo.png'}]})}
  }
+ const published=[]
  const oldFetch=globalThis.fetch,oldCreate=URL.createObjectURL
  globalThis.fetch=async url=>{fetched.push(url);return {ok:true,blob:async()=>new Blob([new Uint8Array(64)],{type:'image/png'})}}
  URL.createObjectURL=blob=>{downloads.push(blob);return 'blob:test'}
@@ -142,6 +144,15 @@ test('with Dotb off, the last step downloads the listing folder and never asks D
   assert.equal(calls.filter(a=>a==='step').length,1)
   assert.ok(button('Télécharger le dossier d’annonce'))
   assert.equal(calls.includes('publish'),false)
+  // After publishing by hand on Vinted, the link is noted from the same panel.
+  const form=[...document.querySelectorAll('form')].find(f=>f.textContent.includes('Déjà publiée sur Vinted'))
+  assert.ok(form,'link field shown in manual mode')
+  const props=node=>node[Object.keys(node).find(key=>key.startsWith('__reactProps$'))]
+  await act(async()=>props(form.querySelector('input')).onChange({target:{value:'https://www.vinted.fr/items/42-combinaison'}}))
+  await act(async()=>props(form).onSubmit({preventDefault(){}}))
+  assert.equal(published.length,1);assert.equal(published[0].url,'https://www.vinted.fr/items/42-combinaison');assert.equal(typeof published[0].version,'number')
+  assert.ok(document.body.textContent.includes('Publiée à la main'));assert.ok(document.body.textContent.includes('Voir l’annonce sur Vinted'))
+  assert.equal(document.body.textContent.includes('Fiche créée dans Dotb'),false,'no Dotb steps for a listing published by hand')
  }finally{
   await act(async()=>root.unmount())
   globalThis.fetch=oldFetch;URL.createObjectURL=oldCreate

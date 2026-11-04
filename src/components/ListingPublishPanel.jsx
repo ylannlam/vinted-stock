@@ -1,3 +1,4 @@
+import {useState} from 'react'
 import {listingStateLabels} from '../lib/listingStudio'
 
 const button='rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50'
@@ -11,7 +12,7 @@ export function ListingChecklist({issues,onFix,busy}){
  </div>
 }
 
-export default function ListingPublishPanel({account,issues,busy,dirty,error,notice,onFix,onPublish,onSave,onConnection,onAccounts,manual=false,onExport}){
+export default function ListingPublishPanel({account,issues,busy,dirty,error,notice,onFix,onPublish,onSave,onConnection,onAccounts,manual=false,onExport,onMarkPublished}){
  return <section aria-label="Vérification avant publication" className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 space-y-5">
   <div><p className="text-xs font-semibold uppercase tracking-widest text-teal-700">Dernière vérification</p><h2 className="mt-2 text-xl font-bold">Prêt à mettre ton article en vente ?</h2><p className="mt-2 text-sm text-slate-600">{manual?'L’envoi automatique par Dotb est coupé. Télécharge le dossier (photos et fiche), puis publie toi-même l’annonce sur Vinted.':'Le brouillon reste privé sur Stock Vinted jusqu’à ce que tu cliques sur « Publier ».'}</p></div>
   <div className="rounded-xl bg-teal-50 p-4"><p className="text-xs text-teal-800">Compte de destination</p><p className="mt-1 text-lg font-bold text-teal-950">{account?`#${account.profile_number||'—'} · ${account.login}`:'Compte à choisir'}</p></div>
@@ -29,11 +30,22 @@ export default function ListingPublishPanel({account,issues,busy,dirty,error,not
   {notice&&<p role="status" className="rounded-xl bg-teal-50 p-3 text-sm text-teal-900">{notice}</p>}
   <button type="button" className={`${primary} w-full`} disabled={!!busy} onClick={issues.length?()=>onFix(issues[0]):manual?onExport:onPublish}>{busy|| (issues.length?'Compléter la fiche →':manual?'Télécharger le dossier d’annonce':`Publier sur ${account?.login||'le compte choisi'}`)}</button>
   <button type="button" className={`${button} w-full`} disabled={!!busy} onClick={onSave}>Enregistrer le brouillon</button>
-  <p className="text-xs leading-relaxed text-slate-500">{dirty?'Modifications à enregistrer.':'Brouillon enregistré sur Stock Vinted.'} {manual?'Le téléchargement ne publie rien : Stock Vinted ne saura pas si l’annonce est en ligne.':'L’enregistrement du brouillon ne publie rien sur Vinted.'}</p>
+  <p className="text-xs leading-relaxed text-slate-500">{dirty?'Modifications à enregistrer.':'Brouillon enregistré sur Stock Vinted.'} {manual?'Après la publication sur Vinted, colle le lien ci-dessous pour mettre le suivi à jour.':'L’enregistrement du brouillon ne publie rien sur Vinted.'}</p>
+  {manual&&onMarkPublished&&<PublishedLinkForm busy={busy} onSave={onMarkPublished}/>}
  </section>
 }
 
+function PublishedLinkForm({busy,onSave}){
+ const [url,setUrl]=useState('')
+ return <form className="rounded-xl border border-dashed p-4 space-y-2" onSubmit={e=>{e.preventDefault();if(url.trim())onSave(url.trim())}}>
+  <label className="block text-sm font-medium">Déjà publiée sur Vinted ? Colle le lien de l’annonce<input className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm focus:outline-teal-600" inputMode="url" placeholder="https://www.vinted.fr/items/…" value={url} disabled={!!busy} onChange={e=>setUrl(e.target.value)}/></label>
+  <button className={`${button} w-full`} disabled={!!busy||!url.trim()}>Noter comme publiée</button>
+ </form>
+}
+
 export function ListingTransfer({draft,photos,busy,onResume,onRefresh,manual=false}){
+ // Publiée à la main (sans Dotb) : pas d'étapes Dotb à afficher.
+ if(draft.state==='published'&&!draft.dotb_item_id)return <section id="listing-progress" aria-label="Suivi de la publication" className="scroll-mt-40 rounded-2xl border border-teal-200 bg-white p-5 sm:p-6 space-y-4"><h2 className="text-xl font-bold">Publiée à la main</h2><p role="status" className="rounded-xl bg-teal-50 p-4 text-sm text-teal-950">{draft.message||'Annonce publiée sur Vinted.'}</p>{draft.url&&<a className={`${primary} inline-block`} href={draft.url} target="_blank" rel="noreferrer">Voir l’annonce sur Vinted ↗</a>}</section>
  const interrupted=draft.state==='preparing'&&draft.last_error
  const stages=[['Fiche créée dans Dotb',!!draft.dotb_item_id],['Photos transmises',!!draft.dotb_item_id&&draft.uploaded===photos.length],['Publication demandée',['scheduled','published'].includes(draft.state)],['En ligne sur Vinted',draft.state==='published']]
  return <section id="listing-progress" aria-label="Suivi de la publication" className="scroll-mt-40 rounded-2xl border border-teal-200 bg-white p-5 sm:p-6">

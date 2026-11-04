@@ -3,6 +3,7 @@ import {randomUUID} from 'node:crypto'
 import {AppError,isId} from './dotb.js'
 import {ASSET_BUCKET,uploadTarget,ensureAssetBucket} from './resources.js'
 import {validateListingPhoto} from '../src/lib/listingStudio.js'
+import {readTeamBoard,markPublished} from './team-board.js'
 import {check,listingFields,verifiedPhotos,dotbListingRequest,listingMetadata,listingAccounts,listingPayload,validateRemoteItem,scheduleResult,generateListingText,listingAiToken} from './listing-studio-core.js'
 
 const TABLE='listing_drafts',now=()=>new Date().toISOString()
@@ -121,6 +122,8 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
    const q=req.query.q;if(typeof q!=='string'||!q.trim()||q.length>120)throw new AppError('Renseigne le nom de la marque.')
    return listingMetadata(`brands?q=${encodeURIComponent(q.trim())}&limit=25`,read)
   }
+  // Onglet « Alicia » : une ligne par compte, sans appel à Dotb.
+  if(action==='board')return readTeamBoard(db,user)
   if(action==='list'){
    const page=Number(req.query.page||0);if(!Number.isSafeInteger(page)||page<0||page>1000)throw new AppError('Page invalide.')
    const result=await db.from(TABLE).select('*',{count:'exact'}).eq('owner_id',user.id).order('updated_at',{ascending:false}).order('id').range(page*20,page*20+19)
@@ -175,6 +178,8 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
    const result=await generate(row,urls,catalogs.data,colors.data,{token:listingAiToken(req)})
    row=await updateListing(db,row,{fields:{...row.fields,title:result.title,description:result.description,catalog_id:result.catalog_id,color_ids:result.color_ids,size_id:null,status_id:null,package_size_id:null,item_attributes:[]},message:result.review_notes||null,last_error:null,inflight:null,lease:null,lease_until:null})
   }catch(error){const message=error instanceof AppError?error.message:'Le texte n’a pas pu être préparé.';row=await updateListing(db,row,{message,last_error:message,inflight:null,lease:null,lease_until:null})}
+ }else if(action==='mark_published'){
+  row=await markPublished(db,row,body.url,updateListing)
  }else if(action==='publish'){
   if(body.confirmation_account_id!==row.fields.account_id)throw new AppError('Vérifie le compte ciblé avant de publier.')
   const accounts=listingAccounts(await read('accounts')),account=await requireSelectedAccount(db,user.id,row.fields.account_id,accounts)

@@ -19,3 +19,4 @@ export const TAB_HOME = '__home__'
 export const TAB_HISTORY = '__history__'
 
 export const TAB_ADSPOWER = '__adspower__'
+export const TAB_ALICIA = '__alicia__'

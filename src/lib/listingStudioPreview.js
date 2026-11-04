@@ -16,6 +16,7 @@ export async function listingStudioPreview(method='GET',body,query=''){
  const row=rows.find(r=>r.id===(body?.id||q.get('id')));if(!row)throw Error('Brouillon introuvable.')
  if(action==='save'){row.fields=structuredClone(body.fields);row.photos=body.photos.map(p=>({...p,type:'image/webp',size:100,url:images.get(p.path)||row.photos.find(old=>old.path===p.path)?.url}));row.version++}
  if(action==='generate'){row.fields={...row.fields,title:'Body noir à manches longues',description:`Body noir uni à manches longues et encolure ronde.\nCoupe près du corps. Taille ${row.fields.size_text}.`,catalog_id:11,color_ids:[1]};row.ai_updated_at=new Date().toISOString();row.version++}
+ if(action==='mark_published'){const id=String(body.url||'').match(/(?:items\/|^)(\d+)/)?.[1];if(!id)throw Error('Colle le lien Vinted de l’annonce.');row.state='published';row.vinted_id=id;row.url=`https://www.vinted.fr/items/${id}`;row.message='Publiée à la main (simulation).';row.published_at=new Date().toISOString();row.version++}
  if(action==='publish'){row.state='preparing';row.message='Préparation de l’envoi (simulation)…';row.version++}
  if(action==='step'){row.uploaded++;row.dotb_item_id='demo';if(row.uploaded>=row.photos.length){row.state='scheduled';row.message='Annonce transmise (simulation).'}row.version++}
  if(action==='refresh'&&row.state==='scheduled'){row.state='published';row.message='Publication confirmée (simulation uniquement).';row.published_at=new Date().toISOString();row.version++}
