@@ -1,0 +1,40 @@
+name: Tests du coefficient
+on:
+  push:
+    paths:
+      - 'supabase/migrations/*finance_coefficient.sql'
+      - 'tests/coefficient.*.sql'
+      - '.github/workflows/test-coefficient.yml'
+  pull_request:
+    paths:
+      - 'supabase/migrations/*finance_coefficient.sql'
+      - 'tests/coefficient.*.sql'
+      - '.github/workflows/test-coefficient.yml'
+permissions:
+  contents: read
+jobs:
+  coefficient:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: test-only
+          POSTGRES_DB: coefficient_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Vérifier les calculs dans PostgreSQL
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:test-only@127.0.0.1:5432/coefficient_test
+        run: >-
+          psql --dbname "$TEST_DATABASE_URL" -X --set ON_ERROR_STOP=1
+          --file tests/coefficient.fixture.sql
+          --file supabase/migrations/20261104141001_finance_coefficient.sql
+          --file tests/coefficient.integration.sql

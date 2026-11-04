@@ -40,9 +40,14 @@ begin
  result:=public.workspace_finance('2099-12',0);
  if (result#>>'{totals,0,confirmed_margin}')::numeric<>13 or (result#>>'{totals,0,confirmed_count}')::int<>1 then raise exception 'confirmed costs incorrect';end if;
  if (result#>>'{leaders,0,verified_count}')::int<>1 or (result#>>'{leaders,0,quantity}')::int<>2 then raise exception 'profit coverage missing';end if;
+ -- Resale coefficient: only the sale with a real paid cost counts (30 - 3 refund - 2 fees = 25 for 12 paid).
+ if (result#>>'{totals,0,coef_revenue}')::numeric is distinct from 25 or (result#>>'{totals,0,coef_cost}')::numeric is distinct from 12 or (result#>>'{totals,0,coef_count}')::int is distinct from 1 then raise exception 'coefficient totals incorrect';end if;
+ if (result#>>'{leaders,0,coef_revenue}')::numeric is distinct from 25 or (result#>>'{leaders,0,coef_cost}')::numeric is distinct from 12 or (result#>>'{leaders,0,coef_count}')::int is distinct from 1 then raise exception 'product coefficient incorrect';end if;
+ if (result#>>'{totals,0,purchase_cost}')::numeric is distinct from 12 or (result#>>'{totals,0,quantity}')::int is distinct from 2 then raise exception 'existing finance fields changed';end if;
  update public.sales_lines set actual_cost=null,finance_confirmed=false where id=id_a;
  result:=public.workspace_finance('2099-12',0);
  if result#>>'{totals,0,confirmed_margin}' is not null or result#>>'{totals,0,purchase_cost}' is not null then raise exception 'unknown cost shown as zero';end if;
+ if (result#>>'{totals,0,coef_count}')::int is distinct from 0 or result#>>'{totals,0,coef_cost}' is not null then raise exception 'coefficient invented without a paid cost';end if;
  update public.sales_orders set status='completed' where id=o;
  if exists(select 1 from public.workspace_sale_actions where id in(id_a,id_b)) then raise exception 'completed sale remains actionable';end if;
  update public.sales_orders set status='cancelled' where id=o;

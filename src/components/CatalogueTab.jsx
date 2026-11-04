@@ -4,6 +4,7 @@ import { availabilityLabels, isStale, missingProductFields, observationChange, s
 import { safeUrl } from '../lib/fulfillment'
 import CollectionManager from './CollectionManager'
 import TrackingPeriod from './TrackingPeriod'
+import CoefficientSimulator from './CoefficientSimulator'
 import CatalogueLibrary, {BestSellerList,ProductDetails} from './CatalogueLibrary'
 const defaultRequest = (...args) => import('../lib/api').then(m => m.catalogRequest(...args))
 const defaultCollectorRequest = (...args) => import('../lib/api').then(m => m.collectorRequest(...args))
@@ -142,6 +143,7 @@ export default function CatalogueTab({isAdmin,request=defaultRequest,collectorRe
   const historyRows=history?.observations.filter(o=>historyFilter==='all'||JSON.stringify([o.size,o.color])===historyFilter)||[]
   return <main className="workspace-page max-w-screen-2xl mx-auto p-4 sm:p-6 space-y-5 text-slate-800">
     <header className="flex flex-wrap justify-between items-center gap-4"><div><h1 className="text-2xl font-bold">Produits Shein <span className="text-base font-normal text-slate-400">{data.products.length}</span></h1><p className="text-sm text-slate-500 mt-1">Photos, tailles et prix de tes articles vendus.</p></div><div className="flex gap-2"><button className={button} disabled={busy} onClick={()=>run(load)}>Actualiser</button><button className={button} aria-expanded={toolsOpen} aria-controls="catalog-tools" onClick={()=>setToolsOpen(!toolsOpen)}>Outils</button></div></header>
+    <details className="rounded-2xl border border-slate-200 bg-white [&[open]>summary]:border-b"><summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-teal-800">Calculer un coefficient de revente (×) avant d’acheter</summary><div className="p-2 sm:p-3"><CoefficientSimulator/></div></details>
     {error&&!editing&&!linking&&<p role="alert" className="border border-red-200 bg-red-50 rounded-xl p-3 text-sm text-red-800">{error}</p>}
     {notice&&<p role="status" className="text-sm text-teal-800">{notice}</p>}
     {toolsOpen&&<section id="catalog-tools" className="rounded-xl border bg-white p-4 space-y-4"><h2 className="text-sm font-semibold">Récupération et associations</h2><div className="flex flex-wrap gap-2">{[['collector','Connexion Shein'],['sku','Associer les SKU']].map(([key,label])=><button key={key} className={tab===key?primary:button} onClick={()=>{setTab(key);setSearch('');setFilter('all')}}>{label}</button>)}</div><TrackingPeriod period={data.tracking}/></section>}

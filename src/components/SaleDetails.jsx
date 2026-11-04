@@ -5,6 +5,7 @@ import {ShipmentSummary} from './SupplierShipments'
 import {ErrorNotice,fieldClass,buttonClass,primaryClass} from './WorkspaceUI'
 import {STAGES,stageOf,money,deadline,ORDER_LABELS,nextStage,blocked,salePhotos,safeUrl} from '../lib/fulfillment'
 import {retrievalState,variantAvailability,saleMargin,draftSupplierUrl} from '../lib/saleDetails'
+import {saleCoefficient,formatCoefficient} from '../lib/coefficient'
 
 export function SheinStatus({sku,product}) {
   const state=retrievalState(sku,product)
@@ -16,6 +17,7 @@ export default function SaleDetails({value,onChange,product,busy,error,notice,on
   const dirty=JSON.stringify(value)!==initial.current
   const state=retrievalState(value.sku,product),availability=variantAvailability(value.supplier_size,value.supplier_color,product)
   const margin=saleMargin(value),currency=value.order?.currency,due=deadline(value)
+  const coef=formatCoefficient(saleCoefficient(value)),excludedCoefficient=['returning','cancelled','suspended'].includes(value.order?.status)
   const catalog=product?[product]:[],photos=salePhotos({...value,sku_override:value.sku},catalog),supplierUrl=draftSupplierUrl(value,catalog)
   const change=(key,val)=>onChange({...value,[key]:val,...(['actual_cost','fees_amount','refund_amount'].includes(key)?{finance_confirmed:false}:{}),...(key==='sku'?{supplier_url:undefined,variant:''}:{})})
   const close=()=>{if(!dirty||window.confirm('Fermer sans enregistrer tes modifications ?'))onClose()}
@@ -39,6 +41,7 @@ export default function SaleDetails({value,onChange,product,busy,error,notice,on
       <section className="space-y-3"><h3 className="font-semibold">Commande & réception</h3><div className="grid sm:grid-cols-2 gap-3">{field('supplier_order_ref','Numéro de commande Shein')}{value.supplier_tracking&&<p className="text-sm text-slate-500">Ancien suivi saisi : {value.supplier_tracking}</p>}{field('location','Emplacement chez toi',{max:100})}</div>{field('notes','Notes pour cette vente',{max:1000})}<div className="flex flex-wrap gap-2"><button type="button" className={buttonClass} disabled={busy||dirty} onClick={onParcel}>Relier un colis Shein</button><button type="button" className={buttonClass} disabled={busy||dirty} onClick={onShipments}>Voir les colis Shein</button></div>{dirty&&<p className="text-xs text-slate-500">Enregistre la vente avant de relier un colis.</p>}{value.shipments?.map(p=><div key={p.id} className="rounded-xl border p-3"><ShipmentSummary parcel={p}/></div>)}</section>
       <details className="rounded-xl bg-slate-50 p-4 space-y-3"><summary className="font-semibold cursor-pointer">Coûts réels & marge {currency?`(${currency})`:''}</summary><p className="text-xs text-slate-500">Le coût reprend le prix payé pour cet article après remise. La livraison de la commande reste dans le Budget. Tu peux renseigner ici des frais propres à cette vente.</p><div className="grid sm:grid-cols-3 gap-3">{field('actual_cost','Coût réellement payé',{amount:true,placeholder:'À renseigner'})}{field('fees_amount','Frais affectés',{amount:true})}{field('refund_amount','Remboursé au client',{amount:true})}</div>
         <div className="flex flex-wrap justify-between gap-2 text-sm"><span>Marge calculée avec tes montants</span><strong>{currency&&margin!=null?money(margin,currency):'À compléter'}</strong></div>
+        <div className="flex flex-wrap justify-between gap-2 text-sm"><span>Coefficient de revente <span className="text-xs text-slate-500">(vente nette ÷ prix payé)</span></span><strong>{coef||(excludedCoefficient?'Vente exclue du calcul':'Montants à compléter ou vérifier')}</strong></div>
         <label className="flex gap-2 items-start text-sm"><input type="checkbox" disabled={busy||margin==null||!currency} checked={value.finance_confirmed} onChange={e=>change('finance_confirmed',e.target.checked)}/>J’ai vérifié le coût payé, les frais et les remboursements.</label>
       </details>
       {onPreparePhoto&&<button type="button" className={buttonClass} disabled={busy} onClick={()=>{if(!dirty||window.confirm('Quitter sans enregistrer tes modifications ?'))onPreparePhoto()}}>Préparer les photos</button>}
