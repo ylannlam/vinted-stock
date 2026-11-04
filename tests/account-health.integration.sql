@@ -24,8 +24,10 @@ do $$ begin
  if not exists(select 1 from public.account_health_reports where status='restricted' and until_at is not null) then raise exception 'Restriction deadline lost';end if;
 end $$;
 update public.account_health_reports set until_at=null,until_date='2026-11-05';
+update public.account_health_alerts set until_date='2026-11-05' where status='restricted';
 do $$ begin
  if not exists(select 1 from public.account_health_reports where status='restricted' and until_date='2026-11-05' and until_at is null) then raise exception 'Date precision lost';end if;
+ if not exists(select 1 from public.account_health_alerts where status='restricted' and until_date='2026-11-05') then raise exception 'Notification date lost';end if;
  begin
   update public.account_health_reports set until_at=now();
   raise exception 'Mixed date precision accepted';

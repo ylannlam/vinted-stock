@@ -48,6 +48,7 @@ test('the profile 78 message keeps its date without fabricating an hour or a per
   const title="Compte restreint jusqu'au 05/11/2026",body="Ton compte est restreint. Tu ne peux plus ajouter de nouveaux articles ni modifier tes annonces existantes jusqu'au 05/11/2026."
   const a=normalizeHealthAlert(alert({title,body,severity:'info'}))
   assert.equal(a.status,'restricted');assert.equal(a.until_date,'2026-11-05');assert.equal(a.until_at,undefined)
+  assert.equal(normalizeHealthAlert(alert({title,body:null,severity:'info'})).status,'restricted')
   assert.match(remainingHealthTime(null,now,a.until_date),/05\/11\/2026 · heure non précisée/)
   assert.equal(healthView({alerts:[a]},now).status,'restricted')
   const nextDay=healthView({alerts:[a]},Date.parse('2026-11-04T23:30:00Z'))
