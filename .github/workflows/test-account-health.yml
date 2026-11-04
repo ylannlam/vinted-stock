@@ -6,7 +6,7 @@ on:
       - 'src/lib/accountHealth*'
       - 'src/lib/useAccountHealth*'
       - 'src/components/AccountHealth.jsx'
-      - 'supabase/migrations/*account_health.sql'
+      - 'supabase/migrations/*account_health*.sql'
       - 'tests/account-health.integration.sql'
       - '.github/workflows/test-account-health.yml'
 permissions:
@@ -37,4 +37,5 @@ jobs:
           --file tests/team-board.fixture.sql
           --file supabase/migrations/20261103112015_publication_history.sql
           --file supabase/migrations/20261104173331_account_health.sql
+          --file supabase/migrations/20261104174748_account_health_restrictions.sql
           --file tests/account-health.integration.sql

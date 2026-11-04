@@ -1,0 +1,12 @@
+begin;
+alter table public.account_health_reports add column until_date date;
+alter table public.account_health_alerts add column until_date date;
+alter table public.account_health_reports drop constraint account_health_reports_status_check;
+alter table public.account_health_reports add constraint account_health_reports_status_check check(status in ('ok','temporary','restricted','permanent','blocked','review'));
+alter table public.account_health_reports drop constraint account_health_reports_check;
+alter table public.account_health_reports add constraint account_health_reports_check check(until_at is null or status in ('temporary','restricted'));
+alter table public.account_health_reports add constraint account_health_reports_date_check check(until_date is null or (until_at is null and status in ('temporary','restricted')));
+alter table public.account_health_alerts add constraint account_health_alerts_date_check check(until_date is null or status in ('temporary','restricted'));
+alter table public.account_health_alerts drop constraint account_health_alerts_status_check;
+alter table public.account_health_alerts add constraint account_health_alerts_status_check check(status in ('temporary','restricted','permanent','blocked','verification','review'));
+commit;

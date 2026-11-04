@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {normalizeHealthAlert,healthReportInput,syncHealth,handleAccountHealth,readHealth} from './account-health.js'
+import {normalizeHealthAlert,healthReportInput,restrictionDate,syncHealth,handleAccountHealth,readHealth} from './account-health.js'
 import {publicationAccount} from '../src/lib/publications.js'
 import {healthView,remainingHealthTime} from '../src/lib/accountHealth.js'
 import {boardSection} from '../src/lib/teamBoard.js'
@@ -27,6 +27,38 @@ test('a deadline expiring never declares the account restored, and absence of al
   assert.match(remainingHealthTime('2026-11-05T17:00:00Z',now),/23 h/)
   assert.match(remainingHealthTime(null,now),/non communiquée/)
 })
+test('partial restrictions are recognized even as info notices, without being promoted to permanent bans',()=>{
+  for(const title of ['Votre compte est temporairement restreint','Compte restreint','Votre compte Vinted a été limité','Nous avons temporairement restreint votre compte','Certaines fonctionnalités de votre compte sont temporairement suspendues','Vous ne pouvez plus envoyer des messages','Your account is temporarily restricted']){
+    const h=normalizeHealthAlert(alert({title,severity:'info'}));assert.equal(h?.status,'restricted',title)
+  }
+  assert.equal(normalizeHealthAlert(alert({group:'dotb',title:'Votre compte est temporairement restreint',severity:'warning'})).status,'restricted')
+  for(const title of ['Les restrictions ont été levées','Votre compte n’est plus restreint','Account restrictions have been lifted','Cette annonce est limitée','Le compte de votre acheteur est restreint','Votre compte pourrait être restreint','Si votre compte est restreint, contactez-nous'])assert.equal(normalizeHealthAlert(alert({title,severity:'info'})),null,title)
+})
+test('restrictions retain deadlines and visibility reports are shown without asserting a ban',()=>{
+  const input={account_id:account,version:0,status:'restricted',reason:'Messages limités',until_at:'2026-11-05T18:00:00Z'}
+  const report=healthReportInput(input,now)
+  assert.equal(healthView({report},now).status,'restricted')
+  assert.equal(healthView({report},now+86400000).expired,true)
+  assert.equal(healthView({report},now+86400000).status,'review')
+  assert.equal(boardSection({health:healthView({report},now),vinted:{statut:'actif',creation_stage:'ready'}},now),'blocked')
+  assert.equal(healthView({native:{statut:'actif',is_shadowbanned:true}},now).status,'restricted')
+  assert.equal(healthView({report:{status:'ok',checked_at:new Date(now).toISOString()},alerts:[normalizeHealthAlert(alert({title:'Compte restreint'}))]},now).status,'ok')
+})
+test('the profile 78 message keeps its date without fabricating an hour or a permanent ban',()=>{
+  const title="Compte restreint jusqu'au 05/11/2026",body="Ton compte est restreint. Tu ne peux plus ajouter de nouveaux articles ni modifier tes annonces existantes jusqu'au 05/11/2026."
+  const a=normalizeHealthAlert(alert({title,body,severity:'info'}))
+  assert.equal(a.status,'restricted');assert.equal(a.until_date,'2026-11-05');assert.equal(a.until_at,undefined)
+  assert.match(remainingHealthTime(null,now,a.until_date),/05\/11\/2026 · heure non précisée/)
+  assert.equal(healthView({alerts:[a]},now).status,'restricted')
+  const nextDay=healthView({alerts:[a]},Date.parse('2026-11-04T23:30:00Z'))
+  assert.equal(nextDay.status,'review');assert.equal(nextDay.attention,true);assert.match(nextDay.label,/Date annoncée/)
+  assert.equal(restrictionDate("jusqu’au 31/02/2026"),null)
+  assert.equal(restrictionDate("jusqu'au 05/11/2026 puis jusqu'au 06/11/2026"),null)
+  assert.equal(restrictionDate('dans 24 heures'),null)
+  const input={account_id:account,version:0,status:'restricted',reason:body,until_date:'2026-11-05'}
+  assert.equal(healthReportInput(input,now).until_at,null)
+  for(const patch of [{until_date:0},{until_date:'2026-02-31'},{until_date:'2026-11-03'},{status:'ok'},{until_at:'2026-11-05T18:00:00Z'}])assert.throws(()=>healthReportInput({...input,...patch},now))
+})
 test('manual confirmation acknowledges old alerts but new ones and native restrictions still win',()=>{
   const report={status:'ok',checked_at:new Date(now).toISOString()},a=normalizeHealthAlert(alert())
   assert.equal(healthView({report,alerts:[a]},now).status,'ok')
@@ -52,9 +84,10 @@ function dbMock({claim=true,conflict=false}={}){
 }
 test('notification sync is read-only on Dotb, follows pages and persists resolved notices',async()=>{
   const db=dbMock(),calls=[]
-  const fetcher=async(url,opts)=>{calls.push({url,opts});assert.equal(opts.method,undefined);const q=new URL(url).searchParams;return {ok:true,json:async()=>q.get('group')==='captchas'?{data:[],has_more:false}:q.get('cursor')?{data:[alert({resolved:true,title:'Accès rétabli'})],has_more:false}:{data:[alert()],has_more:true,next_cursor:'next'}}}
+  const fetcher=async(url,opts)=>{calls.push({url,opts});assert.equal(opts.method,undefined);const q=new URL(url).searchParams;return {ok:true,json:async()=>q.get('group')!=='vinted'?{data:[],has_more:false}:q.get('cursor')?{data:[alert({resolved:true,title:'Accès rétabli'})],has_more:false}:{data:[alert()],has_more:true,next_cursor:'next'}}}
   assert.deepEqual(await syncHealth(db,{fetcher,token:'test',now}),{refreshed:true})
-  assert.equal(calls.length,3);assert.ok(calls.every(c=>!c.url.includes('live-')))
+  assert.equal(calls.length,4);assert.ok(calls.every(c=>!c.url.includes('live-')))
+  assert.ok(calls.some(c=>new URL(c.url).searchParams.get('group')==='dotb'))
   assert.ok(db.writes.some(w=>w.table==='account_health_alerts'&&w.mode==='upsert'))
   assert.ok(db.writes.some(w=>Array.isArray(w.patch)&&w.patch.some(n=>n.id===id&&n.resolved===true)))
 })

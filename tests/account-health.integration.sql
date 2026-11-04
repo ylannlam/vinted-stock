@@ -18,7 +18,20 @@ do $$ begin
  exception when check_violation then null;end;
  if not exists(select 1 from public.account_health_reports where status='temporary') then raise exception 'Report was lost';end if;
 end $$;
-update public.account_health_reports set status='ok',until_at=null,version=version+1 where version=1;
+update public.account_health_reports set status='restricted' where version=1;
+insert into public.account_health_alerts(id,account_id,status,title,body,resolved,created_at,observed_at) values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','restricted','Compte restreint','Messages limités',false,now(),now());
+do $$ begin
+ if not exists(select 1 from public.account_health_reports where status='restricted' and until_at is not null) then raise exception 'Restriction deadline lost';end if;
+end $$;
+update public.account_health_reports set until_at=null,until_date='2026-11-05';
+do $$ begin
+ if not exists(select 1 from public.account_health_reports where status='restricted' and until_date='2026-11-05' and until_at is null) then raise exception 'Date precision lost';end if;
+ begin
+  update public.account_health_reports set until_at=now();
+  raise exception 'Mixed date precision accepted';
+ exception when check_violation then null;end;
+end $$;
+update public.account_health_reports set status='ok',until_at=null,until_date=null,version=version+1 where version=1;
 do $$ begin
  if not exists(select 1 from public.account_health_reports where status='ok' and version=2) then raise exception 'Confirmation failed';end if;
  if (select count(*) from public.account_health_sync)<>1 then raise exception 'Refresh state missing';end if;
