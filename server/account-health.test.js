@@ -43,9 +43,9 @@ test('manual reports reject invalid identifiers, stale versions, dates and overs
 function dbMock({claim=true,conflict=false}={}){
   const writes=[]
   return {writes,from(table){let patch,filters=[],mode,one=false
-    const q={select(){return q},eq(k,v){filters.push([k,v]);return q},lte(){return q},update(v){patch=v;mode='update';return q},upsert(v){patch=v;mode='upsert';return q},insert(v){patch=v;mode='insert';return q},maybeSingle(){one=true;return q},single(){one=true;return q},then(resolve){
+    const q={select(){return q},eq(k,v){filters.push([k,v]);return q},in(k,v){filters.push([k,v]);return q},lte(){return q},update(v){patch=v;mode='update';return q},upsert(v){patch=v;mode='upsert';return q},insert(v){patch=v;mode='insert';return q},maybeSingle(){one=true;return q},single(){one=true;return q},then(resolve){
       if(patch)writes.push({table,patch,mode,filters})
-      const data=table==='publication_accounts'?{id:account}:table==='account_health_sync'&&patch?.last_attempt_at?claim?{id:true}:null:null
+      const data=table==='publication_accounts'?{id:account}:table==='account_health_sync'&&patch?.last_attempt_at?claim?{id:true}:null:table==='account_health_alerts'&&!patch?[normalizeHealthAlert(alert())]:null
       return Promise.resolve({data,error:table==='account_health_reports'&&conflict?{code:'23505'}:null}).then(resolve)
     }};return q
   }}
@@ -56,7 +56,7 @@ test('notification sync is read-only on Dotb, follows pages and persists resolve
   assert.deepEqual(await syncHealth(db,{fetcher,token:'test',now}),{refreshed:true})
   assert.equal(calls.length,3);assert.ok(calls.every(c=>!c.url.includes('live-')))
   assert.ok(db.writes.some(w=>w.table==='account_health_alerts'&&w.mode==='upsert'))
-  assert.ok(db.writes.some(w=>w.patch.resolved===true&&w.filters.some(([k,v])=>k==='id'&&v===id)))
+  assert.ok(db.writes.some(w=>Array.isArray(w.patch)&&w.patch.some(n=>n.id===id&&n.resolved===true)))
 })
 test('concurrent refresh uses cache; missing permission is explicit and never clears stored alerts',async()=>{
   assert.deepEqual(await syncHealth(dbMock({claim:false}),{fetcher:()=>{throw Error('must not fetch')},now}),{cached:true})

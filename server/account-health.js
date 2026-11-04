@@ -59,12 +59,17 @@ export async function syncHealth(db,{fetcher=fetch,token=process.env.DOTB_API_TO
           throw new AppError(messages[response.status]||'Les alertes Dotb sont indisponibles. Les statuts précédents sont conservés.',502)
         }
         const data=await response.json()
-        if(!Array.isArray(data?.data)||typeof data.has_more!=='boolean'||data.has_more&&(!data.data.length||typeof data.next_cursor!=='string'||!data.next_cursor||seen.has(data.next_cursor)))throw new AppError('La liste des alertes Dotb est incomplète.',502)
+        if(!Array.isArray(data?.data)||data.data.length>100||typeof data.has_more!=='boolean'||data.has_more&&(!data.data.length||typeof data.next_cursor!=='string'||!data.next_cursor||seen.has(data.next_cursor)))throw new AppError('La liste des alertes Dotb est incomplète.',502)
         const rows=data.data.map(n=>normalizeHealthAlert(n,started)).filter(Boolean)
         if(rows.length)check(await db.from('account_health_alerts').upsert(rows,{onConflict:'id'}))
         // A resolved alert can change its wording. Close its previous record by ID,
         // even when the new wording no longer looks like a restriction.
-        for(const n of data.data.filter(n=>n?.resolved===true&&isId(n.id)&&isId(n.vinted_account_id)))check(await db.from('account_health_alerts').update({resolved:true,observed_at:started}).eq('id',n.id.toLowerCase()).eq('account_id',n.vinted_account_id.toLowerCase()))
+        const closed=new Map(data.data.filter(n=>n?.resolved===true&&isId(n.id)&&isId(n.vinted_account_id)).map(n=>[n.id.toLowerCase(),n.vinted_account_id.toLowerCase()]))
+        if(closed.size){
+          const existing=check(await db.from('account_health_alerts').select('id,account_id,status,title,body,created_at').in('id',[...closed.keys()]))||[]
+          const resolved=existing.filter(n=>closed.get(n.id)===n.account_id).map(n=>({...n,resolved:true,observed_at:started}))
+          if(resolved.length)check(await db.from('account_health_alerts').upsert(resolved,{onConflict:'id'}))
+        }
         if(!data.has_more)break
         cursor=data.next_cursor;seen.add(cursor)
         if(page===2)partial=true
