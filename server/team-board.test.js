@@ -95,7 +95,7 @@ test('the Alicia tab lists accounts by priority, opens listing creation for an a
   const mod=new Module(fileURLToPath(import.meta.url));mod.paths=Module._nodeModulePaths(fileURLToPath(new URL('..',import.meta.url)));mod._compile(compiled.outputFiles[0].text,fileURLToPath(import.meta.url))
   const base=(login,patch)=>({account_id:login,login,profile:null,can_create:true,vinted:null,style:null,today:0,week:0,last_at:null,drafts:0,recent:[],mine:[],...patch})
   let board={day:'2026-11-04',me:'Alicia',accounts:[base('fed.today',{vinted:{creation_stage:'ready'},today:2,week:4,last_at:new Date().toISOString(),profile:{id:'p1',number:'3'},style:{ready:true}}),
-    base('starving',{vinted:{creation_stage:'ready'},profile:{id:'p2',number:'8'},mine:[{id:'d1',version:5,title:'Body noir'}]}),base('banned',{vinted:{statut:'banni_def'}})]}
+    base('starving',{vinted:{creation_stage:'ready'},profile:{id:'p2',number:'8'},mine:[{id:'d1',version:5,title:'Body noir'}]}),base('banned',{vinted:{statut:'banni_def'}}),base('unselected',{can_create:false})]}
   const calls=[],created=[]
   const request=async(method,body,query)=>{calls.push(body?.action||query);if(body?.action==='mark_published'){board=structuredClone(board);board.accounts[1].mine=[];board.accounts[1].today=1};return structuredClone(board)}
   const root=createRoot(document.getElementById('app')),props=n=>n[Object.keys(n).find(k=>k.startsWith('__reactProps$'))]
@@ -103,6 +103,11 @@ test('the Alicia tab lists accounts by priority, opens listing creation for an a
     await act(async()=>root.render(React.createElement(mod.exports.default,{request,onCreateListing:p=>created.push(p),onStyles(){},onAccounts(){}})))
     await act(async()=>{await new Promise(r=>setTimeout(r,10))})
     const titles=[...document.querySelectorAll('article h3')].map(h=>h.textContent)
+    assert.equal(titles.includes('unselected'),false,'my selected accounts are the default view')
+    await act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Tous les comptes · 4').click())
+    assert.ok(document.body.textContent.includes('unselected'))
+    await act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Mes comptes choisis · 3').click())
+    assert.equal(document.body.textContent.includes('unselected'),false)
     assert.deepEqual(titles.slice(0,2),['starving','fed.today'],'the account fed least recently comes first')
     assert.ok(document.body.textContent.includes('2 annonces publiées aujourd’hui sur 1 compte'))
     assert.ok(document.body.textContent.includes('Profil AdsPower n°8'))

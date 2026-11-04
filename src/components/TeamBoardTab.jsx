@@ -34,7 +34,7 @@ function AccountCard({row,section,busy,onCreate,onStyles,onProfiles,onPublished}
 }
 
 export default function TeamBoardTab({request=defaultRequest,onCreateListing,onStyles,onAccounts,onProfiles}) {
-  const [data,setData]=useState(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false),[search,setSearch]=useState('')
+  const [data,setData]=useState(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false),[search,setSearch]=useState(''),[allAccounts,setAllAccounts]=useState(false)
   const alive=useRef(true),revision=useRef(0),saving=useRef(false)
   async function load(){const ticket=++revision.current;setBusy(true);try{const next=await request('GET',undefined,'action=board');if(alive.current&&ticket===revision.current){setData(next);setError('')}}catch(e){if(alive.current&&ticket===revision.current)setError(e.message)}finally{if(alive.current&&ticket===revision.current)setBusy(false)}}
   useEffect(()=>{alive.current=true;load();return()=>{alive.current=false;revision.current++}},[request])
@@ -44,11 +44,13 @@ export default function TeamBoardTab({request=defaultRequest,onCreateListing,onS
     try{await request('POST',{action:'mark_published',id:draft.id,version:draft.version,url});if(alive.current)setNotice(`« ${draft.title} » est notée comme publiée.`);if(alive.current)await load()}
     catch(e){if(alive.current){setError(e.message);setBusy(false)}}finally{saving.current=false}
   }
-  const rows=data?.accounts||[],sections=groupBoard(rows,{search}),today=rows.reduce((n,r)=>n+r.today,0)
+  const allRows=data?.accounts||[],selectedRows=allRows.filter(r=>r.can_create),showAll=allAccounts||!selectedRows.length,rows=showAll?allRows:selectedRows,sections=groupBoard(rows,{search}),today=rows.reduce((n,r)=>n+r.today,0)
   return <main className="workspace-page max-w-screen-2xl mx-auto p-4 sm:p-6 space-y-5 text-slate-800">
     <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-widest text-teal-700">Poste de travail d’Alicia</p><h1 className="text-2xl font-bold mt-1">Comptes à alimenter</h1><p className="text-sm text-slate-500 mt-1">Commence par le haut. Rien n’est publié automatiquement : publie à la main sur Vinted, puis colle le lien ici.</p><p className="text-xs text-slate-500 mt-2">Les compteurs regroupent les publications déjà relevées et les liens ajoutés ici. Les comptes sans historique restent à vérifier.</p></div><button className={buttonClass} disabled={busy} onClick={load}>Actualiser</button></header>
     <ErrorNotice error={error} retry={load} busy={busy}/>
     {notice&&<p role="status" className="rounded-xl bg-teal-50 p-3 text-sm text-teal-900">{notice}</p>}
+    {data&&<nav aria-label="Comptes affichés" className="flex flex-wrap gap-2"><button className={showAll?buttonClass:primaryClass} aria-pressed={!showAll} disabled={!selectedRows.length} onClick={()=>setAllAccounts(false)}>Mes comptes choisis · {selectedRows.length}</button><button className={showAll?primaryClass:buttonClass} aria-pressed={showAll} onClick={()=>setAllAccounts(true)}>Tous les comptes · {allRows.length}</button></nav>}
+    {data&&!selectedRows.length&&!!allRows.length&&<p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">Choisis tes comptes dans AdsPower pour retrouver ici ta liste de travail. <button className="underline" onClick={onProfiles}>Choisir mes comptes</button></p>}
     {data&&<div className="flex flex-wrap items-center gap-3"><p className="text-sm"><strong>{today}</strong> annonce{today>1?'s':''} publiée{today>1?'s':''} aujourd’hui sur {rows.filter(r=>r.today).length} compte{rows.filter(r=>r.today).length>1?'s':''}</p><input aria-label="Chercher un compte" className={`${fieldClass} sm:w-72 ml-auto`} placeholder="Chercher un compte ou un n° de profil" value={search} onChange={e=>setSearch(e.target.value)}/></div>}
     {!data&&busy&&<p role="status" className="py-12 text-center text-slate-500">Chargement des comptes…</p>}
     {data&&!rows.length&&<p className="rounded-xl border bg-white p-6 text-sm text-slate-600">Aucun compte relié pour l’instant. Les comptes apparaissent ici une fois connectés dans l’onglet AdsPower.</p>}
