@@ -27,6 +27,8 @@ export function listingIssues(f,photos,options){
  if(!f.sku?.trim())add('sku','le SKU','product')
  if(!/^\d{1,5}([.,]\d{1,2})?$/.test(String(f.price))||Number(String(f.price).replace(',','.'))<=0)add('price','le prix','product')
  if(!f.title?.trim()||f.title.trim().length<5||f.title.length>100)add('title','un titre de 5 à 100 caractères')
+ // Vinted refuse un titre avec plus de 6 majuscules en dehors de la première lettre des mots.
+ else if(f.title.split(/\s+/).reduce((n,w)=>n+[...w.slice(1)].filter(c=>c!==c.toLowerCase()).length,0)>6)add('title','un titre avec moins de majuscules (6 au maximum hors initiales)')
  if(!f.description?.trim()||f.description.trim().length<5||f.description.length>2000)add('description','une description de 5 à 2 000 caractères')
  if(!f.catalog_id||!options||options.catalog?.id!==Number(f.catalog_id))add('category','la catégorie et ses options')
  if(!f.brand_id)add('brand','la marque ou « Sans marque »')

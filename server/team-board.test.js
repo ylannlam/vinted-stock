@@ -112,7 +112,7 @@ test('the Alicia tab lists accounts by priority, opens listing creation for an a
     assert.ok(document.body.textContent.includes('2 annonces publiées aujourd’hui sur 1 compte'))
     assert.ok(document.body.textContent.includes('Profil AdsPower n°8'))
     const card=[...document.querySelectorAll('article')].find(a=>a.querySelector('h3').textContent==='starving')
-    await act(async()=>[...card.querySelectorAll('button')].find(b=>b.textContent==='Créer une annonce').click())
+    await act(async()=>[...card.querySelectorAll('button')].find(b=>b.textContent==='Créer des annonces').click())
     assert.deepEqual(created,['p2'])
     const input=card.querySelector('input');await act(async()=>props(input).onChange({target:{value:'https://www.vinted.fr/items/42'}}))
     // The simulated DOM does not submit a form on button click (browsers do): submit it as the browser would.
@@ -122,7 +122,7 @@ test('the Alicia tab lists accounts by priority, opens listing creation for an a
     assert.deepEqual(calls,['action=board','mark_published','action=board'])
     assert.ok(document.body.textContent.includes('« Body noir » est notée comme publiée.'))
     assert.ok(document.body.textContent.includes('3 annonces publiées aujourd’hui sur 2 comptes'))
-    assert.equal([...document.querySelectorAll('article')].filter(a=>a.textContent.includes('Créer une annonce')).length,2,'no create button on blocked accounts')
+    assert.equal([...document.querySelectorAll('article')].filter(a=>a.textContent.includes('Créer des annonces')).length,2,'no create button on blocked accounts')
     const blocked=[...document.querySelectorAll('details summary')].find(s=>s.textContent.includes('Bloqués'));assert.ok(blocked,'blocked accounts are folded away')
   }finally{await act(async()=>root.unmount());delete globalThis.window;delete globalThis.document;delete globalThis.IS_REACT_ACT_ENVIRONMENT}
 })
