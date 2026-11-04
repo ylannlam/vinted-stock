@@ -34,6 +34,15 @@ test('an authorization rejection cannot create an unlimited retry loop',async()=
   assert.equal(issued,2);assert.equal(calls,2)
 })
 
+test('temporary verification failures do not discard tickets or replay launches',async()=>{
+  let issued=0,calls=0,unavailable=true
+  const request=createAdsPowerRequest(options({issueTicket:async()=>({ticket:`ticket-${++issued}`,expires_at:100000}),fetcher:async()=>{calls++;return unavailable?response(503,{code:'verification_unavailable',error:'Site momentanément indisponible'}):response(200,{configured:true})}}))
+  await assert.rejects(request('/launch',{ids:['x']}),e=>e.code==='site')
+  assert.equal(issued,1);assert.equal(calls,1)
+  unavailable=false;assert.equal((await request()).configured,true)
+  assert.equal(issued,1);assert.equal(calls,2)
+})
+
 test('a timed-out launch is not silently replayed and is not reported as a closed connector',async()=>{
   let calls=0
   const request=createAdsPowerRequest(options({fetcher:async()=>{calls++;throw Object.assign(Error('timeout'),{name:'TimeoutError'})}}))

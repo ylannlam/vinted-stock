@@ -7,6 +7,7 @@ import {readConfig,saveConfig} from './storage.mjs'
 import {LaunchQueue} from './queue.mjs'
 import {startDotb} from './dotb.mjs'
 import {RuntimeMonitor} from './monitor.mjs'
+import {verifyTicket as verifyRemoteTicket,createTicketVerifier} from './authorization.mjs'
 
 export const PORT=17442,SITE='https://vinted-stock.vercel.app',LOCAL=`http://127.0.0.1:${PORT}`
 const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
@@ -14,14 +15,11 @@ const html=(token,{configured=false,message='',port=50325}={})=>`<!doctype html>
 async function body(req){let size=0,parts=[];for await(const part of req){size+=part.length;if(size>16000)throw new LocalError('Demande trop volumineuse.',413);parts.push(part)}return Buffer.concat(parts).toString('utf8')}
 function json(res,status,value){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(value))}
 export async function verifyTicket(ticket,fetcher=fetch){
-  if(typeof ticket!=='string'||!/^svads_[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/.test(ticket)||ticket.length>1500)throw new LocalError('Connecte-toi au site pour utiliser AdsPower.',401)
-  let response;try{response=await fetcher(`${SITE}/api/adspower`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'verify',ticket}),redirect:'error',signal:AbortSignal.timeout(12000)})}catch{throw new LocalError('Le site est momentanément inaccessible. Réessaie.',503)}
-  const result=await response.json().catch(()=>({}));if(!response.ok||!result.user_id||!(result.expires_at>Date.now()))throw new LocalError('Autorisation expirée. Actualise le site.',401)
-  return result
+  return verifyRemoteTicket(ticket,{site:SITE,fetcher})
 }
 export async function createCompanion({dataDir,verify=verifyTicket,clientFactory=c=>new AdsPowerClient(c),runner=startDotb,load=readConfig,save=saveConfig,monitorOptions={}}={}){
   let config=await load(dataDir).catch(()=>null),ads=config?clientFactory(config):null,profiles=[],listAt=0,loadingList=null,settingUp=false
-  const tickets=new Map(),csrf=new Map()
+  const authorize=createTicketVerifier(verify),csrf=new Map()
   const queue=new LaunchQueue({run:(profile,update)=>runner(profile,update,ads)})
   const monitor=new RuntimeMonitor({...monitorOptions,getClient:()=>ads})
   async function refresh(){
@@ -59,13 +57,10 @@ export async function createCompanion({dataDir,verify=verifyTicket,clientFactory
         res.setHeader('Access-Control-Allow-Methods','GET, POST, OPTIONS');res.setHeader('Access-Control-Allow-Headers','Authorization, Content-Type');res.writeHead(204);res.end();return
       }
       const ticket=req.headers.authorization?.match(/^Bearer (.+)$/)?.[1]
-      const cached=tickets.get(ticket)
-      if(!cached||cached.until<Date.now()){
-        const auth=await verify(ticket);tickets.set(ticket,{until:Math.min(auth.expires_at,Date.now()+10000)});if(tickets.size>20)tickets.delete(tickets.keys().next().value)
-      }
+      await authorize(ticket)
       if(req.method==='GET'&&url.pathname==='/state'){
         void monitor.refresh(profiles,queue.snapshot())
-        json(res,200,{version:'1.0.4',configured:!!config,jobs:queue.snapshot(),list_at:listAt,...monitor.snapshot()});return
+        json(res,200,{version:'1.0.5',configured:!!config,jobs:queue.snapshot(),list_at:listAt,...monitor.snapshot()});return
       }
       if(req.method==='GET'&&url.pathname==='/profiles'){json(res,200,{profiles:await refresh()});return}
       if(req.method==='POST'){
@@ -79,7 +74,7 @@ export async function createCompanion({dataDir,verify=verifyTicket,clientFactory
         if(url.pathname==='/cancel'){json(res,200,{jobs:queue.cancel()});return}
       }
       throw new LocalError('Commande inconnue.',404)
-    }catch(error){json(res,error.status||500,{error:error.status?error.message:'La connexion locale a été interrompue. Relance le connecteur.'})}
+    }catch(error){json(res,error.status||500,{error:error.status?error.message:'La connexion locale a été interrompue. Relance le connecteur.',...(error.code?{code:error.code}:{})})}
   })
   server.headersTimeout=15000;server.requestTimeout=20000
   return {server,queue}

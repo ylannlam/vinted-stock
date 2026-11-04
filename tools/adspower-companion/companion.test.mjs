@@ -10,6 +10,19 @@ import {mkdtemp,readFile,rm} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import path from 'node:path'
 
+test('the HTTP service preserves temporary verification errors without executing a launch',async t=>{
+  let verified=0,started=0,unavailable=true
+  const {server}=await createCompanion({load:async()=>null,runner:async()=>{started++},verify:async()=>{verified++;if(unavailable)throw new LocalError('Site indisponible',503,'verification_unavailable');return {user_id:'admin',expires_at:Date.now()+90000}}})
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>server.close())
+  const base=`http://127.0.0.1:${server.address().port}`,headers={Origin:SITE,Authorization:'Bearer test-admin','Content-Type':'application/json'}
+  const failure=await fetch(base+'/launch',{method:'POST',headers,body:'{}'})
+  assert.equal(failure.status,503);assert.equal((await failure.json()).code,'verification_unavailable');assert.equal(started,0)
+  unavailable=false
+  const states=await Promise.all([fetch(base+'/state',{headers}),fetch(base+'/state',{headers})])
+  assert.ok(states.every(response=>response.status===200));assert.equal(verified,2);assert.equal(started,0)
+  assert.equal((await states[0].json()).version,'1.0.5')
+})
+
 test('local connection survives encrypted Windows storage without plaintext on disk',async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'stock-vinted-storage-')),key='dummy-secret-for-storage-test'
   try{await saveConfig(dir,{apiKey:key,port:50325});assert.deepEqual(await readConfig(dir),{apiKey:key,port:50325});if(process.platform==='win32')assert.equal((await readFile(path.join(dir,'connection.json'),'utf8')).includes(key),false)}

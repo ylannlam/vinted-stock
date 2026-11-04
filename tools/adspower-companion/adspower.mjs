@@ -1,5 +1,5 @@
 export const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms))
-export class LocalError extends Error{constructor(message,status=400){super(message);this.status=status}}
+export class LocalError extends Error{constructor(message,status=400,code){super(message);this.status=status;if(code)this.code=code}}
 export const validProfile=id=>typeof id==='string'&&/^[A-Za-z0-9_-]{1,80}$/.test(id)
 export function debugAddress(value){
   let url;try{url=new URL(value)}catch{throw new LocalError('Le navigateur ne fournit pas de connexion locale valide.')}

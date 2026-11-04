@@ -49,7 +49,7 @@ export function createAdsPowerRequest({getSession,issueTicket,fetcher=globalThis
       const result=await response.json().catch(()=>null)
       // Authorization rejection is safe to retry; a timed-out launch is never replayed.
       if(response.status===401&&attempt===0){ticket=await ticketFor(user,ticket);continue}
-      if(!response.ok){if(response.status===401&&capability===ticket)capability=null;throw failure(result?.error||'Le connecteur a refusé la demande. Réessaie.',response.status===401?'authorization':'connector')}
+      if(!response.ok){if(response.status===401&&capability===ticket)capability=null;throw failure(result?.error||'Le connecteur a refusé la demande. Réessaie.',response.status===401?'authorization':result?.code==='verification_unavailable'?'site':'connector')}
       if(!result||typeof result!=='object')throw failure('La réponse du connecteur est illisible. Actualise la page.','response')
       return result
     }

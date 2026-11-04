@@ -31,6 +31,13 @@ Garde le PC éveillé et les pages Dotb ouvertes pour qu’elles continuent à t
 Fermer le connecteur ne ferme pas les profils et n'arrête pas leurs automatisations.
 « Annuler l'attente » annule uniquement les profils pas encore lancés.
 
+En cas de coupure, ouvre « Diagnostic de connexion » dans l'onglet AdsPower :
+la dernière réponse, la version et le dernier incident y sont indiqués.
+La liaison est retentée automatiquement lorsque le site reste ouvert sur ce PC.
+Sur téléphone, le suivi reste consultable, mais le connecteur du PC n'est pas joignable.
+Pour une mise à jour, attends la fin des lancements, ferme le connecteur,
+remplace ses fichiers dans le même dossier en conservant .data, puis relance run.bat.
+
 Ne partage pas le dossier .data : il contient ta connexion locale.
 Le programme n'est accessible que depuis ce PC et exige une autorisation
 administrateur temporaire émise par Stock Vinted. La clé AdsPower, les cookies
