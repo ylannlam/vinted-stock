@@ -13,6 +13,19 @@ export async function readBoardRows(query){
   for(;;){const page=await query().range(rows.length,rows.length+499);const data=check(page)||[];rows.push(...data);if(!data.length||rows.length>=page.count)return rows}
 }
 
+// Shared by the board and account health: explicit links before exact names,
+// with the signed-in member's profile preferred over another member's profile.
+export function matchPublicationProfiles({accounts,links,prefs},ownerId){
+  const matches=new Map()
+  for(const pref of [...prefs].sort((a,b)=>(b.owner_id===ownerId)-(a.owner_id===ownerId))){
+    for(const profile of Array.isArray(pref.profiles)?pref.profiles:[]){
+      const account=publicationAccount(profile,accounts,links.filter(l=>l.owner_id===pref.owner_id))
+      if(account&&!matches.has(account.id))matches.set(account.id,{profile,own:pref.owner_id===ownerId})
+    }
+  }
+  return matches
+}
+
 // Lien ou numéro d'annonce Vinted → numéro (ex. https://www.vinted.fr/items/123456-robe → 123456).
 export function vintedItemId(value) {
   if(typeof value!=='string')return null
@@ -43,13 +56,7 @@ export async function readTeamBoard(db,user,{now=new Date()}={}) {
   ])
   const data={accounts,links,prefs,styles,vinted,people,counts:check(counts)||{},mine,backgrounds}
   const names=new Map(data.people.map(p=>[p.id,p.pseudo||'Quelqu’un']))
-  const matches=new Map()
-  for(const pref of [...data.prefs].sort((a,b)=>(b.owner_id===user.id)-(a.owner_id===user.id))){
-    for(const profile of Array.isArray(pref.profiles)?pref.profiles:[]){
-      const account=publicationAccount(profile,data.accounts,data.links.filter(l=>l.owner_id===pref.owner_id))
-      if(account&&!matches.has(account.id))matches.set(account.id,{profile,own:pref.owner_id===user.id})
-    }
-  }
+  const matches=matchPublicationProfiles(data,user.id)
   const byKey=(rows,key)=>new Map((rows||[]).map(r=>[r[key],r]))
   const stats=byKey(data.counts.stats,'account_id'),drafts=byKey(data.counts.drafts,'account_id'),recent=byKey(data.counts.recent,'account_id'),style=byKey(data.styles,'id'),background=byKey(data.backgrounds,'id')
   const vintedByNumber=new Map(),vintedByPseudo=new Map()

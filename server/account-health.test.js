@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {normalizeHealthAlert,healthReportInput,restrictionDate,syncHealth,handleAccountHealth,readHealth} from './account-health.js'
+import {normalizeHealthAlert,healthReportInput,restrictionDate,syncHealth,handleAccountHealth,readHealth,healthNativeLink} from './account-health.js'
 import {publicationAccount} from '../src/lib/publications.js'
 import {healthView,remainingHealthTime} from '../src/lib/accountHealth.js'
 import {boardSection} from '../src/lib/teamBoard.js'
@@ -111,12 +111,44 @@ test('health endpoint retains the existing administrator authorization boundary'
   await resourcesHandler(async(req,res,r)=>{roles=r;return null})({method:'GET',query:{scope:'health'}},res)
   assert.deepEqual(roles,['admin'])
 })
+function healthDatabase(tables){
+  return {from(name){let filters=[],start=0,end=999,single=false;const q={select(){return q},eq(k,v){filters.push(r=>r[k]===v);return q},is(k,v){filters.push(r=>(r[k]??null)===v);return q},order(){return q},range(s,e){start=s;end=e;return q},single(){single=true;return q},then(resolve){const rows=(tables[name]||[]).filter(r=>filters.every(f=>f(r)));return Promise.resolve({error:null,count:rows.length,data:single?rows[0]:rows.slice(start,end+1)}).then(resolve)}};return q}}
+}
 test('read status links to an AdsPower profile by exact login and keeps the native deadline',async()=>{
   const tables={publication_accounts:[{id:account,login:'Mode.Paris',source_present:true}],account_health_reports:[],account_health_alerts:[],account_health_sync:[{id:true,error:null}],vinted_accounts:[{id,pseudo:'mode.paris',statut:'banni_temp',deban_at:'2026-11-05T18:00:00Z',deleted_at:null}]}
-  const db={from(name){let filters=[],start=0,end=999,single=false;const q={select(){return q},eq(k,v){filters.push(r=>r[k]===v);return q},is(k,v){filters.push(r=>(r[k]??null)===v);return q},order(){return q},range(s,e){start=s;end=e;return q},single(){single=true;return q},then(resolve){const rows=(tables[name]||[]).filter(r=>filters.every(f=>f(r)));return Promise.resolve({error:null,count:rows.length,data:single?rows[0]:rows.slice(start,end+1)}).then(resolve)}};return q}}
-  const result=await readHealth(db)
+  const result=await readHealth(healthDatabase(tables))
   const matched=publicationAccount({id:'profile',name:'MODE.PARIS'},result.accounts)
   assert.equal(matched.id,account);assert.equal(matched.native.deban_at,'2026-11-05T18:00:00Z')
   assert.equal(healthView(matched,now).status,'temporary')
   assert.equal(publicationAccount({id:'profile',name:'Wrong'},result.accounts),null)
+})
+
+test('health uses the same explicit profile links and owner priority as Alicia when a pseudo changes',async()=>{
+  const other='cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+  const tables={
+    publication_accounts:[{id:account,login:'nouveau.pseudo',source_present:true}],
+    publication_profile_links:[{owner_id:id,profile_id:'own',account_id:account},{owner_id:other,profile_id:'other',account_id:account}],
+    adspower_preferences:[{owner_id:other,profiles:[{id:'other',number:'99'}]},{owner_id:id,profiles:[{id:'own',number:'75',name:'Nom différent / OUI'}]}],
+    vinted_accounts:[{id:'native',pseudo:'ancien.pseudo',ads_power_num:75,statut:'banni_temp',deban_at:'2026-11-05T18:00:00Z'},{id:'another',pseudo:'nouveau.pseudo',ads_power_num:99,statut:'actif'}],
+    account_health_reports:[{account_id:account,status:'review',reason:'À conserver',version:2}],account_health_sync:[{id:true,error:null}]
+  }
+  const result=await handleAccountHealth({method:'GET'},{db:healthDatabase(tables),user:{id}})
+  const found=result.accounts[0]
+  assert.equal(found.native.id,'native');assert.equal(found.health.status,'temporary')
+  assert.equal(found.health.until_at,'2026-11-05T18:00:00Z')
+  assert.deepEqual(found.native_link,{by:'profile_number',profile_number:'75',ambiguous:false})
+  assert.equal(found.report.reason,'À conserver');assert.equal(found.report.version,2)
+  tables.publication_profile_links=[];tables.adspower_preferences[1].profiles[0].name='NOUVEAU.PSEUDO'
+  assert.equal((await readHealth(healthDatabase(tables),{ownerId:id})).accounts[0].native.id,'native','exact profile names remain a fallback when there is no explicit link')
+})
+
+test('native restrictions are never assigned from duplicated or archived account records',()=>{
+  const a={login:'mode.paris'},profile={number:'75'}
+  const active={id:'active',pseudo:'ancien',ads_power_num:75},archived={...active,id:'archive',deleted_at:'2026-01-01'}
+  assert.equal(healthNativeLink(a,profile,[archived,active]).account.id,'active')
+  const duplicate=healthNativeLink(a,profile,[active,{...active,id:'duplicate'},{id:'pseudo',pseudo:'mode.paris'}])
+  assert.equal(duplicate.account,null);assert.equal(duplicate.ambiguous,true)
+  assert.equal(healthNativeLink(a,null,[{pseudo:'MODE.PARIS'},{pseudo:'mode.paris'}]).account,null)
+  assert.equal(healthNativeLink(a,profile,[archived]).account,null)
+  assert.equal(healthNativeLink(a,{number:'123'},[{id:'pseudo',pseudo:'MODE.PARIS'}]).by,'pseudo')
 })

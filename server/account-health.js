@@ -1,5 +1,5 @@
 import {AppError,isId} from './dotb.js'
-import {readBoardRows} from './team-board.js'
+import {readBoardRows,matchPublicationProfiles} from './team-board.js'
 import {healthView,healthHasDeadline,parisHealthDay} from '../src/lib/accountHealth.js'
 
 const check=r=>{if(r.error)throw r.error;return r.data}
@@ -39,19 +39,30 @@ export function healthReportInput(body,now=Date.now()){
   if(until&&(Date.parse(until)<=now||Date.parse(until)>now+366*86400000))throw new AppError('Indique la date de fin à venir affichée par Vinted, ou laisse ce champ vide.')
   return {status:body.status,reason:body.reason.trim(),until_at:until,until_date:untilDate,checked_at:new Date(now).toISOString()}
 }
-export async function readHealth(db){
-  const [accounts,reports,alerts,native,sync]=await Promise.all([
+export function healthNativeLink(account,profile,native){
+  const number=String(profile?.number??'').trim(),active=native.filter(n=>!n.deleted_at)
+  const byNumber=number?active.filter(n=>String(n.ads_power_num??'').trim()===number):[]
+  const byPseudo=active.filter(n=>fold(n.pseudo).trim()===fold(account.login).trim())
+  const matching=byNumber.length?byNumber:byPseudo
+  // Never transfer a restriction when more than one live record matches.
+  return {account:matching.length===1?matching[0]:null,by:matching.length===1?(byNumber.length?'profile_number':'pseudo'):null,profile_number:number||null,ambiguous:matching.length>1}
+}
+export async function readHealth(db,{ownerId}={}){
+  const [accounts,reports,alerts,native,sync,links,prefs]=await Promise.all([
     readBoardRows(()=>db.from('publication_accounts').select('id,login,source_present',{count:'exact'}).eq('source_present',true).order('id')),
     readBoardRows(()=>db.from('account_health_reports').select('account_id,status,reason,until_at,until_date,version,checked_at',{count:'exact'}).order('account_id')),
     readBoardRows(()=>db.from('account_health_alerts').select('id,account_id,status,title,body,resolved,created_at,observed_at,until_date',{count:'exact'}).eq('resolved',false).order('id')),
-    readBoardRows(()=>db.from('vinted_accounts').select('id,pseudo,statut,creation_stage,deban_at,blocked_at,deleted_at,is_shadowbanned',{count:'exact'}).is('deleted_at',null).order('id')),
-    db.from('account_health_sync').select('last_completed_at,last_attempt_at,next_allowed_at,error,partial').eq('id',true).single()
+    readBoardRows(()=>db.from('vinted_accounts').select('id,pseudo,statut,creation_stage,deban_at,blocked_at,deleted_at,is_shadowbanned,ads_power_num',{count:'exact'}).is('deleted_at',null).order('id')),
+    db.from('account_health_sync').select('last_completed_at,last_attempt_at,next_allowed_at,error,partial').eq('id',true).single(),
+    readBoardRows(()=>db.from('publication_profile_links').select('owner_id,profile_id,account_id',{count:'exact'}).order('owner_id').order('profile_id')),
+    readBoardRows(()=>db.from('adspower_preferences').select('owner_id,profiles',{count:'exact'}).order('owner_id'))
   ])
+  const profiles=matchPublicationProfiles({accounts,links,prefs},ownerId)
   return {accounts:accounts.map(a=>{
-    const report=reports.find(r=>r.account_id===a.id)||null,matching=native.filter(n=>fold(n.pseudo).trim()===fold(a.login).trim())
+    const report=reports.find(r=>r.account_id===a.id)||null
     const signals=alerts.filter(n=>n.account_id===a.id)
-    const legacy=matching.length===1?matching[0]:null
-    return {id:a.id,login:a.login,source_present:a.source_present,report,alerts:signals,native:legacy,health:healthView({report,alerts:signals,native:legacy})}
+    const {account:legacy,...native_link}=healthNativeLink(a,profiles.get(a.id)?.profile,native)
+    return {id:a.id,login:a.login,source_present:a.source_present,report,alerts:signals,native:legacy,native_link,health:healthView({report,alerts:signals,native:legacy})}
   }),sync:check(sync)}
 }
 export async function syncHealth(db,{fetcher=fetch,token=process.env.DOTB_API_TOKEN,now=Date.now()}={}){
@@ -96,9 +107,9 @@ export async function syncHealth(db,{fetcher=fetch,token=process.env.DOTB_API_TO
   }
 }
 export async function handleAccountHealth(req,{db,user}){
-  if(req.method==='GET')return readHealth(db)
+  if(req.method==='GET')return readHealth(db,{ownerId:user.id})
   if(req.method!=='POST')throw new AppError('Méthode non autorisée.',405)
-  if(req.body?.action==='sync'){await syncHealth(db);return readHealth(db)}
+  if(req.body?.action==='sync'){await syncHealth(db);return readHealth(db,{ownerId:user.id})}
   if(req.body?.action!=='report')throw new AppError('Action inconnue.')
   const body=req.body,value=healthReportInput(body)
   if(!check(await db.from('publication_accounts').select('id').eq('id',body.account_id).maybeSingle()))throw new AppError('Compte introuvable.',404)
@@ -106,5 +117,5 @@ export async function handleAccountHealth(req,{db,user}){
   const result=body.version===0?await db.from('account_health_reports').insert({...patch,account_id:body.account_id}).select().single():await db.from('account_health_reports').update(patch).eq('account_id',body.account_id).eq('version',body.version).select().maybeSingle()
   if(result.error?.code==='23505'||!result.error&&!result.data)throw new AppError('Ce statut a changé. Actualise avant de réessayer.',409)
   check(result)
-  return readHealth(db)
+  return readHealth(db,{ownerId:user.id})
 }
