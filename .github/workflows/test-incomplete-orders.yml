@@ -1,0 +1,39 @@
+name: Tests des commandes incomplètes
+on:
+  push:
+    paths:
+      - 'server/incomplete-orders*'
+      - 'src/components/IncompleteOrders.jsx'
+      - 'supabase/migrations/*incomplete_sales_orders.sql'
+      - 'tests/incomplete-orders*'
+      - '.github/workflows/test-incomplete-orders.yml'
+permissions:
+  contents: read
+jobs:
+  incomplete-orders:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: test-only
+          POSTGRES_DB: incomplete_orders_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Vérifier les commandes sans article et les droits
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:test-only@127.0.0.1:5432/incomplete_orders_test
+        run: >-
+          psql --dbname "$TEST_DATABASE_URL" -X --set ON_ERROR_STOP=1
+          --file tests/team-board.fixture.sql
+          --file tests/incomplete-orders.fixture.sql
+          --file supabase/migrations/20261029174512_dotb_fulfillment.sql
+          --file supabase/migrations/20261104180106_incomplete_sales_orders.sql
+          --file tests/incomplete-orders.integration.sql

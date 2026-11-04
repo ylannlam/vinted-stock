@@ -14,6 +14,7 @@ import {readSheinOrders,reviewSheinOrder} from '../server/shein-orders.js'
 import {refreshSalePhotos} from '../server/sale-photos.js'
 import {readDailyPurchases} from '../server/daily-purchases.js'
 import {assistantSummary} from '../server/shein-assistant.js'
+import {readIncompleteOrders} from '../server/incomplete-orders.js'
 
 export const config = { maxDuration: 60 }
 const fail = error => { if (error) throw error }
@@ -41,6 +42,7 @@ export default async function handler(req, res) {
     if (!auth) return
     const { db, role, user } = auth
     if (req.method === 'GET') {
+      if(req.query?.view==='incomplete')return res.json(await readIncompleteOrders(db,req.query.page??0))
       if(req.query?.view==='shein_assistant')return res.json(await assistantSummary(db,req.query))
       if(req.query?.view==='daily_cart')return res.json(await readDailyPurchases(db,req.query))
       if(req.query?.view==='shein_orders')return res.json(await readSheinOrders(db,req.query))
@@ -56,19 +58,21 @@ export default async function handler(req, res) {
       }
       if(req.query?.view==='page'){
         const filters=salesFilters(req.query)
-        const known=typeof req.query.revision==='string'?req.query.revision:null
+        const prefix='incomplete-orders-v1:'
+        const known=typeof req.query.revision==='string'&&req.query.revision.startsWith(prefix)?req.query.revision.slice(prefix.length):null
         const pendingPage=db.rpc('sales_workspace_page',{p_filters:filters,p_known_revision:known})
         const conditional=known?await pendingPage:null
-        if(conditional){fail(conditional.error);if(conditional.data.unchanged)return res.json(conditional.data)}
-        const [pageResult,tracking,syncState,automation]=await Promise.all([
+        if(conditional){fail(conditional.error);if(conditional.data.unchanged)return res.json({...conditional.data,revision:prefix+conditional.data.revision})}
+        const [pageResult,tracking,syncState,automation,incomplete]=await Promise.all([
           conditional||pendingPage,
           readTrackingPeriod(db),
           db.from('dotb_sync_state').select('cursor,last_completed_at,processed').eq('id',true).single(),
           automationStatus(db),
+          readIncompleteOrders(db),
         ])
         fail(pageResult.error);fail(syncState.error)
         const data=pageResult.data
-        return res.json({...data,tracking,automation,connected:!!process.env.DOTB_API_TOKEN,
+        return res.json({...data,revision:prefix+data.revision,incomplete,tracking,automation,connected:!!process.env.DOTB_API_TOKEN,
           last_sync:syncState.data.last_completed_at,resume:!!syncState.data.cursor,processed:syncState.data.processed})
       }
       const offset = Number(req.query?.offset || 0)

@@ -4,6 +4,7 @@ import ResourceDialog from './ResourceDialog'
 import SupplierShipments,{ShipmentForm} from './SupplierShipments'
 import SaleDetails from './SaleDetails'
 import SaleCard from './SaleCard'
+import IncompleteOrders from './IncompleteOrders'
 import ShippingLabelDialog from './ShippingLabelDialog'
 import {ErrorNotice,Pagination,fieldClass,buttonClass,primaryClass} from './WorkspaceUI'
 import {confirmPurchase,draftSupplierUrl} from '../lib/saleDetails'
@@ -167,6 +168,7 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
     <nav aria-label="Ventes, panier, commandes ou colis" className="workspace-view-tabs"><button className={'pb-3 text-sm font-semibold border-b-2 '+(view==='sales'?'border-teal-700 text-teal-800':'border-transparent text-slate-500')} onClick={()=>setShowShipments(false)}>Mes ventes</button><button className={'pb-3 text-sm font-semibold border-b-2 '+(showCart?'border-teal-700 text-teal-800':'border-transparent text-slate-500')} onClick={()=>setView('cart')}>Panier du jour</button><button className={'pb-3 text-sm font-semibold border-b-2 '+(showOrders?'border-teal-700 text-teal-800':'border-transparent text-slate-500')} onClick={()=>setView('orders')}>Mes commandes Shein</button><button className={'pb-3 text-sm font-semibold border-b-2 '+(showShipments?'border-teal-700 text-teal-800':'border-transparent text-slate-500')} onClick={()=>setShowShipments(true)}>Mes colis Shein</button></nav>
     {showCart?<Suspense fallback={<p className="text-sm text-slate-500">Préparation du panier…</p>}><DailyPurchaseCart request={request} collectorRequest={collectorRequest} bridge={collectorBridge} isAdmin={isAdmin} onOpenSale={id=>run(()=>openDetail(id))} onOrders={()=>setView('orders')} onChanged={()=>load(true)}/></Suspense>:showOrders?<Suspense fallback={<p className="text-sm text-slate-500">Chargement des commandes…</p>}><SheinOrders request={request} bridge={collectorBridge} isAdmin={isAdmin} onOpenSale={id=>run(()=>openDetail(id))} onChanged={()=>load(true)}/></Suspense>:showShipments?<SupplierShipments request={request} onOpenSale={id=>run(()=>openDetail(id))} onChanged={()=>load(true)}/>:<>
     <section aria-label="Liste des ventes" className="space-y-4">
+      <IncompleteOrders initial={data.incomplete} request={request} busy={busy} onSync={isAdmin&&data.connected?()=>run(sync):undefined}/>
       <div className="workspace-filter-pills">
         {stages.map(s=><button key={s.id} disabled={busy} aria-pressed={filter===s.id} onClick={()=>chooseStage(s.id)} className={'rounded-full px-4 py-2 text-sm '+(filter===s.id?'bg-teal-800 text-white':'bg-white border text-slate-600 hover:bg-slate-50')}>{s.label} <span className="ml-1 opacity-70">{data.counts?.[s.id]||0}</span></button>)}
         {(data.counts?.missing_sku>0||filter==='missing_sku')&&<button disabled={busy} aria-pressed={filter==='missing_sku'} onClick={()=>chooseStage('missing_sku')} className={'rounded-full px-4 py-2 text-sm '+(filter==='missing_sku'?'bg-amber-700 text-white':'bg-amber-50 text-amber-900')}>SKU à ajouter · {data.counts?.missing_sku||0}</button>}
