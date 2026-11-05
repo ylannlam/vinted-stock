@@ -36,7 +36,7 @@ test('creation lets AdsPower draw a Windows 11 UA; replacement keeps the profile
   assert.equal(created.webgl_config.unmasked_renderer,'ANGLE (NVIDIA, NVIDIA GeForce RTX 4060 (0x00002882) Direct3D11 vs_5_0 ps_5_0, D3D11)')
   const replaced=fingerprintConfig(h,{chrome:141})
   assert.equal(replaced.random_ua,undefined);assert.match(replaced.ua,/^Mozilla\/5\.0 \(Windows NT 10\.0; Win64; x64\) .* Chrome\/141\.0\.0\.0 Safari\/537\.36$/)
-  assert.deepEqual(replaced.browser_kernel_config,{version:'ua_auto',type:'chrome'})
+  assert.deepEqual(created.browser_kernel_config,{version:'ua_auto',type:'chrome'});assert.equal(replaced.browser_kernel_config,undefined)
   assert.equal(chromeMajor(UA),141);assert.equal(chromeMajor('Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0'),null)
   for(const bad of [null,'',42,'Chrome/12.0.0','Mozilla/5.0 Chrome/x.0'])assert.equal(chromeMajor(bad),null)
 })
@@ -81,8 +81,29 @@ test('fingerprint replacement sends only the fingerprint and refuses unreadable 
   const update=ads.calls.find(c=>c.path==='/api/v2/browser-profile/update').body
   assert.deepEqual(Object.keys(update).sort(),['fingerprint_config','profile_id'],'proxy, cookies and session must not be sent')
   assert.match(update.fingerprint_config.ua,/Chrome\/141\.0\.0\.0/)
+  assert.equal(Object.hasOwn(update.fingerprint_config,'browser_kernel_config'),false,'replacement must not request a kernel change')
   await assert.rejects(replaceFingerprint(fakeAds({'/api/v2/browser-profile/ua':{list:[{profile_id:'k1abc',ua:'Mozilla/5.0 Firefox/128.0'}]}}),'k1abc'),e=>e.status===409)
   await assert.rejects(replaceFingerprint(fakeAds(),'../etc'),/Profil invalide/)
+})
+
+test('replacement retains readable AdsPower errors up to 300 characters and redacts secrets before clipping',async()=>{
+  const key='private-credential-value',prefix='AdsPower a refusé la nouvelle empreinte : '
+  let detail='browser_kernel_config version value error: '+ 'x'.repeat(240)+' '+key+' '+ 'y'.repeat(80)
+  const api=new AdsPowerClient({apiKey:key,interval:0,wait:async()=>{},fetcher:async(url,options)=>{
+    if(url.endsWith('/ua'))return {ok:true,json:async()=>({code:0,data:{list:[{profile_id:'k1abc',ua:UA}]}})}
+    const sent=JSON.parse(options.body)
+    assert.deepEqual(Object.keys(sent).sort(),['fingerprint_config','profile_id'])
+    assert.equal(Object.hasOwn(sent.fingerprint_config,'browser_kernel_config'),false)
+    return {ok:true,json:async()=>({code:-1,msg:detail})}
+  }})
+  await assert.rejects(replaceFingerprint(api,'k1abc'),error=>{
+    assert.equal(error.status,502)
+    assert.equal(error.message,prefix+detail.split(key).join('•••').slice(0,300))
+    assert.equal(error.message.includes('private-credential'),false)
+    return true
+  })
+  detail='Refus court et lisible'
+  await assert.rejects(replaceFingerprint(api,'k1abc'),error=>error.message===prefix+detail)
 })
 
 test('profile proxies are listed without passwords and broken pages are rejected',async()=>{

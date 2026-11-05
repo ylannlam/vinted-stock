@@ -36,11 +36,11 @@ export const windowsUserAgent=major=>`Mozilla/5.0 (Windows NT 10.0; Win64; x64) 
 
 // À la création, AdsPower tire un User-Agent Windows 11 récent et le noyau assorti.
 // Au remplacement, random_ua n'est pas accepté : on garde la version de Chrome du profil
-// (son noyau est déjà installé) dans un User-Agent Windows explicite.
+// (son noyau est déjà installé) dans un User-Agent Windows explicite, et on n'envoie pas
+// browser_kernel_config : le remplacement ne doit pas demander de changement de noyau.
 export function fingerprintConfig(hardware,{chrome=null}={}){
   return {
-    ...(chrome?{ua:windowsUserAgent(chrome)}:{random_ua:{ua_browser:['chrome'],ua_system_version:['Windows 11']}}),
-    browser_kernel_config:{version:'ua_auto',type:'chrome'},
+    ...(chrome?{ua:windowsUserAgent(chrome)}:{random_ua:{ua_browser:['chrome'],ua_system_version:['Windows 11']},browser_kernel_config:{version:'ua_auto',type:'chrome'}}),
     automatic_timezone:'1',language_switch:'1',page_language_switch:'1',location_switch:'1',location:'ask',
     webrtc:'forward',
     screen_resolution:hardware.resolution,hardware_concurrency:String(hardware.threads),device_memory:'8',
@@ -88,7 +88,7 @@ async function profileNumber(ads,id,given){
 // AdsPower explique parfois son refus (proxy injoignable, limite de profils…) : on le montre, sans secret.
 function refusal(error,secret,prefix){
   if(!(error instanceof LocalError)||error.status!==502||!error.detail)return error
-  const detail=(secret?error.detail.split(secret).join('•••'):error.detail).slice(0,160)
+  const detail=(secret?error.detail.split(secret).join('•••'):error.detail).slice(0,300)
   return new LocalError(`${prefix} : ${detail}`,502)
 }
 
