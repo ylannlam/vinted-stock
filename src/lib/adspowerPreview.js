@@ -13,5 +13,5 @@ export async function adsPowerPreview(path,body){
     return elapsed>6500?{...j,state:i===2?'attention':'started',message:i===2?'Une connexion Vinted est nécessaire dans ce profil.':'Les 4 automatisations Dotb sont démarrées',checked_at:started+6500}:{...j,state:elapsed>2500?'dotb':'opening',message:elapsed>2500?'Vérification des automatisations Dotb':'Ouverture de Vinted'}
   })
   const checked=Date.now(),runtime=jobs.filter(j=>j.state==='started').map(j=>({profile_id:j.profile.id,job_id:j.id,status:'running',opened:true,features:['likes','agent','orders','bridge'],message:'Les 4 automatisations Dotb sont actives.',checked_at:checked}))
-  return {configured:true,jobs:structuredClone(jobs),version:'1.1.2',factory:true,monitoring:true,runtime,opened_ids:[...new Set([...profiles.filter(p=>p.opened).map(p=>p.id),...jobs.map(j=>j.profile.id)])],browser_checked_at:checked}
+  return {configured:true,jobs:structuredClone(jobs),version:'1.1.3',factory:true,monitoring:true,runtime,opened_ids:[...new Set([...profiles.filter(p=>p.opened).map(p=>p.id),...jobs.map(j=>j.profile.id)])],browser_checked_at:checked}
 }

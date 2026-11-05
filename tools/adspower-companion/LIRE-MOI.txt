@@ -31,7 +31,7 @@ Garde le PC éveillé et les pages Dotb ouvertes pour qu’elles continuent à t
 Fermer le connecteur ne ferme pas les profils et n'arrête pas leurs automatisations.
 « Annuler l'attente » annule uniquement les profils pas encore lancés.
 
-PROFILS ET PROXYS (version 1.1.2)
+PROFILS ET PROXYS (version 1.1.3)
 Dans l'onglet AdsPower, la section « Profils et proxys » permet :
 - d'enregistrer tes proxys (Decodo, Oxylabs ou autre) en les collant une fois ;
 - de créer un profil AdsPower pour un compte Vinted, avec un proxy libre et une

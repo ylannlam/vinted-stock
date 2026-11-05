@@ -33,14 +33,15 @@ export function chromeMajor(ua){
   return major>=90&&major<=999?major:null
 }
 export const windowsUserAgent=major=>`Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`
+// User-Agent Chrome Windows tel qu'AdsPower les génère (version complète), sans Edge ni Opera.
+export const windowsChromeUserAgent=ua=>typeof ua==='string'&&ua.length<=300&&/^Mozilla\/5\.0 \(Windows NT 10\.0; Win64; x64\) AppleWebKit\/537\.36 \(KHTML, like Gecko\) Chrome\/\d{2,3}\.\d{1,5}\.\d{1,5}\.\d{1,5} Safari\/537\.36$/.test(ua)
 
-// À la création, AdsPower tire un User-Agent Windows 11 récent et le noyau assorti.
-// Au remplacement, random_ua n'est pas accepté : on garde la version de Chrome du profil
-// (son noyau est déjà installé) dans un User-Agent Windows explicite, et on n'envoie pas
-// browser_kernel_config : le remplacement ne doit pas demander de changement de noyau.
-export function fingerprintConfig(hardware,{chrome=null}={}){
+// À la création, AdsPower tire un User-Agent Windows 11 récent et le noyau assorti (ua_auto).
+// Au remplacement, on conserve le User-Agent complet et on nomme son noyau explicitement
+// pour éviter le choix implicite ua_auto. `kernel` vaut un numéro (« 154 ») ou « latest ».
+export function fingerprintConfig(hardware,{chrome=null,ua=null,kernel=null}={}){
   return {
-    ...(chrome?{ua:windowsUserAgent(chrome)}:{random_ua:{ua_browser:['chrome'],ua_system_version:['Windows 11']},browser_kernel_config:{version:'ua_auto',type:'chrome'}}),
+    ...(chrome?{ua:ua||windowsUserAgent(chrome),browser_kernel_config:{version:String(kernel||chrome),type:'chrome'}}:{random_ua:{ua_browser:['chrome'],ua_system_version:['Windows 11']},browser_kernel_config:{version:'ua_auto',type:'chrome'}}),
     automatic_timezone:'1',language_switch:'1',page_language_switch:'1',location_switch:'1',location:'ask',
     webrtc:'forward',
     screen_resolution:hardware.resolution,hardware_concurrency:String(hardware.threads),device_memory:'8',
@@ -79,7 +80,8 @@ function userAgentIn(data,id){
   const row=rows.find(r=>r?.profile_id===id||r?.user_id===id)||(rows.length===1?rows[0]:null)
   return [row?.ua,row?.user_agent,data?.ua,data?.[id]].find(v=>typeof v==='string'&&v.startsWith('Mozilla/'))||null
 }
-export async function readChrome(ads,id){return chromeMajor(userAgentIn(await ads.call('/api/v2/browser-profile/ua',{profile_id:[id]}),id))}
+export async function readUserAgent(ads,id){return userAgentIn(await ads.call('/api/v2/browser-profile/ua',{profile_id:[id]}),id)}
+export async function readChrome(ads,id){return chromeMajor(await readUserAgent(ads,id))}
 async function profileNumber(ads,id,given){
   if(/^\d{1,12}$/.test(String(given??'')))return String(given)
   const row=(await ads.call('/api/v2/browser-profile/list',{profile_id:[id],page:1,limit:1})).list?.find(p=>p?.profile_id===id)
@@ -111,15 +113,55 @@ export async function createProfile(ads,input,{random=Math.random,dispatch=async
   return {profile_id:data.profile_id,profile_no:number,name,group,...summary(hardware,chrome)}
 }
 
+// Quand AdsPower refuse la version du noyau, son message liste les versions acceptées :
+// « browser_kernel_config->version value error,value must be one of ua_auto or latest or 156 or 155 … ».
+// Seul ce refus de validation précis autorise les essais de secours ; un message incomplet,
+// une panne réseau ou une autre erreur ne donne aucune garantie et ne déclenche pas de nouvel envoi.
+function kernelOptions(error){
+  const detail=error instanceof LocalError&&error.status===502&&typeof error.detail==='string'?error.detail:''
+  const match=/^browser_kernel_config\s*->\s*version\s+value error\s*,?\s*value must be one of\s+((?:ua_auto|latest|\d{2,3})(?:\s+or\s+(?:ua_auto|latest|\d{2,3}))*)\s*[.!]?$/i.exec(detail.trim())
+  if(!match)return null
+  const tokens=match[1].toLowerCase().split(/\s+or\s+/)
+  return {versions:[...new Set(tokens.filter(v=>/^\d+$/.test(v)).map(Number).filter(v=>v>=90&&v<=999))].sort((a,b)=>a-b),latest:tokens.includes('latest')}
+}
+export const kernelVersions=error=>kernelOptions(error)?.versions??null
+// Essais successifs, seulement après le refus de validation ci-dessus :
+// 1. la version de Chrome du profil et son User-Agent exact ;
+// 2. si AdsPower ne liste pas cette version : la version plus récente la plus proche ;
+// 3. « latest » seulement s'il est proposé, avec un User-Agent assorti. Jamais de rétrogradation.
+function kernelAttempts(chrome,{versions:allowed,latest}){
+  const attempts=[]
+  if(!allowed.length)return attempts
+  if(!allowed.includes(chrome)){const next=allowed.find(v=>v>chrome);if(next)attempts.push({chrome:next,ua:windowsUserAgent(next),kernel:String(next)})}
+  const newest=allowed.at(-1)
+  if(latest&&newest>=chrome)attempts.push({chrome:newest,ua:windowsUserAgent(newest),kernel:'latest'})
+  return attempts
+}
+
 // Seule l'empreinte est envoyée : proxy, cookies, onglets et session du profil restent intacts.
 export async function replaceFingerprint(ads,id,{random=Math.random,dispatch=async()=>{}}={}){
   if(!validProfile(id))throw new LocalError('Profil invalide.')
-  const chrome=await readChrome(ads,id)
+  const current=await readUserAgent(ads,id),chrome=chromeMajor(current)
   if(!chrome)throw new LocalError('La version de Chrome de ce profil est illisible. Ouvre-le une fois dans AdsPower, ferme-le, puis réessaie.',409)
-  const hardware=pickHardware(random)
-  try{await dispatch();await ads.call('/api/v2/browser-profile/update',{profile_id:id,fingerprint_config:fingerprintConfig(hardware,{chrome})})}
-  catch(error){throw refusal(error,null,'AdsPower a refusé la nouvelle empreinte')}
-  return {profile_id:id,...summary(hardware,chrome)}
+  const hardware=pickHardware(random),prefix='AdsPower a refusé la nouvelle empreinte'
+  const send=attempt=>ads.call('/api/v2/browser-profile/update',{profile_id:id,fingerprint_config:fingerprintConfig(hardware,attempt)})
+  let attempt={chrome,ua:windowsChromeUserAgent(current)?current:windowsUserAgent(chrome),kernel:String(chrome)}
+  await dispatch()
+  try{await send(attempt)}
+  catch(error){
+    const allowed=kernelOptions(error)
+    if(!allowed)throw refusal(error,null,prefix)
+    let last=error,applied=false
+    for(const next of kernelAttempts(chrome,allowed)){
+      try{await send(next);attempt=next;applied=true;break}
+      catch(again){last=again;if(JSON.stringify(kernelOptions(again))!==JSON.stringify(allowed))break}
+    }
+    if(!applied)throw refusal(last,null,prefix)
+  }
+  // L'historique reflète la version relue après succès, pas une supposition sur « latest ».
+  // Si la lecture échoue après l'écriture, on garde le succès sans inventer de version ni réécrire.
+  const appliedChrome=await readChrome(ads,id).catch(()=>null)
+  return {profile_id:id,...summary(hardware,appliedChrome)}
 }
 
 // Proxy de chaque profil, sans mot de passe, pour repérer les proxys déjà utilisés.

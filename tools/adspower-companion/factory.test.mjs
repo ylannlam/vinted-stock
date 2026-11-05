@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {GPUS,RESOLUTIONS,pickHardware,chromeMajor,fingerprintConfig,readProxy,createProfile,replaceFingerprint,profileProxies} from './factory.mjs'
+import {GPUS,RESOLUTIONS,pickHardware,chromeMajor,fingerprintConfig,readProxy,createProfile,replaceFingerprint,profileProxies,kernelVersions,windowsChromeUserAgent} from './factory.mjs'
 import {createCompanion,SITE,VERSION} from './companion.mjs'
 import {AdsPowerClient,LocalError} from './adspower.mjs'
 
@@ -36,7 +36,12 @@ test('creation lets AdsPower draw a Windows 11 UA; replacement keeps the profile
   assert.equal(created.webgl_config.unmasked_renderer,'ANGLE (NVIDIA, NVIDIA GeForce RTX 4060 (0x00002882) Direct3D11 vs_5_0 ps_5_0, D3D11)')
   const replaced=fingerprintConfig(h,{chrome:141})
   assert.equal(replaced.random_ua,undefined);assert.match(replaced.ua,/^Mozilla\/5\.0 \(Windows NT 10\.0; Win64; x64\) .* Chrome\/141\.0\.0\.0 Safari\/537\.36$/)
-  assert.deepEqual(created.browser_kernel_config,{version:'ua_auto',type:'chrome'});assert.equal(replaced.browser_kernel_config,undefined)
+  // Replacement names the kernel explicitly instead of relying on the ua_auto default.
+  assert.deepEqual(created.browser_kernel_config,{version:'ua_auto',type:'chrome'});assert.deepEqual(replaced.browser_kernel_config,{version:'141',type:'chrome'})
+  const kept=fingerprintConfig(h,{chrome:141,ua:UA});assert.equal(kept.ua,UA);assert.deepEqual(kept.browser_kernel_config,{version:'141',type:'chrome'})
+  assert.deepEqual(fingerprintConfig(h,{chrome:156,kernel:'latest'}).browser_kernel_config,{version:'latest',type:'chrome'})
+  assert.equal(windowsChromeUserAgent(UA),true)
+  for(const other of ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.7390.55 Safari/537.36',UA+' Edg/141.0.3537.57',UA.replace('Win64; x64','WOW64'),null])assert.equal(windowsChromeUserAgent(other),false)
   assert.equal(chromeMajor(UA),141);assert.equal(chromeMajor('Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0'),null)
   for(const bad of [null,'',42,'Chrome/12.0.0','Mozilla/5.0 Chrome/x.0'])assert.equal(chromeMajor(bad),null)
 })
@@ -78,10 +83,15 @@ test('fingerprint replacement sends only the fingerprint and refuses unreadable 
   const ads=fakeAds({'/api/v2/browser-profile/ua':{list:[{profile_id:'k1abc',ua:UA}]}})
   const result=await replaceFingerprint(ads,'k1abc',{random:sequence([0.99])})
   assert.deepEqual(result,{profile_id:'k1abc',resolution:'1920_1080',threads:8,gpu:'NVIDIA GeForce RTX 3070',chrome:141})
-  const update=ads.calls.find(c=>c.path==='/api/v2/browser-profile/update').body
+  const updates=ads.calls.filter(c=>c.path==='/api/v2/browser-profile/update');assert.equal(updates.length,1)
+  const update=updates[0].body
   assert.deepEqual(Object.keys(update).sort(),['fingerprint_config','profile_id'],'proxy, cookies and session must not be sent')
-  assert.match(update.fingerprint_config.ua,/Chrome\/141\.0\.0\.0/)
-  assert.equal(Object.hasOwn(update.fingerprint_config,'browser_kernel_config'),false,'replacement must not request a kernel change')
+  assert.equal(update.fingerprint_config.ua,UA,'the profile keeps its exact Windows Chrome UA')
+  assert.deepEqual(update.fingerprint_config.browser_kernel_config,{version:'141',type:'chrome'},'the installed kernel is named explicitly, never ua_auto')
+  // A profile whose UA is not Windows Chrome gets a Windows UA of the same Chrome version.
+  const mac=fakeAds({'/api/v2/browser-profile/ua':{list:[{profile_id:'k1abc',ua:'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.7390.55 Safari/537.36'}]}})
+  await replaceFingerprint(mac,'k1abc')
+  assert.match(mac.calls.find(c=>c.path==='/api/v2/browser-profile/update').body.fingerprint_config.ua,/^Mozilla\/5\.0 \(Windows NT 10\.0; Win64; x64\) .* Chrome\/141\.0\.0\.0 Safari\/537\.36$/)
   await assert.rejects(replaceFingerprint(fakeAds({'/api/v2/browser-profile/ua':{list:[{profile_id:'k1abc',ua:'Mozilla/5.0 Firefox/128.0'}]}}),'k1abc'),e=>e.status===409)
   await assert.rejects(replaceFingerprint(fakeAds(),'../etc'),/Profil invalide/)
 })
@@ -93,7 +103,7 @@ test('replacement retains readable AdsPower errors up to 300 characters and reda
     if(url.endsWith('/ua'))return {ok:true,json:async()=>({code:0,data:{list:[{profile_id:'k1abc',ua:UA}]}})}
     const sent=JSON.parse(options.body)
     assert.deepEqual(Object.keys(sent).sort(),['fingerprint_config','profile_id'])
-    assert.equal(Object.hasOwn(sent.fingerprint_config,'browser_kernel_config'),false)
+    assert.deepEqual(sent.fingerprint_config.browser_kernel_config,{version:'141',type:'chrome'})
     return {ok:true,json:async()=>({code:-1,msg:detail})}
   }})
   await assert.rejects(replaceFingerprint(api,'k1abc'),error=>{
@@ -104,6 +114,87 @@ test('replacement retains readable AdsPower errors up to 300 characters and reda
   })
   detail='Refus court et lisible'
   await assert.rejects(replaceFingerprint(api,'k1abc'),error=>error.message===prefix+detail)
+})
+
+test('a refused kernel version is retried with a version AdsPower lists, only for that refusal',async()=>{
+  const listed='browser_kernel_config->version value error,value must be one of ua_auto or latest or 156 or 155 or 154 or 153'
+  const refuse=detail=>{const e=new LocalError('AdsPower a refusé la demande. Vérifie le profil dans AdsPower.',502);e.detail=detail;return e}
+  assert.deepEqual(kernelVersions(refuse(listed)),[153,154,155,156])
+  assert.equal(kernelVersions(refuse('browser_kernel_config version value error')),null)
+  for(const detail of [listed+' or',listed+' or 155 extra error',listed.replace('version value error','type value error'),'Internal failure after writing browser_kernel_config: one of 156 or 155'])assert.equal(kernelVersions(refuse(detail)),null)
+  assert.equal(kernelVersions(refuse('Proxy check failed')),null);assert.equal(kernelVersions(new LocalError('AdsPower ne répond pas.',503)),null)
+  // `answer` decides each update; every call and every dispatch is recorded.
+  const run=async(ua,answer)=>{
+    const sent=[];let dispatched=0,currentUa=ua
+    const ads=fakeAds({'/api/v2/browser-profile/ua':()=>({list:[{profile_id:'k1abc',ua:currentUa}]}),'/api/v2/browser-profile/update':body=>{sent.push(body.fingerprint_config);const error=answer(body.fingerprint_config,sent.length);if(error)throw error;currentUa=body.fingerprint_config.ua;return {}}})
+    const outcome=await replaceFingerprint(ads,'k1abc',{random:sequence([0]),dispatch:async()=>{dispatched++}}).catch(error=>error)
+    return {outcome,sent,dispatched}
+  }
+  // Chrome 141 is not listed: the nearest newer listed version is used, with a matching Windows UA.
+  let r=await run(UA,config=>config.browser_kernel_config.version==='141'?refuse(listed):null)
+  assert.equal(r.outcome.chrome,153);assert.equal(r.dispatched,1)
+  assert.deepEqual(r.sent.map(c=>c.browser_kernel_config.version),['141','153'])
+  assert.match(r.sent[1].ua,/Chrome\/153\.0\.0\.0 Safari\/537\.36$/)
+  // The profile version is listed but still refused: fall back to latest, announced as the newest listed version.
+  const UA154=UA.replace('141.0.7390.55','154.0.7704.12')
+  r=await run(UA154,config=>config.browser_kernel_config.version!=='latest'?refuse(listed):null)
+  assert.deepEqual(r.sent.map(c=>c.browser_kernel_config.version),['154','latest']);assert.equal(r.outcome.chrome,156);assert.match(r.sent[1].ua,/Chrome\/156\.0\.0\.0/)
+  // Everything refused: three attempts at most, and the full AdsPower message is shown.
+  r=await run(UA,()=>refuse(listed))
+  assert.deepEqual(r.sent.map(c=>c.browser_kernel_config.version),['141','153','latest'])
+  assert.equal(r.outcome.status,502);assert.equal(r.outcome.message,'AdsPower a refusé la nouvelle empreinte : '+listed)
+  // Any other refusal or a network failure is never retried.
+  r=await run(UA,()=>refuse('Profile does not exist'))
+  assert.equal(r.sent.length,1);assert.equal(r.outcome.message,'AdsPower a refusé la nouvelle empreinte : Profile does not exist')
+  r=await run(UA,()=>new LocalError('AdsPower ne répond pas.',503))
+  assert.equal(r.sent.length,1);assert.equal(r.outcome.status,503)
+  // A retry that fails for another reason stops there with that reason.
+  r=await run(UA,(config,n)=>n===1?refuse(listed):refuse('Proxy check failed'))
+  assert.equal(r.sent.length,2);assert.match(r.outcome.message,/Proxy check failed$/)
+  // Never downgrade a newer profile, even if the error advertises older versions and latest.
+  r=await run(UA.replace('141.0.7390.55','157.0.7704.12'),()=>refuse(listed))
+  assert.deepEqual(r.sent.map(c=>c.browser_kernel_config.version),['157'])
+  // latest must be explicitly offered; unrelated or malformed errors never trigger retries.
+  r=await run(UA,()=>refuse(listed.replace('latest or ','')))
+  assert.deepEqual(r.sent.map(c=>c.browser_kernel_config.version),['141','153'])
+  r=await run(UA,()=>refuse(listed+' or'))
+  assert.equal(r.sent.length,1)
+  // Stop if a later refusal advertises a different set instead of trying stale guesses.
+  r=await run(UA,(config,n)=>refuse(n===1?listed:listed.replace('156 or ','')))
+  assert.equal(r.sent.length,2)
+})
+
+test('replacement records the Chrome version read back after success, and never repeats a successful write',async()=>{
+  for(const actual of [155,null]){
+    let reads=0,writes=0,dispatched=0
+    const ads=fakeAds({'/api/v2/browser-profile/ua':()=>{
+      reads++
+      if(reads>1&&actual===null)throw new LocalError('AdsPower ne répond pas.',503)
+      return {list:[{profile_id:'k1abc',ua:reads===1?UA:UA.replace('141.0.7390.55',`${actual}.0.7704.12`)}]}
+    },'/api/v2/browser-profile/update':()=>{writes++;return {}}})
+    const result=await replaceFingerprint(ads,'k1abc',{dispatch:async()=>{dispatched++}})
+    assert.equal(result.chrome,actual);assert.equal(reads,2);assert.equal(writes,1);assert.equal(dispatched,1)
+  }
+})
+
+test('AdsPowerClient uses explicit kernel then latest only after the exact validation refusal',async()=>{
+  const listed='browser_kernel_config->version value error,value must be one of ua_auto or latest or 156 or 155 or 154 or 153'
+  const original=UA.replace('141.0.7390.55','154.0.7704.12')
+  for(const latestOnly of [false,true]){
+    let current=original,dispatched=0;const sent=[]
+    const ads=new AdsPowerClient({apiKey:'test-credential',interval:0,wait:async()=>{},fetcher:async(url,options)=>{
+      if(url.endsWith('/ua'))return {ok:true,json:async()=>({code:0,data:{list:[{profile_id:'k1abc',ua:current}]}})}
+      const payload=JSON.parse(options.body);sent.push(payload)
+      if(latestOnly&&payload.fingerprint_config.browser_kernel_config.version!=='latest')return {ok:true,json:async()=>({code:-1,msg:listed})}
+      current=payload.fingerprint_config.ua
+      return {ok:true,json:async()=>({code:0,data:{}})}
+    }})
+    const result=await replaceFingerprint(ads,'k1abc',{dispatch:async()=>{dispatched++}})
+    assert.deepEqual(sent.map(p=>p.fingerprint_config.browser_kernel_config.version),latestOnly?['154','latest']:['154'])
+    assert.equal(sent[0].fingerprint_config.ua,original);assert.equal(dispatched,1)
+    assert.equal(result.chrome,latestOnly?156:154)
+    for(const payload of sent)assert.deepEqual(Object.keys(payload).sort(),['fingerprint_config','profile_id'])
+  }
 })
 
 test('profile proxies are listed without passwords and broken pages are rejected',async()=>{
