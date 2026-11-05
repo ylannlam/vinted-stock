@@ -1,16 +1,15 @@
 import {LocalError,validProfile} from './adspower.mjs'
 
-// Empreintes cohérentes avec le PC qui fait tourner AdsPower : Windows 11 et carte NVIDIA.
-// Le rendu WebGL réel vient de la carte NVIDIA du PC, donc les cartes annoncées restent NVIDIA.
-// Seules des résolutions courantes, inférieures à l'écran réel, sont utilisées (jamais 3440×1440).
+// Empreintes cohérentes avec le PC qui fait tourner AdsPower : Windows 11 et RTX 4070.
+// Le rendu WebGL réel vient de la carte du PC, donc les cartes annoncées restent des NVIDIA proches
+// d'une 4070 (même génération ou voisine), avec la 4070 en tête. Seules des résolutions courantes,
+// inférieures à l'écran réel, sont utilisées (jamais 3440×1440).
 export const GPUS=[
-  {name:'NVIDIA GeForce RTX 3060',id:'0x00002504',weight:22,high:false},
-  {name:'NVIDIA GeForce RTX 3060 Ti',id:'0x00002489',weight:12,high:false},
-  {name:'NVIDIA GeForce RTX 3070',id:'0x00002484',weight:12,high:true},
-  {name:'NVIDIA GeForce RTX 4060',id:'0x00002882',weight:22,high:false},
   {name:'NVIDIA GeForce RTX 4060 Ti',id:'0x00002803',weight:14,high:false},
-  {name:'NVIDIA GeForce RTX 4070',id:'0x00002786',weight:12,high:true},
-  {name:'NVIDIA GeForce RTX 4070 SUPER',id:'0x00002783',weight:6,high:true},
+  {name:'NVIDIA GeForce RTX 4070',id:'0x00002786',weight:50,high:true},
+  {name:'NVIDIA GeForce RTX 4070 SUPER',id:'0x00002783',weight:20,high:true},
+  {name:'NVIDIA GeForce RTX 4070 Ti',id:'0x00002782',weight:10,high:true},
+  {name:'NVIDIA GeForce RTX 3070',id:'0x00002484',weight:6,high:true},
 ]
 export const RESOLUTIONS=['1920_1080','2560_1440']
 export const DEFAULT_GROUP='Stock Vinted'

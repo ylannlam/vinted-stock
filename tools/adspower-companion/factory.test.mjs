@@ -51,7 +51,7 @@ test('proxies are validated, normalised and never point at this PC or the local 
 test('creation reuses or creates the group, sends the proxy once and returns no secret',async()=>{
   const ads=fakeAds({'/api/v1/group/list':{list:[{group_id:7,group_name:'Autre'}]},'/api/v1/group/create':{group_id:'12'},'/api/v2/browser-profile/create':{profile_id:'k1abc',profile_no:'41'},'/api/v2/browser-profile/ua':{list:[{profile_id:'k1abc',ua:UA}]}})
   const result=await createProfile(ads,{name:'  dressing_lea ',group:'Stock Vinted',proxy},{random:sequence([0])})
-  assert.deepEqual(result,{profile_id:'k1abc',profile_no:'41',name:'dressing_lea',group:'Stock Vinted',resolution:'1920_1080',threads:16,gpu:'NVIDIA GeForce RTX 3060',chrome:141})
+  assert.deepEqual(result,{profile_id:'k1abc',profile_no:'41',name:'dressing_lea',group:'Stock Vinted',resolution:'1920_1080',threads:16,gpu:'NVIDIA GeForce RTX 4060 Ti',chrome:141})
   assert.equal(JSON.stringify(result).includes(proxy.password),false)
   const create=ads.calls.find(c=>c.path==='/api/v2/browser-profile/create').body
   assert.equal(create.group_id,'12');assert.equal(create.name,'dressing_lea')
@@ -77,7 +77,7 @@ test('an AdsPower refusal is explained without the proxy password or the API key
 test('fingerprint replacement sends only the fingerprint and refuses unreadable Chrome versions',async()=>{
   const ads=fakeAds({'/api/v2/browser-profile/ua':{list:[{profile_id:'k1abc',ua:UA}]}})
   const result=await replaceFingerprint(ads,'k1abc',{random:sequence([0.99])})
-  assert.deepEqual(result,{profile_id:'k1abc',resolution:'1920_1080',threads:8,gpu:'NVIDIA GeForce RTX 4070 SUPER',chrome:141})
+  assert.deepEqual(result,{profile_id:'k1abc',resolution:'1920_1080',threads:8,gpu:'NVIDIA GeForce RTX 3070',chrome:141})
   const update=ads.calls.find(c=>c.path==='/api/v2/browser-profile/update').body
   assert.deepEqual(Object.keys(update).sort(),['fingerprint_config','profile_id'],'proxy, cookies and session must not be sent')
   assert.match(update.fingerprint_config.ua,/Chrome\/141\.0\.0\.0/)

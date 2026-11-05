@@ -21,12 +21,74 @@ function proxyFrom(host,port,user,password){
   if(!password||password.length>200||control.test(password))return {error:'mot de passe manquant ou invalide'}
   return {proxy:{adresse:host,port,username:proxyUser(host,user),password,fournisseur:providerOf(host)}}
 }
-// Une ligne par proxy : « hôte:port:identifiant:motdepasse » (export AdsPower, Decodo, Oxylabs)
-// ou « identifiant:motdepasse@hôte:port », avec ou sans « http:// ».
+// Découpe une commande en mots comme un terminal : guillemets simples ou doubles, \ pour protéger un caractère.
+function shellWords(text){
+  const words=[];let cur='',started=false,quote=null
+  for(let i=0;i<text.length;i++){
+    const c=text[i]
+    if(quote==="'"){if(c==="'")quote=null;else cur+=c;continue}
+    if(quote==='"'){
+      if(c==='"')quote=null
+      else if(c==='\\'&&'"\\$`'.includes(text[i+1]??'\n'))cur+=text[++i]
+      else cur+=c
+      continue
+    }
+    if(/\s/.test(c)){if(started){words.push(cur);cur='';started=false}continue}
+    started=true
+    if(c==="'"||c==='"')quote=c
+    else if(c==='\\'&&i+1<text.length)cur+=text[++i]
+    else cur+=c
+  }
+  if(quote)return null
+  if(started)words.push(cur)
+  return words
+}
+const CURL=/^\s*(?:[$>]\s*)?curl(?:\.exe)?(?=\s|$)/i
+const PROXY_USER_OPTION=/\s(?:-U|--proxy-user)(?:\s|=|["'])/
+// Commande copiée depuis Oxylabs : curl -x hôte:port -U "identifiant:motdepasse" https://…
+// On ne garde que le proxy (-x / --proxy) et ses identifiants (-U / --proxy-user).
+function curlToLine(text){
+  const words=shellWords(text.replace(/^\s*[$>]\s*/,''))
+  if(!words)return {error:'guillemets non fermés'}
+  let proxy='',credentials=''
+  for(let i=0;i<words.length;i++){
+    const word=words[i];let m
+    if(word==='-x'||word==='--proxy')proxy=words[++i]??''
+    else if((m=/^--proxy=([\s\S]*)$/.exec(word)))proxy=m[1]
+    else if(/^-x[^-]/.test(word))proxy=word.slice(2)
+    else if(word==='-U'||word==='--proxy-user')credentials=words[++i]??''
+    else if((m=/^--proxy-user=([\s\S]*)$/.exec(word)))credentials=m[1]
+    else if(/^-U./.test(word))credentials=word.slice(2)
+  }
+  // Collage coupé (« hôte:port -U … » sans « curl -x ») : on prend le premier mot hôte:port.
+  if(!proxy)proxy=words.find(w=>/^(?:https?:\/\/)?[a-z0-9.-]+:\d{1,5}\/?$/i.test(w))||''
+  if(!proxy)return {error:'adresse du proxy introuvable (option -x)'}
+  if(proxy.includes('@'))return {line:proxy.replace(/\/+$/,'')}
+  if(!credentials)return {error:'identifiant:motdepasse introuvable (option -U)'}
+  return {line:`${proxy.replace(/^[a-z0-9]+:\/\//i,'').replace(/\/+$/,'')}:${credentials}`}
+}
+// Lignes à lire : une commande curl coupée par « \ » (ou « ^ » sous Windows) redevient une seule ligne.
+function logicalLines(text){
+  const raws=String(text||'').split(/\r?\n/),lines=[]
+  let pending=null
+  raws.forEach((raw,index)=>{
+    pending=pending?{...pending,text:`${pending.text} ${raw.trim()}`}:{line:index+1,text:raw.trim().replace(/^PS\s+[^>]*>\s*(?=curl(?:\.exe)?\s)/i,'')}
+    if(CURL.test(pending.text)&&/[\\^]$/.test(pending.text)&&index<raws.length-1){pending.text=pending.text.slice(0,-1).trim();return}
+    lines.push(pending);pending=null
+  })
+  return lines
+}
+// Une ligne par proxy : « hôte:port:identifiant:motdepasse » (export AdsPower, Decodo, Oxylabs),
+// « identifiant:motdepasse@hôte:port » (avec ou sans « http:// »), ou la commande curl d'Oxylabs.
 export function parseProxyLines(text){
   const proxies=[],errors=[],seen=new Set()
-  String(text||'').split(/\r?\n/).forEach((raw,index)=>{
-    const line=raw.trim();if(!line||line.startsWith('#'))return
+  for(const {line:number,text:raw} of logicalLines(text)){
+    let line=raw.trim();if(!line||line.startsWith('#'))continue
+    if(CURL.test(line)||PROXY_USER_OPTION.test(line)){
+      const converted=curlToLine(line)
+      if(converted.error){errors.push({line:number,message:converted.error});continue}
+      line=converted.line
+    }
     const bare=line.replace(/^(?:https?|socks5h?):\/\//i,'')
     // hôte:port d'abord : un mot de passe peut contenir « @ » ou « : ».
     const parts=bare.split(':'),at=bare.lastIndexOf('@')
@@ -34,11 +96,11 @@ export function parseProxyLines(text){
     if(parts.length>=4&&HOST.test(parts[0].trim().toLowerCase())&&/^\d{1,5}$/.test(parts[1].trim()))parsed=proxyFrom(parts[0],parts[1],parts[2],parts.slice(3).join(':'))
     else if(at>0){const [host,port,...extra]=bare.slice(at+1).split(':'),credentials=bare.slice(0,at),colon=credentials.indexOf(':');parsed=extra.length||colon<1?{error:'format non reconnu'}:proxyFrom(host,port,credentials.slice(0,colon),credentials.slice(colon+1))}
     else parsed={error:'format attendu hôte:port:identifiant:motdepasse'}
-    if(parsed.error){errors.push({line:index+1,message:parsed.error});return}
+    if(parsed.error){errors.push({line:number,message:parsed.error});continue}
     const key=proxyKey(parsed.proxy)
-    if(seen.has(key)){errors.push({line:index+1,message:'déjà présent plus haut'});return}
+    if(seen.has(key)){errors.push({line:number,message:'déjà présent plus haut'});continue}
     seen.add(key);proxies.push(parsed.proxy)
-  })
+  }
   return {proxies,errors}
 }
 export const proxyKey=p=>`${String(p.adresse).toLowerCase()}:${Number(p.port)}:${p.username}`

@@ -27,6 +27,44 @@ test('pasted proxies accept Decodo, Oxylabs and URL formats, with passwords cont
   assert.match(errors[0].message,/déjà présent/)
 })
 
+test('pasted Oxylabs curl commands are reduced to the proxy and its credentials',()=>{
+  const oxy=(user,password)=>({adresse:'disp.oxylabs.io',port:8001,username:user,password,fournisseur:'Oxylabs'})
+  const {proxies,errors}=parseProxyLines([
+    'curl -x disp.oxylabs.io:8001 -U "user-disp_1111aaaa:Zz+9=qf+B" https://ip.oxylabs.io/location',
+    "$ curl --proxy http://disp.oxylabs.io:8001/ --proxy-user 'disp_2222bbbb:p@ss:word' https://ip.oxylabs.io/location",
+    'curl -x disp.oxylabs.io:8001 \\',
+    '  -U "user-disp_3333cccc:zz" \\',
+    '  https://ip.oxylabs.io/location',
+    'curl -x "http://user-disp_4444dddd:pw@disp.oxylabs.io:8001" https://ip.oxylabs.io/location',
+    'disp.oxylabs.io:8001 -U "user-disp_5555eeee:cut" https://ip.oxylabs.io/location',
+    'curl -x disp.oxylabs.io:8001 -U "user-disp_1111aaaa:Zz+9=qf+B" https://ip.oxylabs.io/location',
+    'curl -x disp.oxylabs.io:8001 https://ip.oxylabs.io/location',
+    'curl -U "user-disp_x:y" https://ip.oxylabs.io/location',
+    'curl -x disp.oxylabs.io:8001 -U "user-disp_f:oops https://ip.oxylabs.io/location',
+    'isp.decodo.com:10011:spuser:autre',
+  ].join('\n'))
+  assert.deepEqual(proxies,[
+    oxy('user-disp_1111aaaa','Zz+9=qf+B'),
+    oxy('user-disp_2222bbbb','p@ss:word'),
+    oxy('user-disp_3333cccc','zz'),
+    oxy('user-disp_4444dddd','pw'),
+    oxy('user-disp_5555eeee','cut'),
+    {adresse:'isp.decodo.com',port:10011,username:'spuser',password:'autre',fournisseur:'Decodo'},
+  ])
+  // La commande écrite sur 3 lignes compte pour la ligne où elle commence : le doublon est ligne 8.
+  assert.deepEqual(errors.map(e=>e.line),[8,9,10,11])
+  assert.match(errors[0].message,/déjà présent/)
+  assert.match(errors[1].message,/-U/)
+  assert.match(errors[2].message,/-x/)
+  assert.match(errors[3].message,/guillemets/)
+})
+
+test('Windows curl prompts and continuations preserve proxy credentials without executing commands',()=>{
+  const {proxies,errors}=parseProxyLines('PS C:\\Users\\test> curl.exe -x disp.oxylabs.io:8001 ^\n -U "disp_test:a+b=:@z" ^\n https://ip.oxylabs.io/location\ncurl -x "http://disp_other:pw@disp.oxylabs.io:8001/" https://ip.oxylabs.io/location')
+  assert.deepEqual(errors,[])
+  assert.deepEqual(proxies.map(p=>[p.username,p.password]),[['user-disp_test','a+b=:@z'],['user-disp_other','pw']])
+})
+
 test('proxy usage flags shared IPs from the database and from AdsPower profiles',()=>{
   const proxies=[{id:'free',adresse:'disp.oxylabs.io',port:8001,username:'user-disp_a'},{id:'one',adresse:'disp.oxylabs.io',port:8001,username:'user-disp_b'},{id:'two',adresse:'isp.decodo.com',port:10001,username:'sp'},{id:'ads',adresse:'isp.decodo.com',port:10002,username:'sp'},{id:'mismatch',adresse:'isp.decodo.com',port:10003,username:'sp'}]
   const accounts=[{id:'a',pseudo:'A',proxy_id:'one',ads_power_num:'1'},{id:'b',pseudo:'B',proxy_id:'two'},{id:'c',pseudo:'C',proxy_id:'two'},{id:'d',pseudo:'D',proxy_id:'mismatch',ads_power_num:'4'}]

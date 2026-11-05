@@ -74,7 +74,7 @@ export default function AdsPowerFactory({request,store,profiles,owner='preview',
     remember(null);submission.current=null;setOrphan(null);setAccountId('');setProxyId('');await load();onChanged()
   }
   const addProxies=()=>run('add',async()=>{
-    if(!parsed.proxies.length)throw Error('Colle au moins un proxy au format hôte:port:identifiant:motdepasse.')
+    if(!parsed.proxies.length)throw Error('Colle au moins un proxy (hôte:port:identifiant:motdepasse ou commande curl).')
     const added=await store.addProxies(parsed.proxies),skipped=parsed.proxies.length-added
     setPaste('');setAdding(false);setNotice(`${added} proxy${added>1?'s':''} ajouté${added>1?'s':''}${skipped?` · ${skipped} déjà enregistré${skipped>1?'s':''}`:''}.`);await load()
   })
@@ -111,8 +111,8 @@ export default function AdsPowerFactory({request,store,profiles,owner='preview',
     <section aria-labelledby="factory-proxies" className="px-5 py-4 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2"><h3 id="factory-proxies" className="text-sm font-semibold">Proxys</h3><button className={secondary} disabled={!!busy} onClick={()=>setAdding(!adding)}>{adding?'Fermer':'+ Ajouter des proxys'}</button></div>
       {adding&&<div className="rounded-xl border border-slate-200 p-3 space-y-2">
-        <textarea aria-label="Proxys à ajouter" rows={4} spellCheck={false} autoComplete="off" className={`${field} font-mono text-xs`} placeholder={'disp.oxylabs.io:8001:disp_xxxxxxxx:motdepasse\nisp.decodo.com:10011:identifiant:motdepasse'} value={paste} onChange={e=>setPaste(e.target.value)}/>
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs"><span className="text-slate-500">Un proxy par ligne : <code>hôte:port:identifiant:motdepasse</code>. Oxylabs : le préfixe « user- » est ajouté tout seul.{parsed.errors.length>0&&<span className="block text-amber-800 mt-1">{parsed.errors.slice(0,3).map(e=>`Ligne ${e.line} : ${e.message}`).join(' · ')}{parsed.errors.length>3?' …':''}</span>}</span><button className={primary} disabled={!parsed.proxies.length||!!busy} onClick={addProxies}>{busy==='add'?'Enregistrement…':`Enregistrer ${parsed.proxies.length} proxy${parsed.proxies.length>1?'s':''}`}</button></div>
+        <textarea aria-label="Proxys à ajouter" rows={4} spellCheck={false} autoComplete="off" className={`${field} font-mono text-xs`} placeholder={'curl -x disp.oxylabs.io:8001 -U "user-disp_xxxxxxxx:motdepasse" https://ip.oxylabs.io/location\ndisp.oxylabs.io:8001:disp_xxxxxxxx:motdepasse\nisp.decodo.com:10011:identifiant:motdepasse'} value={paste} onChange={e=>setPaste(e.target.value)}/>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs"><span className="text-slate-500">Un proxy par ligne : <code>hôte:port:identifiant:motdepasse</code>, ou la commande <code>curl</code> d’Oxylabs collée telle quelle. Oxylabs : le préfixe « user- » est ajouté tout seul.{parsed.errors.length>0&&<span className="block text-amber-800 mt-1">{parsed.errors.slice(0,3).map(e=>`Ligne ${e.line} : ${e.message}`).join(' · ')}{parsed.errors.length>3?' …':''}</span>}</span><button className={primary} disabled={!parsed.proxies.length||!!busy} onClick={addProxies}>{busy==='add'?'Enregistrement…':`Enregistrer ${parsed.proxies.length} proxy${parsed.proxies.length>1?'s':''}`}</button></div>
       </div>}
       {shared>0&&<p className="text-xs text-amber-800">Un proxy partagé relie entre eux les comptes qui l’utilisent. Donne à chacun son propre proxy.</p>}
       <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-left text-xs"><thead className="text-[10px] uppercase tracking-wide text-slate-400"><tr><th className="py-2 pr-3 font-semibold">Proxy</th><th className="py-2 pr-3 font-semibold">Fournisseur</th><th className="py-2 pr-3 font-semibold">Utilisé par</th><th className="py-2 font-semibold">État</th></tr></thead>
