@@ -4,9 +4,10 @@ import {AppError,isId} from './dotb.js'
 import {ASSET_BUCKET,uploadTarget,ensureAssetBucket} from './resources.js'
 import {validateListingPhoto} from '../src/lib/listingStudio.js'
 import {readTeamBoard,readBoardRows,markPublished,vintedItemId} from './team-board.js'
+import {readListingPicker} from './listing-picker.js'
 import {readListingSettings,dotbAccounts,saveListingSettings,listingTitleExamples,reserveListingSlot} from './listing-settings.js'
 import {applyListingPresets,LISTING_AI_MODELS} from '../src/lib/listingSettings.js'
-import {check,listingFields,verifiedPhotos,dotbListingRequest,listingMetadata,listingAccounts,listingPayload,validateRemoteItem,scheduleResult,generateListingText,listingAiToken} from './listing-studio-core.js'
+import {catalogRoots,check,listingFields,verifiedPhotos,dotbListingRequest,listingMetadata,listingAccounts,listingPayload,validateRemoteItem,scheduleResult,generateListingText,listingAiToken} from './listing-studio-core.js'
 
 const TABLE='listing_drafts',now=()=>new Date().toISOString()
 export const manualPublishingMessage='L’envoi par Dotb est temporairement désactivé. Recharge l’atelier et utilise la publication manuelle après la fin du blocage Vinted.'
@@ -109,7 +110,15 @@ export async function listingStep(db,row,{read=dotbListingRequest,allowDotb=dotb
   return updateListing(db,current,patch)
  }
 }
-export async function handleListingStudio(req,{db,user},{read=dotbListingRequest,generate=generateListingText,allowDotb=dotbPublishingEnabled(),settings=readListingSettings,examples=listingTitleExamples}={}){
+// Catégories des articles déjà vendus (toute la boutique), relues au plus toutes les 10 minutes.
+let soldCache={at:0,ids:[]}
+export async function soldCatalogIds(db,now=Date.now()){
+ if(now>=soldCache.at&&now-soldCache.at<600000)return soldCache.ids
+ let ids=[]
+ try{const rows=check(await db.from('sales_lines').select('catalog_id:source->>catalog_id').not('source->>catalog_id','is',null).order('updated_at',{ascending:false}).limit(400))||[];ids=[...new Set(rows.map(r=>Number(r.catalog_id)).filter(n=>Number.isSafeInteger(n)&&n>0))]}catch{}
+ soldCache={at:now,ids};return ids
+}
+export async function handleListingStudio(req,{db,user},{read=dotbListingRequest,generate=generateListingText,allowDotb=dotbPublishingEnabled(),settings=readListingSettings,examples=listingTitleExamples,soldCatalogs=soldCatalogIds}={}){
  const action=req.query?.action||req.body?.action||'list',body=req.body||{}
  // Dotb publie seulement si le serveur l'autorise ET si l'interrupteur du compte est allumé.
  const dotbFor=async accountId=>allowDotb&&(await settings(db,accountId)).effective.dotb===true
@@ -134,6 +143,8 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
   }
   // Onglet « Alicia » : une ligne par compte, sans appel à Dotb.
   if(action==='board')return readTeamBoard(db,user)
+  // Choix du compte : fond, publications du jour, articles en cours, état connu.
+  if(action==='picker')return readListingPicker(db,user)
   // Session de publication : toutes mes fiches de ce compte encore en cours, plus celles publiées depuis 24 h.
   if(action==='session'){
    if(!isId(req.query.account_id))throw new AppError('Compte invalide.')
@@ -203,15 +214,17 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
   if(row.dotb_item_id&&(fields.account_id!==row.fields.account_id||JSON.stringify(photos)!==JSON.stringify(row.photos)))throw new AppError('La fiche existe déjà dans Dotb : le compte et les photos sont conservés.',409)
   row=await updateListing(db,row,{fields,photos,message:null,last_error:null,inflight:null,lease:null,lease_until:null})
  }else if(action==='generate'){
-  if(!row.photos.length||!row.fields.sku||!row.fields.size_text||!row.fields.price)throw new AppError('Ajoute les photos, le SKU, la taille et le prix pour préparer l’annonce.')
+  // L'IA n'a besoin que des photos et de la taille ; le SKU et le prix restent obligatoires pour publier.
+  if(!row.photos.length||!row.fields.size_text)throw new AppError('Ajoute les photos et la taille pour préparer l’annonce.')
   if(row.ai_count>=10)throw new AppError('Ce brouillon a déjà été rédigé dix fois. Tu peux modifier le texte directement.',429)
   if(row.ai_updated_at&&Date.parse(row.ai_updated_at)>Date.now()-30000)throw new AppError('Patiente quelques secondes avant de refaire le texte.',429)
   row=await updateListing(db,row,{lease:randomUUID(),lease_until:new Date(Date.now()+60000).toISOString(),inflight:'generate',ai_count:row.ai_count+1,ai_updated_at:now()})
   try{
-   const [catalogs,colors,signed]=await Promise.all([listingMetadata('catalogs?country=FR&depth=6',read),listingMetadata('colors?country=FR',read),db.storage.from(ASSET_BUCKET).createSignedUrls(row.photos.slice(0,4).map(p=>p.path),180)])
+   // Tout ce qui précède la rédaction est lu en même temps ; 3 photos suffisent à décrire l'article.
+   const [catalogs,colors,signed,presets,titles,sold]=await Promise.all([listingMetadata('catalogs?country=FR&depth=6',read),listingMetadata('colors?country=FR',read),db.storage.from(ASSET_BUCKET).createSignedUrls(row.photos.slice(0,3).map(p=>p.path),180),settings(db,row.fields.account_id),examples(db,row.fields.account_id),soldCatalogs(db)])
    const urls=check(signed).map(x=>x.signedUrl);if(urls.some(u=>!u))throw new AppError('Une photo est indisponible. Ajoute-la à nouveau.')
-   const [presets,titles]=await Promise.all([settings(db,row.fields.account_id),examples(db,row.fields.account_id)])
-   const result=await generate(row,urls,catalogs.data,colors.data,{token:listingAiToken(req),settings:presets.effective,examples:titles})
+   const roots=catalogRoots(catalogs.data,[...sold,...(row.fields.catalog_id?[row.fields.catalog_id]:[])])
+   const result=await generate(row,urls,catalogs.data,colors.data,{token:listingAiToken(req),settings:presets.effective,examples:titles,roots})
    // Les réglages complètent la fiche (marque, état, colis, taille Vinted) ; un choix encore valide est gardé.
    const options=result.catalog_id?await listingMetadata(`catalogs/${result.catalog_id}/options?country=FR&locale=fr`,read).catch(()=>null):null
    const sameCatalog=result.catalog_id===row.fields.catalog_id

@@ -4,8 +4,9 @@ const BudgetTab=lazy(()=>import('./components/BudgetTab'))
 const CatalogueTab=lazy(()=>import('./components/CatalogueTab'))
 const ResourcesTab=lazy(()=>import('./components/ResourcesTab'))
 const TeamBoardTab=lazy(()=>import('./components/TeamBoardTab'))
+const ListingStudio=lazy(()=>import('./components/ListingStudio'))
 import { captureDraft } from './lib/catalog'
-import { TAB_ADSPOWER, TAB_ALICIA, TAB_SALES, TAB_BUDGET, TAB_CATALOG, TAB_RESOURCES } from './constants'
+import { TAB_ADSPOWER, TAB_ALICIA, TAB_LISTINGS, TAB_SALES, TAB_BUDGET, TAB_CATALOG, TAB_RESOURCES } from './constants'
 import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import {useNavigation} from './lib/navigation'
 import {readAllRows} from './lib/workspace'
@@ -72,7 +73,9 @@ export default function App() {
   }, [activeTab])
 
   useEffect(() => {
-    if(profile && profile.role!=='admin' && [TAB_RESOURCES,TAB_BUDGET,TAB_COMPTES_VINTED,TAB_ADSPOWER,TAB_ALICIA].includes(activeTab))setActiveTab(TAB_HOME)
+    if(profile && profile.role!=='admin' && [TAB_RESOURCES,TAB_BUDGET,TAB_COMPTES_VINTED,TAB_ADSPOWER,TAB_ALICIA,TAB_LISTINGS].includes(activeTab))setActiveTab(TAB_HOME)
+    // Les annonces ont quitté l'atelier photo : un ancien lien « atelier ?section=listings » ouvre l'onglet Annonces.
+    if(activeTab===TAB_RESOURCES&&navigationFilters.section==='listings')setActiveTab(TAB_LISTINGS,navigationFilters.profile?{profile:navigationFilters.profile}:{})
   }, [profile,activeTab])
 
   useEffect(() => {
@@ -527,11 +530,12 @@ export default function App() {
       {(stockError||commandeError)&&<div className="max-w-screen-2xl mx-auto p-4 space-y-3"><ErrorNotice error={stockError} retry={fetchItems} busy={itemsLoading}/><ErrorNotice error={commandeError} retry={fetchCommandes}/></div>}
       {stockNotice&&<div role="status" className="max-w-screen-2xl mx-auto p-3 bg-teal-50 text-sm text-teal-800 flex justify-between gap-3">{stockNotice}<button onClick={()=>setStockNotice('')}>Fermer</button></div>}
       <Suspense fallback={<p role="status" className="p-8 text-center text-gray-500">Chargement de l’écran…</p>}><PageBoundary key={activeTab}>
-      {activeTab===TAB_ADSPOWER&&isAdmin&&<AdsPowerTab owner={user.id} onCreateListing={p=>setActiveTab(TAB_RESOURCES,{section:"listings",profile:p.id})}/>}
+      {activeTab===TAB_ADSPOWER&&isAdmin&&<AdsPowerTab owner={user.id} onCreateListing={p=>setActiveTab(TAB_LISTINGS,{profile:p.id})}/>}
       {activeTab===TAB_HOME&&<HomeTab isAdmin={isAdmin} onNavigate={setActiveTab}/>}
       {activeTab===TAB_HISTORY&&<HistoryTab isAdmin={isAdmin} onRestored={()=>{fetchItems();fetchCommandes()}}/>}
       {activeTab === TAB_BUDGET && isAdmin && <BudgetTab onOpenSale={row=>setActiveTab(TAB_SALES,{line:row.id})} />}
-      {activeTab===TAB_ALICIA&&isAdmin&&<TeamBoardTab onCreateListing={profile=>setActiveTab(TAB_RESOURCES,{section:'listings',profile})} onStyles={()=>setActiveTab(TAB_RESOURCES,{section:'accounts'})} onAccounts={()=>setActiveTab(TAB_COMPTES_VINTED)} onProfiles={()=>setActiveTab(TAB_ADSPOWER)}/>}
+      {activeTab===TAB_ALICIA&&isAdmin&&<TeamBoardTab onCreateListing={profile=>setActiveTab(TAB_LISTINGS,{profile})} onStyles={()=>setActiveTab(TAB_RESOURCES,{section:'accounts'})} onAccounts={()=>setActiveTab(TAB_COMPTES_VINTED)} onProfiles={()=>setActiveTab(TAB_ADSPOWER)}/>}
+      {activeTab===TAB_LISTINGS&&isAdmin&&<main className="workspace-page max-w-screen-2xl mx-auto p-4 sm:p-6 text-slate-800"><ListingStudio key={JSON.stringify(navigationFilters)} initialProfile={navigationFilters.profile} onAccounts={()=>setActiveTab(TAB_ADSPOWER)} onStyles={()=>setActiveTab(TAB_RESOURCES,{section:'accounts'})}/></main>}
       {activeTab === TAB_RESOURCES && isAdmin && <ResourcesTab key={JSON.stringify(navigationFilters)} initialSection={navigationFilters.section} initialProfile={navigationFilters.profile} onAccounts={()=>setActiveTab(TAB_ADSPOWER)} />}
       {activeTab === TAB_SALES && <SalesTab key={JSON.stringify(navigationFilters)} isAdmin={isAdmin} initialFilters={navigationFilters} onPreparePhoto={setPhotoArticle} />}
       {activeTab === TAB_CATALOG && (userRole==='admin'||userRole==='stock') && <CatalogueTab isAdmin={isAdmin} onPreparePhoto={isAdmin?setPhotoArticle:undefined} />}
@@ -630,7 +634,7 @@ export default function App() {
         )
       })()}
 
-      {activeTab !== TAB_ADSPOWER && activeTab !== TAB_ALICIA && activeTab !== TAB_HOME && activeTab !== TAB_HISTORY && activeTab !== TAB_RESOURCES && activeTab !== TAB_CATALOG && activeTab !== TAB_BUDGET && activeTab !== TAB_SALES && activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_A_RECEVOIR && (
+      {activeTab !== TAB_ADSPOWER && activeTab !== TAB_ALICIA && activeTab !== TAB_LISTINGS && activeTab !== TAB_HOME && activeTab !== TAB_HISTORY && activeTab !== TAB_RESOURCES && activeTab !== TAB_CATALOG && activeTab !== TAB_BUDGET && activeTab !== TAB_SALES && activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_A_RECEVOIR && (
         <Gallery
           items={filteredItems}
           loading={itemsLoading}
@@ -656,7 +660,7 @@ export default function App() {
         />
       )}
 
-      {activeTab !== TAB_ADSPOWER && activeTab !== TAB_ALICIA && activeTab !== TAB_HOME && activeTab !== TAB_HISTORY && activeTab !== TAB_RESOURCES && activeTab !== TAB_CATALOG && activeTab !== TAB_BUDGET && activeTab !== TAB_SALES && activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_A_ENVOYER && activeTab !== TAB_A_ENVOYER_LOT && activeTab !== TAB_ENVOYES && (
+      {activeTab !== TAB_ADSPOWER && activeTab !== TAB_ALICIA && activeTab !== TAB_LISTINGS && activeTab !== TAB_HOME && activeTab !== TAB_HISTORY && activeTab !== TAB_RESOURCES && activeTab !== TAB_CATALOG && activeTab !== TAB_BUDGET && activeTab !== TAB_SALES && activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_A_ENVOYER && activeTab !== TAB_A_ENVOYER_LOT && activeTab !== TAB_ENVOYES && (
         <button
           onClick={() => activeTab === TAB_A_RECEVOIR ? setShowAddCommandeModal(true) : setShowAddModal(true)}
           className={`fixed bottom-6 right-5 w-14 h-14 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-105 z-40 ${

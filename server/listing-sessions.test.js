@@ -1,10 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {handleListingStudio,accountManualMessage,manualRestoredMessage,listingStep} from './listing-studio.js'
-import {scheduleResult,generateListingText,listingInstructions,listingFields} from './listing-studio-core.js'
+import {handleListingStudio,soldCatalogIds,accountManualMessage,manualRestoredMessage,listingStep} from './listing-studio.js'
+import {catalogRoots,scheduleResult,generateListingText,listingInstructions,listingFields} from './listing-studio-core.js'
 import {readListingSettings,saveListingSettings,reserveListingSlot,listingTitleExamples} from './listing-settings.js'
 import {cleanListingSettings,effectiveListingSettings,applyListingPresets,tidyListingTitle,composeListingDescription,DEFAULT_LISTING_SETTINGS} from '../src/lib/listingSettings.js'
 import {listingIssues} from '../src/lib/listingStudio.js'
+import {readListingPicker} from './listing-picker.js'
 
 const owner='11111111-1111-4111-8111-111111111111',other='99999999-9999-4999-8999-999999999999'
 const account='33333333-3333-4333-8333-333333333333',account2='55555555-5555-4555-8555-555555555555',remoteId='44444444-4444-4444-8444-444444444444'
@@ -50,7 +51,7 @@ function dotb(){
  }
  return {read,calls,item}
 }
-const handle=(db,req,opts={})=>handleListingStudio({query:{},body:null,...req},{db,user:{id:owner}},{read:opts.read||dotb().read,allowDotb:opts.allowDotb??true,generate:opts.generate})
+const handle=(db,req,opts={})=>handleListingStudio({query:{},body:null,...req},{db,user:{id:owner}},{read:opts.read||dotb().read,allowDotb:opts.allowDotb??true,generate:opts.generate,...(opts.soldCatalogs?{soldCatalogs:opts.soldCatalogs}:{})})
 
 test('presets are validated, account presets only apply when chosen, and broken values fall back to defaults',()=>{
  assert.deepEqual(cleanListingSettings({}),DEFAULT_LISTING_SETTINGS)
@@ -259,4 +260,56 @@ test('Dotb can create a Vinted draft instead of publishing, then the link is not
  assert.equal(online.state,'published');assert.equal(online.url,'https://www.vinted.fr/items/555')
  const {draft:retried}=await handle(db,{method:'POST',body:{action:'mark_published',id:row.id,version,url:'https://www.vinted.fr/items/555-body'}})
  assert.equal(retried.version,online.version);assert.equal(retried.published_at,online.published_at)
+})
+
+test('writing is faster: only the shop’s universes, a compact list and 3 photos are sent',async()=>{
+ const catalogs=[{id:1,title:'Femmes'},{id:2,parent_id:1,title:'Vêtements'},{id:10,parent_id:2,title:'Robes'},{id:5,title:'Hommes'},{id:6,parent_id:5,title:'Pulls'},{id:7,title:'Maison'},{id:8,parent_id:7,title:'Bougies'}]
+ assert.deepEqual([...catalogRoots(catalogs,[10,10,'6',999])].sort(),[1,5])
+ let sent
+ const fetcher=async(_url,request)=>{sent=JSON.parse(request.body);return {ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({title:'Robe longue noire tulle taille M',description:'Robe longue noire.',catalog_id:8,color_ids:[],review_notes:''})}}]})}}
+ const urls=['https://example.test/1','https://example.test/2','https://example.test/3','https://example.test/4']
+ const value=await generateListingText(draft(),urls,catalogs,[],{fetcher,token:'test-only',roots:new Set([1])})
+ const data=JSON.parse(sent.messages[1].content[0].text)
+ assert.deepEqual(data.categories,['10 Femmes › Vêtements › Robes'],'only the Femmes branch, one short line per category')
+ assert.equal(sent.messages[1].content.filter(p=>p.type==='image_url').length,3)
+ assert.equal(value.catalog_id,null,'a category outside the list is refused')
+ await generateListingText(draft(),urls,catalogs,[],{fetcher,token:'test-only',roots:new Set([42])})
+ assert.equal(JSON.parse(sent.messages[1].content[0].text).categories.length,3,'unknown universes fall back to the full list')
+})
+
+test('the AI needs only the photos and the size; sold categories are read in parallel and cached',async()=>{
+ const row=draft({fields:fields({sku:'',price:''})}),db=database({drafts:[row]})
+ let received
+ const generate=async(_row,urls,_c,_col,args)=>{received={urls,...args};return {title:'Body noir effet cuir décolleté taille M',description:'Body noir.',catalog_id:10,color_ids:[1],review_notes:''}}
+ const {draft:result}=await handle(db,{method:'POST',body:{action:'generate',id:row.id,version:1}},{generate,soldCatalogs:async()=>[10]})
+ assert.equal(result.fields.title,'Body noir effet cuir décolleté taille M','written without SKU or price')
+ assert.deepEqual([...received.roots],[1]);assert.equal(received.urls.length,1)
+ const empty=database({drafts:[draft({fields:fields({size_text:''})})]})
+ await assert.rejects(handle(empty,{method:'POST',body:{action:'generate',id:empty.tables.listing_drafts[0].id,version:1}},{generate}),/la taille/)
+ let reads=0
+ const shop={from:()=>{reads++;const q={select:()=>q,not:()=>q,order:()=>q,limit:()=>Promise.resolve({data:[{catalog_id:'10'},{catalog_id:'10'},{catalog_id:'x'}],error:null})};return q}}
+ const later=Date.now()+86400000
+ assert.deepEqual(await soldCatalogIds(shop,later),[10]);assert.deepEqual(await soldCatalogIds(shop,later+60000),[10]);assert.equal(reads,1,'cached for 10 minutes')
+})
+
+test('choosing an account shows each account’s background, today’s count, articles in progress and accounts to avoid',async()=>{
+ const bg='88888888-8888-4888-8888-888888888888',archived='99999999-9999-4999-8999-999999999990'
+ const tables={
+  creative_accounts:[{id:account,background_id:bg},{id:account2,background_id:archived}],
+  creative_resources:[{id:bg,title:'Chambre claire',image_bucket:'creative-assets',image_path:'owner/bg.png',archived_at:null},{id:archived,title:'Ancien',image_bucket:'creative-assets',image_path:'owner/old.png',archived_at:'2026-01-01'}],
+  listing_drafts:[{id:'d1',owner_id:owner,state:'draft',fields:{account_id:account}},{id:'d2',owner_id:owner,state:'scheduled',fields:{account_id:account}},{id:'d3',owner_id:owner,state:'published',fields:{account_id:account}},{id:'d4',owner_id:other,state:'draft',fields:{account_id:account}}]
+ }
+ const db={from(table){const tests=[];let lo=0,hi=Infinity;const run=()=>{const rows=(tables[table]||[]).filter(r=>tests.every(t=>t(r)));return {data:rows.slice(lo,hi+1),count:rows.length,error:null}};const q={select:()=>q,order:()=>q,eq(k,v){tests.push(r=>r[k]===v);return q},neq(k,v){tests.push(r=>r[k]!==v);return q},in(k,v){tests.push(r=>v.includes(r[k]));return q},range(a,b){lo=a;hi=b;return q},then:(res,rej)=>Promise.resolve(run()).then(res,rej)};return q},
+  rpc:async(name)=>name==='team_board_counts'?{data:{stats:[{account_id:account,today:2,week:5,last_at:'2026-11-05T08:00:00Z'}]},error:null}:{data:null,error:{message:'unknown'}},
+  storage:{from:()=>({createSignedUrls:async paths=>({data:paths.map(path=>({path,signedUrl:`https://example.test/${path}`})),error:null})})}}
+ const health=async()=>({accounts:[{id:account2,health:{status:'restricted',label:'Compte restreint',attention:true}},{id:account,health:{status:'ok',label:'Accès confirmé',attention:false}}]})
+ const {accounts}=await readListingPicker(db,{id:owner},{health,now:new Date('2026-11-05T10:00:00Z')})
+ assert.equal(accounts[account].background.title,'Chambre claire')
+ assert.match(accounts[account].background.url,/^https:\/\/example\.test\//)
+ assert.deepEqual([accounts[account].today,accounts[account].week,accounts[account].in_progress],[2,5,2],'my drafts not yet published, never someone else’s')
+ assert.equal(accounts[account2].background,null,'an archived background is not shown')
+ assert.equal(accounts[account2].health.attention,true)
+ const broken=await readListingPicker(db,{id:owner},{health:async()=>{throw Error('offline')}})
+ assert.equal(broken.accounts[account].health,null,'health is optional');assert.equal(broken.accounts[account].today,2)
+ assert.equal(broken.health_unavailable,true,'an unavailable restriction reading is explicitly reported')
 })

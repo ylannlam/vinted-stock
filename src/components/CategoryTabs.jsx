@@ -1,12 +1,12 @@
 import {useState,useEffect} from 'react'
-import {TAB_ADSPOWER,TAB_ALICIA,TAB_HOME,TAB_HISTORY,TAB_SALES,TAB_BUDGET,TAB_CATALOG,TAB_RESOURCES,TAB_TOUT,TAB_A_RECEVOIR,TAB_A_ENVOYER,TAB_A_ENVOYER_LOT,TAB_ENVOYES,TAB_COMPTES_VINTED} from '../constants'
+import {TAB_ADSPOWER,TAB_ALICIA,TAB_LISTINGS,TAB_HOME,TAB_HISTORY,TAB_SALES,TAB_BUDGET,TAB_CATALOG,TAB_RESOURCES,TAB_TOUT,TAB_A_RECEVOIR,TAB_A_ENVOYER,TAB_A_ENVOYER_LOT,TAB_ENVOYES,TAB_COMPTES_VINTED} from '../constants'
 export default function CategoryTabs({active,onChange,items=[],commandes=[],userRole,sentCount=0}){
  const [menu,setMenu]=useState(false)
  useEffect(()=>setMenu(false),[active])
  useEffect(()=>{const close=e=>{if(e.key==='Escape')setMenu(false)};document.addEventListener('keydown',close);return()=>document.removeEventListener('keydown',close)},[])
  if(userRole==='employe')return null
  const admin=userRole==='admin',stockTabs=[TAB_TOUT,TAB_A_RECEVOIR,TAB_A_ENVOYER,TAB_A_ENVOYER_LOT,TAB_ENVOYES]
- const primary=[[TAB_HOME,'Accueil'],[TAB_SALES,'Ventes'],[TAB_TOUT,'Stock'],[TAB_CATALOG,'Produits Shein'],...(admin?[[TAB_ADSPOWER,'AdsPower'],[TAB_RESOURCES,'Atelier photo'],[TAB_ALICIA,'Alicia'],[TAB_BUDGET,'Budget']]:[])]
+ const primary=[[TAB_HOME,'Accueil'],[TAB_SALES,'Ventes'],[TAB_TOUT,'Stock'],[TAB_CATALOG,'Produits Shein'],...(admin?[[TAB_ADSPOWER,'AdsPower'],[TAB_RESOURCES,'Atelier photo'],[TAB_ALICIA,'Alicia'],[TAB_LISTINGS,'Annonces'],[TAB_BUDGET,'Budget']]:[])]
  const other=[...(admin?[[TAB_COMPTES_VINTED,'Comptes']]:[]),[TAB_HISTORY,'Historique & corbeille']]
  const tabClass=id=>`workspace-nav-link px-3 py-3 text-sm font-medium rounded-lg transition ${active===id||(id===TAB_TOUT&&stockTabs.includes(active))?'is-active bg-teal-700 text-white':'text-slate-500 hover:bg-slate-50'}`
  const sold=items.filter(i=>i.status==='vendu'),groups=sold.reduce((a,i)=>{if(i.bordereau_url)a[i.bordereau_url]=(a[i.bordereau_url]||0)+1;return a},{})

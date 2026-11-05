@@ -1,10 +1,9 @@
 import {useCachedState} from '../lib/useCachedState'
-import {lazy,Suspense,useEffect,useRef,useState} from 'react'
+import {useEffect,useRef,useState} from 'react'
 import ResourceDialog from './ResourceDialog'
 import CreativeAccounts from './CreativeAccounts'
 import {filterResources,validateImage} from '../lib/resources'
 import {stableThumbs,missingThumbs,thumbOf,resourceImageKey,mergeThumbnails} from '../lib/resourceThumbs'
-const ListingStudio=lazy(()=>import('./ListingStudio'))
 
 const defaultRequest=(...args)=>import('../lib/api').then(m=>m.resourcesRequest(...args))
 const defaultUpload=(...args)=>import('../lib/api').then(m=>m.uploadResourceImage(...args))
@@ -45,8 +44,8 @@ function ImageField({editing,file,onFile,onRemove,busy}) {
   </div>
 }
 
-export default function ResourcesTab({request=defaultRequest,upload=defaultUpload,accountsRequest,listingRequest,listingUpload,initialSection,initialProfile,onAccounts}) {
-  const [section,setSection]=useState(['accounts','listings'].includes(initialSection)?initialSection:'library')
+export default function ResourcesTab({request=defaultRequest,upload=defaultUpload,accountsRequest,initialSection}) {
+  const [section,setSection]=useState(initialSection==='accounts'?'accounts':'library')
   const [rows,setRows]=useCachedState(request,'resources',[]),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false)
   const [error,setError]=useState(''),[notice,setNotice]=useState(''),[tab,setTab]=useState('all')
   const [search,setSearch]=useState(''),[category,setCategory]=useState(''),[favorites,setFavorites]=useState(false),[sort,setSort]=useState('recent'),[limit,setLimit]=useState(24)
@@ -71,7 +70,7 @@ export default function ResourcesTab({request=defaultRequest,upload=defaultUploa
   useEffect(()=>{alive.current=true;run(load);return()=>{alive.current=false}},[request])
   // Images saved before previews existed get one in the background, four at a time.
   useEffect(()=>{
-    if(loading||thumbing.current||section==='listings')return
+    if(loading||thumbing.current)return
     const ids=missingThumbs(rows);if(!ids.length)return
     const requested=new Map(rows.filter(row=>ids.includes(row.id)).map(row=>[row.id,resourceImageKey(row)]))
     thumbing.current=true
@@ -132,8 +131,8 @@ export default function ResourcesTab({request=defaultRequest,upload=defaultUploa
     setNotice('Téléchargement demandé. Le lien reste disponible si ton navigateur ne l’a pas démarré.')
   }
   return <main className="workspace-page max-w-screen-2xl mx-auto p-4 sm:p-6 space-y-5 text-slate-800">
-    <nav aria-label="Organisation de l’atelier" className="workspace-view-tabs"><button className={section==='listings'?primary:button} onClick={()=>setSection('listings')}>Annonces</button><button className={section==='library'?primary:button} onClick={()=>setSection('library')}>Fonds et prompts</button><button className={section==='accounts'?primary:button} onClick={()=>setSection('accounts')}>Style par compte</button></nav>
-    {section==='listings'?<Suspense fallback={<p role="status" className="py-12 text-center text-slate-500">Ouverture de la création d’annonces…</p>}><ListingStudio request={listingRequest} upload={listingUpload} initialProfile={initialProfile} onAccounts={onAccounts}/></Suspense>:section==='accounts'?<CreativeAccounts resources={rows} request={accountsRequest} onLibrary={()=>setSection('library')} onDownload={row=>run(()=>prepareDownload(row))}/>:<>
+    <nav aria-label="Organisation de l’atelier" className="workspace-view-tabs"><button className={section==='library'?primary:button} onClick={()=>setSection('library')}>Fonds et prompts</button><button className={section==='accounts'?primary:button} onClick={()=>setSection('accounts')}>Style par compte</button></nav>
+    {section==='accounts'?<CreativeAccounts resources={rows} request={accountsRequest} onLibrary={()=>setSection('library')} onDownload={row=>run(()=>prepareDownload(row))}/>:<>
     <header className="flex flex-wrap justify-between items-center gap-4"><div><p className="text-xs font-semibold tracking-widest text-teal-700 uppercase mb-1">Ton atelier photo</p><h1 className="text-2xl font-bold">Prompts & fonds</h1><p className="text-sm text-gray-500 mt-1">Tes fonds et les prompts pour y placer tes articles, au même endroit.</p></div><div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={()=>run(load)}>Actualiser</button><button className={button} disabled={busy} onClick={()=>openEditor('prompt')}>+ Nouveau prompt</button><button className={primary} disabled={busy} onClick={()=>openEditor('background')}>+ Ajouter un fond</button></div></header>
 
     {!editing&&!detail&&error&&<p role="alert" className="rounded-xl bg-red-50 border border-red-200 text-red-800 p-3 text-sm">{error}</p>}

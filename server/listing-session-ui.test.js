@@ -29,8 +29,8 @@ async function mount(){
 }
 
 // Fake server: the same actions as /api/resources?scope=listings, nothing remote.
-function server({dotb=false}={}){
- const rows=new Map(),calls=[],settings={global:null,account:null,effective:{...DEFAULT_LISTING_SETTINGS,dotb,spacing_minutes:30,custom:false}}
+function server({dotb=false,slow=0}={}){
+ const rows=new Map(),calls=[],live={now:0,max:0},settings={global:null,account:null,effective:{...DEFAULT_LISTING_SETTINGS,dotb,spacing_minutes:30,custom:false}}
  const expose=row=>structuredClone({...row,photos:row.photos.map(p=>({...p,url:`https://example.test/${p.path}`}))})
  const request=async(method,body,query='')=>{
   const q=new URLSearchParams(query),action=body?.action||q.get('action');calls.push({action,body:structuredClone(body)})
@@ -43,18 +43,26 @@ function server({dotb=false}={}){
   const row=rows.get(body?.id||q.get('id'));if(!row)throw Error('Brouillon introuvable.')
   if(body?.version!=null&&body.version!==row.version)throw Error('Cette fiche a changé dans un autre onglet.')
   if(action==='save'){row.fields={...body.fields,price:String(body.fields.price).replace(',','.')};row.photos=body.photos;row.version++}
-  if(action==='generate'){row.fields=applyListingPresets({...row.fields,title:`Body noir effet cuir décolleté V manches longues moulant soirée Y2K taille ${row.fields.size_text}`,description:'Body noir effet cuir.\n– Décolleté V',catalog_id:10,color_ids:[1]},options,settings.effective);row.ai_updated_at=new Date().toISOString();row.version++}
+  if(action==='generate'){live.now++;live.max=Math.max(live.max,live.now);if(slow)await wait(slow);live.now--;row.fields=applyListingPresets({...row.fields,title:`Body noir effet cuir décolleté V manches longues moulant soirée Y2K taille ${row.fields.size_text}`,description:'Body noir effet cuir.\n– Décolleté V',catalog_id:10,color_ids:[1]},options,settings.effective);row.ai_updated_at=new Date().toISOString();row.version++}
   if(action==='mark_published'){row.state='published';row.vinted_id='42';row.url='https://www.vinted.fr/items/42';row.published_at=new Date().toISOString();row.version++}
-  if(action==='publish'){row.state='preparing';row.uploaded=0;row.version++}
+  if(action==='publish'){row.state='preparing';row.uploaded=0;row.dotb_publish=body.mode!=='draft';row.dotb_item_id='remote';row.version++}
   if(action==='step'){row.uploaded++;if(row.uploaded>=row.photos.length){row.state='scheduled';row.scheduled_at=new Date(Date.now()+3600000).toISOString();row.message='Annonce planifiée.'}row.version++}
   if(action==='discard'){rows.delete(row.id);return {removed:row.id}}
   return {draft:expose(row)}
  }
  let n=0
  const upload=async file=>({path:`owner/${String(++n).padStart(2,'0')}-${file.name}`})
- return {rows,calls,request,upload,settings}
+ return {rows,calls,request,upload,settings,live}
 }
 const png=name=>new File([new Uint8Array(32)],name,{type:'image/png'})
+
+const article=()=>document.querySelector('article')
+const field=placeholder=>document.querySelector(`article input[placeholder="${placeholder}"]`)
+const queue=()=>[...document.querySelectorAll('aside[aria-label="Articles du compte"] li button')]
+const addFiles=async(ui,files)=>ui.act(async()=>ui.props(document.querySelector('input[aria-label="Ajouter les photos d’un ou plusieurs articles"]')).onChange({target:{files,value:''}}))
+const autoWrite=async(ui,on)=>ui.act(async()=>ui.props([...document.querySelectorAll('input[type="checkbox"]')].find(i=>i.closest('label')?.textContent.includes('Rédaction automatique'))).onChange({target:{checked:on}}))
+const fill=async(ui,{sku,size,price})=>{if(sku!=null)await ui.type(field('sz…'),sku);if(size!=null)await ui.type(field('M'),size);if(price!=null)await ui.type(field('24,90'),price)}
+const rail=label=>[...document.querySelectorAll('nav[aria-label="Étapes des articles"] button')].find(b=>b.textContent.includes(label))?.textContent
 
 test('photos dropped together become one or several articles, in file-name order',async()=>{
  const ui=await mount(),s=server()
@@ -62,60 +70,72 @@ test('photos dropped together become one or several articles, in file-name order
  try{
   await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request:s.request,upload:s.upload,account,meta,onBack(){},onOpenDraft(){}})))
   assert.ok(document.body.textContent.includes('Aucun article en cours'))
-  const input=document.querySelector('input[aria-label="Ajouter les photos d’un ou plusieurs articles"]')
-  await ui.act(async()=>ui.props(input).onChange({target:{files:[png('b-02.png'),png('a-01.png'),png('b-01.png'),png('a-02.png')],value:''}}))
+  await addFiles(ui,[png('b-02.png'),png('a-01.png'),png('b-01.png'),png('a-02.png')])
   assert.ok(document.body.textContent.includes('4 photos sélectionnées'))
   assert.ok(ui.button('2 articles de 2 photos'),'pairs offered (front/back)')
   await ui.click('2 articles de 2 photos')
   await ui.act(()=>wait(50))
   assert.equal(s.rows.size,2)
   assert.deepEqual([...s.rows.values()].map(r=>r.photos.map(p=>p.path.split('-').slice(1).join('-'))),[['a-01.png','a-02.png'],['b-01.png','b-02.png']])
-  assert.equal(document.querySelectorAll('article').length,2)
-  assert.equal(s.calls.filter(c=>c.action==='generate').length,0,'nothing is written by the AI before asked')
+  assert.equal(queue().length,2,'both articles are in the queue');assert.equal(document.querySelectorAll('article').length,1,'one article is open at a time')
+  assert.equal(s.calls.filter(c=>c.action==='generate').length,0,'nothing is written by the AI before the size is known')
  }finally{await ui.unmount()}
 })
 
-test('a session prepares several articles, then each is copied and noted as published by hand',async()=>{
+test('several articles are written at the same time, then published by hand line by line',async()=>{
+ const ui=await mount(),s=server({slow:120})
+ try{
+  await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request:s.request,upload:s.upload,account,meta,onBack(){},onOpenDraft(){}})))
+  await autoWrite(ui,false)
+  for(const name of ['01.png','02.png','03.png']){await addFiles(ui,[png(name)]);await ui.act(()=>wait(20))}
+  assert.equal(queue().length,3)
+  for(const [i,item] of queue().entries()){await ui.act(async()=>item.click());await fill(ui,{sku:`sku-${i}`,size:'M',price:'24,90'})}
+  await ui.act(()=>wait(1100))
+  assert.ok([...s.rows.values()].every(r=>r.fields.price==='24.90'&&r.fields.size_text==='M'))
+  assert.equal(s.calls.filter(c=>c.action==='generate').length,0,'automatic writing switched off')
+  await ui.click('Rédiger les 3 articles avec l’IA')
+  await ui.act(()=>wait(500))
+  assert.equal(s.calls.filter(c=>c.action==='generate').length,3)
+  assert.equal(s.live.max,3,'the three articles are written in parallel')
+  assert.ok(document.body.textContent.includes('3 articles rédigés.'))
+  // Presets filled condition, parcel and Vinted size: all articles are ready.
+  assert.match(rail('Prêtes'),/3$/)
+  assert.match(article().querySelector('textarea.font-semibold').value,/taille M$/)
+  await ui.click('Publier sur Vinted')
+  assert.ok(document.querySelector('section[aria-label="Publier sur Vinted"]'))
+  const copyTitle=[...document.querySelectorAll('section[aria-label="Publier sur Vinted"] li')].find(li=>li.textContent.includes('Titre')).querySelector('button:last-child')
+  await ui.act(async()=>copyTitle.click());await ui.act(()=>wait(10))
+  assert.ok(document.body.textContent.includes('Copié ✓'))
+  assert.ok(document.querySelector('button[aria-label="Titre : fait"]'),'copying ticks the line')
+  const link=[...article().querySelectorAll('input')].find(i=>i.getAttribute('aria-label')?.startsWith('Lien Vinted'))
+  const openId=[...s.rows.values()].find(r=>article().getAttribute('aria-label')===r.fields.title)?.id
+  await ui.type(link,'https://www.vinted.fr/items/42-body')
+  await ui.act(async()=>ui.props(article().querySelector('form')).onSubmit({preventDefault(){}}))
+  await ui.act(()=>wait(30))
+  const marked=s.calls.find(c=>c.action==='mark_published')
+  assert.equal(marked.body.url,'https://www.vinted.fr/items/42-body');assert.equal(typeof marked.body.version,'number')
+  assert.match(rail('En ligne'),/1$/);assert.match(rail('Prêtes'),/2$/)
+  assert.match(document.body.textContent,/est notée publiée/)
+  assert.notEqual(s.rows.get(openId)?.state==='published'&&article().getAttribute('aria-label'),undefined)
+  assert.ok(article().querySelector('textarea.font-semibold'),'the next ready article opens')
+  assert.equal(s.calls.some(c=>c.action==='publish'),false,'never sent to Dotb when the account publishes by hand')
+  assert.equal(ui.button('Tout publier en ligne via Dotb (2)'),undefined)
+ }finally{await ui.unmount()}
+})
+
+test('automatic writing starts as soon as the photos and the size are there',async()=>{
  const ui=await mount(),s=server()
  try{
   await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request:s.request,upload:s.upload,account,meta,onBack(){},onOpenDraft(){}})))
-  for(const name of ['01.png','02.png']){
-   const input=document.querySelector('input[aria-label="Ajouter les photos d’un ou plusieurs articles"]')
-   await ui.act(async()=>ui.props(input).onChange({target:{files:[png(name)],value:''}}))
-   await ui.act(()=>wait(20))
-  }
-  assert.equal(document.querySelectorAll('article').length,2)
-  assert.equal(ui.button('Tout préparer avec l’IA').disabled,true,'SKU, size and price first')
-  // Fill SKU, size and price of both cards; edits are saved after a short pause.
-  const cards=[...document.querySelectorAll('article')]
-  for(const [i,card] of cards.entries()){
-   const [sku,size,price]=card.querySelectorAll('fieldset input')
-   await ui.type(sku,`sku-${i}`);await ui.type(size,'M');await ui.type(price,'24,90')
-  }
-  await ui.act(()=>wait(1100))
-  assert.ok([...s.rows.values()].every(r=>r.fields.price==='24.90'&&r.fields.size_text==='M'))
-  await ui.click('Tout préparer avec l’IA (2)')
-  await ui.act(()=>wait(50))
-  assert.equal(s.calls.filter(c=>c.action==='generate').length,2)
-  assert.ok(document.body.textContent.includes('2 articles préparés.'))
-  // Presets filled condition, parcel and Vinted size: both articles are ready.
-  assert.equal(document.body.textContent.match(/Prête à publier/g)?.length,2)
-  assert.ok(document.body.textContent.includes('Très bon état'))
-  const first=document.querySelector('article')
-  const title=first.querySelector('textarea.font-semibold')
-  assert.match(title.value,/taille M$/)
-  await ui.act(async()=>[...first.querySelectorAll('button')].find(b=>b.textContent==='Copier le titre').click())
-  await ui.act(()=>wait(10))
-  assert.ok(first.textContent.includes('Titre copié ✓'))
-  const linkInput=[...first.querySelectorAll('input')].find(i=>i.getAttribute('aria-label')?.startsWith('Lien Vinted'))
-  await ui.type(linkInput,'https://www.vinted.fr/items/42-body')
-  await ui.act(async()=>ui.props(first.querySelector('form')).onSubmit({preventDefault(){}}))
-  await ui.act(()=>wait(20))
-  const marked=s.calls.find(c=>c.action==='mark_published')
-  assert.equal(marked.body.url,'https://www.vinted.fr/items/42-body');assert.equal(typeof marked.body.version,'number')
-  assert.ok(document.body.textContent.includes('Publiées depuis hier · 1'))
-  assert.equal(s.calls.some(c=>c.action==='publish'),false,'never sent to Dotb when the account publishes by hand')
-  assert.equal(ui.button('Tout publier en ligne via Dotb (1)'),undefined)
+  await addFiles(ui,[png('01.png')]);await ui.act(()=>wait(20))
+  assert.equal(s.calls.filter(c=>c.action==='generate').length,0)
+  await fill(ui,{size:'M'})
+  await ui.act(()=>wait(1200))
+  assert.equal(s.calls.filter(c=>c.action==='generate').length,1,'written without a click, before SKU and price')
+  assert.match(article().querySelector('textarea.font-semibold').value,/taille M$/)
+  assert.match(rail('À vérifier'),/1$/,'SKU and price are still required before publishing')
+  await ui.act(()=>wait(400))
+  assert.equal(s.calls.filter(c=>c.action==='generate').length,1,'never rewritten automatically')
  }finally{await ui.unmount()}
 })
 
@@ -134,7 +154,7 @@ for(const mode of ['draft','live'])test(`Dotb ${mode}: ready articles are sent o
   assert.ok(s.calls.filter(c=>c.action==='publish').every(c=>c.body.confirmation_account_id===account.id&&c.body.mode===mode))
   assert.ok([...s.rows.values()].every(r=>r.state==='scheduled'))
   assert.match(document.body.textContent,mode==='draft'?/2 annonces transmises à Dotb sur 2\. Dotb crée les brouillons/:/2 annonces transmises à Dotb sur 2\. Dotb les publie/)
-  assert.match(document.body.textContent,/Prévue/)
+  assert.match(document.body.textContent,mode==='draft'?/Brouillon prévu/:/Mise en ligne prévue/)
  }finally{await ui.unmount()}
 })
 
@@ -144,12 +164,12 @@ test('a completed Vinted draft stays separate from published listings until its 
  try{
   await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request:s.request,upload:s.upload,account,meta:{...meta,dotb_publish_enabled:true},onBack(){},onOpenDraft(){}})))
   assert.match(document.body.textContent,/Brouillon créé sur Vinted/)
-  assert.doesNotMatch(document.body.textContent,/Publiées depuis hier/)
-  assert.equal(ui.button('Dotb : en ligne'),undefined)
+  assert.match(rail('En ligne'),/0$/)
+  assert.equal(ui.button('En ligne via Dotb'),undefined)
   const link=document.querySelector('input[aria-label="Lien Vinted de Robe test"]')
   await ui.type(link,'https://www.vinted.fr/items/42-robe')
-  await ui.act(async()=>ui.props(document.querySelector('article form')).onSubmit({preventDefault(){}}))
-  assert.match(document.body.textContent,/Publiées depuis hier · 1/)
+  await ui.act(async()=>ui.props(article().querySelector('form')).onSubmit({preventDefault(){}}))
+  assert.match(rail('En ligne'),/1$/)
   assert.equal(s.calls.some(c=>c.action==='publish'),false)
  }finally{await ui.unmount()}
 })
@@ -160,30 +180,28 @@ test('an article never sent can be removed after a confirmation',async()=>{
  try{
   await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request:s.request,upload:s.upload,account,meta,onBack(){},onOpenDraft(){}})))
   await ui.act(()=>wait(20))
-  await ui.click('Modifier les détails')
   await ui.click('Retirer de la session')
   assert.equal(s.calls.some(c=>c.action==='discard'),false,'asks first')
   await ui.click('Oui, retirer')
   await ui.act(()=>wait(20))
-  assert.equal(s.rows.size,0);assert.equal(document.querySelectorAll('article').length,0)
+  assert.equal(s.rows.size,0);assert.equal(queue().length,0)
  }finally{await ui.unmount()}
 })
-
 
 test('a failed save keeps edits visible and blocks refresh or leaving until retry succeeds',async()=>{
  const ui=await mount(),s=server();let fail=false,left=0
  const request=async(method,body,query)=>{if(body?.action==='save'&&fail)throw Error('Sauvegarde interrompue');return s.request(method,body,query)}
  try{
   await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request,upload:s.upload,account,meta,onBack(){left++},onOpenDraft(){left++}})))
-  await ui.act(async()=>ui.props(document.querySelector('input[type="file"]')).onChange({target:{files:[png('one.png')],value:''}}))
+  await addFiles(ui,[png('one.png')])
   await ui.act(()=>wait(20));fail=true
-  await ui.type(document.querySelector('article input'),'SKU-À-CONSERVER')
+  await ui.type(field('sz…'),'SKU-À-CONSERVER')
   await ui.click('← Changer de compte')
   assert.equal(left,0);assert.match(document.body.textContent,/Sauvegarde interrompue/)
   await ui.click('Actualiser')
-  assert.equal(document.querySelector('article input').value,'SKU-À-CONSERVER')
+  assert.equal(field('sz…').value,'SKU-À-CONSERVER')
   assert.equal(s.calls.filter(c=>c.action==='session').length,1,'refresh cannot replace unsaved edits')
-  await ui.click('Modifier les détails');await ui.click('Ouvrir la fiche complète');assert.equal(left,0)
+  await ui.click('Ouvrir la fiche complète');assert.equal(left,0)
   fail=false;await ui.click('Réessayer l’enregistrement')
   assert.equal([...s.rows.values()][0].fields.sku,'SKU-À-CONSERVER')
   await ui.click('← Changer de compte');assert.equal(left,1)
@@ -200,15 +218,56 @@ test('refresh retries category options, changed sizes match again, and failed co
  try{
   await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request,upload:s.upload,account,meta,onBack(){},onOpenDraft(){}})))
   optionsFail=false;await ui.click('Actualiser')
-  assert.ok(ui.button('Copier le titre'))
-  await ui.type(document.querySelectorAll('article fieldset input')[1],'L')
-  assert.ok(ui.button('Copier le titre'),'changing the size keeps an available Vinted size')
+  assert.ok(ui.button('Publier sur Vinted'))
+  await ui.type(field('M'),'L')
+  assert.ok(ui.button('Publier sur Vinted'),'changing the size keeps an available Vinted size')
+  await ui.click('Publier sur Vinted')
   document.execCommand=()=>false
-  await ui.click('Copier le titre')
+  const copyTitle=[...document.querySelectorAll('section[aria-label="Publier sur Vinted"] li')].find(li=>li.textContent.includes('Titre')).querySelector('button:last-child')
+  await ui.act(async()=>copyTitle.click())
   assert.match(document.body.textContent,/copie automatique est indisponible/)
-  assert.equal(ui.button('Titre copié ✓'),undefined)
+  assert.equal(ui.button('Copié ✓'),undefined)
+  assert.ok(document.querySelector('button[aria-label="Titre : à faire"]'),'a failed copy does not tick the checklist')
+  await ui.click('Revenir à la fiche')
   await ui.click('← Changer de compte')
   assert.equal(s.rows.get(id).fields.size_id,5)
+ }finally{await ui.unmount()}
+})
+
+test('step filters show only matching articles and an empty step has no publication action',async()=>{
+ const ui=await mount(),s=server()
+ for(const [id,state] of [['pending','draft'],['done','published']])s.rows.set(id,{id,version:1,state,fields:{...emptyListing(),account_id:account.id,title:state==='published'?'Article publié':''},photos:[]})
+ try{
+  await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request:s.request,upload:s.upload,account,meta,onBack(){},onOpenDraft(){}})))
+  const filter=label=>[...document.querySelectorAll('nav[aria-label="Étapes des articles"] button')].find(b=>b.textContent.includes(label))
+  await ui.act(async()=>filter('En ligne').click())
+  assert.equal(article().getAttribute('aria-label'),'Article publié')
+  await ui.act(async()=>filter('Prêtes').click())
+  assert.equal(article(),null)
+  assert.equal(queue().length,0)
+ }finally{await ui.unmount()}
+})
+
+test('automatic and batch writing share three slots and stop on quota errors',async()=>{
+ const ui=await mount(),s=server(),releases=[];let running=0,max=0,attempts=0
+ for(let n=0;n<7;n++){const id=`draft-${n}`;s.rows.set(id,{id,version:1,state:'draft',fields:{...emptyListing(),account_id:account.id,size_text:'M'},photos:[{path:`${id}.png`}]})}
+ const request=async(method,body,query)=>{
+  if(body?.action==='generate'){
+   attempts++;running++;max=Math.max(max,running)
+   await new Promise(resolve=>releases.push(resolve));running--
+   throw Error('Quota Gemini atteint')
+  }
+  return s.request(method,body,query)
+ }
+ try{
+  await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request,upload:s.upload,account,meta,onBack(){},onOpenDraft(){}})))
+  await ui.act(()=>wait(20));assert.equal(attempts,3)
+  await ui.click('Rédiger les 7 articles avec l’IA')
+  await ui.act(()=>wait(20));assert.equal(attempts,3,'batch waits for the existing automatic writes')
+  await ui.act(async()=>{releases.splice(0).forEach(resolve=>resolve());await wait(50)})
+  await ui.act(()=>wait(50))
+  assert.equal(max,3);assert.equal(attempts,3,'quota failure does not send waiting articles')
+  assert.match(document.body.textContent,/Quota Gemini atteint|quota IA atteint/)
  }finally{await ui.unmount()}
 })
 

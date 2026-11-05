@@ -97,16 +97,30 @@ export function listingInstructions(settings=DEFAULT_LISTING_SETTINGS){
   ...(settings.title_rules?[`Consignes de l’équipe pour le titre, à suivre si elles respectent les règles ci-dessus : ${settings.title_rules}`]:[])
  ].join('\n')
 }
+// Univers déjà vendus par la boutique (Femmes, Hommes…) : seules leurs catégories sont proposées à l'IA.
+// La liste complète de Vinted compte près de 2 000 catégories ; la raccourcir accélère nettement la rédaction.
+export function catalogRoots(catalogs,ids){
+ const map=new Map((catalogs||[]).map(c=>[c.id,c])),roots=new Set()
+ for(const id of ids||[]){let node=map.get(Number(id)),guard=0;while(node?.parent_id&&map.has(node.parent_id)&&guard++<12)node=map.get(node.parent_id);if(node)roots.add(node.id)}
+ return roots
+}
+function rootChoices(catalogs,roots){
+ const choices=catalogChoices(catalogs)
+ if(!roots?.size)return choices
+ const map=new Map(catalogs.map(c=>[c.id,c])),rootOf=id=>{let node=map.get(id),guard=0;while(node?.parent_id&&map.has(node.parent_id)&&guard++<12)node=map.get(node.parent_id);return node?.id}
+ const kept=choices.filter(c=>roots.has(rootOf(c.id)))
+ return kept.length?kept:choices
+}
 const aiModel=model=>LISTING_AI_MODELS.some(m=>m.id===model)?model:DEFAULT_LISTING_SETTINGS.ai_model
-export async function generateListingText(row,urls,catalogs,colors,{fetcher=fetch,token=process.env.GEMINI_API_KEY,model,settings=DEFAULT_LISTING_SETTINGS,examples={own:[],others:[]}}={}){
+export async function generateListingText(row,urls,catalogs,colors,{fetcher=fetch,token=process.env.GEMINI_API_KEY,model,settings=DEFAULT_LISTING_SETTINGS,examples={own:[],others:[]},roots=null}={}){
  if(!token)throw new AppError('La rédaction automatique reste à connecter. Tu peux déjà préparer et enregistrer ta fiche.',503)
  model=aiModel(model||settings.ai_model)
- const choices=catalogChoices(catalogs).slice(0,1800)
+ const choices=rootChoices(catalogs,roots).slice(0,1800)
  const schema={type:'object',additionalProperties:false,properties:{title:{type:'string'},description:{type:'string'},catalog_id:{type:['integer','null']},color_ids:{type:'array',items:{type:'integer'}},review_notes:{type:'string'}},required:['title','description','catalog_id','color_ids','review_notes']}
  const system=listingInstructions(settings)
- const text=JSON.stringify({informations_vendeur:{taille:row.fields.size_text,notes:row.fields.notes},exemples_de_titres_vendus_sur_ce_compte:examples.own||[],exemples_de_titres_vendus_sur_les_autres_comptes:examples.others||[],categories:choices.map(c=>({id:c.id,titre:c.label})),couleurs:colors})
+ const text=JSON.stringify({informations_vendeur:{taille:row.fields.size_text,notes:row.fields.notes},exemples_de_titres_vendus_sur_ce_compte:examples.own||[],exemples_de_titres_vendus_sur_les_autres_comptes:examples.others||[],categories:choices.map(c=>`${c.id} ${c.label}`),couleurs:colors})
  let response
- try{response=await fetcher('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({model,messages:[{role:'system',content:system},{role:'user',content:[{type:'text',text},...urls.slice(0,4).map(url=>({type:'image_url',image_url:{url,detail:'auto'}}))]}],max_tokens:1800,reasoning_effort:model.includes('lite')?'minimal':'low',response_format:{type:'json_schema',json_schema:{name:'vinted_listing',strict:true,schema}}}),signal:AbortSignal.timeout(45000)})}catch{throw new AppError('La rédaction a pris trop de temps. Tes photos sont enregistrées ; réessaie.',504)}
+ try{response=await fetcher('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({model,messages:[{role:'system',content:system},{role:'user',content:[{type:'text',text},...urls.slice(0,3).map(url=>({type:'image_url',image_url:{url,detail:'auto'}}))]}],max_tokens:1800,reasoning_effort:model.includes('lite')?'minimal':'low',response_format:{type:'json_schema',json_schema:{name:'vinted_listing',strict:true,schema}}}),signal:AbortSignal.timeout(45000)})}catch{throw new AppError('La rédaction a pris trop de temps. Tes photos sont enregistrées ; réessaie.',504)}
  const body=await response.json().catch(()=>null)
  if(!response.ok){
   const type=body?.error?.type||body?.error?.code
