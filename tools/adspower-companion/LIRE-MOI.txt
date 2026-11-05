@@ -31,6 +31,17 @@ Garde le PC éveillé et les pages Dotb ouvertes pour qu’elles continuent à t
 Fermer le connecteur ne ferme pas les profils et n'arrête pas leurs automatisations.
 « Annuler l'attente » annule uniquement les profils pas encore lancés.
 
+PROFILS ET PROXYS (version 1.1.0)
+Dans l'onglet AdsPower, la section « Profils et proxys » permet :
+- d'enregistrer tes proxys (Decodo, Oxylabs ou autre) en les collant une fois ;
+- de créer un profil AdsPower pour un compte Vinted, avec un proxy libre et une
+  empreinte cohérente avec ce PC (Windows 11, carte NVIDIA, résolution courante) ;
+- de remplacer l'empreinte d'un profil existant. Le proxy, les cookies et la session
+  du profil sont gardés. Le profil doit être fermé. L'ancienne empreinte ne peut pas
+  être restaurée.
+Le mot de passe du proxy passe du site à ce connecteur puis à AdsPower, uniquement
+sur ce PC. Les empreintes sont prévues pour ce PC : n'ouvre pas ces profils sur un Mac.
+
 En cas de coupure, ouvre « Diagnostic de connexion » dans l'onglet AdsPower :
 la dernière réponse, la version et le dernier incident y sont indiqués.
 La liaison est retentée automatiquement lorsque le site reste ouvert sur ce PC.

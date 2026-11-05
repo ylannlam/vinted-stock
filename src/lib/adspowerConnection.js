@@ -39,7 +39,7 @@ export function createAdsPowerRequest({getSession,issueTicket,fetcher=globalThis
       if(owner!==user)throw failure('Le compte connecté a changé. Actualise le site.','session')
       let response
       try{
-        response=await fetcher(COMPANION+path,{method:body?'POST':'GET',headers:{Authorization:`Bearer ${ticket.ticket}`,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(path==='/profiles'?120000:20000)})
+        response=await fetcher(COMPANION+path,{method:body?'POST':'GET',headers:{Authorization:`Bearer ${ticket.ticket}`,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(path.startsWith('/profiles')?120000:20000)})
       }catch(error){
         if(['TimeoutError','AbortError'].includes(error.name))throw failure('Le connecteur met trop de temps à répondre. La liaison sera retentée automatiquement ; cela ne signifie pas qu’AdsPower est fermé.','timeout')
         let denied=false
@@ -49,7 +49,7 @@ export function createAdsPowerRequest({getSession,issueTicket,fetcher=globalThis
       const result=await response.json().catch(()=>null)
       // Authorization rejection is safe to retry; a timed-out launch is never replayed.
       if(response.status===401&&attempt===0){ticket=await ticketFor(user,ticket);continue}
-      if(!response.ok){if(response.status===401&&capability===ticket)capability=null;throw failure(result?.error||'Le connecteur a refusé la demande. Réessaie.',response.status===401?'authorization':result?.code==='verification_unavailable'?'site':'connector')}
+      if(!response.ok){if(response.status===401&&capability===ticket)capability=null;throw failure(result?.error||'Le connecteur a refusé la demande. Réessaie.',response.status===401?'authorization':result?.code==='verification_unavailable'?'site':['factory_not_started','factory_uncertain'].includes(result?.code)?result.code:'connector')}
       if(!result||typeof result!=='object')throw failure('La réponse du connecteur est illisible. Actualise la page.','response')
       return result
     }

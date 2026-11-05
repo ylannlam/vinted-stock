@@ -22,7 +22,10 @@ export class AdsPowerClient{
     if(response.status===429||/too many|frequency|rate limit/i.test(result?.msg||''))throw new LocalError('AdsPower demande une pause. Attends quelques secondes puis réessaie.',429)
     if(!response.ok||result?.code!==0){
       if(/api.?key|unauthori|auth|token/i.test(result?.msg||'')||[401,403].includes(response.status))throw new LocalError('La clé AdsPower est absente ou refusée. Ouvre les réglages du connecteur.',401)
-      throw new LocalError('AdsPower a refusé la demande. Vérifie le profil dans AdsPower.',502)
+      const refused=new LocalError('AdsPower a refusé la demande. Vérifie le profil dans AdsPower.',502)
+      // Kept apart from the message: only callers that strip their own secrets may show it.
+      if(typeof result?.msg==='string'){const detail=result.msg.replace(/[\x00-\x1f\x7f]+/g,' ').trim();refused.detail=this.key?detail.split(this.key).join('•••'):detail}
+      throw refused
     }
     return result.data||{}
   }
