@@ -26,7 +26,7 @@ export function cardStage(card,options){
 }
 // Les étapes, dans l'ordre où un article les traverse. « loading » se range avec la vérification.
 export const STEPS=[
- {key:'inputs',label:'À compléter',hint:'Photos et taille',dot:'bg-[#b8b2a8]'},
+ {key:'inputs',label:'À compléter',hint:'Photos, SKU, taille et prix',dot:'bg-[#b8b2a8]'},
  {key:'prepare',label:'À rédiger',hint:'Titre et description par l’IA',dot:'bg-sky-500'},
  {key:'review',label:'À vérifier',hint:'Un choix manque',dot:'bg-amber-500'},
  {key:'ready',label:'Prêtes',hint:'À mettre en ligne',dot:'bg-[#087f5b]'},
@@ -73,7 +73,8 @@ export default function ListingSession({request,upload,account,meta,onBack,onOpe
   catch(e){card.error=e.message;throw e}
   finally{card.busy='';render()}
  }
- function touch(card){card.dirty=true;card.rev++;card.error='';clearTimeout(card.timer);card.timer=setTimeout(()=>save(card).catch(()=>{}),900);render()}
+ // La rédaction automatique attend 2 secondes sans frappe, pour ne jamais partir au milieu d'une saisie.
+ function touch(card){card.dirty=true;card.rev++;card.error='';card.editedAt=Date.now();clearTimeout(card.timer);card.timer=setTimeout(()=>save(card).catch(()=>{}),900);clearTimeout(card.idle);card.idle=setTimeout(render,2100);render()}
  function edit(card,patch){
   if(card.row.state!=='draft'||card.busy)return
   card.fields={...card.fields,...patch}
@@ -183,18 +184,18 @@ export default function ListingSession({request,upload,account,meta,onBack,onOpe
   aiPaused.current=false
   const waiting=list().filter(c=>c.row.state==='draft'&&!c.fields.title?.trim())
   const ready=waiting.filter(c=>!generationIssues(c.fields,c.photos).length&&!c.busy)
-  if(!ready.length)throw Error(waiting.length?'Indique d’abord la taille des articles à rédiger.':'Tous les articles ont déjà leur texte.')
+  if(!ready.length)throw Error(waiting.length?'Indique d’abord le SKU, la taille et le prix des articles à rédiger.':'Tous les articles ont déjà leur texte.')
   let done=0,failed=0,next=0,stop=false
   const worker=async()=>{while(!stop&&next<ready.length){const card=ready[next++];setBusy(`Rédaction : ${done+failed} sur ${ready.length} terminées…`);try{await writeCard(card);done++}catch(e){failed++;if(/quota/i.test(e.message)){stop=true;setError(e.message)}}}}
   await Promise.all(Array.from({length:Math.min(3,ready.length)},worker))
-  setNotice([`${done} article${done>1?'s':''} rédigé${done>1?'s':''}.`,waiting.length>ready.length?`${waiting.length-ready.length} attend${waiting.length-ready.length>1?'ent':''} encore sa taille ou ses photos.`:'',failed?`${failed} en erreur : regarde l’article concerné.`:''].filter(Boolean).join(' '))
+  setNotice([`${done} article${done>1?'s':''} rédigé${done>1?'s':''}.`,waiting.length>ready.length?`${waiting.length-ready.length} attend${waiting.length-ready.length>1?'ent':''} encore son SKU, sa taille, son prix ou ses photos.`:'',failed?`${failed} en erreur : regarde l’article concerné.`:''].filter(Boolean).join(' '))
  }
  useEffect(()=>{
   if(!autoWrite||meta.ai_ready===false||busy||loading||aiPaused.current)return
   let available=3-aiSlots.current-aiWaiters.current.length
   for(const card of list()){
    if(available<=0)break
-   if(card.row.state!=='draft'||card.fields.title?.trim()||card.row.ai_updated_at||card.autoTried||card.busy||card.dirty||generationIssues(card.fields,card.photos).length)continue
+   if(card.row.state!=='draft'||card.fields.title?.trim()||card.row.ai_updated_at||card.autoTried||card.busy||card.dirty||Date.now()-(card.editedAt||0)<2000||generationIssues(card.fields,card.photos).length)continue
    available--;writeCard(card).catch(()=>{})
   }
  })
@@ -491,7 +492,7 @@ export default function ListingSession({request,upload,account,meta,onBack,onOpe
     {loading?<p role="status" className="px-2 py-6 text-sm text-[#79756f]">Chargement de la session…</p>:<ul className="max-h-[22rem] space-y-1 overflow-y-auto pr-1 lg:max-h-[calc(100vh-22rem)]">{visible.map(([c,s])=>queueItem(c,s))}{!visible.length&&<li className="px-2 py-6 text-sm text-[#79756f]">{rows.length?'Aucun article à cette étape.':'Aucun article pour l’instant.'}</li>}</ul>}
    </aside>
 
-   <div className="min-w-0">{loading?null:current?detail(current):<div className="grid min-h-[22rem] place-items-center rounded-3xl border border-dashed border-[#d6d0c6] bg-[#fffefa] p-8 text-center"><div className="max-w-sm"><p className="text-lg font-semibold">Aucun article en cours sur ce compte</p><p className="mt-2 text-sm text-[#79756f]">Glisse les photos de tes articles sur la page, ou clique sur « Ajouter des articles ». Indique la taille de chaque article : l’IA rédige aussitôt, pendant que tu passes au suivant.</p></div></div>}</div>
+   <div className="min-w-0">{loading?null:current?detail(current):<div className="grid min-h-[22rem] place-items-center rounded-3xl border border-dashed border-[#d6d0c6] bg-[#fffefa] p-8 text-center"><div className="max-w-sm"><p className="text-lg font-semibold">Aucun article en cours sur ce compte</p><p className="mt-2 text-sm text-[#79756f]">Glisse les photos de tes articles sur la page, ou clique sur « Ajouter des articles ». Indique le SKU, la taille et le prix de chaque article : l’IA rédige aussitôt, pendant que tu passes au suivant.</p></div></div>}</div>
   </div>
 
   {showSettings&&settings&&<div className="fixed inset-0 z-50 flex justify-end bg-[#323630]/25" onClick={e=>{if(e.target===e.currentTarget)setShowSettings(false)}}><div role="dialog" aria-modal="true" aria-label="Réglages des annonces" className="h-full w-full max-w-xl overflow-y-auto bg-[#faf8f5] p-3 sm:p-5 shadow-2xl"><ListingSettingsPanel key={JSON.stringify(settings)} settings={settings} account={account} request={request} serverDotb={serverDotb} aiModels={meta.ai_models} onClose={()=>setShowSettings(false)} onSaved={value=>{settingsRef.current=value;setSettings(value);setDotb(serverDotb&&value.effective.dotb===true);setShowSettings(false);setNotice('Réglages enregistrés. Ils s’appliquent aux prochains articles rédigés.')}}/></div></div>}

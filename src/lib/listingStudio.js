@@ -52,8 +52,8 @@ export function listingIssues(f,photos,options){
 export const missingListingFields=(...args)=>listingIssues(...args).map(issue=>issue.label)
 
 export function generationIssues(fields,photos){
- // L'IA n'a besoin que des photos et de la taille : le SKU et le prix peuvent venir après.
- const issues=listingIssues(fields,photos,null).filter(issue=>['photos','account'].includes(issue.key))
+ // La rédaction attend que l'article soit complet : photos, SKU, taille et prix.
+ const issues=listingIssues(fields,photos,null).filter(issue=>['photos','account','sku','price'].includes(issue.key))
  if(!fields.size_text?.trim())issues.push({key:'size-text',label:'la taille de l’article',step:'product'})
  return issues
 }

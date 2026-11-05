@@ -123,17 +123,24 @@ test('several articles are written at the same time, then published by hand line
  }finally{await ui.unmount()}
 })
 
-test('automatic writing starts as soon as the photos and the size are there',async()=>{
+test('automatic writing waits for SKU, size and price, then 2 seconds without typing',async()=>{
  const ui=await mount(),s=server()
  try{
   await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request:s.request,upload:s.upload,account,meta,onBack(){},onOpenDraft(){}})))
   await addFiles(ui,[png('01.png')]);await ui.act(()=>wait(20))
-  assert.equal(s.calls.filter(c=>c.action==='generate').length,0)
   await fill(ui,{size:'M'})
+  await ui.act(()=>wait(2400))
+  assert.equal(s.calls.filter(c=>c.action==='generate').length,0,'size alone is not enough')
+  await fill(ui,{sku:'sz123'})
+  await ui.act(()=>wait(2400))
+  assert.equal(s.calls.filter(c=>c.action==='generate').length,0,'price still missing')
+  await fill(ui,{price:'24,90'})
   await ui.act(()=>wait(1200))
-  assert.equal(s.calls.filter(c=>c.action==='generate').length,1,'written without a click, before SKU and price')
+  assert.equal(s.calls.filter(c=>c.action==='generate').length,0,'still typing: no writing yet')
+  await ui.act(()=>wait(1300))
+  assert.equal(s.calls.filter(c=>c.action==='generate').length,1,'written without a click once everything is filled')
   assert.match(article().querySelector('textarea.font-semibold').value,/taille M$/)
-  assert.match(rail('À vérifier'),/1$/,'SKU and price are still required before publishing')
+  assert.match(rail('Prêtes'),/1$/)
   await ui.act(()=>wait(400))
   assert.equal(s.calls.filter(c=>c.action==='generate').length,1,'never rewritten automatically')
  }finally{await ui.unmount()}
@@ -250,7 +257,7 @@ test('step filters show only matching articles and an empty step has no publicat
 
 test('automatic and batch writing share three slots and stop on quota errors',async()=>{
  const ui=await mount(),s=server(),releases=[];let running=0,max=0,attempts=0
- for(let n=0;n<7;n++){const id=`draft-${n}`;s.rows.set(id,{id,version:1,state:'draft',fields:{...emptyListing(),account_id:account.id,size_text:'M'},photos:[{path:`${id}.png`}]})}
+ for(let n=0;n<7;n++){const id=`draft-${n}`;s.rows.set(id,{id,version:1,state:'draft',fields:{...emptyListing(),account_id:account.id,sku:`sz-${n}`,size_text:'M',price:'24.90'},photos:[{path:`${id}.png`}]})}
  const request=async(method,body,query)=>{
   if(body?.action==='generate'){
    attempts++;running++;max=Math.max(max,running)

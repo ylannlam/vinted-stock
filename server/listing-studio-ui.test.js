@@ -16,7 +16,7 @@ test('incomplete and stale choices point to a visible field; Gemini has a separa
  assert.deepEqual(missing,[{key:'condition',label:'l’état réel de l’article',step:'review'}])
  assert.equal(listingIssues({...fields,size_id:99},base().photos,options)[0].key,'size')
  assert.deepEqual(generationIssues(fields,base().photos),[])
- assert.deepEqual(generationIssues({...fields,price:'oops',size_text:''},[]).map(i=>i.key),['photos','size-text'])
+ assert.deepEqual(generationIssues({...fields,price:'oops',size_text:''},[]).map(i=>i.key),['photos','price','size-text'])
 })
 
 test('listing editor guides missing fields, confirms saves, refreshes offline accounts and preserves edits during saves',async()=>{
