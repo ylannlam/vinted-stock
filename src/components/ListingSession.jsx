@@ -1,3 +1,4 @@
+import ListingSheinHint from './ListingSheinHint'
 import {useEffect,useMemo,useRef,useState} from 'react'
 import ListingSettingsPanel from './ListingSettingsPanel'
 import {catalogChoices,generationIssues,listingIssues,listingSizes,listingStateLabels,validateListingPhoto,MAX_LISTING_PHOTOS} from '../lib/listingStudio'
@@ -42,11 +43,12 @@ export function groupFiles(files,size){
  return groups
 }
 
-export default function ListingSession({request,upload,account,meta,onBack,onOpenDraft}){
+export default function ListingSession({request,upload,account,meta,initialSku='',onBack,onOpenDraft}){
+ const skuToUse=useRef(initialSku)
  const cards=useRef(new Map()),optionCache=useRef(new Map()),alive=useRef(true),settingsRef=useRef(null),dragDepth=useRef(0)
  const [order,setOrder]=useState([]),[,setTick]=useState(0)
  const [settings,setSettings]=useState(null),[dotb,setDotb]=useState(false),[serverDotb,setServerDotb]=useState(!!meta.dotb_publish_enabled)
- const [loading,setLoading]=useState(true),[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState('')
+ const [loading,setLoading]=useState(true),[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(initialSku?`SKU ${initialSku} prêt : ajoute les photos de l’article, il sera repris sur la fiche avec ses mesures Shein.`:'')
  const [dropped,setDropped]=useState(null),[showSettings,setShowSettings]=useState(false),[copied,setCopied]=useState('')
  const [selected,setSelected]=useState(null),[filter,setFilter]=useState('all'),[dragging,setDragging]=useState(false),[photoIndex,setPhotoIndex]=useState(0)
  const choices=useMemo(()=>catalogChoices(meta.catalogs||[]),[meta.catalogs])
@@ -139,6 +141,8 @@ export default function ListingSession({request,upload,account,meta,onBack,onOpe
    setBusy(`${label} : création…`)
    const {draft}=await request('POST',{action:'create',id:crypto.randomUUID(),account_id:account.id})
    const card=remember(draft);setOrder(old=>[card.id,...old.filter(id=>id!==card.id)]);if(g===0){setSelected(card.id);setPhotoIndex(0);setFilter('all')}
+   // Article ouvert depuis la bibliothèque : son SKU est repris sur la première fiche créée.
+   if(g===0&&skuToUse.current){edit(card,{sku:skuToUse.current});skuToUse.current=''}
    await uploadInto(card,groups[g],(i,n)=>setBusy(`${label} : photo ${i} sur ${n}…`))
   }
   setNotice(groups.length>1?`${groups.length} articles ajoutés. Indique le SKU, la taille et le prix de chacun, puis lance la rédaction par l’IA.`:'Article ajouté. Indique son SKU, sa taille et son prix.')
@@ -355,11 +359,11 @@ export default function ListingSession({request,upload,account,meta,onBack,onOpe
   const f=card.fields,editable=card.row.state==='draft',needs=stage==='inputs'?generationIssues(f,card.photos):stage==='review'?listingIssues(f,card.photos,optionsFor(f.catalog_id)):[]
   const warn=key=>needs.some(i=>i.key===key)?' !border-amber-400 bg-amber-50/40':''
   if(!editable)return <p className="text-sm text-[#79756f]">{[f.sku&&`SKU ${f.sku}`,f.size_text&&`taille ${f.size_text}`,f.price&&euros(f.price)].filter(Boolean).join(', ')}</p>
-  return <fieldset disabled={!!card.busy} className="grid grid-cols-[1.6fr_1fr_1fr] gap-2.5">
+  return <><fieldset disabled={!!card.busy} className="grid grid-cols-[1.6fr_1fr_1fr] gap-2.5">
    <label className="text-xs font-medium text-[#79756f]">SKU Shein<input className={field+' mt-1'+warn('sku')} value={f.sku} maxLength={200} placeholder="sz…" onChange={e=>edit(card,{sku:e.target.value})}/></label>
    <label className="text-xs font-medium text-[#79756f]">Taille<input className={field+' mt-1'+warn('size-text')} value={f.size_text} maxLength={80} placeholder="M" onChange={e=>edit(card,{size_text:e.target.value,size_id:null})}/></label>
    <label className="text-xs font-medium text-[#79756f]">Prix (€)<input className={field+' mt-1 tabular-nums'+warn('price')} inputMode="decimal" value={String(f.price||'').replace('.',',')} maxLength={12} placeholder="24,90" onChange={e=>edit(card,{price:e.target.value})}/></label>
-  </fieldset>
+  </fieldset><ListingSheinHint request={request} sku={f.sku||''} size={f.size_text||''} price={f.price} description={f.description||''} onPrice={price=>edit(card,{price})} onDescription={description=>edit(card,{description:description.slice(0,2000)})}/></>
  }
 
  // Mode publication : les champs dans l'ordre du formulaire « Vends ton article » de Vinted.

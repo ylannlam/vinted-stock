@@ -533,10 +533,10 @@ export default function App() {
       {activeTab===TAB_HOME&&<HomeTab isAdmin={isAdmin} onNavigate={setActiveTab}/>}
       {activeTab===TAB_HISTORY&&<HistoryTab isAdmin={isAdmin} onRestored={()=>{fetchItems();fetchCommandes()}}/>}
       {activeTab === TAB_BUDGET && isAdmin && <BudgetTab onOpenSale={row=>setActiveTab(TAB_SALES,{line:row.id})} />}
-      {activeTab===TAB_LISTINGS&&isAdmin&&<main className="workspace-page max-w-screen-2xl mx-auto p-4 sm:p-6 text-slate-800"><ListingStudio key={JSON.stringify(navigationFilters)} initialProfile={navigationFilters.profile} onAccounts={()=>setActiveTab(TAB_ADSPOWER)} onStyles={()=>setActiveTab(TAB_RESOURCES,{section:'accounts'})}/></main>}
+      {activeTab===TAB_LISTINGS&&isAdmin&&<main className="workspace-page max-w-screen-2xl mx-auto p-4 sm:p-6 text-slate-800"><ListingStudio key={JSON.stringify(navigationFilters)} initialProfile={navigationFilters.profile} initialSku={navigationFilters.sku} onAccounts={()=>setActiveTab(TAB_ADSPOWER)} onStyles={()=>setActiveTab(TAB_RESOURCES,{section:'accounts'})}/></main>}
       {activeTab === TAB_RESOURCES && isAdmin && <ResourcesTab key={JSON.stringify(navigationFilters)} initialSection={navigationFilters.section} initialProfile={navigationFilters.profile} onAccounts={()=>setActiveTab(TAB_ADSPOWER)} />}
       {activeTab === TAB_SALES && <SalesTab key={JSON.stringify(navigationFilters)} isAdmin={isAdmin} initialFilters={navigationFilters} onPreparePhoto={setPhotoArticle} />}
-      {activeTab === TAB_CATALOG && (userRole==='admin'||userRole==='stock') && <CatalogueTab isAdmin={isAdmin} onPreparePhoto={isAdmin?setPhotoArticle:undefined} />}
+      {activeTab === TAB_CATALOG && (userRole==='admin'||userRole==='stock') && <CatalogueTab isAdmin={isAdmin} onPreparePhoto={isAdmin?setPhotoArticle:undefined} onCreateListing={isAdmin?sku=>setActiveTab(TAB_LISTINGS,{sku}):undefined} />}
       {activeTab === TAB_COMPTES_VINTED && isAdmin && <VintedAccountsTab onDirections={()=>setActiveTab(TAB_RESOURCES,{section:'accounts'})} />}
       </PageBoundary></Suspense>
 

@@ -2,6 +2,7 @@ import {AppError,isId} from './dotb.js'
 import {ownedAsset,ASSET_BUCKET} from './resources.js'
 import {validateListingPhoto,catalogChoices,listingSizes,missingListingFields} from '../src/lib/listingStudio.js'
 import {DEFAULT_LISTING_SETTINGS,LISTING_AI_MODELS,tidyListingTitle,composeListingDescription} from '../src/lib/listingSettings.js'
+import {withMeasures} from '../src/lib/library.js'
 
 export const check=result=>{if(result.error)throw result.error;return result.data}
 export function listingFields(input={}){
@@ -94,6 +95,7 @@ export function listingInstructions(settings=DEFAULT_LISTING_SETTINGS){
   'CATÉGORIE : choisis le catalog_id le plus précis parmi les catégories fournies, sinon null. COULEURS : au plus 2 color_ids parmi ceux fournis.',
   'review_notes : une ou deux phrases sur ce qui reste incertain sur les photos (matière, couleur exacte, longueur), sans rien inventer.',
   'Les informations données explicitement par le vendeur priment sur ce que tu déduis des photos.',
+  'fiche_fournisseur (si présente) vient de la fiche Shein du même SKU : ses caractéristiques (composition, doublure, élasticité, transparence, coupe, longueur, encolure, manches, détails) sont des faits sûrs, à utiliser si elles correspondent aux photos. N’y reprends ni la marque, ni « Shein », ni son titre tel quel. N’écris aucune mesure : les mesures de la taille sont ajoutées automatiquement après ta description.',
   ...(settings.title_rules?[`Consignes de l’équipe pour le titre, à suivre si elles respectent les règles ci-dessus : ${settings.title_rules}`]:[])
  ].join('\n')
 }
@@ -112,13 +114,13 @@ function rootChoices(catalogs,roots){
  return kept.length?kept:choices
 }
 const aiModel=model=>LISTING_AI_MODELS.some(m=>m.id===model)?model:DEFAULT_LISTING_SETTINGS.ai_model
-export async function generateListingText(row,urls,catalogs,colors,{fetcher=fetch,token=process.env.GEMINI_API_KEY,model,settings=DEFAULT_LISTING_SETTINGS,examples={own:[],others:[]},roots=null}={}){
+export async function generateListingText(row,urls,catalogs,colors,{fetcher=fetch,token=process.env.GEMINI_API_KEY,model,settings=DEFAULT_LISTING_SETTINGS,examples={own:[],others:[]},roots=null,shein=null}={}){
  if(!token)throw new AppError('La rédaction automatique reste à connecter. Tu peux déjà préparer et enregistrer ta fiche.',503)
  model=aiModel(model||settings.ai_model)
  const choices=rootChoices(catalogs,roots).slice(0,1800)
  const schema={type:'object',additionalProperties:false,properties:{title:{type:'string'},description:{type:'string'},catalog_id:{type:['integer','null']},color_ids:{type:'array',items:{type:'integer'}},review_notes:{type:'string'}},required:['title','description','catalog_id','color_ids','review_notes']}
  const system=listingInstructions(settings)
- const text=JSON.stringify({informations_vendeur:{taille:row.fields.size_text,notes:row.fields.notes},exemples_de_titres_vendus_sur_ce_compte:examples.own||[],exemples_de_titres_vendus_sur_les_autres_comptes:examples.others||[],categories:choices.map(c=>`${c.id} ${c.label}`),couleurs:colors})
+ const text=JSON.stringify({informations_vendeur:{taille:row.fields.size_text,notes:row.fields.notes},...(shein?.details?.length?{fiche_fournisseur:{caracteristiques:shein.details.slice(0,30)}}:{}),exemples_de_titres_vendus_sur_ce_compte:examples.own||[],exemples_de_titres_vendus_sur_les_autres_comptes:examples.others||[],categories:choices.map(c=>`${c.id} ${c.label}`),couleurs:colors})
  let response
  try{response=await fetcher('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({model,messages:[{role:'system',content:system},{role:'user',content:[{type:'text',text},...urls.slice(0,3).map(url=>({type:'image_url',image_url:{url,detail:'auto'}}))]}],max_tokens:1800,reasoning_effort:model.includes('lite')?'minimal':'low',response_format:{type:'json_schema',json_schema:{name:'vinted_listing',strict:true,schema}}}),signal:AbortSignal.timeout(45000)})}catch{throw new AppError('La rédaction a pris trop de temps. Tes photos sont enregistrées ; réessaie.',504)}
  const body=await response.json().catch(()=>null)
@@ -130,5 +132,5 @@ export async function generateListingText(row,urls,catalogs,colors,{fetcher=fetc
  let result;try{result=JSON.parse(body?.choices?.[0]?.message?.content)}catch{throw new AppError('La rédaction n’a pas renvoyé une fiche complète. Réessaie.',502)}
  const title=typeof result.title==='string'?tidyListingTitle(result.title):''
  if(title.length<5||typeof result.description!=='string'||result.description.trim().length<5||result.description.length>4000)throw new AppError('Le texte reçu n’est pas valide. Ton brouillon est conservé.',502)
- return {usage:body?.usage?{model,input_tokens:Number(body.usage.prompt_tokens)||0,output_tokens:Number(body.usage.completion_tokens)||0}:null,title,description:composeListingDescription(result.description,settings.description_footer),catalog_id:choices.some(c=>c.id===result.catalog_id)?result.catalog_id:null,color_ids:[...new Set(Array.isArray(result.color_ids)?result.color_ids:[])].filter(id=>colors.some(c=>c.id===id)).slice(0,2),review_notes:typeof result.review_notes==='string'?result.review_notes.slice(0,600):''}
+ return {usage:body?.usage?{model,input_tokens:Number(body.usage.prompt_tokens)||0,output_tokens:Number(body.usage.completion_tokens)||0}:null,title,description:composeListingDescription(withMeasures(result.description,shein),settings.description_footer),catalog_id:choices.some(c=>c.id===result.catalog_id)?result.catalog_id:null,color_ids:[...new Set(Array.isArray(result.color_ids)?result.color_ids:[])].filter(id=>colors.some(c=>c.id===id)).slice(0,2),review_notes:typeof result.review_notes==='string'?result.review_notes.slice(0,600):''}
 }

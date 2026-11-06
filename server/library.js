@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto'
 import {AppError,isId} from './dotb.js'
 import {readDotbItems,normalizeDotbItems} from './catalog.js'
-import {CATEGORIES,validatePricing} from '../src/lib/library.js'
+import {CATEGORIES,validatePricing,listingFacts,salePriceOf,productCategory} from '../src/lib/library.js'
 import {collectionReferences} from '../src/lib/collector.js'
 
 const check=r=>{if(r.error)throw r.error;return r.data}
@@ -75,4 +75,53 @@ export async function readLibraryExtras(db,readPage,offset) {
   if(sync.error)throw sync.error
   return {posted:posted.data,posted_count:posted.count,pricing:settings.data?.pricing||null,
     dotb_sync:sync.data?{last_completed_at:sync.data.last_completed_at,running:Date.parse(sync.data.locked_until)>Date.now(),resumable:!!sync.data.cursor}:null}
+}
+
+// --- Création d'annonce : le SKU retrouve sa fiche Shein (bibliothèque), sinon le PC va la chercher.
+const SKU=/^[A-Za-z0-9_-]{1,200}$/
+const like=v=>v.replace(/[\\%_]/g,m=>'\\'+m)
+export async function findSheinProduct(db,sku) {
+  if(!SKU.test(sku||''))return null
+  const link=check(await db.from('catalog_sku_links').select('product_id').ilike('sku',like(sku)).not('product_id','is',null).limit(1))
+  let query=db.from('catalog_product_summary').select('*').limit(1)
+  query=link?.[0]?.product_id?query.eq('id',link[0].product_id):query.ilike('supplier_sku',like(sku))
+  return check(await query.order('updated_at',{ascending:false}))?.[0]||null
+}
+// Faits Shein pour la rédaction de l'annonce ; null si le SKU n'a pas (encore) de fiche.
+export async function sheinListingFacts(db,sku,size) {
+  const product=await findSheinProduct(db,String(sku||'').trim())
+  return product?.collection_status==='completed'||product?.details?.length?listingFacts(product,size):null
+}
+async function optional(promise,fallback) {
+  const r=await promise
+  if(r.error){if(missingRelation(r.error))return fallback;throw r.error}
+  return r.data??fallback
+}
+export async function lookupListingSku(db,user,{sku,size,queue=false}) {
+  sku=String(sku||'').trim()
+  if(!SKU.test(sku))throw new AppError('SKU invalide : lettres, chiffres, - et _ uniquement.')
+  const [product,job,collectors]=await Promise.all([
+    findSheinProduct(db,sku),
+    db.from('catalog_collection_jobs').select('status,message,created_at').ilike('expected_sku',like(sku)).order('created_at',{ascending:false}).limit(1).then(check),
+    db.from('catalog_collectors').select('last_seen_at,enabled').is('revoked_at',null).then(check),
+  ])
+  const online=(collectors||[]).some(c=>c.enabled&&Date.now()-Date.parse(c.last_seen_at)<120000)
+  const latest=job?.[0]||null
+  if(product&&(product.collection_status==='completed'||product.details?.length)) {
+    const [meta,settings]=await Promise.all([
+      optional(db.from('catalog_product_meta').select('category,sale_price').eq('product_id',product.id).maybeSingle(),null),
+      optional(db.from('catalog_settings').select('pricing').eq('id',true).maybeSingle(),null),
+    ])
+    const full={...product,...(meta||{})},facts=listingFacts(full,size)
+    return {status:'found',collector_online:online,refreshing:['queued','running'].includes(latest?.status),
+      product:{id:product.id,title:product.title,supplier_url:product.supplier_url,photo_url:product.photo_url,price:product.price,observed_at:product.observed_at,category:productCategory(full),sizes:product.sizes||[]},
+      sale_price:salePriceOf(full,settings?.pricing)?.price??null,measures:facts.measures,details:facts.details.length}
+  }
+  if(['queued','running'].includes(latest?.status))return {status:'pending',collector_online:online}
+  // Recherche automatique (saisie du SKU) : un échec n'est pas relancé tout seul.
+  if(!queue||queue==='auto'&&['failed','blocked'].includes(latest?.status))return {status:latest&&['failed','blocked'].includes(latest.status)?'failed':'unknown',message:latest?.message||null,collector_online:online}
+  const refs=[{reference_key:`sku:${sku.toLowerCase()}`,input:sku,expected_sku:sku,expected_supplier_id:null}]
+  const r=await db.rpc('library_add_references',{p_refs:refs,p_source:'listing',p_user:user.id})
+  if(r.error){if(missingRelation(r.error))return {status:'unavailable',collector_online:online,message:'Active la bibliothèque (migration Supabase) pour chercher un nouveau SKU sur Shein.'};throw r.error}
+  return {status:'pending',queued:r.data,collector_online:online}
 }

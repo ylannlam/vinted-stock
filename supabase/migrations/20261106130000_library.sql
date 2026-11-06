@@ -93,7 +93,10 @@ begin
       order by job.created_at desc,job.id desc limit 1) latest on true
     where (p.id is null or p.observed_at is null or p.observed_at<now()-interval '24 hours')
       and (latest.status is null or latest.status not in ('queued','running'))
-      and (latest.status is null or latest.status not in ('blocked','failed') or latest.created_at<now()-interval '24 hours')
+      -- Après un échec : nouvel essai au bout de 24 h pour un ajout manuel ; un SKU saisi dans une annonce
+      -- et introuvable n'est plus relancé tout seul (une faute de frappe ne tourne pas en boucle).
+      and (latest.status is null or latest.status not in ('blocked','failed')
+        or (latest.created_at<now()-interval '24 hours' and (b.source='manual' or latest.status='blocked')))
       and (latest.created_at is null or latest.created_at<=now()-interval '1 hour')
     order by b.created_at desc limit 20
   ) x;

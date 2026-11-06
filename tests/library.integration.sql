@@ -74,6 +74,15 @@ begin
     raise exception 'Expired lease accepted';
   exception when others then if sqlerrm not like '%sync_lease_expired%' then raise; end if; end;
 
+  -- Un SKU d'annonce introuvable n'est pas relancé tout seul ; un ajout manuel l'est au bout de 24 h.
+  insert into public.catalog_library(sku,input,source) values('TYPO_'||substr(added,5,20),'typo','listing'),('MANU_'||substr(added,5,20),'manu','manual');
+  insert into public.catalog_collection_jobs(reference_key,input,expected_sku,status,created_at) values
+    ('sku:'||lower('TYPO_'||substr(added,5,20)),'typo','TYPO_'||substr(added,5,20),'failed',now()-interval '25 hours'),
+    ('sku:'||lower('MANU_'||substr(added,5,20)),'manu','MANU_'||substr(added,5,20),'failed',now()-interval '25 hours');
+  perform public.queue_library_sources();
+  assert not exists(select 1 from public.catalog_collection_jobs where expected_sku='TYPO_'||substr(added,5,20) and status='queued'),'A failed listing SKU is not retried automatically';
+  assert exists(select 1 from public.catalog_collection_jobs where expected_sku='MANU_'||substr(added,5,20) and status='queued'),'A failed manual SKU is retried after 24 h';
+
   assert not has_table_privilege('authenticated','public.catalog_library','SELECT'),'Library stays server-only';
   assert not has_table_privilege('authenticated','public.catalog_library_products','SELECT'),'Library view stays server-only';
   assert not has_function_privilege('authenticated','public.library_add_references(jsonb,text,uuid)','EXECUTE'),'Library writes stay server-only';

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {guessCategory,validatePricing,gridPrice,salePriceOf,groupPosted,sheinFacts} from '../src/lib/library.js'
+import {guessCategory,validatePricing,gridPrice,salePriceOf,groupPosted,measuresForSize,listingFacts,withMeasures} from '../src/lib/library.js'
 import {syncDotbLibrary,handleLibraryAction,validateMeta} from './library.js'
 
 test('categories are guessed from the first keyword of the title',()=>{
@@ -45,11 +45,24 @@ test('posted Dotb items are grouped by SKU, without sold SKUs, with their linked
   assert.equal(groups[0].product.id,'p1');assert.equal(groups[0].title,'Robe longue Shein');assert.equal(groups[0].photo_url,'https://img/a2.jpg','latest listing photo')
 })
 
-test('Shein measurements are separated from other details',()=>{
-  const facts=sheinFacts({details:[{name:'Longueur',value:'120 cm'},{name:'Composition',value:'100% Polyester'},{name:'Tour de poitrine',value:'88'},{name:'Détails',value:'Fente, 45 cm'},{name:'',value:'x'}]})
-  assert.deepEqual(facts.measures.map(d=>d.name),['Longueur','Tour de poitrine','Détails'])
-  assert.deepEqual(facts.details.map(d=>d.name),['Composition'])
-  assert.deepEqual(sheinFacts(null),{measures:[],details:[]})
+const chartProduct={title:'Robe longue',details:[{name:'Composition',value:'100% Polyester'},{name:'Festivals',value:'Noël'},{name:'Unité des mesures',value:'CM'},
+  {name:'FR · Taille · Tour de poitrine · Tour de taille · Longueur',value:'34 · XS · 84 · 66 · 144'},{name:'FR · Taille · Tour de poitrine · Tour de taille · Longueur',value:'36 · S · 88.0 · 70 · 145'},
+  {name:'FR · Taille · Tour de poitrine · Tour de taille · Longueur',value:'40/42 · L · 98 · 80 · 147'},
+  {name:'FR · Taille · Carrure · Longueur de',value:'36 · S · 61 · 108 · 66-96'}]}
+test('the Shein size chart gives the measurements of the listed size only',()=>{
+  assert.deepEqual(measuresForSize(chartProduct,'S'),[{name:'Tour de poitrine',value:'88 cm'},{name:'Tour de taille',value:'70 cm'},{name:'Longueur',value:'145 cm'},{name:'Carrure',value:'61 cm'}],'two charts are merged')
+  assert.equal(measuresForSize({details:chartProduct.details.slice(0,6)},'taille S').length,3)
+  assert.deepEqual(measuresForSize({details:chartProduct.details.slice(0,6)},'40/42').map(m=>m.value),['98 cm','80 cm','147 cm'])
+  assert.deepEqual(measuresForSize({details:chartProduct.details.slice(0,6)},'38'),[],'unknown size: nothing invented')
+  assert.deepEqual(measuresForSize(chartProduct,''),[])
+  assert.deepEqual(measuresForSize({details:[chartProduct.details.at(-1)]},'S'),[{name:'Carrure',value:'61 cm'}],'a cut header drops its last column')
+  const facts=listingFacts({...chartProduct,details:chartProduct.details.slice(0,6)},'S')
+  assert.deepEqual(facts.details,[{name:'Composition',value:'100% Polyester'}],'no size chart, units or marketing in details')
+  const text=withMeasures('Robe longue fleurie.\n– Coupe trapèze\nTaille : S\nMots-clés : robe longue, robe soirée',facts)
+  assert.match(text,/Taille : S\nMesures \(taille S\) :\n– Tour de poitrine : 88 cm\n– Tour de taille : 70 cm\n– Longueur : 145 cm\n\nMots-clés/)
+  assert.equal(withMeasures('Texte',{measures:[]}),'Texte')
+  assert.match(withMeasures('Texte',facts),/^Texte\n\nMesures/)
+  assert.equal(listingFacts(null),null)
 })
 
 function fakeDb(extra={}){
@@ -96,4 +109,59 @@ test('library actions validate SKU lists, categories, prices and the grid',async
   assert.deepEqual((await handleLibraryAction(db,user,{action:'pricing',pricing:{tiers:[{max:10,price:39}],above:null}})).pricing,{tiers:[{max:10,price:39}],above:null})
   await assert.rejects(handleLibraryAction(db,user,{action:'pricing',pricing:{tiers:'x'}}),/Grille/)
   assert.equal(await handleLibraryAction(db,user,{action:'observe'}),undefined,'other catalogue actions are left to the catalogue')
+})
+
+// Base factice : chaque table renvoie ses lignes, quelles que soient les conditions demandées.
+function tableDb(tables,rpc={}){
+  const calls=[]
+  const from=table=>{const q={};for(const m of ['select','eq','ilike','not','is','order','limit','update','upsert','delete'])q[m]=(...a)=>{calls.push([table,m,...a]);return q}
+    const result=()=>{const v=tables[table];return v instanceof Error?{data:null,error:v}:{data:v??null,error:null}}
+    q.maybeSingle=()=>Promise.resolve((r=>({...r,data:Array.isArray(r.data)?r.data[0]??null:r.data}))(result()))
+    q.then=(ok,ko)=>Promise.resolve(result()).then(ok,ko);return q}
+  return {calls,from,rpc:async(name,args)=>{calls.push(['rpc',name,args]);return rpc[name]?.(args)||{data:1,error:null}}}
+}
+const missing=Object.assign(Error('missing'),{code:'PGRST205'})
+test('a listing SKU finds its library sheet with the measurements of its size and the advised price',async()=>{
+  const {lookupListingSku}=await import('./library.js')
+  const product={id:uuid(5),title:'Robe longue',supplier_url:'https://fr.shein.com/x-p-1.html',price:9.68,collection_status:'completed',sizes:[{size:'36 (S)'}],details:chartProduct.details.slice(0,6)}
+  const db=tableDb({catalog_sku_links:[{product_id:uuid(5)}],catalog_product_summary:[product],catalog_collection_jobs:[],catalog_collectors:[{enabled:true,last_seen_at:new Date().toISOString()}],
+    catalog_product_meta:[{category:null,sale_price:null}],catalog_settings:[{pricing:{tiers:[{max:10,price:39}],above:null}}]})
+  const r=await lookupListingSku(db,{id:uuid(9)},{sku:'sz123456789',size:'S',queue:'auto'})
+  assert.equal(r.status,'found');assert.equal(r.sale_price,39);assert.equal(r.measures.length,3);assert.equal(r.details,1);assert.equal(r.collector_online,true);assert.equal(r.product.category,'robe')
+  assert.equal(db.calls.some(c=>c[1]==='library_add_references'),false,'a known SKU is not searched again')
+  const old=tableDb({catalog_sku_links:[{product_id:uuid(5)}],catalog_product_summary:[product],catalog_collection_jobs:[],catalog_collectors:[],catalog_product_meta:missing,catalog_settings:missing})
+  assert.equal((await lookupListingSku(old,{id:uuid(9)},{sku:'sz123456789',size:'S'})).sale_price,null,'without the library migration the sheet still works, without price')
+  await assert.rejects(lookupListingSku(db,{id:uuid(9)},{sku:'sz 12'}),/SKU invalide/)
+})
+
+test('an unknown listing SKU is searched by the PC once, and a failed search is not relaunched automatically',async()=>{
+  const {lookupListingSku}=await import('./library.js')
+  const base={catalog_sku_links:[],catalog_product_summary:[],catalog_collectors:[]}
+  const fresh=tableDb({...base,catalog_collection_jobs:[]})
+  assert.deepEqual(await lookupListingSku(fresh,{id:uuid(9)},{sku:'szNEW1234567',size:'M',queue:'auto'}),{status:'pending',queued:1,collector_online:false})
+  const add=fresh.calls.find(c=>c[1]==='library_add_references')[2]
+  assert.equal(add.p_source,'listing');assert.deepEqual(add.p_refs,[{reference_key:'sku:sznew1234567',input:'szNEW1234567',expected_sku:'szNEW1234567',expected_supplier_id:null}])
+  const running=tableDb({...base,catalog_collection_jobs:[{status:'running'}]})
+  assert.equal((await lookupListingSku(running,{id:uuid(9)},{sku:'szNEW1234567',queue:'auto'})).status,'pending')
+  assert.equal(running.calls.some(c=>c[1]==='library_add_references'),false)
+  const failed=tableDb({...base,catalog_collection_jobs:[{status:'failed',message:'Produit introuvable'}]})
+  assert.deepEqual(await lookupListingSku(failed,{id:uuid(9)},{sku:'szNEW1234567',queue:'auto'}),{status:'failed',message:'Produit introuvable',collector_online:false})
+  await lookupListingSku(failed,{id:uuid(9)},{sku:'szNEW1234567',queue:true})
+  assert.equal(failed.calls.filter(c=>c[1]==='library_add_references').length,1,'the button relaunches the search')
+  const noLibrary=tableDb({...base,catalog_collection_jobs:[]},{library_add_references:()=>({data:null,error:missing})})
+  assert.equal((await lookupListingSku(noLibrary,{id:uuid(9)},{sku:'szNEW1234567',queue:'auto'})).status,'unavailable')
+})
+
+test('the AI receives the Shein characteristics and the size measurements are appended to its text',async()=>{
+  const {generateListingText}=await import('./listing-studio-core.js')
+  let sent
+  const fetcher=async(url,options)=>{sent=JSON.parse(options.body);return {ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({title:'Robe longue rose fleurie taille S',description:'Jolie robe longue.\n– Coupe trapèze\nTaille : S\nMots-clés : robe longue, robe fleurie',catalog_id:null,color_ids:[],review_notes:''})}}]})}}
+  const shein=listingFacts({...chartProduct,details:chartProduct.details.slice(0,6)},'S')
+  const result=await generateListingText({fields:{size_text:'S',notes:''}},['https://img/1.jpg'],[],[],{fetcher,token:'t',shein})
+  const payload=JSON.parse(sent.messages[1].content[0].text)
+  assert.deepEqual(payload.fiche_fournisseur,{caracteristiques:[{name:'Composition',value:'100% Polyester'}]})
+  assert.match(sent.messages[0].content,/N’écris aucune mesure/)
+  assert.match(result.description,/Taille : S\nMesures \(taille S\) :\n– Tour de poitrine : 88 cm[\s\S]*\n\nMots-clés/)
+  await generateListingText({fields:{size_text:'S',notes:''}},['https://img/1.jpg'],[],[],{fetcher,token:'t'})
+  assert.equal(JSON.parse(sent.messages[1].content[0].text).fiche_fournisseur,undefined,'no sheet: nothing added')
 })

@@ -5,6 +5,7 @@ import {ASSET_BUCKET,uploadTarget,ensureAssetBucket} from './resources.js'
 import {validateListingPhoto} from '../src/lib/listingStudio.js'
 import {readTeamBoard,readBoardRows,markPublished,vintedItemId} from './team-board.js'
 import {readListingPicker} from './listing-picker.js'
+import {lookupListingSku,sheinListingFacts} from './library.js'
 import {readListingSettings,dotbAccounts,saveListingSettings,listingTitleExamples,reserveListingSlot} from './listing-settings.js'
 import {applyListingPresets,LISTING_AI_MODELS} from '../src/lib/listingSettings.js'
 import {catalogRoots,check,listingFields,verifiedPhotos,dotbListingRequest,listingMetadata,listingAccounts,listingPayload,validateRemoteItem,scheduleResult,generateListingText,listingAiToken} from './listing-studio-core.js'
@@ -175,6 +176,8 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
   const ticket=check(await db.storage.from(ASSET_BUCKET).createSignedUploadUrl(path))
   return {path,token:ticket.token}
  }
+ // Fiche Shein du SKU saisi : mesures et prix conseillé depuis la bibliothèque, sinon recherche par le PC.
+ if(action==='shein')return lookupListingSku(db,user,{sku:body.sku,size:body.size,queue:body.queue===true?true:body.queue==='auto'?'auto':false})
  if(!isId(body.id))throw new AppError('Brouillon invalide.')
  let row=check(await db.from(TABLE).select('*').eq('owner_id',user.id).eq('id',body.id).maybeSingle())
  if(action==='create'){
@@ -221,10 +224,10 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
   row=await updateListing(db,row,{lease:randomUUID(),lease_until:new Date(Date.now()+60000).toISOString(),inflight:'generate',ai_count:row.ai_count+1,ai_updated_at:now()})
   try{
    // Tout ce qui précède la rédaction est lu en même temps ; 3 photos suffisent à décrire l'article.
-   const [catalogs,colors,signed,presets,titles,sold]=await Promise.all([listingMetadata('catalogs?country=FR&depth=6',read),listingMetadata('colors?country=FR',read),db.storage.from(ASSET_BUCKET).createSignedUrls(row.photos.slice(0,3).map(p=>p.path),180),settings(db,row.fields.account_id),examples(db,row.fields.account_id),soldCatalogs(db)])
+   const [catalogs,colors,signed,presets,titles,sold,shein]=await Promise.all([listingMetadata('catalogs?country=FR&depth=6',read),listingMetadata('colors?country=FR',read),db.storage.from(ASSET_BUCKET).createSignedUrls(row.photos.slice(0,3).map(p=>p.path),180),settings(db,row.fields.account_id),examples(db,row.fields.account_id),soldCatalogs(db),row.fields.sku?sheinListingFacts(db,row.fields.sku,row.fields.size_text).catch(()=>null):null])
    const urls=check(signed).map(x=>x.signedUrl);if(urls.some(u=>!u))throw new AppError('Une photo est indisponible. Ajoute-la à nouveau.')
    const roots=catalogRoots(catalogs.data,[...sold,...(row.fields.catalog_id?[row.fields.catalog_id]:[])])
-   const result=await generate(row,urls,catalogs.data,colors.data,{token:listingAiToken(req),settings:presets.effective,examples:titles,roots})
+   const result=await generate(row,urls,catalogs.data,colors.data,{token:listingAiToken(req),settings:presets.effective,examples:titles,roots,shein})
    // Les réglages complètent la fiche (marque, état, colis, taille Vinted) ; un choix encore valide est gardé.
    const options=result.catalog_id?await listingMetadata(`catalogs/${result.catalog_id}/options?country=FR&locale=fr`,read).catch(()=>null):null
    const sameCatalog=result.catalog_id===row.fields.catalog_id

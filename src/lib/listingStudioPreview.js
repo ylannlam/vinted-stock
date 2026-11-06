@@ -25,6 +25,9 @@ export async function listingStudioPreview(method='GET',body,query=''){
  if(action==='session'){const id=q.get('account_id');return {account_id:id,settings:readSettings(id),dotb_publish_enabled:false,dotb:false,drafts:structuredClone(rows.filter(r=>r.fields.account_id===id))}}
  if(action==='settings'&&method==='GET')return readSettings(q.get('account_id'))
  if(action==='settings'){const scope=body.scope,value=cleanListingSettings(body.settings,{account:scope!=='default'}),old=settings.get(scope);settings.set(scope,{scope,settings:value,version:(old?.version||0)+1});return readSettings(scope==='default'?null:scope)}
+ // Démo : tout SKU commençant par « sz » a une fiche Shein (taille S ou M), les autres sont « en recherche ».
+ if(action==='shein'){const size=String(body.size||'').toUpperCase();const chart={S:[['Tour de poitrine','88 cm'],['Tour de taille','70 cm'],['Longueur','145 cm']],M:[['Tour de poitrine','92 cm'],['Tour de taille','74 cm'],['Longueur','146 cm']]}[size.replace(/TAILLE\s*/,'').trim()]||[]
+  return /^sz/i.test(body.sku)?{status:'found',collector_online:true,product:{id:'demo',title:'Robe longue fleurie',price:9.68,category:'robe',sizes:[{size:'36 (S)'},{size:'38 (M)'}]},sale_price:39,measures:chart.map(([name,value])=>({name,value})),details:12}:{status:'pending',collector_online:false}}
  if(action==='create'){const row={...structuredClone(base),id:body.id,created_at:now(),fields:{...emptyListing(),account_id:body.account_id||''},photos:[]};rows.unshift(row);return {draft:structuredClone(row)}}
  const row=rows.find(r=>r.id===(body?.id||q.get('id')));if(!row)throw Error('Brouillon introuvable.')
  if(action==='discard'){rows.splice(rows.indexOf(row),1);return {removed:row.id}}

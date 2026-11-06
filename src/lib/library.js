@@ -77,10 +77,49 @@ export function groupPosted(posted=[],{products=[],links=[],sales=[]}={}) {
 const STATUS={pending:'En attente',draft:'Brouillon',scheduled:'Programmé',published:'En ligne',active:'En ligne',online:'En ligne',sold:'Vendu',reserved:'Réservé',hidden:'Masqué',error:'Erreur',failed:'Erreur'}
 export const postedStatus=s=>STATUS[s]||s||'Inconnu'
 
-// Mesures et caractéristiques Shein utiles à une annonce (jamais inventées).
-const MEASURE=/(longueur|tour|buste|poitrine|taille|hanches?|épaules?|epaules?|manches?|cuisses?|entrejambe|largeur|aisselle|cm\b)/i
-export function sheinFacts(product) {
-  if(!product)return {measures:[],details:[]}
-  const details=(Array.isArray(product.details)?product.details:[]).filter(d=>d?.name&&d?.value).map(d=>({name:String(d.name).slice(0,100),value:String(d.value).slice(0,300)}))
-  return {measures:details.filter(d=>MEASURE.test(d.name)||/\d\s*cm/i.test(d.value)),details:details.filter(d=>!(MEASURE.test(d.name)||/\d\s*cm/i.test(d.value)))}
+// Guide des tailles Shein lu par le PC : lignes « FR · Taille · Tour de poitrine · … » → « 36 · S · 88 · … ».
+// Le nom est coupé à 100 caractères : la dernière colonne d'un en-tête plus court que ses valeurs est ignorée.
+const SIZE_COLUMNS=/^(fr|eu|uk|us|it|de|es|taille|size|tailles)$/i
+const clean=v=>String(v).trim().replace(/(\d+)\.0\b/g,'$1')
+export function sizeChart(product) {
+  const rows=[],details=Array.isArray(product?.details)?product.details:[]
+  const unit=details.find(d=>/unit[ée] des mesures/i.test(d?.name||''))?.value?.trim().toLowerCase()||'cm'
+  for(const d of details) {
+    const head=String(d?.name||'').split(' · ').map(x=>x.trim()),values=String(d?.value||'').split(' · ').map(x=>x.trim())
+    if(head.length<3||values.length<3||!head.some(h=>/^(taille|size)$/i.test(h)))continue
+    const usable=head.length<values.length?head.slice(0,-1):head
+    const labels={},measures=[]
+    usable.forEach((h,i)=>{if(values[i]===undefined||values[i]==='')return;if(SIZE_COLUMNS.test(h))labels[h.toLowerCase()]=values[i];else measures.push({name:h,value:`${clean(values[i])} ${unit}`})})
+    rows.push({labels,measures})
+  }
+  return rows
+}
+const sizeTokens=text=>String(text||'').toUpperCase().replace(/TAILLE/g,' ').match(/[A-Z0-9]+(?:\/[A-Z0-9]+)?/g)||[]
+export function measuresForSize(product,size) {
+  const wanted=sizeTokens(size)
+  if(!wanted.length)return []
+  const matches=sizeChart(product).filter(r=>Object.values(r.labels).some(v=>sizeTokens(v).some(t=>wanted.includes(t))))
+  // Plusieurs guides (ex. haut et bas d'un ensemble) : leurs mesures s'additionnent, sans doublon.
+  const seen=new Set()
+  return matches.flatMap(r=>r.measures).filter(m=>!seen.has(m.name.toLowerCase())&&seen.add(m.name.toLowerCase()))
+}
+// Caractéristiques utiles à la rédaction (le guide des tailles et le marketing Shein sont retirés).
+const NOT_FOR_LISTING=/^(festivals|unit[ée] des mesures|instructions d'entretien|origine|type)$/i
+export function listingFacts(product,size) {
+  if(!product)return null
+  const details=(Array.isArray(product.details)?product.details:[]).filter(d=>d?.name&&d?.value&&!d.name.includes(' · ')&&!NOT_FOR_LISTING.test(d.name.trim()))
+    .map(d=>({name:String(d.name).slice(0,100),value:String(d.value).slice(0,300)}))
+  return {title:String(product.title||'').slice(0,300),details,measures:measuresForSize(product,size),size:String(size||'').trim()}
+}
+export function measuresBlock(facts) {
+  if(!facts?.measures?.length)return ''
+  return [`Mesures${facts.size?` (taille ${facts.size})`:''} :`,...facts.measures.map(m=>`– ${m.name} : ${m.value}`)].join('\n')
+}
+// Le bloc des mesures se place avant la ligne « Mots-clés » si elle existe.
+export function withMeasures(description,facts) {
+  const block=measuresBlock(facts),text=String(description||'').trim()
+  if(!block)return text
+  const lines=text.split('\n'),at=lines.findIndex(l=>/^mots-cl[ée]s\s*:/i.test(l.trim()))
+  if(at<0)return `${text}\n\n${block}`
+  return [...lines.slice(0,at),block,'',...lines.slice(at)].join('\n').replace(/\n{3,}/g,'\n\n')
 }
