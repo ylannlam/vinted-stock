@@ -1,4 +1,4 @@
-import {PDFDocument, degrees, PrintScaling} from 'pdf-lib'
+import {PDFDocument, degrees, PrintScaling, StandardFonts, rgb} from 'pdf-lib'
 import {getDocument, OPS} from 'pdfjs-dist/legacy/build/pdf.mjs'
 import {AppError} from './dotb.js'
 import {createCanvas} from '@napi-rs/canvas'
@@ -44,7 +44,23 @@ export function identifyLabel({width,height,rotation=0,items,frames=[]}) {
   throw unknown()
 }
 
-export async function thermalLabel(bytes,{preview=false}={}) {
+// Titre des articles écrit sous l'étiquette (comme l'option « Titres des articles » de Dotb).
+const WINANSI=/[^\x20-\x7E\u00A0-\u00FF\u0152\u0153\u0160\u0161\u0178\u017D\u017E\u2013\u2014\u2018\u2019\u201C\u201D\u2026\u20AC]/g
+export function noteLines(text,font,size,width,max=3){
+  const words=String(text||'').replace(/[\u2019]/g,"'").replace(WINANSI,'').replace(/\s+/g,' ').trim().split(' ').filter(Boolean)
+  const lines=[];let line=''
+  for(const word of words){
+    const next=line?`${line} ${word}`:word
+    if(font.widthOfTextAtSize(next,size)<=width){line=next;continue}
+    if(line)lines.push(line)
+    line=word;while(font.widthOfTextAtSize(line,size)>width)line=line.slice(0,-1)
+    if(lines.length===max)break
+  }
+  if(line&&lines.length<max)lines.push(line)
+  if(lines.length===max&&words.join(' ').length>lines.join(' ').length){let last=lines[max-1];while(last&&font.widthOfTextAtSize(last+'…',size)>width)last=last.slice(0,-1);lines[max-1]=last+'…'}
+  return lines
+}
+export async function thermalLabel(bytes,{preview=false,note=''}={}) {
   let parsed
   try{
     const source=await PDFDocument.load(bytes)
@@ -57,10 +73,14 @@ export async function thermalLabel(bytes,{preview=false}={}) {
     const crop=identifyLabel({width:box.width,height:box.height,rotation:original.getRotation().angle,items,frames:labelFrames(operators)})
     const output=await PDFDocument.create(),embedded=await output.embedPage(original,crop)
     const target=output.addPage(LABEL_SIZE)
+    const font=await output.embedFont(StandardFonts.HelveticaBold),fontSize=8,lines=note?noteLines(note,font,fontSize,LABEL_SIZE[0]-12):[]
+    const band=lines.length?lines.length*(fontSize+2)+8:0
     const sideways=crop.rotate===90||crop.rotate===270
     const w=sideways?embedded.height:embedded.width,h=sideways?embedded.width:embedded.height
-    const scale=Math.min((LABEL_SIZE[0]-4)/w,(LABEL_SIZE[1]-4)/h),dw=w*scale,dh=h*scale
-    let x=(LABEL_SIZE[0]-dw)/2,y=(LABEL_SIZE[1]-dh)/2
+    const scale=Math.min((LABEL_SIZE[0]-4)/w,(LABEL_SIZE[1]-4-band)/h),dw=w*scale,dh=h*scale
+    let x=(LABEL_SIZE[0]-dw)/2,y=band+(LABEL_SIZE[1]-band-dh)/2
+    lines.forEach((text,i)=>target.drawText(text,{x:6,y:band-4-fontSize-i*(fontSize+2)+2,size:fontSize,font,color:rgb(0,0,0)}))
+    if(band)target.drawLine({start:{x:6,y:band},end:{x:LABEL_SIZE[0]-6,y:band},thickness:0.5,color:rgb(0,0,0)})
     if(crop.rotate===90)x+=dw
     if(crop.rotate===180){x+=dw;y+=dh}
     if(crop.rotate===270)y+=dh

@@ -29,7 +29,7 @@ export default function ShippingLabelDialog({line,request,onClose}) {
       <ErrorNotice error={error}/>
       {error&&<div className="flex flex-wrap gap-2"><button type="button" className={primaryClass} onClick={()=>setAttempt(n=>n+1)}>Réessayer</button>{safeUrl(line.order?.label_url)&&<a href={safeUrl(line.order.label_url)} target="_blank" rel="noreferrer" className={buttonClass}>Voir l’original dans Dotb</a>}</div>}
       {label&&<>
-        <div className="rounded-xl bg-teal-50 p-4 text-teal-900"><p className="font-semibold">Prêt à imprimer · {label.format}</p><p className="text-sm mt-1">{label.carrier} · Une étiquette, déjà découpée et orientée.</p></div>
+        <div className="rounded-xl bg-teal-50 p-4 text-teal-900"><p className="font-semibold">Prêt à imprimer · {label.format}</p><p className="text-sm mt-1">{label.carrier} · Une étiquette, déjà découpée et orientée, avec le titre de l’article en bas.</p></div>
         <div className="flex flex-wrap gap-2"><button type="button" className={primaryClass} onClick={print}>Imprimer l’étiquette</button><a className={buttonClass} href={label.url} download={label.filename}>Télécharger le PDF</a><a className={buttonClass} href={label.url} target="_blank" rel="noreferrer">Ouvrir le PDF ↗</a></div>
         <p className="text-xs text-slate-500">À l’impression : papier 100 × 150 mm, taille réelle (100 %), sans marges.</p>
         {label.preview&&<div className="rounded-xl border bg-slate-100 p-4"><img alt="Aperçu du bordereau découpé en 100 × 150 mm" src={'data:image/png;base64,'+label.preview} className="block mx-auto w-full max-w-[320px] h-auto bg-white shadow-sm"/></div>}

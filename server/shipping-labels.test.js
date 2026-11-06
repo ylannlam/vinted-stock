@@ -62,3 +62,12 @@ test('label endpoint requires authentication and forbids response caching',async
   await handler({method:'POST',body:{action:'shipping_label',id},headers:{}},res)
   assert.equal(res.code,401);assert.equal(res.headers['Cache-Control'],'no-store')
 })
+test('the item title is written under the cropped label, without unsupported characters',async()=>{
+  const {noteLines}=await import('./shipping-label-pdf.js')
+  const doc=await PDFDocument.create(),font=await doc.embedFont((await import('pdf-lib')).StandardFonts.HelveticaBold)
+  const lines=noteLines('Robe longue bleu 💙 tulle fleurs en relief bustier bretelles fines princesse soirée mariage cérémonie taille M '.repeat(3),font,8,271)
+  assert.ok(lines.length<=3&&lines.length>1);assert.ok(lines.every(l=>!/💙/.test(l)));assert.match(lines.at(-1),/…$/)
+  const source=await PDFDocument.create();source.addPage(LABEL_SIZE).drawRectangle({x:10,y:10,width:50,height:50})
+  const result=await thermalLabel(Buffer.from(await source.save()),{note:'Robe longue bleu clair'})
+  assert.equal((await PDFDocument.load(result.bytes)).getPageCount(),1)
+})

@@ -150,6 +150,16 @@ export default function CatalogueTab({isAdmin,request=defaultRequest,collectorRe
   const hot=new Set(bestSellers(data,{days:30}).filter(r=>r.count>=2&&r.product).map(r=>r.product.id))
   const postedGroups=groupPosted(data.posted,data)
   const postedSkus=new Set(postedGroups.map(g=>g.sku.toLowerCase()))
+  // Articles postés sans fiche Shein : la récupération part toute seule (une fois par session et par SKU).
+  const missingPosted=isAdmin&&data.library_ready?postedGroups.filter(g=>!g.product&&/^s[a-z]\d{10,}$/i.test(g.sku)).map(g=>g.sku):[]
+  useEffect(()=>{
+    if(busy||!missingPosted.length)return
+    let tried=[];try{tried=JSON.parse(sessionStorage.getItem('library-auto-collect')||'[]')}catch{}
+    const fresh=missingPosted.filter(s=>!tried.includes(s)).slice(0,50)
+    if(!fresh.length)return
+    try{sessionStorage.setItem('library-auto-collect',JSON.stringify([...tried,...fresh].slice(-500)))}catch{}
+    request('POST',{action:'library-add',references:fresh.join('\n')}).then(r=>{if(r.queued)setNotice(`${r.queued} article${r.queued>1?'s':''} posté${r.queued>1?'s':''} sans fiche Shein : récupération lancée sur le PC.`)}).catch(()=>{})
+  },[missingPosted.join('|'),busy])
   const productSkus=p=>[p.supplier_sku,...data.links.filter(l=>l.product_id===p.id).map(l=>l.sku)].filter(Boolean).map(s=>s.toLowerCase())
   // Sans la migration de la bibliothèque, tous les produits sont des produits vendus.
   const isSold=p=>!data.library_ready||p.sold
