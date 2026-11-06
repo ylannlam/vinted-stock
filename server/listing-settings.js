@@ -50,7 +50,10 @@ export async function listingTitleExamples(db,accountId){
 
 // Le verrou par compte et la réservation sont dans la même transaction, même depuis deux onglets.
 export async function reserveListingSlot(db,row,payload,spacing,notBefore=null){
- const rows=check(await db.rpc('reserve_listing_slot',{p_id:row.id,p_owner:row.owner_id,p_version:row.version,p_payload:payload,p_spacing:spacing,...(notBefore?{p_not_before:notBefore}:{})}))
+ const result=await db.rpc('reserve_listing_slot',{p_id:row.id,p_owner:row.owner_id,p_version:row.version,p_payload:payload,p_spacing:spacing,...(notBefore?{p_not_before:notBefore}:{})})
+ // Planning à heure choisie avant la mise à jour de la base : message clair plutôt qu'une erreur technique.
+ if(notBefore&&['PGRST202','42883'].includes(result.error?.code))throw new AppError('La planification sur plusieurs jours attend la mise à jour de la base (migration « publication_planning_ai_usage »).',503)
+ const rows=check(result)
  if(!rows?.[0])throw new AppError('Cette fiche a changé. Actualise la session avant de reprendre l’envoi.',409)
  return rows[0]
 }
