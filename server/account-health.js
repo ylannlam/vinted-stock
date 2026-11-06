@@ -167,7 +167,9 @@ export async function readHealth(db,{ownerId}={}){
     const signals=openAlerts(alerts.filter(n=>n.account_id===a.id))
     const {account:legacy,...native_link}=healthNativeLink(a,profiles.get(a.id)?.profile,native)
     return {id:a.id,login:a.login,source_present:a.source_present,report,alerts:signals,native:legacy,native_link,health:healthView({report,alerts:signals,native:legacy})}
-  }),sync:check(sync)}
+  }),sync:check(sync),
+  // Comptes bannis définitivement dans l'onglet Comptes, même absents de Dotb : l'onglet AdsPower masque leur profil.
+  banned:native.filter(n=>n.statut==='banni_def').map(n=>({number:String(n.ads_power_num??'').trim()||null,pseudo:n.pseudo||''}))}
 }
 export async function syncHealth(db,{fetcher=fetch,token=process.env.DOTB_API_TOKEN,now=Date.now()}={}){
   const started=new Date(now).toISOString()
