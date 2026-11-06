@@ -76,7 +76,7 @@ test('manual reports reject invalid identifiers, stale versions, dates and overs
 function dbMock({claim=true,conflict=false}={}){
   const writes=[]
   return {writes,from(table){let patch,filters=[],mode,one=false
-    const q={select(){return q},eq(k,v){filters.push([k,v]);return q},in(k,v){filters.push([k,v]);return q},lte(){return q},update(v){patch=v;mode='update';return q},upsert(v){patch=v;mode='upsert';return q},insert(v){patch=v;mode='insert';return q},maybeSingle(){one=true;return q},single(){one=true;return q},then(resolve){
+    const q={select(){return q},or(){return q},eq(k,v){filters.push([k,v]);return q},in(k,v){filters.push([k,v]);return q},lte(){return q},update(v){patch=v;mode='update';return q},upsert(v){patch=v;mode='upsert';return q},insert(v){patch=v;mode='insert';return q},maybeSingle(){one=true;return q},single(){one=true;return q},then(resolve){
       if(patch)writes.push({table,patch,mode,filters})
       const data=table==='publication_accounts'?{id:account}:table==='account_health_sync'&&patch?.last_attempt_at?claim?{id:true}:null:table==='account_health_alerts'&&!patch?[normalizeHealthAlert(alert())]:null
       return Promise.resolve({data,error:table==='account_health_reports'&&conflict?{code:'23505'}:null}).then(resolve)
@@ -87,8 +87,8 @@ test('notification sync is read-only on Dotb, follows pages and persists resolve
   const db=dbMock(),calls=[]
   const fetcher=async(url,opts)=>{calls.push({url,opts});assert.equal(opts.method,undefined);const q=new URL(url).searchParams;return {ok:true,json:async()=>q.get('group')!=='vinted'?{data:[],has_more:false}:q.get('cursor')?{data:[alert({resolved:true,title:'Accès rétabli'})],has_more:false}:{data:[alert()],has_more:true,next_cursor:'next'}}}
   assert.deepEqual(await syncHealth(db,{fetcher,token:'test',now}),{refreshed:true})
-  assert.equal(calls.length,5);assert.ok(calls.every(c=>!c.url.includes('live-')))
-  assert.ok(calls.some(c=>new URL(c.url).searchParams.get('group')==='smart_agent'))
+  assert.equal(calls.length,4);assert.ok(calls.every(c=>!c.url.includes('live-')))
+  assert.ok(!calls.some(c=>new URL(c.url).searchParams.get('group')==='smart_agent'),'buyer conversations are never read')
   assert.ok(calls.some(c=>new URL(c.url).searchParams.get('group')==='dotb'))
   assert.ok(db.writes.some(w=>w.table==='account_health_alerts'&&w.mode==='upsert'))
   assert.ok(db.writes.some(w=>Array.isArray(w.patch)&&w.patch.some(n=>n.id===id&&n.resolved===true)))
@@ -113,7 +113,7 @@ test('health endpoint retains the existing administrator authorization boundary'
   assert.deepEqual(roles,['admin'])
 })
 function healthDatabase(tables){
-  return {from(name){let filters=[],start=0,end=999,single=false;const q={select(){return q},eq(k,v){filters.push(r=>r[k]===v);return q},is(k,v){filters.push(r=>(r[k]??null)===v);return q},order(){return q},range(s,e){start=s;end=e;return q},single(){single=true;return q},then(resolve){const rows=(tables[name]||[]).filter(r=>filters.every(f=>f(r)));return Promise.resolve({error:null,count:rows.length,data:single?rows[0]:rows.slice(start,end+1)}).then(resolve)}};return q}}
+  return {from(name){let filters=[],start=0,end=999,single=false;const q={select(){return q},or(expr){filters.push(r=>expr.split(',').some(part=>{const [k,,v]=part.split('.');return String(r[k]??'')===v}));return q},eq(k,v){filters.push(r=>r[k]===v);return q},is(k,v){filters.push(r=>(r[k]??null)===v);return q},order(){return q},range(s,e){start=s;end=e;return q},single(){single=true;return q},then(resolve){const rows=(tables[name]||[]).filter(r=>filters.every(f=>f(r)));return Promise.resolve({error:null,count:rows.length,data:single?rows[0]:rows.slice(start,end+1)}).then(resolve)}};return q}}
 }
 test('read status links to an AdsPower profile by exact login and keeps the native deadline',async()=>{
   const tables={publication_accounts:[{id:account,login:'Mode.Paris',source_present:true}],account_health_reports:[],account_health_alerts:[],account_health_sync:[{id:true,error:null}],vinted_accounts:[{id,pseudo:'mode.paris',statut:'banni_temp',deban_at:'2026-11-05T18:00:00Z',deleted_at:null}]}
@@ -163,9 +163,9 @@ test('the Dotb alert type is read first: restriction, ban, lifted restriction; l
   for(const kind of ['item_blocked','listing_restricted','order_created','publish_failed','daily_limit_reached',''])assert.equal(kindStatus(kind),null)
   assert.equal(normalizeHealthAlert(alert({kind:'vinted_account_restricted',title:'Alerte',body:'',severity:'warning'})).status,'restricted')
   assert.equal(normalizeHealthAlert(alert({kind:'vinted_account_restricted',params:{restricted_until:'2026-11-09T10:00:00Z'},title:'Alerte'})).until_date,'2026-11-09')
-  assert.equal(normalizeHealthAlert(alert({kind:'account_restriction_lifted',title:'Ton compte est restreint'})),null)
+  assert.equal(normalizeHealthAlert(alert({kind:'account_restriction_lifted',title:'Ton compte est restreint'})).kind,'recovered')
   assert.equal(normalizeHealthAlert(alert({kind:'item_blocked',title:'Annonce bloquée'})),null)
-  assert.equal(normalizeHealthAlert(alert({kind:'captcha_required',group:'smart_agent',title:'Vérification'})).status,'verification')
+  assert.equal(normalizeHealthAlert(alert({kind:'captcha_required',group:'captchas',title:'Vérification'})).status,'verification')
 })
 test('wordings naming the account or titled as a restriction are detected, with their end date',()=>{
   const r=normalizeHealthAlert(alert({title:'Restriction de compte',body:'Le compte lilyaapm est restreint jusqu’au 05/11/2026.',severity:'warning'}))
@@ -174,7 +174,7 @@ test('wordings naming the account or titled as a restriction are detected, with 
   assert.equal(normalizeHealthAlert(alert({title:'Info',body:'Ton compte fait l’objet d’une restriction jusqu’au 9 novembre 2026',severity:'info'})).until_date,'2026-11-09')
   assert.equal(normalizeHealthAlert(alert({title:'Le compte lauriepmn a été désactivé',severity:'warning'})).status,'blocked')
   assert.equal(normalizeHealthAlert(alert({title:'Suspension définitive du compte',severity:'warning'})).status,'permanent')
-  assert.equal(normalizeHealthAlert(alert({group:'smart_agent',title:'Votre compte est restreint',severity:'warning'})).status,'restricted')
+  assert.equal(normalizeHealthAlert(alert({group:'smart_agent',title:'Votre compte est restreint',severity:'warning'})),null,'a buyer message is never an account alert')
 })
 test('every account notification is archived, and a live webhook alert updates the account at once',async()=>{
   const {archiveRow,receiveNotification}=await import('./account-health.js')
@@ -188,4 +188,25 @@ test('every account notification is archived, and a live webhook alert updates t
   assert.deepEqual(writes.map(w=>w.table),['dotb_notifications','account_health_alerts'])
   const before={from:table=>({upsert:async rows=>table==='dotb_notifications'?{error:{code:'42P01'}}:(writes.push({table,rows}),{error:null}),select:()=>({in:async()=>({data:[],error:null})})})}
   assert.equal((await receiveNotification(before,alert(),now)).alert,'temporary','a database not yet updated still detects the account')
+})
+
+// Messages Vinted réels relayés par Dotb (pseudos remplacés).
+const notice=(title,body,created_at='2026-11-04T22:01:26Z')=>alert({kind:'vinted_notice',severity:'info',title,body,created_at})
+test('real Vinted notices: automation block, unblock, 5-day restriction, permanent ban, hidden listings',async()=>{
+  const {openAlerts}=await import('./account-health.js')
+  const blocked=normalizeHealthAlert(notice('Compte bloqué : automatisation détectée','compte1 Salut, on a remarqu&eacute; une activit&eacute; automatis&eacute;e sur ton compte, ce qui va &agrave; l\'encontre de nos Conditions g&eacute;n&eacute;rales .','2026-11-04T09:27:34Z'))
+  assert.equal(blocked.status,'temporary');assert.match(blocked.body,/remarqué une activité automatisée/)
+  const unblocked=normalizeHealthAlert(notice('Compte bloqué : automatisation détectée','Bonjour compte1, Ton compte a été débloqué. Tu peux à nouveau modifier tes annonces et mettre en ligne de nouveaux articles.','2026-11-05T14:09:51Z'))
+  assert.equal(unblocked.kind,'recovered');assert.equal(unblocked.resolved,true)
+  const restricted=normalizeHealthAlert(notice('Restriction de vente pendant 5 jours','compte2, Certaines activités sur ton compte semblent enfreindre nos Règles du catalogue relatives aux activités commerciales . Par conséquent, nous t\'imposons une restriction de 5 jours pendant laq'))
+  assert.equal(restricted.status,'restricted');assert.equal(restricted.until_date,'2026-11-09','same date as the Vinted banner « jusqu’au 09/11/2026 »')
+  assert.equal(normalizeHealthAlert(notice('Compte bloqué : Activité frauduleuse','Bonjour compte3, Nous avons définitivement bloqué votre compte Vinted en raison d\'une activité frauduleuse')).status,'permanent')
+  for(const [title,body] of [['Important : annonce masquée','Bonjour compte4, Une annonce que tu as publiée sur Vinted semble contenir des photos de mauvaise qualité'],['Annonce(s) masquée(s) : problème lié aux photos','Bonjour compte4, Il semblerait que certaines photos'],['Important : article supprimé','Bonjour compte4, Un article que vous avez mis en ligne'],['Annonce supprimée : annonces en double','Bonjour compte4, Nous avons des raisons de croire']])
+    assert.equal(normalizeHealthAlert(notice(title,body)),null,title)
+  // Blocage puis déblocage puis nouveau blocage : seul le dernier blocage compte.
+  const later={...blocked,id:'later',created_at:'2026-11-06T10:00:00.000Z'}
+  assert.deepEqual(openAlerts([blocked,unblocked]),[])
+  assert.deepEqual(openAlerts([blocked,unblocked,later]).map(a=>a.id),['later'])
+  assert.equal(healthView({alerts:openAlerts([restricted])},Date.parse('2026-11-06T12:00:00Z')).status,'restricted')
+  assert.equal(healthView({alerts:openAlerts([restricted])},Date.parse('2026-11-09T12:00:00Z')).status,'review','on the end date the account is shown as to check')
 })

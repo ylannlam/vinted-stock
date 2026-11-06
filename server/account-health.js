@@ -3,6 +3,9 @@ import {readBoardRows,matchPublicationProfiles} from './team-board.js'
 import {healthView,healthHasDeadline,parisHealthDay} from '../src/lib/accountHealth.js'
 
 const check=r=>{if(r.error)throw r.error;return r.data}
+const ENTITIES={amp:'&',lt:'<',gt:'>',quot:'"',apos:"'",nbsp:' ',rsquo:'’',lsquo:'‘',laquo:'«',raquo:'»',hellip:'…',eacute:'é',egrave:'è',ecirc:'ê',euml:'ë',agrave:'à',acirc:'â',ccedil:'ç',icirc:'î',iuml:'ï',ocirc:'ô',ucirc:'û',ugrave:'ù',Eacute:'É',Egrave:'È',Agrave:'À',Ccedil:'Ç',oelig:'œ'}
+// Les messages Vinted relayés par Dotb contiennent parfois des entités HTML (« remarqu&eacute; »).
+export const decodeEntities=v=>String(v||'').replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi,(m,e)=>e[0]==='#'?String.fromCodePoint(e[1]==='x'||e[1]==='X'?parseInt(e.slice(2),16):Number(e.slice(1))):ENTITIES[e]??m)
 const fold=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[’']/g,' ')
 const iso=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?new Date(v).toISOString():null
 const validDate=v=>typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&iso(`${v}T12:00:00Z`)?.slice(0,10)===v
@@ -30,16 +33,37 @@ export function kindStatus(kind,text=''){
   if(/\b(?:captcha|captchas|verification|verify|challenge|otp|2fa)\b/.test(k))return 'verification'
   return null
 }
+// Formulations des messages Vinted observées sur tes comptes.
+export function vintedNotice(title,body,createdAt){
+  const t=fold(title).trim(),text=fold(`${title} ${body}`)
+  if(/\b(?:ton|votre) compte a ete (?:debloque|reactive|retabli)\b|\b(?:la|les) restrictions? (?:de|sur) (?:ton|votre) compte (?:a|ont) ete levees?\b/.test(text))return {status:'recovered'}
+  // Une annonce masquée ou supprimée ne bloque pas le compte.
+  if(/^(?:important\s*:\s*)?(?:annonces?|articles?)(?:\s*\(s\))?\b/.test(t)&&!/\bcompte\b/.test(t))return null
+  if(/\bdefinitivement bloque\b|\bbloque definitivement\b|\bcompte (?:a ete )?(?:ferme|supprime) definitivement\b/.test(text))return {status:'permanent'}
+  if(/^compte bloque\b/.test(t))return {status:/automatis/.test(text)?'temporary':'blocked'}
+  const days=text.match(/\brestriction (?:de vente |de publication |d achat )?(?:de|pendant) (\d{1,3}) jours?\b|\bpendant (\d{1,3}) jours?\b/)
+  if(/^restriction\b|\bnous t imposons une restriction\b|\bnous vous imposons une restriction\b/.test(t+' '+text)){
+    const n=Number(days?.[1]||days?.[2]),start=Date.parse(createdAt)
+    const until=restrictionDate(`${title} ${body}`)||(n>0&&n<=365&&Number.isFinite(start)?parisHealthDay(start+n*86400000):null)
+    return {status:'restricted',until_date:until}
+  }
+  return null
+}
 export function normalizeHealthAlert(n,observedAt=new Date().toISOString()){
   if(!n||!isId(n.id)||!isId(n.vinted_account_id)||!iso(n.created_at)||typeof n.resolved!=='boolean')return null
-  const title=typeof n.title==='string'?n.title.slice(0,500):'',body=typeof n.body==='string'?n.body.slice(0,1500):'',text=fold(`${title} ${body}`)
+  const title=typeof n.title==='string'?decodeEntities(n.title).slice(0,500):'',body=typeof n.body==='string'?decodeEntities(n.body).slice(0,1500):'',text=fold(`${title} ${body}`)
   const kind=typeof n.kind==='string'?n.kind.slice(0,80):''
   let status
-  const byKind=['vinted','dotb','smart_agent','captchas'].includes(n.group)?kindStatus(kind,text):null
-  if(byKind==='recovered')return null
+  const base={id:n.id.toLowerCase(),account_id:n.vinted_account_id.toLowerCase(),kind,title,body,created_at:iso(n.created_at),observed_at:observedAt}
+  // Messages Vinted réels (relayés par Dotb) : déblocage, blocage pour automatisation, restriction de N jours.
+  const notice=vintedNotice(title,body,n.created_at)
+  if(notice?.status==='recovered')return {...base,status:'review',kind:'recovered',resolved:true,until_date:null}
+  if(notice)return {...base,status:notice.status,resolved:n.resolved,until_date:notice.until_date||null}
+  const byKind=['vinted','dotb','captchas'].includes(n.group)?kindStatus(kind,text):null
+  if(byKind==='recovered')return {...base,status:'review',kind:'recovered',resolved:true,until_date:null}
   if(byKind)status=byKind
   else if(n.group==='captchas')status='verification'
-  else if(['vinted','dotb','smart_agent'].includes(n.group)){
+  else if(['vinted','dotb'].includes(n.group)){
     // No guesses from a 403, a disconnected bridge, a removed listing or a general warning.
     const recovered=/\b(?:restrictions?|limitations?) (?:ont ete |sont )?(?:levees?|supprimees?)\b|\b(?:restrictions?|limitations?) (?:have been |are )?(?:lifted|removed)\b|\b(?:aucune restriction|no restrictions?|n est plus (?:restreint|bloque)|no longer (?:restricted|blocked))\b/.test(text)
     if(recovered)return null
@@ -51,11 +75,11 @@ export function normalizeHealthAlert(n,observedAt=new Date().toISOString()){
     else if(n.severity==='blocking'&&!/\b(annonce|article|item|listing)\b/.test(text))status='review'
   }
   if(!status)return null
-  return {id:n.id.toLowerCase(),account_id:n.vinted_account_id.toLowerCase(),status,kind,title,body,resolved:n.resolved,created_at:iso(n.created_at),observed_at:observedAt,until_date:healthHasDeadline(status)?restrictionDate(`${title} ${body}`,n.params):null}
+  return {...base,status,resolved:n.resolved,until_date:healthHasDeadline(status)?restrictionDate(`${title} ${body}`,n.params):null}
 }
 // Archive brute (sans données acheteur) : ce que Dotb a réellement envoyé, pour vérifier et affiner la détection.
 export function archiveRow(n,observedAt=new Date().toISOString()){
-  if(!n||!isId(n.id)||!iso(n.created_at)||!['vinted','dotb','captchas','smart_agent'].includes(n.group))return null
+  if(!n||!isId(n.id)||!iso(n.created_at)||!['vinted','dotb','captchas'].includes(n.group))return null
   let params={}
   try{const text=JSON.stringify(n.params&&typeof n.params==='object'?n.params:{});params=text.length<=4000?JSON.parse(text):{truncated:true}}catch{}
   return {id:n.id.toLowerCase(),account_id:isId(n.vinted_account_id)?n.vinted_account_id.toLowerCase():null,grp:n.group,kind:typeof n.kind==='string'?n.kind.slice(0,80):'',
@@ -111,11 +135,17 @@ export function healthNativeLink(account,profile,native){
   // Never transfer a restriction when more than one live record matches.
   return {account:matching.length===1?matching[0]:null,by:matching.length===1?(byNumber.length?'profile_number':'pseudo'):null,profile_number:number||null,ambiguous:matching.length>1}
 }
+// Un message « Ton compte a été débloqué » efface les blocages et restrictions antérieurs du même compte.
+export function openAlerts(rows){
+  const recovered=rows.filter(r=>r.kind==='recovered').map(r=>Date.parse(r.created_at)).filter(Number.isFinite)
+  const last=recovered.length?Math.max(...recovered):null
+  return rows.filter(r=>r.kind!=='recovered'&&!r.resolved&&(last===null||Date.parse(r.created_at)>last))
+}
 export async function readHealth(db,{ownerId}={}){
   const [accounts,reports,alerts,native,sync,links,prefs]=await Promise.all([
     readBoardRows(()=>db.from('publication_accounts').select('id,login,source_present',{count:'exact'}).eq('source_present',true).order('id')),
     readBoardRows(()=>db.from('account_health_reports').select('account_id,status,reason,until_at,until_date,version,checked_at',{count:'exact'}).order('account_id')),
-    readBoardRows(()=>db.from('account_health_alerts').select('id,account_id,status,title,body,resolved,created_at,observed_at,until_date',{count:'exact'}).eq('resolved',false).order('id')),
+    readBoardRows(()=>db.from('account_health_alerts').select('id,account_id,status,kind,title,body,resolved,created_at,observed_at,until_date',{count:'exact'}).or('resolved.eq.false,kind.eq.recovered').order('id')),
     readBoardRows(()=>db.from('vinted_accounts').select('id,pseudo,statut,creation_stage,deban_at,blocked_at,deleted_at,is_shadowbanned,ads_power_num',{count:'exact'}).is('deleted_at',null).order('id')),
     db.from('account_health_sync').select('last_completed_at,last_attempt_at,next_allowed_at,error,partial').eq('id',true).single(),
     readBoardRows(()=>db.from('publication_profile_links').select('owner_id,profile_id,account_id',{count:'exact'}).order('owner_id').order('profile_id')),
@@ -124,7 +154,7 @@ export async function readHealth(db,{ownerId}={}){
   const profiles=matchPublicationProfiles({accounts,links,prefs},ownerId)
   return {accounts:accounts.map(a=>{
     const report=reports.find(r=>r.account_id===a.id)||null
-    const signals=alerts.filter(n=>n.account_id===a.id)
+    const signals=openAlerts(alerts.filter(n=>n.account_id===a.id))
     const {account:legacy,...native_link}=healthNativeLink(a,profiles.get(a.id)?.profile,native)
     return {id:a.id,login:a.login,source_present:a.source_present,report,alerts:signals,native:legacy,native_link,health:healthView({report,alerts:signals,native:legacy})}
   }),sync:check(sync)}
@@ -136,7 +166,7 @@ export async function syncHealth(db,{fetcher=fetch,token=process.env.DOTB_API_TO
   try{
     if(!token)throw new AppError('La connexion Dotb reste à configurer.',503)
     let partial=false
-    for(const group of ['vinted','captchas','dotb','smart_agent']){
+    for(const group of ['vinted','captchas','dotb']){
       let cursor='';const seen=new Set()
       for(let page=0;page<3;page++){
         const query=new URLSearchParams({group,locale:'fr',limit:'100',...(cursor?{cursor}:{})})
