@@ -35,8 +35,10 @@ export function labelFrames(operators) {
 export function identifyLabel({width,height,rotation=0,items,frames=[]}) {
   const dimensions=[width,height].sort((a,b)=>a-b)
   if(dimensions.every((v,n)=>Math.abs(v-LABEL_SIZE[n])<18))return {left:0,bottom:0,right:width,top:height,rotate:rotation?(360-rotation)%360:width>height?90:0,carrier:'Bordereau thermique'}
-  if(rotation!==0||Math.abs(width-595)>2||Math.abs(height-842)>2)throw unknown()
   const text=items.map(i=>i.str||'').join(' '),at=(pattern,x,y)=>items.some(i=>pattern.test(i.str||'')&&Math.abs(i.transform[4]-x)<8&&Math.abs(i.transform[5]-y)<8)
+  // Chronopost Relais Europe : A4 paysage, fiche destinataire à gauche (ignorée), bordereau à droite.
+  if(rotation===0&&Math.abs(width-842)<=2&&Math.abs(height-595)<=2&&/Chrono Relais/i.test(text)&&at(/^Track$/,518,243)&&at(/^Service$/,788,243))return {left:505,bottom:91,right:836,top:578,rotate:0,carrier:'Chronopost Relais Europe'}
+  if(rotation!==0||Math.abs(width-595)>2||Math.abs(height-842)>2)throw unknown()
   // These A4 layouts have been checked against real Dotb carrier PDFs.
   if(/vintedgo\.com\/deals/i.test(text)&&at(/Scanner le QR code/,49,673))return {left:10,bottom:height-410,right:288,top:height-10,rotate:0,carrier:'Vinted Go'}
   if(/Shop2Shop/.test(text)&&at(/^Chronopost/,44,330)&&items.some(i=>/Chronopost/.test(i.str||'')&&i.transform[1]<0))return {left:18,bottom:10,right:567,top:342,rotate:90,carrier:'Chronopost'}

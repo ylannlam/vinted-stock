@@ -71,3 +71,10 @@ test('the item title is written under the cropped label, without unsupported cha
   const result=await thermalLabel(Buffer.from(await source.save()),{note:'Robe longue bleu clair'})
   assert.equal((await PDFDocument.load(result.bytes)).getPageCount(),1)
 })
+test('Chronopost Relais Europe landscape labels keep only the right-hand label, not the recipient sheet',()=>{
+  const item=(str,x,y)=>({str,transform:[7,0,0,7,x,y]})
+  const items=[item('Chrono Relais - Nkd-Salorno',516,481),item('Track',518,243),item('Service',788,243)]
+  const crop=identifyLabel({width:842,height:595,rotation:0,items})
+  assert.equal(crop.carrier,'Chronopost Relais Europe');assert.ok(crop.left>500&&crop.right<842&&crop.rotate===0)
+  assert.throws(()=>identifyLabel({width:842,height:595,rotation:0,items:items.slice(1)}),/reconnu/)
+})
