@@ -1,5 +1,6 @@
 import {useEffect,useMemo,useRef,useState} from 'react'
 import ShippingLabelDialog from './ShippingLabelDialog'
+import BatchLabelsDialog from './BatchLabelsDialog'
 import {ErrorNotice,buttonClass,primaryClass,fieldClass} from './WorkspaceUI'
 import {safeUrl} from '../lib/fulfillment'
 import {candidatesFor,codeKey,daySummary,deadlineOf,expectedItems,lotState,matchCode,nextSlot,orderLines,skuOfLine,variantOf,variantsFor,WAITING} from '../lib/reception'
@@ -46,12 +47,12 @@ export default function ReceptionDesk({request,onOpenSale}){
  const [code,setCode]=useState(''),[camera,setCamera]=useState(false),[search,setSearch]=useState(''),[arrivingOnly,setArrivingOnly]=useState(false)
  const [pick,setPick]=useState(null) // {sku,variant,lineId}
  const [step,setStep]=useState(null) // {line, slot, gather:[...]} après réception
- const [labelLine,setLabelLine]=useState(null),[aliases,setAliases]=useState(readAliases)
+ const [labelLine,setLabelLine]=useState(null),[aliases,setAliases]=useState(readAliases),[checked,setChecked]=useState([]),[batchLines,setBatchLines]=useState(null)
  const input=useRef(null)
  async function load(){const r=await request('GET',undefined,'?view=reception');setData(r);setLoading(false)}
  async function run(fn){if(busy)return;setBusy(true);setError('');try{await fn()}catch(e){setError(e.message)}finally{setBusy(false)}}
  useEffect(()=>{run(load)},[])
- useEffect(()=>{if(pick||step||labelLine)return;const t=setInterval(()=>{if(document.visibilityState==='visible')load().catch(()=>{})},20000);return()=>clearInterval(t)},[pick,step,labelLine])
+ useEffect(()=>{if(pick||step||labelLine||batchLines)return;const t=setInterval(()=>{if(document.visibilityState==='visible')load().catch(()=>{})},20000);return()=>clearInterval(t)},[pick,step,labelLine,batchLines])
  useEffect(()=>{try{localStorage.setItem('vs-reception-mode',mode)}catch{}},[mode])
  useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(''),3500);return()=>clearTimeout(t)},[toast])
 
@@ -160,8 +161,10 @@ export default function ReceptionDesk({request,onOpenSale}){
   {fiche()}
 
   <div className="grid gap-4 lg:grid-cols-3">
-   <section className="rounded-2xl border bg-white p-4 space-y-2"><h3 className="font-semibold">Reçus · à emballer <span className="text-slate-400 font-normal">{packOrders.length}</span></h3>
-    {packOrders.length?<ul className="divide-y text-sm">{packOrders.map(l=><li key={l.order_id} className="py-2 flex items-center gap-2"><span className="min-w-0 flex-1"><span className="block truncate">{l.source?.title}</span><span className={`text-xs ${urgency(deadlineOf(l))}`}>{l.account_login} · avant le {when(deadlineOf(l))}</span></span><button className={buttonClass+' !px-2 !py-1.5 !text-xs'} onClick={()=>setLabelLine(l)}>Étiquette</button><button className={buttonClass+' !px-2 !py-1.5 !text-xs'} disabled={busy} onClick={()=>run(()=>pack(l))}>Emballé</button></li>)}</ul>:<p className="text-sm text-slate-500">Rien en attente d’emballage.</p>}
+   <section className="rounded-2xl border bg-white p-4 space-y-2"><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold mr-auto">Reçus · à emballer <span className="text-slate-400 font-normal">{packOrders.length}</span></h3>
+     {packOrders.length>1&&<button className="text-xs text-teal-700 underline" onClick={()=>setChecked(c=>c.length===packOrders.length?[]:packOrders.map(l=>l.order_id))}>{checked.length===packOrders.length?'Tout décocher':'Tout cocher'}</button>}</div>
+    {packOrders.length?<ul className="divide-y text-sm">{packOrders.map(l=><li key={l.order_id} className="py-2 flex items-center gap-2"><input type="checkbox" className="h-4 w-4 accent-teal-700 shrink-0" aria-label={`Sélectionner ${l.source?.title||'ce colis'}`} checked={checked.includes(l.order_id)} onChange={e=>setChecked(c=>e.target.checked?[...c,l.order_id]:c.filter(x=>x!==l.order_id))}/><span className="min-w-0 flex-1"><span className="block truncate">{l.source?.title}</span><span className={`text-xs ${urgency(deadlineOf(l))}`}>{l.account_login} · avant le {when(deadlineOf(l))}</span></span><button className={buttonClass+' !px-2 !py-1.5 !text-xs'} onClick={()=>setLabelLine(l)}>Étiquette</button><button className={buttonClass+' !px-2 !py-1.5 !text-xs'} disabled={busy} onClick={()=>run(()=>pack(l))}>Emballé</button></li>)}</ul>:<p className="text-sm text-slate-500">Rien en attente d’emballage.</p>}
+    {checked.filter(id=>packOrders.some(l=>l.order_id===id)).length>0&&<button className={`${primaryClass} w-full`} onClick={()=>setBatchLines(packOrders.filter(l=>checked.includes(l.order_id)))}>Imprimer les {checked.filter(id=>packOrders.some(l=>l.order_id===id)).length} bordereaux à la suite</button>}
    </section>
    <section className="rounded-2xl border bg-white p-4 space-y-2"><h3 className="font-semibold">Bac d’attente · lots incomplets <span className="text-slate-400 font-normal">{waitingLots.length}</span></h3>
     {waitingLots.length?<ul className="divide-y text-sm">{waitingLots.map(l=>{const lot=lotState(lines,l);return <li key={l.order_id} className="py-2 flex items-center gap-2"><span className="rounded-lg bg-amber-100 px-2 py-1 text-xs font-bold text-amber-900">{orderLines(lines,l).find(x=>x.location)?.location||'—'}</span><span className="min-w-0 flex-1"><span className="block truncate">{l.account_login}</span><span className="text-xs text-slate-500">il manque {lot.missing} article{lot.missing>1?'s':''} · avant le {when(deadlineOf(l))}</span></span></li>})}</ul>:<p className="text-sm text-slate-500">Bac vide.</p>}
@@ -173,5 +176,6 @@ export default function ReceptionDesk({request,onOpenSale}){
   </div>
   {toast&&<p role="status" className="fixed bottom-5 left-1/2 z-40 -translate-x-1/2 rounded-full bg-slate-900 px-4 py-2 text-sm text-white shadow-lg">{toast}</p>}
   {labelLine&&<ShippingLabelDialog line={labelLine} request={request} onClose={()=>setLabelLine(null)}/>}
+  {batchLines&&<BatchLabelsDialog lines={batchLines} request={request} onClose={()=>{setBatchLines(null);setChecked([]);load().catch(()=>{})}} onPacked={()=>load().catch(()=>{})}/>}
  </section>
 }

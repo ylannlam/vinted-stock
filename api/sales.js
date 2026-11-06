@@ -98,7 +98,7 @@ export default async function handler(req, res) {
     }
     if (req.method === 'POST') {
       if(req.body?.action==='refresh_photos')return res.json(await refreshSalePhotos(db,req.body.ids))
-      if(req.body?.action==='shipping_label')return res.json(await shippingLabel(db,req.body.id))
+      if(req.body?.action==='shipping_label')return res.json(await shippingLabel(db,req.body.id,{preview:req.body.preview!==false}))
       if(req.body?.action==='shipment_refresh')return res.json(await refreshShipment(db,req.body.id))
       if (role !== 'admin') throw new AppError('Seul un administrateur peut importer les ventes.',403)
       if(req.body?.action==='automation')return res.json(await enableSalesAutomation(db))

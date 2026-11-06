@@ -52,3 +52,11 @@ test('receiving an article walks the sale to « Reçu » and packing frees the w
  const packed=await packOrder(db,'u',{order_id:order},{dotb:async path=>{assert.equal(path,`orders/${order}/pack`)}})
  assert.equal(packed.dotb_packed,true);assert.deepEqual(rows.map(r=>[r.stage,r.location]),[['prepared',null],['prepared',null]])
 })
+test('batch labels: one label per order, merged into a single PDF in list order',async()=>{
+ const {labelTargets,mergeLabels}=await import('../src/lib/batchLabels.js')
+ const {PDFDocument}=await import('pdf-lib')
+ assert.deepEqual(labelTargets([{id:'a',order_id:'1'},{id:'b',order_id:'1'},{id:'c',order_id:'2'}]).map(l=>l.id),['a','c'])
+ const one=async text=>{const d=await PDFDocument.create();d.addPage([283,425]).drawText(text);return d.saveAsBase64()}
+ const merged=await PDFDocument.load(await mergeLabels([await one('A'),await one('B'),await one('C')]))
+ assert.equal(merged.getPageCount(),3)
+})

@@ -25,7 +25,7 @@ export async function downloadLabel(url,fetcher=fetch) {
   return bytes
 }
 
-export async function shippingLabel(db,id,{fetcher=fetch,readOrder=dotbRequest,convert}={}) {
+export async function shippingLabel(db,id,{fetcher=fetch,readOrder=dotbRequest,convert,preview=true}={}) {
   if(typeof id!=='string'||id.length>80||!id)throw new AppError('Vente invalide.')
   const {data:line,error}=await db.from('workspace_sales').select('id,order_id,order').eq('id',id).maybeSingle()
   if(error)throw error
@@ -52,7 +52,7 @@ export async function shippingLabel(db,id,{fetcher=fetch,readOrder=dotbRequest,c
   // Titres des articles de la commande (un lot peut en contenir plusieurs), écrits sous l'étiquette.
   const {data:items}=await db.from('workspace_sales').select('source').eq('order_id',line.order_id)
   const titles=[...new Set((items||[]).map(i=>i.source?.title).filter(t=>typeof t==='string'&&t.trim()).map(t=>t.trim()))]
-  const result=await prepare(bytes,{preview:true,note:titles.length>1?titles.map((t,i)=>`${i+1}. ${t}`).join(' '):titles[0]||''})
+  const result=await prepare(bytes,{preview,note:titles.length>1?titles.map((t,i)=>`${i+1}. ${t}`).join(' '):titles[0]||''})
   if(result.bytes.length>3*1024*1024)throw new AppError('Le bordereau préparé est trop volumineux.',422)
   return {pdf:Buffer.from(result.bytes).toString('base64'),preview:result.preview?Buffer.from(result.preview).toString('base64'):undefined,filename:`bordereau-${line.order_id.slice(0,8)}-100x150.pdf`,format:'100 × 150 mm',carrier:result.carrier}
 }
