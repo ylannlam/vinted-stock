@@ -194,3 +194,17 @@ select.library-category { cursor: pointer; }
 .library-copy > button { font-size: 11px; border: 1px solid var(--workspace-line); border-radius: 99px; padding: 3px 9px; background: #fff; }
 .workspace-search-row .library-chips { flex-basis: 100%; order: 3; }
 @media (min-width: 960px) { .catalog-grid { grid-template-columns: repeat(auto-fill,minmax(250px,1fr)); gap: 16px; } .catalog-grid .catalog-card-body { padding: 14px; gap: 10px; } }
+
+/* Ventes : les étapes du parcours d'une vente, de la commande Shein à l'envoi Vinted. */
+.sales-pipeline { display: flex; flex: 1 1 100%; overflow-x: auto; border: 1px solid #e3ded6; border-radius: 16px; background: #fff; }
+.sales-pipeline-step { position: relative; flex: 1 0 96px; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 16px 10px 20px; text-align: left; color: #5d615a; border-right: 1px solid #efebe4; transition: background .15s; }
+.sales-pipeline-step:last-child { border-right: 0; }
+.sales-pipeline-step strong { font-size: 20px; line-height: 1.1; color: #323630; font-variant-numeric: tabular-nums; }
+.sales-pipeline-step span { font-size: 12px; white-space: nowrap; }
+.sales-pipeline-step:hover { background: #f6faf7; }
+.sales-pipeline-step.is-empty strong { color: #b7b2a9; }
+.sales-pipeline-step.is-active { background: #087f5b; color: #e6f4ee; }
+.sales-pipeline-step.is-active strong { color: #fff; }
+.sales-pipeline-step:first-child { border-radius: 15px 0 0 15px; }
+.sales-pipeline-step:last-child { border-radius: 0 15px 15px 0; }
+.sale-parcel { margin-top: 2px; }

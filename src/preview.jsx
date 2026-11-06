@@ -50,6 +50,18 @@ const lines = ['to_order','ordered','in_transit','received','prepared','shipped'
   order:{id:`vente-${i}`,account_login:`Compte démo ${i%2+1}`,currency:'EUR',status:'label_sent',deadline:new Date(Date.now()+(i+1)*86400000).toISOString()},
 }))
 const parcels=[]
+// Suivi Shein de démonstration : un colis en livraison aujourd'hui, un autre en route.
+const demoEvents=(steps)=>steps.map(([h,place,text])=>({at:new Date(Date.now()-h*3600000).toISOString(),place,text}))
+const demoParcels=[
+ {tracking_number:'GFFRDEMO000001',carrier:'GOFO',status_text:'En cours de livraison',delivered:false,eta:'06-12 nov.',track_url:'https://www.gofo.com/fr/tracking-results/?id=GFFRDEMO000001',order_ref:'GDEMO000001',
+  steps:[["En transit vers l'aéroport",true],['Transféré au transporteur',true],['En attente de livraison',true],['Prêt pour le ramassage',false],['Livré',false]].map(([name,done])=>({name,done})),
+  events:demoEvents([[1.5,'','Cher client, votre commande va être livrée. Gardez votre téléphone allumé.'],[8,'Istres','Le chauffeur est sorti pour la livraison'],[27,'Marseille',"Arrivé à l'installation de destination régionale GOFO"],[30,'Marseille','Arrivé au centre de tri'],[44,'Paris','Le colis a quitté le centre de tri']])},
+ {tracking_number:'GFFRDEMO000002',carrier:'GOFO',status_text:'Transféré au transporteur',delivered:false,eta:'10-16 nov.',track_url:'https://www.gofo.com/fr/tracking-results/?id=GFFRDEMO000002',order_ref:'GDEMO000002',
+  steps:[["En transit vers l'aéroport",true],['Transféré au transporteur',true],['En attente de livraison',false],['Prêt pour le ramassage',false],['Livré',false]].map(([name,done])=>({name,done})),
+  events:demoEvents([[5,'Paris','Arrivé au centre de tri'],[20,'','Votre colis a été déchargé et sera chargé pour le transport sous peu.']])},
+]
+const parcelOfLine={'demo-1':demoParcels[1],'demo-2':demoParcels[0]}
+const summaryOf=p=>({tracking_number:p.tracking_number,carrier:p.carrier,status_text:p.status_text,delivered:p.delivered,eta:p.eta,track_url:p.track_url,order_ref:p.order_ref,steps_done:p.steps.filter(s=>s.done).length,steps_total:p.steps.length,last_event:p.events[0]})
 if(new URLSearchParams(location.hash.split('?')[1]||'').get('view')==='cart'){
   const demo=dailyCartDemo();lines.push(...demo.lines);catalog.push(...demo.catalog)
 }
@@ -68,6 +80,7 @@ async function request(method='GET',body,query='') {
     const q=new URLSearchParams(query.replace(/^\?/,''));let filtered=structuredClone(lines).sort(newestSalesFirst)
     if(q.get('view')==='daily_cart')return dailyCartPreview(lines,catalog,q.get('day'),q.get('include_earlier')==='true')
     if(q.get('view')==='shein_orders')return sheinOrdersPreview(lines)
+    if(q.get('view')==='parcels')return {parcels:demoParcels.map((p,i)=>({...p,last_event_at:p.events[0].at,order_date:'2026-11-0'+(i+1),items:[{id:'it'+i,sku:'DEMO-10'+(i+1)+'-M',title:lines[2-i].source.title,size:i?'S':'M',color:'Noir',photo:lines[2-i].source.thumbnail_url,quantity:1,status:'shipped',sales:[{id:lines[2-i].id,account:lines[2-i].order.account_login,title:lines[2-i].source.title,stage:lines[2-i].stage}]}]})),since:'2026-09-07'}
     const shipRows=parcels.filter(p=>p.line_ids.length).map(p=>({...p,lines:p.line_ids.map(id=>{const l=lines.find(x=>x.id===id);return {id,title:l.source.title,account:l.order.account_login,size:l.supplier_size,updated_at:l.updated_at}})}))
     if(q.get('view')==='shipments')return {shipments:structuredClone(shipRows),count:shipRows.length,page:0,shein_orders:sheinOrdersPreview(lines).orders}
     if(q.get('view')==='detail'){const line=filtered.find(l=>l.id===q.get('id'));if(!line)throw Error('Vente introuvable');return {line:{...line,shipments:structuredClone(shipRows.filter(p=>p.line_ids.includes(line.id)))},catalog:structuredClone(catalog)}}
@@ -76,6 +89,7 @@ async function request(method='GET',body,query='') {
     if(q.get('urgent')==='true')filtered=filtered.filter(l=>l.stage!=='shipped'&&Date.parse(l.order.deadline)<Date.now()+48*3600000)
     const counts={all:filtered.length,missing_sku:filtered.filter(l=>!skuOf(l)).length,review:0};for(const l of filtered)counts[l.stage]=(counts[l.stage]||0)+1
     if(q.get('stage')&&q.get('stage')!=='all')filtered=filtered.filter(l=>q.get('stage')==='missing_sku'?!skuOf(l):l.stage===q.get('stage'))
+    filtered=filtered.map(l=>parcelOfLine[l.id]?{...l,parcel:summaryOf(parcelOfLine[l.id])}:l)
     return {lines:filtered,catalog:structuredClone(catalog),count:filtered.length,counts,accounts:[...new Set(lines.map(l=>l.order.account_login))],connected:true,automation:{configured:true,enabled:true,last_received_at:new Date().toISOString()},tracking:{starts_at:'2026-10-30T23:00:00Z',time_zone:'Europe/Paris'}}
   }
   if(method==='POST'&&body.action==='shipment_refresh'){const p=parcels.find(p=>p.id===body.id);p.checked_at=new Date().toISOString();p.refresh_after=new Date(Date.now()+900000).toISOString();p.last_error='GOFO ne fournit pas encore de suivi pour ce numéro. Dernier relevé conservé.';return {refreshed:true}}

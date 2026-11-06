@@ -1,15 +1,15 @@
 # Assistant Shein — 0.8.0
 
-Les fiches se pilotent dans **Catalogue**, et les achats dans **Ventes → Mes commandes Shein**, sur https://vinted-stock.vercel.app. L’extension utilise ses propres onglets.
+Les fiches se pilotent dans **Catalogue**, et les achats dans **Ventes → Commandes Shein**, sur https://vinted-stock.vercel.app. L’extension utilise ses propres onglets.
 
 ## Commandes Shein
-- Dans **Ventes → Mes commandes Shein**, clique sur **Activer la synchronisation**. L’extension lit les commandes récentes depuis le début du suivi, puis leurs lignes détaillées, toutes les 10 minutes lorsque le navigateur reste ouvert.
+- Dans **Ventes → Commandes Shein**, clique sur **Activer la synchronisation**. L’extension lit les commandes récentes depuis le début du suivi, puis leurs lignes détaillées, toutes les 10 minutes lorsque le navigateur reste ouvert.
 - SKU, lien, photo, taille, couleur, quantité, montant et état affichés sont enregistrés. Les adresses, moyens de paiement et cookies ne sont pas récupérés.
 - L’association automatique exige un SKU exact, une taille et une couleur concordantes, assez d’exemplaires et aucune commande concurrente. Les autres cas se choisissent avec **Associer une vente**.
 - Une commande en préparation passe la vente à **Commandé**. Les articles expédiés passent à **En transit**. Un article livré nécessite **J’ai reçu cet article** ; aucune réception n’est confirmée sur Shein.
 - Les prix unitaires ne sont repris que lorsqu’ils sont connus et que le coût de la vente n’a pas été renseigné. Les frais de livraison ne sont pas répartis automatiquement.
 - Une annulation, un retour, une disparition d’article ou une baisse de quantité reste visible à vérifier. **Dissocier** restaure les informations d’avant association seulement si elles n’ont pas été modifiées depuis.
-- Les numéros de suivi explicitement affichés sur la commande apparaissent dans **Mes colis Shein**. Les colis saisis à la main restent disponibles. Les exemplaires ne sont jamais attribués à un colis sans preuve.
+- Les numéros de suivi explicitement affichés sur la commande apparaissent dans **Ventes → Colis**. Les colis saisis à la main restent disponibles. Les exemplaires ne sont jamais attribués à un colis sans preuve.
 - La lecture s’arrête en cas de connexion ou vérification Shein requise. **Ouvrir Shein**, puis **Reprendre** permet de continuer. Aucun achat, retour ou annulation n’est déclenché par l’extension.
 
 ## Installation unique

@@ -16,6 +16,7 @@ import {readDailyPurchases} from '../server/daily-purchases.js'
 import {assistantSummary} from '../server/shein-assistant.js'
 import {readIncompleteOrders} from '../server/incomplete-orders.js'
 import {syncDotbCosts} from '../server/dotb-costs.js'
+import {attachParcels,readParcelBoard} from '../server/parcels.js'
 
 export const config = { maxDuration: 60 }
 const fail = error => { if (error) throw error }
@@ -47,6 +48,7 @@ export default async function handler(req, res) {
       if(req.query?.view==='shein_assistant')return res.json(await assistantSummary(db,req.query))
       if(req.query?.view==='daily_cart')return res.json(await readDailyPurchases(db,req.query))
       if(req.query?.view==='shein_orders')return res.json(await readSheinOrders(db,req.query))
+      if(req.query?.view==='parcels')return res.json(await readParcelBoard(db))
       if(req.query?.view==='shipments')return res.json(await readShipments(db,req.query))
       if(req.query?.view==='detail'){
         const id=req.query.id
@@ -59,11 +61,14 @@ export default async function handler(req, res) {
       }
       if(req.query?.view==='page'){
         const filters=salesFilters(req.query)
-        const prefix='incomplete-orders-v1:'
-        const known=typeof req.query.revision==='string'&&req.query.revision.startsWith(prefix)?req.query.revision.slice(prefix.length):null
+        const prefix='incomplete-orders-v2:'
+        // La révision couvre aussi le dernier relevé Shein : un colis qui avance rafraîchit les cartes.
+        const stamp=await db.from('shein_orders').select('observed_at').order('observed_at',{ascending:false}).limit(1).then(r=>r.data?.[0]?.observed_at||'',()=>'')
+        const sent=typeof req.query.revision==='string'&&req.query.revision.startsWith(prefix)?req.query.revision.slice(prefix.length):''
+        const cut=sent.lastIndexOf('|'),known=cut>0&&sent.slice(cut+1)===stamp?sent.slice(0,cut):null
         const pendingPage=db.rpc('sales_workspace_page',{p_filters:filters,p_known_revision:known})
         const conditional=known?await pendingPage:null
-        if(conditional){fail(conditional.error);if(conditional.data.unchanged)return res.json({...conditional.data,revision:prefix+conditional.data.revision})}
+        if(conditional){fail(conditional.error);if(conditional.data.unchanged)return res.json({...conditional.data,revision:prefix+conditional.data.revision+'|'+stamp})}
         const [pageResult,tracking,syncState,automation,incomplete]=await Promise.all([
           conditional||pendingPage,
           readTrackingPeriod(db),
@@ -73,7 +78,8 @@ export default async function handler(req, res) {
         ])
         fail(pageResult.error);fail(syncState.error)
         const data=pageResult.data
-        return res.json({...data,revision:prefix+data.revision,incomplete,tracking,automation,connected:!!process.env.DOTB_API_TOKEN,
+        if(Array.isArray(data.lines))data.lines=await attachParcels(db,data.lines).catch(()=>data.lines)
+        return res.json({...data,revision:prefix+data.revision+'|'+stamp,incomplete,tracking,automation,connected:!!process.env.DOTB_API_TOKEN,
           last_sync:syncState.data.last_completed_at,resume:!!syncState.data.cursor,processed:syncState.data.processed})
       }
       const offset = Number(req.query?.offset || 0)
