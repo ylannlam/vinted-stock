@@ -3,6 +3,7 @@ import {useEffect,useMemo,useRef,useState} from 'react'
 import ListingSettingsPanel from './ListingSettingsPanel'
 import {catalogChoices,generationIssues,listingIssues,listingSizes,listingStateLabels,validateListingPhoto,MAX_LISTING_PHOTOS} from '../lib/listingStudio'
 import {applyListingPresets} from '../lib/listingSettings'
+import {readTransfer,resolveTransfer,hasTransferImage,filesFromClipboard} from '../lib/dropFiles'
 
 // Atelier d'annonces : la file des articles du compte à gauche, l'article choisi à droite.
 // Pour publier à la main, le « mode publication » suit l'ordre du formulaire Vinted, ligne par ligne.
@@ -50,7 +51,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
  const [settings,setSettings]=useState(null),[dotb,setDotb]=useState(false),[serverDotb,setServerDotb]=useState(!!meta.dotb_publish_enabled)
  const [loading,setLoading]=useState(true),[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(initialSku?`SKU ${initialSku} prêt : ajoute les photos de l’article, il sera repris sur la fiche avec ses mesures Shein.`:'')
  const [dropped,setDropped]=useState(null),[showSettings,setShowSettings]=useState(false),[copied,setCopied]=useState('')
- const [selected,setSelected]=useState(null),[filter,setFilter]=useState('all'),[dragging,setDragging]=useState(false),[photoIndex,setPhotoIndex]=useState(0)
+ const [selected,setSelected]=useState(null),[filter,setFilter]=useState('all'),[dragging,setDragging]=useState(false),[zone,setZone]=useState(null),[photoIndex,setPhotoIndex]=useState(0)
  const choices=useMemo(()=>catalogChoices(meta.catalogs||[]),[meta.catalogs])
  // Rédaction automatique : dès qu'un article a ses photos et sa taille, l'IA l'écrit (3 à la fois au plus).
  const aiSlots=useRef(0),aiWaiters=useRef([]),aiPaused=useRef(false),[autoWrite,setAutoWrite]=useState(()=>{try{return localStorage.getItem('listing-auto-write')!=='off'}catch{return true}})
@@ -265,6 +266,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
  const toPrepare=rows.filter(c=>c.row.state==='draft'&&!c.fields.title?.trim()&&!generationIssues(c.fields,c.photos).length).length
  const firstActive=visible.find(([,s])=>s!=='published')?.[0]||visible[0]?.[0]||null
  const current=visible.find(([c])=>c.id===selected)?.[0]||firstActive
+ const canAddTo=!!current&&current.row.state==='draft'&&!current.row.dotb_item_id&&!current.busy
  const nav=visible.map(([c])=>c.id),position=current?nav.indexOf(current.id):-1
  function select(id){if(id===current?.id)return;setSelected(id);setPhotoIndex(0)}
  // Après une publication, on passe à l'article prêt suivant (sinon au suivant de la file).
@@ -277,9 +279,24 @@ export default function ListingSession({request,upload,account,meta,initialSku='
  const steps=STEPS.filter(s=>s.key!=='dotb'||counts.dotb||dotb)
  const stepFor=stage=>STEPS.find(s=>s.key===stepOf(stage))
 
- function onDragEnter(e){if(!e.dataTransfer?.types?.includes('Files'))return;e.preventDefault();dragDepth.current++;setDragging(true)}
- function onDragLeave(){dragDepth.current=Math.max(0,dragDepth.current-1);if(!dragDepth.current)setDragging(false)}
- function onDrop(e){e.preventDefault();dragDepth.current=0;setDragging(false);if(!busy)drop(e.dataTransfer.files)}
+ function onDragEnter(e){if(!hasTransferImage(e.dataTransfer))return;e.preventDefault();dragDepth.current++;setDragging(true)}
+ function onDragLeave(){dragDepth.current=Math.max(0,dragDepth.current-1);if(!dragDepth.current){setDragging(false);setZone(null)}}
+ function endDrag(){dragDepth.current=0;setDragging(false);setZone(null)}
+ // Photos déposées ou collées : soit ajoutées à l'article ouvert, soit à l'origine d'un nouvel article.
+ async function receive(read,target){
+  if(busy)return
+  let files
+  try{files=await resolveTransfer(read)}catch(e){setError(e.message);return}
+  if(target==='current'&&canAddTo)return withBusy('Ajout des photos…',async()=>{await uploadInto(current,files.sort(byName));setNotice(`${files.length>1?`${files.length} photos ajoutées`:'Photo ajoutée'} à l’article en cours.`)})
+  setError('');drop(files)
+ }
+ function onDrop(e){e.preventDefault();endDrag();receive(readTransfer(e.dataTransfer),'new')}
+ function dropOn(target){return e=>{e.preventDefault();e.stopPropagation();endDrag();receive(readTransfer(e.dataTransfer),target)}}
+ // Ctrl+V : une image copiée sur un site (clic droit › Copier l'image) rejoint l'article en cours, ou en crée un.
+ useEffect(()=>{
+  const onPaste=e=>{const files=filesFromClipboard(e.clipboardData);if(!files.length)return;e.preventDefault();receive({files,urls:[]},'current')}
+  window.addEventListener('paste',onPaste);return()=>window.removeEventListener('paste',onPaste)
+ })
  useEffect(()=>{if(!showSettings)return;const close=e=>{if(e.key==='Escape')setShowSettings(false)};window.addEventListener('keydown',close);return()=>window.removeEventListener('keydown',close)},[showSettings])
 
  function pill(stage,card){
@@ -458,8 +475,11 @@ export default function ListingSession({request,upload,account,meta,initialSku='
 
  const sizes=dropped?[2,3,4].filter(n=>dropped.length%n===0&&dropped.length>n):[]
  const presets=settings?.effective
- return <section className="relative space-y-5" onDragEnter={onDragEnter} onDragOver={e=>{if(e.dataTransfer?.types?.includes('Files'))e.preventDefault()}} onDragLeave={onDragLeave} onDrop={onDrop}>
-  {dragging&&<div className="pointer-events-none fixed inset-3 z-40 grid place-items-center rounded-3xl border-2 border-dashed border-[#087f5b] bg-[#f3f8f5]/90 text-center backdrop-blur-sm"><div><p className="text-xl font-semibold text-[#08664c]">Lâche les photos ici</p><p className="mt-1 text-sm text-[#5d615a]">Tu choisiras ensuite combien d’articles elles forment.</p></div></div>}
+ return <section className="relative space-y-5" onDragEnter={onDragEnter} onDragOver={e=>{if(hasTransferImage(e.dataTransfer))e.preventDefault()}} onDragLeave={onDragLeave} onDrop={onDrop}>
+  {dragging&&(canAddTo?<div className="fixed inset-3 z-40 grid gap-3 sm:grid-cols-2" aria-label="Où ajouter les photos ?">
+   <div onDragEnter={()=>setZone('current')} onDragOver={e=>{e.preventDefault();setZone('current')}} onDrop={dropOn('current')} className={`grid place-items-center rounded-3xl border-2 border-dashed p-6 text-center backdrop-blur-sm ${zone==='current'?'border-[#087f5b] bg-[#dcefe5]/95':'border-[#9fcdb6] bg-[#f3f8f5]/90'}`}><div className="pointer-events-none"><p className="text-xl font-semibold text-[#08664c]">Ajouter à l’article en cours</p><p className="mt-1 text-sm text-[#5d615a]">Une autre photo du même article ({current.photos.length} déjà).</p></div></div>
+   <div onDragEnter={()=>setZone('new')} onDragOver={e=>{e.preventDefault();setZone('new')}} onDrop={dropOn('new')} className={`grid place-items-center rounded-3xl border-2 border-dashed p-6 text-center backdrop-blur-sm ${zone==='new'?'border-[#087f5b] bg-[#dcefe5]/95':'border-[#9fcdb6] bg-[#f3f8f5]/90'}`}><div className="pointer-events-none"><p className="text-xl font-semibold text-[#08664c]">Nouvel article</p><p className="mt-1 text-sm text-[#5d615a]">Un autre vêtement.</p></div></div>
+  </div>:<div className="pointer-events-none fixed inset-3 z-40 grid place-items-center rounded-3xl border-2 border-dashed border-[#087f5b] bg-[#f3f8f5]/90 text-center backdrop-blur-sm"><div><p className="text-xl font-semibold text-[#08664c]">Lâche les photos ici</p><p className="mt-1 text-sm text-[#5d615a]">Un nouvel article sera créé avec ces photos.</p></div></div>)}
 
   <header className="flex flex-wrap items-end justify-between gap-4">
    <div className="min-w-0"><button className={quiet} disabled={working} onClick={()=>withBusy('Enregistrement…',async()=>{await saveAll();onBack()})}>← Changer de compte</button>
@@ -481,7 +501,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
    <aside aria-label="Articles du compte" className="space-y-3 lg:sticky lg:top-24">
     <label className={`flex items-center gap-3 rounded-2xl border border-dashed px-4 py-3.5 ${busy?'border-[#e3ded6] opacity-60':'cursor-pointer border-[#9fcdb6] bg-[#f6faf7] hover:border-[#087f5b]'}`}>
      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#087f5b] text-lg text-white" aria-hidden="true">+</span>
-     <span className="min-w-0"><span className="block text-sm font-semibold text-[#08664c]">Ajouter des articles</span><span className="block text-xs text-[#79756f]">Glisse les photos n’importe où sur la page</span></span>
+     <span className="min-w-0"><span className="block text-sm font-semibold text-[#08664c]">Ajouter des articles</span><span className="block text-xs text-[#79756f]">Glisse ou colle (Ctrl+V) tes photos</span></span>
      <input type="file" multiple accept="image/jpeg,image/png,image/webp" disabled={!!busy} aria-label="Ajouter les photos d’un ou plusieurs articles" className="sr-only" onChange={e=>{const files=Array.from(e.target.files||[]);e.target.value='';drop(files)}}/>
     </label>
     {dropped&&<div role="group" aria-label="Regrouper les photos" className="space-y-2 rounded-2xl border border-[#cfe6da] bg-white p-3.5"><p className="text-sm font-medium">{dropped.length} photos sélectionnées. Ce sont :</p>
@@ -496,7 +516,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
     {loading?<p role="status" className="px-2 py-6 text-sm text-[#79756f]">Chargement de la session…</p>:<ul className="max-h-[22rem] space-y-1 overflow-y-auto pr-1 lg:max-h-[calc(100vh-22rem)]">{visible.map(([c,s])=>queueItem(c,s))}{!visible.length&&<li className="px-2 py-6 text-sm text-[#79756f]">{rows.length?'Aucun article à cette étape.':'Aucun article pour l’instant.'}</li>}</ul>}
    </aside>
 
-   <div className="min-w-0">{loading?null:current?detail(current):<div className="grid min-h-[22rem] place-items-center rounded-3xl border border-dashed border-[#d6d0c6] bg-[#fffefa] p-8 text-center"><div className="max-w-sm"><p className="text-lg font-semibold">Aucun article en cours sur ce compte</p><p className="mt-2 text-sm text-[#79756f]">Glisse les photos de tes articles sur la page, ou clique sur « Ajouter des articles ». Indique le SKU, la taille et le prix de chaque article : l’IA rédige aussitôt, pendant que tu passes au suivant.</p></div></div>}</div>
+   <div className="min-w-0">{loading?null:current?detail(current):<div className="grid min-h-[22rem] place-items-center rounded-3xl border border-dashed border-[#d6d0c6] bg-[#fffefa] p-8 text-center"><div className="max-w-sm"><p className="text-lg font-semibold">Aucun article en cours sur ce compte</p><p className="mt-2 text-sm text-[#79756f]">Glisse les photos de tes articles sur la page, colle-les avec Ctrl+V, ou clique sur « Ajouter des articles ». Une photo glissée sur un article déjà ouvert s’ajoute à cet article. Indique le SKU, la taille et le prix de chaque article : l’IA rédige aussitôt, pendant que tu passes au suivant.</p></div></div>}</div>
   </div>
 
   {showSettings&&settings&&<div className="fixed inset-0 z-50 flex justify-end bg-[#323630]/25" onClick={e=>{if(e.target===e.currentTarget)setShowSettings(false)}}><div role="dialog" aria-modal="true" aria-label="Réglages des annonces" className="h-full w-full max-w-xl overflow-y-auto bg-[#faf8f5] p-3 sm:p-5 shadow-2xl"><ListingSettingsPanel key={JSON.stringify(settings)} settings={settings} account={account} request={request} serverDotb={serverDotb} aiModels={meta.ai_models} onClose={()=>setShowSettings(false)} onSaved={value=>{settingsRef.current=value;setSettings(value);setDotb(serverDotb&&value.effective.dotb===true);setShowSettings(false);setNotice('Réglages enregistrés. Ils s’appliquent aux prochains articles rédigés.')}}/></div></div>}
