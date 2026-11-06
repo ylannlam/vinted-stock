@@ -97,11 +97,13 @@ test('titles follow Vinted limits and the team footer is kept whole',()=>{
  assert.equal(composeListingDescription(' Robe noire. ',''),'Robe noire.')
 })
 
-test('the writing rules ask for keyword titles and follow the presets',()=>{
+test('the writing rules carry the SEO prompt and follow the presets',()=>{
  const rules=listingInstructions(DEFAULT_LISTING_SETTINGS)
- assert.match(rules,/60 à 100 caractères/);assert.match(rules,/termine par « taille »/);assert.match(rules,/Mots-clés :/)
- const plain=listingInstructions({...DEFAULT_LISTING_SETTINGS,size_in_title:false,keywords_line:false,title_rules:'Toujours écrire femme après le type.'})
- assert.doesNotMatch(plain,/termine par « taille »/);assert.doesNotMatch(plain,/Mots-clés :/);assert.match(plain,/Toujours écrire femme/)
+ assert.match(rules,/100 caractères maximum/);assert.match(rules,/termine par « taille »/)
+ assert.match(rules,/Laissez vous envouter par l allure/);assert.match(rules,/exactement deux paragraphes/);assert.match(rules,/exactement 16 hashtags/)
+ assert.match(rules,/Taille : X \| État : Très bon état \| Mesures : sur demande/)
+ const plain=listingInstructions({...DEFAULT_LISTING_SETTINGS,size_in_title:false,condition:'Bon état',title_rules:'Toujours écrire femme après le type.'})
+ assert.doesNotMatch(plain,/termine par « taille »/);assert.match(plain,/État : Bon état \|/);assert.match(plain,/Toujours écrire femme/)
 })
 
 test('the writer sends sold titles as data, uses the chosen model, never the SKU, and appends the footer',async()=>{

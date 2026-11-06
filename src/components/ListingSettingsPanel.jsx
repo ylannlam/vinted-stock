@@ -55,7 +55,6 @@ export default function ListingSettingsPanel({settings,account,request,serverDot
    <div className="sm:col-span-2 space-y-3">
     <Check label="Mettre « Sans marque » automatiquement" checked={form.no_brand} onChange={v=>change({no_brand:v})}/>
     <Check label="Terminer le titre par « taille … »" hint="Comme tes titres qui vendent : « … princesse cérémonie taille S »." checked={form.size_in_title} onChange={v=>change({size_in_title:v})}/>
-    <Check label="Ajouter une ligne « Mots-clés » en fin de description" hint="Des recherches proches (robe de soirée, robe de cérémonie…) pour être trouvée plus souvent." checked={form.keywords_line} onChange={v=>change({keywords_line:v})}/>
    </div>
    <label className="text-sm font-medium sm:col-span-2">Consignes en plus pour le titre · facultatif<textarea className={input+' mt-1.5 min-h-16'} maxLength={600} value={form.title_rules} placeholder="Ex. toujours écrire « femme » juste après le type d’article" onChange={e=>change({title_rules:e.target.value})}/></label>
    <label className="text-sm font-medium sm:col-span-2">Texte ajouté à la fin de chaque description · facultatif<textarea className={input+' mt-1.5 min-h-20'} maxLength={600} value={form.description_footer} placeholder="Ex. Envoi soigné sous 48 h. N’hésite pas à regarder mes autres articles !" onChange={e=>change({description_footer:e.target.value})}/><span className="block text-xs font-normal text-slate-500 mt-1">Ajouté tel quel, sans modification par l’IA.</span></label>

@@ -152,6 +152,17 @@ test('an unknown listing SKU is searched by the PC once, and a failed search is 
   assert.equal((await lookupListingSku(noLibrary,{id:uuid(9)},{sku:'szNEW1234567',queue:'auto'})).status,'unavailable')
 })
 
+test('measures go right after the size line of the SEO bio, before the hashtags',async()=>{
+  const {withMeasures}=await import('../src/lib/library.js')
+  const facts={size:'S',measures:[{name:'Tour de poitrine',value:'88 cm'}]}
+  const bio='Laissez vous envouter par l allure de cette robe.\n\nMatière aspect satin.\n\nTaille : S | État : Très bon état | Mesures : sur demande\n#robe #satin #noir'
+  const out=withMeasures(bio,facts)
+  assert.match(out,/Taille : S \| État : Très bon état \| Mesures : voir ci-dessous\nMesures \(taille S\) :\n– Tour de poitrine : 88 cm\n\n#robe/)
+  assert.equal(withMeasures(bio,null),bio,'no measures: the line stays « sur demande »')
+  const noLine='Texte.\n#a #b #c #d #e'
+  assert.match(withMeasures(noLine,facts),/– Tour de poitrine : 88 cm\n\n#a #b/)
+})
+
 test('the AI receives the Shein characteristics and the size measurements are appended to its text',async()=>{
   const {generateListingText}=await import('./listing-studio-core.js')
   let sent

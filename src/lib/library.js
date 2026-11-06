@@ -115,11 +115,18 @@ export function measuresBlock(facts) {
   if(!facts?.measures?.length)return ''
   return [`Mesures${facts.size?` (taille ${facts.size})`:''} :`,...facts.measures.map(m=>`– ${m.name} : ${m.value}`)].join('\n')
 }
-// Le bloc des mesures se place avant la ligne « Mots-clés » si elle existe.
+// Le bloc des mesures se place juste après la ligne « Taille | État | Mesures » (dont « sur demande » devient « voir ci-dessous »),
+// sinon avant la ligne « Mots-clés » ou les hashtags, sinon à la fin.
 export function withMeasures(description,facts) {
   const block=measuresBlock(facts),text=String(description||'').trim()
   if(!block)return text
-  const lines=text.split('\n'),at=lines.findIndex(l=>/^mots-cl[ée]s\s*:/i.test(l.trim()))
+  const lines=text.split('\n'),onRequest=/mesures\s*:\s*sur demande/i
+  const line=lines.findIndex(l=>onRequest.test(l))
+  if(line>=0){
+    lines[line]=lines[line].replace(onRequest,'Mesures : voir ci-dessous')
+    return [...lines.slice(0,line+1),block,'',...lines.slice(line+1)].join('\n').replace(/\n{3,}/g,'\n\n')
+  }
+  const at=lines.findIndex(l=>/^mots-cl[ée]s\s*:/i.test(l.trim())||/^#\S+(\s+#\S+){3,}\s*$/.test(l.trim()))
   if(at<0)return `${text}\n\n${block}`
   return [...lines.slice(0,at),block,'',...lines.slice(at)].join('\n').replace(/\n{3,}/g,'\n\n')
 }
