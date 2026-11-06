@@ -14,6 +14,16 @@ for (const [i,title,color] of [[0,'Body à manches longues · exemple','Noir'],[
   links.push({sku:p.supplier_sku,product_id:p.id,updated_at:new Date().toISOString()})
 }
 const tracking={starts_at:'2026-10-30T23:00:00Z',time_zone:'Europe/Paris'}
+// Bibliothèque : les 3 produits ci-dessus sont vendus ; un produit ajouté par SKU et deux annonces Dotb postées.
+products.forEach(p=>{p.sold=true})
+products.push({...product,id:'11111111-1111-4111-8111-111111111115',supplier_id:'123499',supplier_sku:'sz-AJOUT-1',title:'Jupe longue vintage à motifs · exemple',color:'Marron',photo_url:previewPhotos[2][0],photos:previewPhotos[2],price:9.68,previous_price:9.14,sold:false,added_at:new Date().toISOString(),category:null,sale_price:null})
+const posted=[
+  {id:'22222222-2222-4222-8222-222222222221',sku:'sz-POSTE-1',title:'Top navettage manches larges taille XS',account_login:'lea.dressing',status:'published',price:'31',currency:'EUR',photo_url:previewPhotos[0][0],synced_at:new Date().toISOString()},
+  {id:'22222222-2222-4222-8222-222222222222',sku:'sz-POSTE-1',title:'Top navettage gris',account_login:'mia.closet',status:'pending',price:'29',currency:'EUR',photo_url:previewPhotos[0][1]||previewPhotos[0][0],synced_at:new Date().toISOString()},
+  {id:'22222222-2222-4222-8222-222222222223',sku:'sz-AJOUT-1',title:'Jupe longue vintage taille S',account_login:'lea.dressing',status:'published',price:'39',currency:'EUR',photo_url:previewPhotos[2][0],synced_at:new Date().toISOString()},
+]
+links.push({sku:'sz-AJOUT-1',product_id:'11111111-1111-4111-8111-111111111115',updated_at:new Date().toISOString()})
+let pricing={tiers:[{max:6,price:31},{max:10,price:39},{max:14,price:49},{max:18,price:64}],above:4.4},lastDotbSync=new Date(Date.now()-3600000).toISOString()
 const devices=[],jobs=Array.from({length:4},(_,i)=>({id:crypto.randomUUID(),reference_key:`sku:sz-DEMO-${i+1}`,input:`sz-DEMO-${i+1}`,expected_sku:`sz-DEMO-${i+1}`,status:['completed','completed','running','queued'][i],message:null,created_at:new Date(Date.now()-(i+1)*60000).toISOString()}))
 const connectionDemo=new URLSearchParams(location.search).get('connect-demo')
 let browserState={version:'0.7.1',connected:!connectionDemo,enabled:!connectionDemo,phase:connectionDemo?'idle':'extract',job:connectionDemo?null:jobs[2],completed:2,lastContactAt:Date.now(),message:'Récupération des photos et du lien Shein…'}
@@ -41,8 +51,13 @@ export async function collectorPreview(method='GET',body) {
 export async function catalogPreview(method='GET',body,query='') {
   if(method==='GET' && query.includes('product_id'))return {observations:structuredClone(observations),count:observations.length}
   if(method==='GET'){
-    return structuredClone({products,items,links,sales,tracking,product_count:products.length,item_count:items.length,link_count:links.length,sales_count:sales.length,connected:true,last_sync:new Date().toISOString()})
+    return structuredClone({products,items,links,sales,tracking,product_count:products.length,item_count:items.length,link_count:links.length,sales_count:sales.length,connected:true,last_sync:new Date().toISOString(),
+      library_ready:true,posted,posted_count:posted.length,pricing,dotb_sync:{last_completed_at:lastDotbSync,running:false,resumable:false}})
   }
+  if(body.action==='library-add'){const refs=collectionReferences(body.references);return {queued:refs.length,references:refs.length}}
+  if(body.action==='library-sync'){lastDotbSync=new Date().toISOString();return {done:true,pages:1,items:posted.length}}
+  if(body.action==='pricing'){pricing=body.pricing;return {saved:true,pricing}}
+  if(body.action==='product-meta'){const p=products.find(p=>p.id===body.product_id);const sale=body.sale_price===''||body.sale_price==null?null:Number(String(body.sale_price).replace(',','.'));Object.assign(p,{category:body.category||null,sale_price:sale});return {saved:true,product_id:p.id,category:p.category,sale_price:p.sale_price}}
   if(body.action==='sync')return {has_more:false,processed:1}
   if(body.action==='supplier'){
     const valid=validateSupplierAssociation(body)

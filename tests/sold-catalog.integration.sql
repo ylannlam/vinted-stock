@@ -8,7 +8,8 @@ declare
   item uuid:=gen_random_uuid(); user_id uuid; version timestamptz; job_id uuid; device uuid; product uuid; result jsonb;
 begin
   select id into user_id from public.profiles where role='admin' limit 1;
-  insert into public.catalog_dotb_items(id,sku,title,synced_at) values(gen_random_uuid(),unsold,'Never sold',now());
+  -- Annonce retirée de Dotb (plus « présente ») : ni vendue ni postée, donc hors bibliothèque.
+  insert into public.catalog_dotb_items(id,sku,title,synced_at,present) values(gen_random_uuid(),unsold,'Never sold',now(),false);
   insert into public.catalog_products(supplier_id,supplier_url,supplier_sku,title,auto_collect,next_check_at)
     values('876'||floor(random()*1000000000000)::bigint::text,'https://fr.shein.com/Unsold-p-87654321.html',unsold,'Never sold',true,now()-interval '1 hour');
   insert into public.sales_orders(id,status,currency,order_date) values(sale,'completed','EUR',now()),(unknown_sale,'payment_received','EUR',now()),(cancelled,'cancelled','EUR',now());

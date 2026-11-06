@@ -3,6 +3,7 @@ import { AppError, isId } from '../server/dotb.js'
 import { validateObservation, validateSupplierAssociation } from '../server/catalog.js'
 import { readPage } from '../server/pagination.js'
 import {readTrackingPeriod} from '../server/tracking.js'
+import {handleLibraryAction,readLibraryExtras,missingRelation} from '../server/library.js'
 
 export const config = { maxDuration: 60 }
 const check = error => { if (error) throw error }
@@ -21,15 +22,26 @@ export default async function handler(req, res) {
       }
       const offset=Number(req.query?.offset || 0)
       if (!Number.isSafeInteger(offset) || offset<0 || offset>1000000) throw new AppError('Page invalide.')
+      // Bibliothèque (vendus + postés + ajoutés). Tant que sa migration n'est pas appliquée,
+      // le catalogue des seuls articles vendus reste affiché comme avant.
+      let library=null
+      try {
+        const [products,links,extras]=await Promise.all([
+          readPage(head=>db.from('catalog_library_products').select('*',{count:'exact',head}).order('created_at',{ascending:false}).order('id'),offset),
+          readPage(head=>db.from('catalog_sku_links').select('*',{count:'exact',head}).order('sku'),offset),
+          readLibraryExtras(db,readPage,offset),
+        ])
+        library={products,links,extras}
+      } catch(e) { if(!missingRelation(e))throw e }
       const [products,items,links,sales,tracking] = await Promise.all([
-        readPage(head=>db.from('catalog_tracked_products').select('*',{count:'exact',head}).order('created_at',{ascending:false}).order('id'),offset),
+        library?library.products:readPage(head=>db.from('catalog_tracked_products').select('*',{count:'exact',head}).order('created_at',{ascending:false}).order('id'),offset),
         readPage(head=>db.from('catalog_sales_items').select('*',{count:'exact',head}).order('id'),offset),
-        readPage(head=>db.from('catalog_tracked_links').select('*',{count:'exact',head}).order('sku'),offset),
+        library?library.links:readPage(head=>db.from('catalog_tracked_links').select('*',{count:'exact',head}).order('sku'),offset),
         readPage(head=>db.from('catalog_sales_by_sku').select('*',{count:'exact',head}).order('sku').order('currency'),offset),
         readTrackingPeriod(db),
       ])
       return res.json({products:products.data,items:items.data,links:links.data,sales:sales.data,tracking,sales_count:sales.count,product_count:products.count,item_count:items.count,link_count:links.count,
-        connected:!!process.env.DOTB_API_TOKEN,sales_only:true})
+        connected:!!process.env.DOTB_API_TOKEN,sales_only:!library,library_ready:!!library,...(library?library.extras:{posted:[],posted_count:0,pricing:null,dotb_sync:null})})
     }
     if (role!=='admin') throw new AppError('Seul un administrateur peut modifier le catalogue.',403)
     const body=req.body
@@ -40,6 +52,10 @@ export default async function handler(req, res) {
       if(error?.message?.includes('link_conflict'))throw new AppError('Cette association a changé. Actualisez avant de recommencer.',409)
       if(error?.message?.includes('sku_missing'))throw new AppError('Ce SKU ne correspond à aucune vente suivie.',409)
       check(error);return res.json({saved:true,product_id:data})
+    }
+    if (req.method==='POST') {
+      try { const done=await handleLibraryAction(db,user,body); if(done!==undefined)return res.json(done) }
+      catch(e) { if(missingRelation(e))throw new AppError('La bibliothèque doit d’abord être activée dans Supabase (migration 20261106130000_library.sql).',503); throw e }
     }
     if (req.method==='POST' && body.action==='observe') {
       const {product,observation}=validateObservation(body)
