@@ -24,6 +24,7 @@ import { recordLogin } from './lib/loginLog'
 import { usePersistedState } from './lib/usePersistedState'
 import Header from './components/Header'
 import CategoryTabs from './components/CategoryTabs'
+import PublicationRunnerBadge from './components/PublicationRunnerBadge'
 import Gallery from './components/Gallery'
 import FilterBar from './components/FilterBar'
 import AddItemModal from './components/AddItemModal'
@@ -541,6 +542,7 @@ export default function App() {
       {activeTab === TAB_CATALOG && (userRole==='admin'||userRole==='stock') && <CatalogueTab isAdmin={isAdmin} onPreparePhoto={isAdmin?setPhotoArticle:undefined} onCreateListing={isAdmin?sku=>setActiveTab(TAB_LISTINGS,{sku}):undefined} />}
       {activeTab === TAB_COMPTES_VINTED && isAdmin && <VintedAccountsTab onDirections={()=>setActiveTab(TAB_RESOURCES,{section:'accounts'})} />}
       </PageBoundary></Suspense>
+      {isAdmin&&activeTab!==TAB_PUBLICATION&&<PublicationRunnerBadge onOpen={()=>setActiveTab(TAB_PUBLICATION)}/>}
 
 
       {activeTab === TAB_TOUT && (

@@ -1,11 +1,10 @@
-import {useEffect,useMemo,useRef,useState} from 'react'
+import {useEffect,useMemo,useRef,useState,useSyncExternalStore} from 'react'
 import {PLAN_DEFAULTS,planPublications,parisDate,dayLabel,timeLabel,SKU_GAP_MINUTES} from '../lib/publicationPlan'
 import {buttonClass,primaryClass,fieldClass} from './WorkspaceUI'
+import {getRunnerState,subscribeRunner,startPlanSend,resumeSend,cancelSchedules,stopRunner,dismissRunnerMessages} from '../lib/publicationRunner'
 
 const defaultRequest=(...args)=>import('../lib/api').then(m=>m.listingStudioRequest(...args))
 const STORE='vs-publication-plan'
-const sleep=ms=>new Promise(r=>setTimeout(r,ms))
-const BATCH=25
 const healthLabels={temporary:'Bloqué temporairement',restricted:'Restreint',permanent:'Bloqué définitivement',blocked:'Bloqué',review:'En vérification'}
 const unusable=a=>['permanent','blocked'].includes(a?.health?.status)
 function stored(){try{return JSON.parse(localStorage.getItem(STORE))||{}}catch{return {}}}
@@ -22,21 +21,25 @@ function Section({title,children,aside}){
 function Thumb({row}){return row.photo?<img src={row.photo} alt="" className="h-10 w-8 rounded-md object-cover bg-slate-100 shrink-0"/>:<span className="h-10 w-8 rounded-md bg-slate-100 shrink-0"/>}
 
 export default function PublicationTab({request=defaultRequest,onOpenListings,step=1800}){
- const [data,setData]=useState(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[notice,setNotice]=useState('')
+ const [data,setData]=useState(null),[loading,setLoading]=useState(true),[loadError,setLoadError]=useState('')
+ const run=useSyncExternalStore(subscribeRunner,getRunnerState)
+ const {progress,notice,failures}=run,error=loadError||run.error
  const saved=useMemo(stored,[])
  const [settings,setSettings]=useState({...PLAN_DEFAULTS,...(saved.settings||{})})
  const [excluded,setExcluded]=useState(()=>new Set(saved.excluded||[])),[onlyConnected,setOnlyConnected]=useState(!!saved.onlyConnected)
  const [plan,setPlan]=useState(null),[planError,setPlanError]=useState('')
- const [progress,setProgress]=useState(null),[failures,setFailures]=useState([]),[picked,setPicked]=useState(()=>new Set())
- const stop=useRef(false),alive=useRef(true)
- useEffect(()=>{alive.current=true;load();return()=>{alive.current=false;stop.current=true}},[])
+ const [picked,setPicked]=useState(()=>new Set())
+ const alive=useRef(true),seenRuns=useRef(run.finished)
+ useEffect(()=>{alive.current=true;load();return()=>{alive.current=false}},[])
+ // L'envoi vit hors de cet écran : quand il se termine, on relit les fiches.
+ useEffect(()=>{if(run.finished!==seenRuns.current){seenRuns.current=run.finished;setPlan(null);setPicked(new Set());load()}},[run.finished])
  useEffect(()=>{keep({settings,excluded:[...excluded],onlyConnected})},[settings,excluded,onlyConnected])
  useEffect(()=>setPlan(null),[settings,excluded,onlyConnected,data])
 
  async function load(){
-  setLoading(true);setError('')
+  setLoading(true);setLoadError('')
   try{const value=await request('GET',undefined,'action=planner');if(alive.current)setData(value)}
-  catch(e){if(alive.current)setError(e.message||'Impossible de charger la publication.')}
+  catch(e){if(alive.current)setLoadError(e.message||'Impossible de charger la publication.')}
   finally{if(alive.current)setLoading(false)}
  }
  const accounts=useMemo(()=>new Map((data?.accounts||[]).map(a=>[a.id,a])),[data])
@@ -59,74 +62,26 @@ export default function PublicationTab({request=defaultRequest,onOpenListings,st
  const occupied=(data?.occupied||[]).map(o=>({...o,at:Number(o.at)}))
 
  function calculate(){
-  setPlanError('');setFailures([])
+  setPlanError('');dismissRunnerMessages()
   try{setPlan(planPublications({drafts:eligible,occupied,settings,spacingByAccount}))}
   catch(e){setPlan(null);setPlanError(e.message)}
  }
  function set(key,value){setSettings(s=>({...s,[key]:value}))}
 
- // Pousse chaque fiche réservée vers Dotb (création, photos, programmation), une étape à la fois.
- async function drive(rows){
-  const done=[]
-  for(let i=0;i<rows.length&&!stop.current;i++){
-   let row=rows[i],waits=0
-   for(let guard=0;guard<30&&!stop.current;guard++){
-    setProgress({phase:'dotb',index:i+1,total:rows.length,title:row.title||'Annonce',message:row.message})
-    let result
-    try{result=(await request('POST',{action:'step',id:row.id})).draft}
-    catch(e){done.push({...row,error:e.message});break}
-    row={...row,state:result.state,message:result.message,last_error:result.last_error,version:result.version}
-    if(result.state!=='preparing'){if(result.state==='attention')done.push({...row,error:result.message});break}
-    if(result.last_error){
-     if(/Limite Dotb/i.test(result.last_error)&&waits<3){waits++;setProgress(p=>({...p,message:'Limite Dotb atteinte : pause de 30 secondes…'}));await sleep(30000);continue}
-     done.push({...row,error:result.last_error});break
-    }
-    await sleep(step)
-   }
-  }
-  return done
- }
- async function send(){
+ function send(){
   if(!plan?.items.length)return
   const label=settings.mode==='draft'?'brouillons Vinted':'annonces'
-  if(!window.confirm(`Programmer ${plan.items.length} ${label} du ${dayLabel(plan.items[0].date)} au ${dayLabel(plan.items.at(-1).date)} ?`))return
-  stop.current=false;setError('');setNotice('');setFailures([])
-  const reserved=[],refused=[]
-  try{
-   for(let i=0;i<plan.items.length&&!stop.current;i+=BATCH){
-    const batch=plan.items.slice(i,i+BATCH)
-    setProgress({phase:'reserve',index:Math.min(i+BATCH,plan.items.length),total:plan.items.length})
-    const {results}=await request('POST',{action:'plan',mode:settings.mode,items:batch.map(x=>({id:x.id,version:x.version,at:new Date(x.at).toISOString()}))})
-    for(const r of results){const item=batch.find(x=>x.id===r.id);if(r.ok)reserved.push({...item,state:r.state,message:r.message,version:r.version});else refused.push({...item,error:r.error})}
-   }
-   const stuck=await drive(reserved)
-   const all=[...refused,...stuck]
-   setFailures(all)
-   const ok=reserved.length-stuck.length
-   setNotice(stop.current?`Envoi arrêté. ${ok} annonce${ok>1?'s':''} programmée${ok>1?'s':''} ; les autres attendent dans « En cours d’envoi ».`:`${ok} annonce${ok>1?'s':''} programmée${ok>1?'s':''} chez Dotb.${all.length?` ${all.length} à revoir ci-dessous.`:''}`)
-  }catch(e){setError(e.message||'L’envoi a été interrompu. Ce qui est déjà réservé reste dans « En cours d’envoi ».')}
-  finally{if(alive.current){setProgress(null);setPlan(null);load()}}
+  if(!window.confirm(`Programmer ${plan.items.length} ${label} du ${dayLabel(plan.items[0].date)} au ${dayLabel(plan.items.at(-1).date)} ?\n\nL’envoi continue même si tu changes d’onglet. Garde simplement le site ouvert jusqu’à la fin.`))return
+  setLoadError('');startPlanSend({request,items:plan.items,mode:settings.mode,step})
  }
- async function resume(){
-  stop.current=false;setError('');setNotice('')
-  try{const stuck=await drive((data?.queue||[]).filter(r=>r.state==='preparing'));setFailures(stuck);setNotice(stuck.length?`${stuck.length} annonce${stuck.length>1?'s':''} attendent encore : lis le message de chacune.`:'Envoi terminé.')}
-  finally{if(alive.current){setProgress(null);load()}}
- }
- async function cancelPicked(){
+ function resume(){setLoadError('');resumeSend({request,rows:(data?.queue||[]).filter(r=>r.state==='preparing'),step})}
+ function cancelPicked(){
   const rows=(data?.scheduled||[]).filter(r=>picked.has(r.id))
   if(!rows.length||!window.confirm(`Annuler ${rows.length} programmation${rows.length>1?'s':''} ? Les fiches redeviennent prêtes à planifier.`))return
-  stop.current=false;setError('');setNotice('')
-  const errors=[]
-  for(let i=0;i<rows.length&&!stop.current;i++){
-   setProgress({phase:'cancel',index:i+1,total:rows.length,title:rows[i].title})
-   try{await request('POST',{action:'unschedule',id:rows[i].id,version:rows[i].version})}catch(e){errors.push({...rows[i],error:e.message})}
-   await sleep(1100)
-  }
-  setFailures(errors);setPicked(new Set());setNotice(`${rows.length-errors.length} programmation${rows.length-errors.length>1?'s':''} annulée${rows.length-errors.length>1?'s':''}.`)
-  setProgress(null);load()
+  setLoadError('');cancelSchedules({request,rows})
  }
 
- const busy=!!progress
+ const busy=run.running
  const scheduled=data?.scheduled||[]
  const scheduledDays=[...new Set(scheduled.map(r=>parisDate(Date.parse(r.scheduled_at||r.planned_at))))]
  const preparing=(data?.queue||[]).filter(r=>r.state==='preparing')
@@ -138,7 +93,7 @@ export default function PublicationTab({request=defaultRequest,onOpenListings,st
    <button className={buttonClass} disabled={loading||busy} onClick={load}>{loading?'Chargement…':'Actualiser'}</button>
   </header>
   {error&&<p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
-  {notice&&<p role="status" className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900">{notice}</p>}
+  {notice&&<p role="status" className="flex items-start justify-between gap-3 rounded-xl border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900"><span>{notice}</span><button type="button" className="shrink-0 text-xs underline" onClick={dismissRunnerMessages}>Fermer</button></p>}
   {data&&!data.dotb_publish_enabled&&<p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">L’envoi par Dotb est coupé sur le serveur : tu peux préparer le planning, mais pas l’envoyer.</p>}
   {loading&&!data?<p role="status" className="py-16 text-center text-slate-500">Lecture de tes fiches et de tes comptes…</p>:data&&<>
    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -177,6 +132,7 @@ export default function PublicationTab({request=defaultRequest,onOpenListings,st
      <div className="block">Heures de publication<div className="mt-1 flex items-center gap-2"><input type="time" aria-label="Début" className={fieldClass} value={settings.from} onChange={e=>set('from',e.target.value)}/><span className="text-slate-400">à</span><input type="time" aria-label="Fin" className={fieldClass} value={settings.to} onChange={e=>set('to',e.target.value)}/></div></div>
      <label className="block">Sur combien de jours<input type="number" min="1" max="30" className={`${fieldClass} mt-1`} value={settings.days} onChange={e=>set('days',e.target.value)}/></label>
      <label className="block">À partir de<select className={`${fieldClass} mt-1`} value={settings.start} onChange={e=>set('start',e.target.value)}><option value="today">Aujourd’hui</option><option value="tomorrow">Demain</option></select></label>
+     <label className="block">Première annonce dans (min)<input type="number" min="5" max="720" className={`${fieldClass} mt-1 disabled:opacity-50`} value={settings.firstIn} disabled={settings.start==='tomorrow'} onChange={e=>set('firstIn',e.target.value)}/><span className="mt-1 block text-xs text-slate-500">{settings.start==='tomorrow'?'Demain, la première part au début de la plage horaire.':'Délai entre ton clic sur « Calculer » et la première publication (5 min minimum).'}</span></label>
     </div>
     <p className="text-xs text-slate-500">L’écart réglé sur un compte dans Annonces s’applique s’il est plus grand. Les annonces déjà prévues comptent dans le total du jour.</p>
    </Section>
@@ -193,7 +149,7 @@ export default function PublicationTab({request=defaultRequest,onOpenListings,st
     </>}
     {progress&&<div className="space-y-2" role="status"><div className="h-2 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-teal-600 transition-all" style={{width:`${Math.round(progress.index/progress.total*100)}%`}}/></div>
      <p className="text-sm text-slate-600">{progress.phase==='reserve'?`Réservation des créneaux… ${progress.index}/${progress.total}`:progress.phase==='cancel'?`Annulation ${progress.index}/${progress.total} : ${progress.title}`:`Envoi à Dotb ${progress.index}/${progress.total} : ${progress.title}${progress.message?` · ${progress.message}`:''}`}</p>
-     <button className={buttonClass} onClick={()=>{stop.current=true}}>Arrêter après l’étape en cours</button></div>}
+     <button className={buttonClass} onClick={stopRunner}>Arrêter après l’étape en cours</button></div>}
     <div className="flex flex-wrap gap-2">
      <button className={primaryClass} disabled={busy||!eligible.length} onClick={calculate}>Calculer le planning</button>
      <button className={buttonClass} disabled={busy||!plan?.items.length||!!plan?.conflicts.length||!data.dotb_publish_enabled} onClick={send}>Programmer {plan?.items.length||''} annonce{plan?.items.length>1?'s':''} chez Dotb</button>

@@ -3,7 +3,7 @@
 // et revérifie les règles (écart du compte, même SKU à 30 minutes) au moment de l'envoi.
 
 export const SKU_GAP_MINUTES = 30
-export const PLAN_DEFAULTS = {perDay: 4, from: '10:00', to: '22:00', days: 7, start: 'today', spacing: 35, mode: 'live'}
+export const PLAN_DEFAULTS = {perDay: 4, from: '10:00', to: '22:00', days: 7, start: 'today', spacing: 35, mode: 'live', firstIn: 15}
 const MINUTE = 60000, DAY = 86400000
 
 const partsFormat = new Intl.DateTimeFormat('en-US', {timeZone: 'Europe/Paris', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'})
@@ -47,14 +47,15 @@ export function validatePlanSettings(raw) {
   const s = {...PLAN_DEFAULTS, ...(raw || {})}
   const from = clockMinutes(s.from), to = clockMinutes(s.to)
   const int = (v, min, max) => Number.isInteger(Number(v)) && Number(v) >= min && Number(v) <= max ? Number(v) : null
-  const perDay = int(s.perDay, 1, 60), days = int(s.days, 1, 30), spacing = int(s.spacing, 5, 720)
+  const perDay = int(s.perDay, 1, 60), days = int(s.days, 1, 30), spacing = int(s.spacing, 5, 720), firstIn = int(s.firstIn, 5, 720)
   if (perDay == null) throw new Error('Choisis entre 1 et 60 articles par jour et par compte.')
   if (days == null) throw new Error('Planifie sur 1 à 30 jours.')
   if (spacing == null) throw new Error('L’écart entre deux articles d’un même compte va de 5 à 720 minutes.')
+  if (firstIn == null) throw new Error('La première annonce part dans 5 à 720 minutes (12 heures).')
   if (from == null || to == null || to - from < 30) throw new Error('La plage horaire doit durer au moins 30 minutes, dans la même journée.')
   if (!['today', 'tomorrow'].includes(s.start)) throw new Error('Choisis de commencer aujourd’hui ou demain.')
   if (!['live', 'draft'].includes(s.mode)) throw new Error('Choisis « en ligne » ou « brouillon Vinted ».')
-  return {perDay, days, spacing, from, to, start: s.start, mode: s.mode}
+  return {perDay, days, spacing, from, to, start: s.start, mode: s.mode, firstIn}
 }
 
 // Petit décalage stable (0…max minutes) pour éviter des heures trop rondes et identiques d'un compte à l'autre.
@@ -86,8 +87,8 @@ export function planPublications({drafts, occupied = [], settings, now = Date.no
   const items = []
   for (const date of days) {
     const end = parisToUtc(date, s.to)
-    // Aujourd'hui : on commence au plus tôt dans un quart d'heure.
-    const start = Math.max(parisToUtc(date, s.from), Math.ceil((now + 15 * MINUTE) / (5 * MINUTE)) * 5 * MINUTE)
+    // Aujourd'hui : la première annonce part au plus tôt après le délai choisi (« première annonce dans »).
+    const start = Math.max(parisToUtc(date, s.from), Math.ceil((now + s.firstIn * MINUTE) / (5 * MINUTE)) * 5 * MINUTE)
     if (end - start < 0) continue
     const span = end - start
     const dayStart = parisToUtc(date, 0), dayEnd = parisToUtc(addDays(date, 1), 0)
@@ -115,7 +116,7 @@ export function planPublications({drafts, occupied = [], settings, now = Date.no
       // Un créneau occupé (même compte trop proche, ou même SKU à moins de 30 min) glisse de 5 en 5 minutes.
       for (let delay = 0; delay <= slot.slack; delay += 5 * MINUTE) {
         const at = slot.at + delay
-        if (at < now + 10 * MINUTE) continue
+        if (at < now + s.firstIn * MINUTE) continue
         if (taken.some(t => t.account_id === slot.account && Math.abs(t.at - at) < slot.spacing)) continue
         const index = queue.findIndex(d => {
           const key = skuKey(d.sku)

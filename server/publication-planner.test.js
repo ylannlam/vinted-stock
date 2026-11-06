@@ -122,3 +122,16 @@ test('best sellers group sales by SKU over the chosen period', () => {
   assert.equal(recent[0].title,'Robe Shein')
   assert.deepEqual(bestSellers({items,products},{days:null,now}).map(r=>r.sku),['A','B'])
 })
+
+test('the first listing leaves after the chosen delay, and never earlier',()=>{
+  const list=drafts('a',3)
+  const base={perDay:4,from:'09:00',to:'22:00',days:1,start:'today',spacing:30}
+  const soon=planPublications({drafts:list,settings:{...base,firstIn:5},now})
+  const late=planPublications({drafts:list,settings:{...base,firstIn:120},now})
+  assert.ok(soon.items[0].at>=now+5*MIN&&soon.items[0].at<now+30*MIN,'5 minutes: right away')
+  assert.ok(late.items[0].at>=now+120*MIN,'120 minutes: not before two hours')
+  assert.ok(late.items[0].at<now+150*MIN,'and not much later either')
+  assert.equal(validatePlanSettings({}).firstIn,15,'default delay')
+  assert.throws(()=>validatePlanSettings({firstIn:2}),/5 à 720/)
+  assert.throws(()=>validatePlanSettings({firstIn:'abc'}),/5 à 720/)
+})
