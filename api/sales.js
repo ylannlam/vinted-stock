@@ -49,6 +49,7 @@ export default async function handler(req, res) {
       if(req.query?.view==='daily_cart')return res.json(await readDailyPurchases(db,req.query))
       if(req.query?.view==='shein_orders')return res.json(await readSheinOrders(db,req.query))
       if(req.query?.view==='parcels')return res.json(await readParcelBoard(db))
+      if(req.query?.view==='reception'){const {readReception}=await import('../server/reception.js');return res.json(await readReception(db))}
       if(req.query?.view==='shipments')return res.json(await readShipments(db,req.query))
       if(req.query?.view==='detail'){
         const id=req.query.id
@@ -140,6 +141,10 @@ export default async function handler(req, res) {
       if(!isId(body.id)||typeof body.line!=='string'||body.line.length>80||!Number.isFinite(Date.parse(body.updated_at)))throw new AppError('Association invalide.')
       const {error}=await db.rpc('unlink_supplier_shipment',{p_id:body.id,p_line:body.line,p_version:body.updated_at,p_user:user.id});fail(error)
       return res.json({saved:true})
+    }
+    if(body.action==='receive'||body.action==='pack'){
+      const {receiveLine,packOrder}=await import('../server/reception.js')
+      return res.json(body.action==='receive'?await receiveLine(db,user.id,body):await packOrder(db,user.id,body))
     }
     if(body.action==='batch'){
       const batch=batchValues(body)

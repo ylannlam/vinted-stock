@@ -13,6 +13,7 @@ import CollectionManager from './CollectionManager'
 import {useDotbCosts} from '../lib/useDotbCosts'
 import ParcelBoard from './ParcelBoard'
 const SheinOrders=lazy(()=>import('./SheinOrders'))
+const ReceptionDesk=lazy(()=>import('./ReceptionDesk'))
 const DailyPurchaseCart=lazy(()=>import('./DailyPurchaseCart'))
 const defaultRequest = (...args) => import('../lib/api').then(m => m.salesRequest(...args))
 import { STAGES, skuOf, photoOf, blocked, nextStage } from '../lib/fulfillment'
@@ -28,8 +29,8 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
   const [editing, setEditing] = useState(null)
   const [labelLine,setLabelLine]=useState(null)
-  const [view,setView]=useState(['cart','orders','shipments'].includes(initialFilters.view)?initialFilters.view:'sales'),[parcelLines,setParcelLines]=useState(null)
-  const showShipments=view==='shipments',showOrders=view==='orders',showCart=view==='cart',setShowShipments=value=>setView(value?'shipments':'sales')
+  const [view,setView]=useState(['cart','orders','shipments','reception'].includes(initialFilters.view)?initialFilters.view:'sales'),[parcelLines,setParcelLines]=useState(null)
+  const showShipments=view==='shipments',showOrders=view==='orders',showCart=view==='cart',showReception=view==='reception',setShowShipments=value=>setView(value?'shipments':'sales')
   const [detailCatalog,setDetailCatalog]=useState([]),[detailNotice,setDetailNotice]=useState('')
   const [skuEditing, setSkuEditing] = useState(null)
   const [purchaseLine,setPurchaseLine]=useState(null),[purchaseReference,setPurchaseReference]=useState('')
@@ -48,10 +49,10 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
   async function run(fn) { if(mutation.current)return;mutation.current=true;setBusy(true);setError('');try{await fn()}catch(e){setError(e.message)}finally{mutation.current=false;setBusy(false)} }
   useEffect(()=>{let active=true;revision.current=null;setSelected([]);setBusy(true);load(true).catch(e=>{if(active)setError(e.message)}).finally(()=>{if(active)setBusy(false)});return()=>{active=false;sequence.current++}},[filterKey])
   useEffect(()=>{
-    if(busy||editing||labelLine||skuEditing||batch||purchaseLine||parcelLines||showShipments||showOrders||showCart||selected.length)return
+    if(busy||editing||labelLine||skuEditing||batch||purchaseLine||parcelLines||showShipments||showOrders||showCart||showReception||selected.length)return
     const timer=setInterval(()=>{if(document.visibilityState==='visible')load().catch(e=>setError(e.message))},15000)
     return ()=>clearInterval(timer)
-  },[busy,editing,labelLine,skuEditing,batch,purchaseLine,parcelLines,showShipments,showOrders,showCart,selected.length,filterKey])
+  },[busy,editing,labelLine,skuEditing,batch,purchaseLine,parcelLines,showShipments,showOrders,showCart,showReception,selected.length,filterKey])
   // Enrich after the sales have rendered. One bounded background request, with
   // a server lease shared by tabs, keeps Dotb latency out of the list loading.
   const photoIds=JSON.stringify(data.lines.filter(l=>!l.listing_photo_url).map(l=>l.id))
@@ -171,8 +172,8 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
     {isAdmin&&dotbCosts.message&&<p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Prix d’achat vers Dotb : {dotbCosts.message}{dotbCosts.pending?` (${dotbCosts.pending} en attente)`:''}</p>}
     {notice&&<p role="status" className="rounded-xl bg-teal-50 px-4 py-3 text-sm text-teal-800">{notice}</p>}
     {data.setup_required?<p className="bg-amber-50 p-3 rounded-lg text-sm">Le suivi doit être activé avant le premier import.</p>:data.connected===false&&<p className="bg-amber-50 p-3 rounded-lg text-sm">La connexion Dotb n’est pas encore activée. Les ventes déjà importées restent consultables.</p>}
-    <nav aria-label="Ventes, colis, commandes ou panier" className="workspace-view-tabs">{tab('sales','Ventes',view==='sales',()=>setShowShipments(false))}{tab('parcels','Colis',showShipments,()=>setShowShipments(true))}{tab('orders','Commandes Shein',showOrders,()=>setView('orders'))}{tab('cart','Panier du jour',showCart,()=>setView('cart'))}</nav>
-    {showCart?<Suspense fallback={<p className="text-sm text-slate-500">Préparation du panier…</p>}><DailyPurchaseCart request={request} collectorRequest={collectorRequest} bridge={collectorBridge} isAdmin={isAdmin} onOpenSale={id=>run(()=>openDetail(id))} onOrders={()=>setView('orders')} onChanged={()=>load(true)}/></Suspense>:showOrders?<Suspense fallback={<p className="text-sm text-slate-500">Chargement des commandes…</p>}><SheinOrders request={request} bridge={collectorBridge} isAdmin={isAdmin} onOpenSale={id=>run(()=>openDetail(id))} onChanged={()=>load(true)}/></Suspense>:showShipments?<ParcelBoard request={request} onOpenSale={id=>run(()=>openDetail(id))}><details className="rounded-2xl border bg-white p-4"><summary className="cursor-pointer text-sm font-semibold text-slate-700">Colis ajoutés à la main</summary><div className="mt-4"><SupplierShipments request={request} onOpenSale={id=>run(()=>openDetail(id))} onChanged={()=>load(true)}/></div></details></ParcelBoard>:<>
+    <nav aria-label="Ventes, colis, commandes ou panier" className="workspace-view-tabs">{tab('sales','Ventes',view==='sales',()=>setShowShipments(false))}{tab('reception','Réception du jour',showReception,()=>setView('reception'))}{tab('parcels','Colis',showShipments,()=>setShowShipments(true))}{tab('orders','Commandes Shein',showOrders,()=>setView('orders'))}{tab('cart','Panier du jour',showCart,()=>setView('cart'))}</nav>
+    {showReception?<Suspense fallback={<p className="text-sm text-slate-500">Chargement de la réception…</p>}><ReceptionDesk request={request} onOpenSale={id=>run(()=>openDetail(id))}/></Suspense>:showCart?<Suspense fallback={<p className="text-sm text-slate-500">Préparation du panier…</p>}><DailyPurchaseCart request={request} collectorRequest={collectorRequest} bridge={collectorBridge} isAdmin={isAdmin} onOpenSale={id=>run(()=>openDetail(id))} onOrders={()=>setView('orders')} onChanged={()=>load(true)}/></Suspense>:showOrders?<Suspense fallback={<p className="text-sm text-slate-500">Chargement des commandes…</p>}><SheinOrders request={request} bridge={collectorBridge} isAdmin={isAdmin} onOpenSale={id=>run(()=>openDetail(id))} onChanged={()=>load(true)}/></Suspense>:showShipments?<ParcelBoard request={request} onOpenSale={id=>run(()=>openDetail(id))}><details className="rounded-2xl border bg-white p-4"><summary className="cursor-pointer text-sm font-semibold text-slate-700">Colis ajoutés à la main</summary><div className="mt-4"><SupplierShipments request={request} onOpenSale={id=>run(()=>openDetail(id))} onChanged={()=>load(true)}/></div></details></ParcelBoard>:<>
     <section aria-label="Liste des ventes" className="space-y-4">
       <IncompleteOrders initial={data.incomplete} request={request} busy={busy} onSync={isAdmin&&data.connected?()=>run(sync):undefined}/>
       <div className="workspace-filter-pills">

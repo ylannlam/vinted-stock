@@ -50,6 +50,10 @@ const lines = ['to_order','ordered','in_transit','received','prepared','shipped'
   supplier_order_ref:i?'DEMO-COMMANDE-01':null,
   order:{id:`vente-${i}`,account_login:`Compte démo ${i%2+1}`,currency:'EUR',status:'label_sent',deadline:new Date(Date.now()+(i+1)*86400000).toISOString()},
 }))
+// Démo réception : le même article vendu deux fois et un lot de deux articles.
+for(const [n,sku,size,order,days,title] of [[6,'DEMO-101-M','S','vente-6',2,'Robe à épaules dénudées'],[7,'DEMO-104-M','M','vente-lot',4,'Body noir'],[8,'DEMO-105-M','S','vente-lot',4,'Robe de soirée']])lines.push({id:`demo-${n}`,updated_at:new Date().toISOString(),stage:'in_transit',sale_date:new Date(Date.now()-n*3600000).toISOString(),listing_photo_url:previewPhotos[n%3][0],
+  source:{title,thumbnail_url:previewPhotos[n%3][0],sku,selling_price:'29.90',supplier_link:'https://fr.shein.com/'},supplier_size:size,supplier_size_manual:false,supplier_order_ref:'DEMO-COMMANDE-02',
+  order:{id:order,account_login:`Compte démo ${n%2+1}`,currency:'EUR',status:'label_sent',deadline:new Date(Date.now()+days*86400000).toISOString()}})
 const parcels=[]
 // Suivi Shein de démonstration : un colis en livraison aujourd'hui, un autre en route.
 const demoEvents=(steps)=>steps.map(([h,place,text])=>({at:new Date(Date.now()-h*3600000).toISOString(),place,text}))
@@ -76,11 +80,14 @@ async function previewWorkspace(view='overview',query={},body){
 async function request(method='GET',body,query='') {
   if(body?.action==='refresh_photos')return {updated:false}
   if(body?.action==='shein_review')return sheinOrdersPreview(lines,body)
+  if(body?.action==='receive'){const l=lines.find(x=>x.id===body.id);l.stage='received';l.location=body.location||null;l.updated_at=new Date().toISOString();return {received:true}}
+  if(body?.action==='pack'){for(const l of lines.filter(x=>x.order.id===body.order_id)){l.stage='prepared';l.location=null}return {packed:true,dotb_packed:false}}
   if(method==='POST'&&body?.action==='shipping_label')return (await import('./lib/shippingLabelPreview')).shippingLabelPreview()
   if(method==='GET'){
     const q=new URLSearchParams(query.replace(/^\?/,''));let filtered=structuredClone(lines).sort(newestSalesFirst)
     if(q.get('view')==='daily_cart')return dailyCartPreview(lines,catalog,q.get('day'),q.get('include_earlier')==='true')
     if(q.get('view')==='shein_orders')return sheinOrdersPreview(lines)
+    if(q.get('view')==='reception')return {lines:structuredClone(lines.map(l=>({...l,effective_stage:l.stage,order_id:l.order.id,resolved_sku:skuOf(l),account_login:l.order.account_login,deadline_at:l.order.deadline,sale_date:l.order.order_date||l.updated_at}))),catalog:structuredClone(catalog.map(c=>({sku:c.sku,photo_url:c.photo_url})))}
     if(q.get('view')==='parcels')return {parcels:demoParcels.map((p,i)=>({...p,last_event_at:p.events[0].at,order_date:'2026-11-0'+(i+1),items:[{id:'it'+i,sku:'DEMO-10'+(i+1)+'-M',title:lines[2-i].source.title,size:i?'S':'M',color:'Noir',photo:lines[2-i].source.thumbnail_url,quantity:1,status:'shipped',sales:[{id:lines[2-i].id,account:lines[2-i].order.account_login,title:lines[2-i].source.title,stage:lines[2-i].stage}]}]})),since:'2026-09-07'}
     const shipRows=parcels.filter(p=>p.line_ids.length).map(p=>({...p,lines:p.line_ids.map(id=>{const l=lines.find(x=>x.id===id);return {id,title:l.source.title,account:l.order.account_login,size:l.supplier_size,updated_at:l.updated_at}})}))
     if(q.get('view')==='shipments')return {shipments:structuredClone(shipRows),count:shipRows.length,page:0,shein_orders:sheinOrdersPreview(lines).orders}
