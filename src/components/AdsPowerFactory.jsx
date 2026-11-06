@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react'
-import {FACTORY_GROUP,parseProxyLines,proxyUsage,creatableAccounts,proxyChoices,profileName,proxyLabel,hardwareLabel,latestFingerprints,recentChange,accountForProfile} from '../lib/adspowerFactory'
+import {FACTORY_GROUP,parseProxyLines,proxyUsage,creatableAccounts,proxyChoices,profileName,proxyLabel,hardwareLabel,latestFingerprints,recentChange,accountForProfile,unlinkedProfilesNamed} from '../lib/adspowerFactory'
 
 const secondary='rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40'
 const primary='rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-40'
@@ -17,10 +17,10 @@ export default function AdsPowerFactory({request,store,profiles,owner='preview',
   const [data,setData]=useState(null),[adsProxies,setAdsProxies]=useState([]),[adsError,setAdsError]=useState('')
   const [loading,setLoading]=useState(true),[busy,setBusy]=useState(null),[error,setError]=useState(''),[notice,setNotice]=useState('')
   const [accountId,setAccountId]=useState(saved?.accountId||''),[proxyId,setProxyId]=useState(saved?.proxyId||''),[group,setGroup]=useState(saved?.group||FACTORY_GROUP)
-  const [orphan,setOrphan]=useState(saved?.profile?saved:null),[adding,setAdding]=useState(false),[paste,setPaste]=useState(''),[confirmId,setConfirmId]=useState(null),[search,setSearch]=useState('')
+  const [orphan,setOrphan]=useState(saved?.profile?saved:null),[adding,setAdding]=useState(false),[paste,setPaste]=useState(''),[confirmId,setConfirmId]=useState(null),[search,setSearch]=useState(''),[confirmedId,setConfirmedId]=useState('')
   const alive=useRef(true),submission=useRef(saved?.requestId?saved:null)
   async function load(){
-    setLoading(true)
+    setLoading(true);setConfirmedId('')
     try{
       const [base,live]=await Promise.all([store.load(),request('/profiles/proxies').then(r=>({rows:r.profiles||[]}),e=>({error:e}))])
       if(!alive.current)return
@@ -35,6 +35,9 @@ export default function AdsPowerFactory({request,store,profiles,owner='preview',
   const usage=proxyUsage(data.proxies,data.accounts,adsProxies)
   const creatable=creatableAccounts(data.accounts),account=creatable.find(a=>a.id===accountId)||null
   const choices=proxyChoices(account,data.proxies,usage),proxy=choices.find(p=>p.id===proxyId)||choices[0]||null
+  const twins=unlinkedProfilesNamed(account,profiles,data.accounts)
+  const twinConsentKey=JSON.stringify([account?.id,account?.pseudo,twins.map(p=>[p.id,p.number]).sort()])
+  const twinBlocked=twins.length>0&&confirmedId!==twinConsentKey
   const groups=[...new Set([FACTORY_GROUP,...profiles.map(p=>p.group).filter(Boolean)])]
   const latest=latestFingerprints(data.log),shared=data.proxies.filter(p=>usage.get(p.id).state==='shared').length,free=data.proxies.filter(p=>usage.get(p.id).state==='free').length
   const parsed=parseProxyLines(paste)
@@ -53,6 +56,7 @@ export default function AdsPowerFactory({request,store,profiles,owner='preview',
   const create=()=>run('create',async()=>{
     if(loading||adsError)throw Error('Actualise les proxys AdsPower avant de créer un profil.')
     if(!account||!proxy)throw Error('Choisis un compte et un proxy libre.')
+    if(twinBlocked)throw Error(`Un profil AdsPower au nom de ${account.pseudo} existe déjà (${twins.map(p=>`#${p.number}`).join(', ')}). Relie-le au compte au lieu d’en créer un autre.`)
     if(submission.current)throw Error('Vérifie d’abord la création en attente.')
     await store.precheck(account.id,proxy.id)
     const secret=await store.secret(proxy.id)
@@ -100,11 +104,12 @@ export default function AdsPowerFactory({request,store,profiles,owner='preview',
     <section aria-labelledby="factory-create" className="px-5 py-4 space-y-3">
       <h3 id="factory-create" className="text-sm font-semibold">Créer un profil pour un compte</h3>
       <div className="grid gap-3 md:grid-cols-[1.2fr_1.5fr_1fr_auto] items-end">
-        <label className="text-xs text-slate-500">Compte Vinted<select aria-label="Compte à équiper" className={`${field} mt-1`} value={account?.id||''} onChange={e=>{setAccountId(e.target.value);setProxyId('')}}><option value="">{creatable.length?'Choisir un compte…':'Aucun compte sans profil'}</option>{creatable.map(a=><option key={a.id} value={a.id}>{a.pseudo}{a.creation_stage==='ready'?' · prêt':''}</option>)}</select></label>
+        <label className="text-xs text-slate-500">Compte Vinted<select aria-label="Compte à équiper" className={`${field} mt-1`} value={account?.id||''} onChange={e=>{setAccountId(e.target.value);setProxyId('');setConfirmedId('')}}><option value="">{creatable.length?'Choisir un compte…':'Aucun compte sans profil'}</option>{creatable.map(a=><option key={a.id} value={a.id}>{a.pseudo}{a.creation_stage==='ready'?' · prêt':''}</option>)}</select></label>
         <label className="text-xs text-slate-500">Proxy<select aria-label="Proxy du profil" className={`${field} mt-1`} disabled={!account||choices.length<2} value={proxy?.id||''} onChange={e=>setProxyId(e.target.value)}>{!proxy&&<option value="">{account?'Aucun proxy libre':'—'}</option>}{choices.map(p=><option key={p.id} value={p.id}>{proxyLabel(p)}</option>)}</select></label>
         <label className="text-xs text-slate-500">Groupe AdsPower<select aria-label="Groupe AdsPower" className={`${field} mt-1`} value={group} onChange={e=>setGroup(e.target.value)}>{groups.map(g=><option key={g}>{g}</option>)}</select></label>
-        <button className={primary} disabled={loading||!!adsError||!account||!proxy||!!busy||!!orphan||!!pending} onClick={create}>{busy==='create'?'Création…':'Créer le profil'}</button>
+        <button className={primary} disabled={loading||!!adsError||!account||!proxy||!!busy||!!orphan||!!pending||twinBlocked} onClick={create}>{busy==='create'?'Création…':'Créer le profil'}</button>
       </div>
+      {twins.length>0&&<div role="alert" className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 flex flex-wrap items-center gap-3"><span className="flex-1">Un profil AdsPower au nom de <b>{account.pseudo}</b> existe déjà sans être relié à un compte : {twins.map(p=>`#${p.number}`).join(', ')}. Ne crée pas un deuxième profil : relie-le en saisissant son numéro dans « N° AdsPower » en modifiant le compte. Il garde son proxy, ses cookies et sa session.</span><button className={secondary} disabled={loading||!!busy||!!orphan||!!pending} onClick={()=>setConfirmedId(twinBlocked?twinConsentKey:'')}>{twinBlocked?'Créer quand même un nouveau profil':'Création autorisée · annuler'}</button></div>}
       <p className="text-xs text-slate-400">{account?.proxy_id?'Ce compte garde son proxy actuel. ':''}Le profil porte le pseudo du compte, reçoit une empreinte cohérente avec ce PC et son numéro est enregistré sur le compte.</p>
     </section>
 

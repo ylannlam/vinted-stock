@@ -151,3 +151,10 @@ export function recentChange(entry,now=Date.now()){
   return Number.isFinite(at)&&now-at<RECENT_CHANGE_DAYS*86400000
 }
 export const accountForProfile=(profile,accounts)=>accounts.find(a=>!a.deleted_at&&String(a.ads_power_num||'').trim()===String(profile.number))||null
+// Profils AdsPower qui portent déjà le pseudo du compte sans être reliés à un compte :
+// il faut les relier (« N° AdsPower » du compte), pas en créer un deuxième.
+export function unlinkedProfilesNamed(account,profiles,accounts){
+  const wanted=profileName(account?.pseudo).toLocaleLowerCase('fr')
+  if(!wanted)return []
+  return profiles.filter(p=>profileName(p.name).toLocaleLowerCase('fr')===wanted&&!accountForProfile(p,accounts))
+}

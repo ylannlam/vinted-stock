@@ -4,7 +4,7 @@ import {parseHTML} from 'linkedom'
 import {build} from 'esbuild'
 import {createRequire,Module} from 'node:module'
 import {fileURLToPath} from 'node:url'
-import {parseProxyLines,proxyUsage,creatableAccounts,proxyChoices,profileName,hardwareLabel,latestFingerprints,recentChange,accountForProfile} from '../src/lib/adspowerFactory.js'
+import {parseProxyLines,proxyUsage,creatableAccounts,proxyChoices,profileName,hardwareLabel,latestFingerprints,recentChange,accountForProfile,unlinkedProfilesNamed} from '../src/lib/adspowerFactory.js'
 
 test('pasted proxies accept Decodo, Oxylabs and URL formats, with passwords containing @ or :',()=>{
   const {proxies,errors}=parseProxyLines([
@@ -97,6 +97,15 @@ test('fingerprint history shows the latest change and recent replacements',()=>{
   assert.equal(accountForProfile({number:'07'},[{id:'x',ads_power_num:'07'},{id:'y',ads_power_num:'07',deleted_at:'x'}]).id,'x')
 })
 
+test('a profile that already carries the account pseudo must be linked, not recreated',()=>{
+  const profiles=[{id:'a',number:'78',name:'lilyaapm'},{id:'b',number:'80',name:'Lilyaapm'},{id:'c',number:'77',name:'@romanec471'},{id:'d',number:'5',name:'autre'},{id:'e',number:'9',name:' '}]
+  const accounts=[{id:'1',pseudo:'lilyaapm',ads_power_num:'80'},{id:'2',pseudo:'romanec471'},{id:'3',pseudo:'corbeille',ads_power_num:'78',deleted_at:'2026-01-01'}]
+  assert.deepEqual(unlinkedProfilesNamed({pseudo:'@LilyaaPM'},profiles,accounts).map(p=>p.number),['78'],'#80 is already linked; #78 only belonged to a deleted account')
+  assert.deepEqual(unlinkedProfilesNamed({pseudo:'romanec471'},profiles,accounts).map(p=>p.number),['77'])
+  assert.deepEqual(unlinkedProfilesNamed({pseudo:'inconnu'},profiles,accounts),[])
+  assert.deepEqual(unlinkedProfilesNamed({pseudo:'  '},profiles,accounts),[]);assert.deepEqual(unlinkedProfilesNamed(null,profiles,accounts),[])
+})
+
 test('the store reads proxies without passwords and links profiles through one database call',async()=>{
   const calls=[]
   // Lists resolve to no rows; .single() returns the one proxy whose password is requested.
@@ -174,5 +183,29 @@ test('the section creates, links and replaces fingerprints, and never recreates 
     await act(async()=>button('Vérifier la création').click())
     assert.equal(calls.filter(c=>c[0]==='/profiles/create').at(-1)[2],lost,'recovery must reuse the original request id')
     assert.equal(persisted.size,0)
+    // Un profil du même nom, non relié : la création est bloquée tant qu'on ne la confirme pas.
+    profiles.push({id:'p9',number:'9',name:'Dressing_Lea',group:'Vinted'})
+    await render();await act(async()=>button('Actualiser').click());await act(async()=>select('Compte à équiper','acc'))
+    assert.match(document.body.textContent,/Un profil AdsPower au nom de dressing_lea existe déjà sans être relié à un compte : #9\. Ne crée pas un deuxième profil/)
+    assert.equal(button('Créer le profil').disabled,true,'a same-name unlinked profile blocks creation')
+    const before=calls.filter(c=>c[0]==='/profiles/create').length
+    await act(async()=>button('Créer quand même un nouveau profil').click())
+    assert.equal(button('Créer le profil').disabled,false,'the explicit confirmation unlocks creation')
+    await act(async()=>select('Compte à équiper',''));await act(async()=>select('Compte à équiper','acc'))
+    assert.equal(button('Créer le profil').disabled,true,'leaving the selected account clears the confirmation')
+    await act(async()=>button('Créer quand même un nouveau profil').click())
+    profiles.push({id:'p10',number:'10',name:'dressing_lea',group:'Vinted'})
+    await render()
+    assert.equal(button('Créer le profil').disabled,true,'new matching profiles require a new confirmation')
+    await act(async()=>button('Créer quand même un nouveau profil').click())
+    await act(async()=>button('Création autorisée · annuler').click())
+    assert.equal(button('Créer le profil').disabled,true,'cancelling the confirmation blocks creation again')
+    assert.equal(calls.filter(c=>c[0]==='/profiles/create').length,before,'nothing was created while blocked')
+    await act(async()=>button('Créer quand même un nouveau profil').click())
+    await act(async()=>button('Actualiser').click())
+    assert.equal(button('Créer le profil').disabled,true,'refreshing requires confirmation against the current state')
+    await act(async()=>button('Créer quand même un nouveau profil').click())
+    await act(async()=>button('Créer le profil').click())
+    assert.equal(calls.filter(c=>c[0]==='/profiles/create').length,before+1)
   }finally{await act(async()=>root.unmount())}
 })
