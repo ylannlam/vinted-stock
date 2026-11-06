@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {handleListingStudio,soldCatalogIds,accountManualMessage,manualRestoredMessage,listingStep} from './listing-studio.js'
-import {catalogRoots,scheduleResult,generateListingText,listingInstructions,listingFields} from './listing-studio-core.js'
+import {catalogRoots,scheduleResult,generateListingText,listingInstructions,listingFields,dressCatalogId} from './listing-studio-core.js'
 import {readListingSettings,saveListingSettings,reserveListingSlot,listingTitleExamples} from './listing-settings.js'
 import {cleanListingSettings,effectiveListingSettings,applyListingPresets,tidyListingTitle,composeListingDescription,DEFAULT_LISTING_SETTINGS} from '../src/lib/listingSettings.js'
 import {listingIssues} from '../src/lib/listingStudio.js'
@@ -314,4 +314,20 @@ test('choosing an account shows each account’s background, today’s count, ar
  const broken=await readListingPicker(db,{id:owner},{health:async()=>{throw Error('offline')}})
  assert.equal(broken.accounts[account].health,null,'health is optional');assert.equal(broken.accounts[account].today,2)
  assert.equal(broken.health_unavailable,true,'an unavailable restriction reading is explicitly reported')
+})
+
+test('every dress is filed under « Robes de bal » when voluminous and « Robes de soirée » otherwise',async()=>{
+ const catalogs=[{id:1,title:'Femmes'},{id:2,parent_id:1,title:'Vêtements'},{id:3,parent_id:2,title:'Robes'},{id:30,parent_id:3,title:'Robes longues'},{id:31,parent_id:3,title:'Robes de soirée'},{id:32,parent_id:3,title:'Robes de bal'},{id:33,parent_id:3,title:'Robes de mariée'},{id:50,title:'Hommes'},{id:51,parent_id:50,title:'Robes de soirée'}]
+ assert.equal(dressCatalogId(catalogs,{ball:true,hint:30}),32)
+ assert.equal(dressCatalogId(catalogs,{ball:false,hint:30}),31)
+ assert.equal(dressCatalogId(catalogs,{ball:false,roots:new Set([50])}),51,'the universe of the shop is respected')
+ assert.equal(dressCatalogId(catalogs.filter(c=>c.id!==32),{ball:true,hint:30}),31,'without a ball category, evening dresses')
+ assert.equal(dressCatalogId(catalogs.filter(c=>![31,32,51].includes(c.id)),{ball:true,hint:30}),null,'nothing to choose: the AI choice is kept')
+ const answer=extra=>async()=>({ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({title:'Robe longue noire tulle bustier taille M',description:'Laissez vous envouter par l allure de cette robe.',catalog_id:30,color_ids:[],review_notes:'',...extra})}}]})})
+ const run=extra=>generateListingText(draft(),['https://example.test/a'],catalogs,[],{fetcher:answer(extra),token:'test-only',roots:new Set([1])})
+ assert.equal((await run({is_dress:true,is_ball_gown:true})).catalog_id,32)
+ assert.equal((await run({is_dress:true,is_ball_gown:false})).catalog_id,31)
+ assert.equal((await run({is_dress:false,is_ball_gown:true})).catalog_id,30,'not a dress: the AI choice stays')
+ assert.equal((await run({})).catalog_id,30,'an answer without the new fields keeps the AI choice')
+ assert.match(listingInstructions(DEFAULT_LISTING_SETTINGS),/Robes de bal[\s\S]*Robes de soirée/)
 })

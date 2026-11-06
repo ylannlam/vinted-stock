@@ -99,6 +99,7 @@ Ligne suivante : exactement 16 hashtags SEO pertinents (#mot), séparés par des
 La bio entière (paragraphes, ligne taille et hashtags) fait au maximum 1 500 caractères. Pas de prix, pas de promesse commerciale, pas de question, pas de mention d’une IA, aucune question d’accessoirisation.`,
   'Le SKU est interne : ne le mets jamais dans l’annonce.',
   'CATÉGORIE : choisis le catalog_id le plus précis parmi les catégories fournies, sinon null. COULEURS : au plus 2 color_ids parmi ceux fournis.',
+  'ROBES : indique is_dress=true si l’article est une robe, sinon false. Une robe est toujours classée soit « Robes de bal », soit « Robes de soirée ». is_ball_gown=true pour une robe volumineuse (jupe ample ou bouffante, tulle en volume, style princesse, crinoline, grande traîne) : catégorie « Robes de bal ». Pour toutes les autres robes (fourreau, moulante, sirène, fluide, courte, longue sans volume), is_ball_gown=false : catégorie « Robes de soirée ». Si ce n’est pas une robe, is_ball_gown=false.',
   'review_notes : une ou deux phrases sur ce qui reste incertain sur les photos (matière, couleur exacte, longueur), sans rien inventer. Ce champ n’est pas publié.',
   'Les informations données explicitement par le vendeur priment sur ce que tu déduis des photos.',
   'fiche_fournisseur (si présente) vient de la fiche Shein du même SKU : ses caractéristiques (composition, doublure, élasticité, transparence, coupe, longueur, encolure, manches, détails) sont des faits sûrs, à utiliser si elles correspondent aux photos. N’y reprends ni la marque, ni « Shein », ni son titre tel quel. N’écris aucune mesure chiffrée : les mesures de la taille sont ajoutées automatiquement après ta ligne taille.',
@@ -119,12 +120,28 @@ function rootChoices(catalogs,roots){
  const kept=choices.filter(c=>roots.has(rootOf(c.id)))
  return kept.length?kept:choices
 }
+
+// Les robes sont toujours classées « Robes de bal » (robe volumineuse) ou « Robes de soirée » (toutes les autres).
+// La décision de l'IA (is_dress / is_ball_gown) choisit la catégorie ; sans catégorie trouvée, son choix est gardé.
+const plain=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
+export function dressCatalogId(catalogs,{ball,hint=null,roots=null}={}){
+ const rows=catalogs||[],map=new Map(rows.map(c=>[c.id,c]))
+ const rootOf=id=>{let node=map.get(id),guard=0;while(node?.parent_id&&map.has(node.parent_id)&&guard++<12)node=map.get(node.parent_id);return node?.id}
+ const leaves=catalogChoices(rows),hintRoot=hint?rootOf(hint):null
+ const pick=test=>{
+  const found=leaves.filter(c=>test(plain(c.title)))
+  if(!found.length)return null
+  return (found.find(c=>hintRoot&&rootOf(c.id)===hintRoot)||found.find(c=>roots?.size&&roots.has(rootOf(c.id)))||found[0]).id
+ }
+ const evening=pick(t=>/\bsoiree\b/.test(t)&&/\brobes?\b/.test(t)),gown=pick(t=>/\bbal\b/.test(t)&&/\brobes?\b/.test(t))
+ return ball?(gown??evening):evening
+}
 const aiModel=model=>LISTING_AI_MODELS.some(m=>m.id===model)?model:DEFAULT_LISTING_SETTINGS.ai_model
 export async function generateListingText(row,urls,catalogs,colors,{fetcher=fetch,token=process.env.GEMINI_API_KEY,model,settings=DEFAULT_LISTING_SETTINGS,examples={own:[],others:[]},roots=null,shein=null}={}){
  if(!token)throw new AppError('La rédaction automatique reste à connecter. Tu peux déjà préparer et enregistrer ta fiche.',503)
  model=aiModel(model||settings.ai_model)
  const choices=rootChoices(catalogs,roots).slice(0,1800)
- const schema={type:'object',additionalProperties:false,properties:{title:{type:'string'},description:{type:'string'},catalog_id:{type:['integer','null']},color_ids:{type:'array',items:{type:'integer'}},review_notes:{type:'string'}},required:['title','description','catalog_id','color_ids','review_notes']}
+ const schema={type:'object',additionalProperties:false,properties:{title:{type:'string'},description:{type:'string'},catalog_id:{type:['integer','null']},color_ids:{type:'array',items:{type:'integer'}},review_notes:{type:'string'},is_dress:{type:'boolean'},is_ball_gown:{type:'boolean'}},required:['title','description','catalog_id','color_ids','is_dress','is_ball_gown','review_notes']}
  const system=listingInstructions(settings)
  const text=JSON.stringify({informations_vendeur:{taille:row.fields.size_text,notes:row.fields.notes},...(shein?.details?.length?{fiche_fournisseur:{caracteristiques:shein.details.slice(0,30)}}:{}),exemples_de_titres_vendus_sur_ce_compte:examples.own||[],exemples_de_titres_vendus_sur_les_autres_comptes:examples.others||[],categories:choices.map(c=>`${c.id} ${c.label}`),couleurs:colors})
  let response
@@ -136,7 +153,10 @@ export async function generateListingText(row,urls,catalogs,colors,{fetcher=fetc
   throw new AppError(message,response.status===429?429:503)
  }
  let result;try{result=JSON.parse(body?.choices?.[0]?.message?.content)}catch{throw new AppError('La rédaction n’a pas renvoyé une fiche complète. Réessaie.',502)}
+ const aiCatalog=choices.some(c=>c.id===result.catalog_id)?result.catalog_id:null
+ const dress=result.is_dress===true?dressCatalogId(catalogs,{ball:result.is_ball_gown===true,hint:aiCatalog,roots}):null
+ const chosenCatalog=dress??aiCatalog
  const title=typeof result.title==='string'?tidyListingTitle(result.title):''
  if(title.length<5||typeof result.description!=='string'||result.description.trim().length<5||result.description.length>4000)throw new AppError('Le texte reçu n’est pas valide. Ton brouillon est conservé.',502)
- return {usage:body?.usage?{model,input_tokens:Number(body.usage.prompt_tokens)||0,output_tokens:Number(body.usage.completion_tokens)||0}:null,title,description:composeListingDescription(withMeasures(result.description,shein),settings.description_footer),catalog_id:choices.some(c=>c.id===result.catalog_id)?result.catalog_id:null,color_ids:[...new Set(Array.isArray(result.color_ids)?result.color_ids:[])].filter(id=>colors.some(c=>c.id===id)).slice(0,2),review_notes:typeof result.review_notes==='string'?result.review_notes.slice(0,600):''}
+ return {usage:body?.usage?{model,input_tokens:Number(body.usage.prompt_tokens)||0,output_tokens:Number(body.usage.completion_tokens)||0}:null,title,description:composeListingDescription(withMeasures(result.description,shein),settings.description_footer),catalog_id:chosenCatalog,color_ids:[...new Set(Array.isArray(result.color_ids)?result.color_ids:[])].filter(id=>colors.some(c=>c.id===id)).slice(0,2),review_notes:typeof result.review_notes==='string'?result.review_notes.slice(0,600):''}
 }
