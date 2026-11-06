@@ -20,7 +20,13 @@ export function createFactoryStore(client=supabase){
       return {host:row.adresse,port:row.port,user:row.username,password:row.password}
     },
     // Les proxys déjà enregistrés (même adresse, port et identifiant) sont ignorés.
-    async addProxies(rows){return (checked(await client.from('proxies').upsert(rows,{onConflict:'adresse,port,username',ignoreDuplicates:true}).select('id'))||[]).length},
+    // Un proxy enregistré sans mot de passe (ligne « hôte:port · identifiant ») reçoit son mot de passe
+    // quand on le colle en entier ; un mot de passe déjà enregistré n'est jamais écrasé.
+    async addProxies(rows){
+      const added=(checked(await client.from('proxies').upsert(rows,{onConflict:'adresse,port,username',ignoreDuplicates:true}).select('id'))||[]).length
+      for(const r of rows.filter(r=>r.password))checked(await client.from('proxies').update({password:r.password}).eq('adresse',r.adresse).eq('port',r.port).eq('username',r.username).eq('password',''))
+      return added
+    },
     async precheck(accountId,proxyId){checked(await client.rpc('link_adspower_profile',{p_account:accountId,p_proxy:proxyId}))},
     async link(accountId,proxyId,profile){
       return checked(await client.rpc('link_adspower_profile',{p_account:accountId,p_proxy:proxyId,p_profile_id:profile.profile_id,p_profile_no:profile.profile_no,

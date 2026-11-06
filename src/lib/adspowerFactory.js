@@ -13,12 +13,14 @@ export function providerOf(host){
 // Oxylabs affiche « disp_xxxx » mais attend « user-disp_xxxx » côté proxy.
 export function proxyUser(host,user){return providerOf(host)==='Oxylabs'&&/^disp_/i.test(user)?`user-${user}`:user}
 
-function proxyFrom(host,port,user,password){
-  host=String(host||'').trim().toLowerCase();port=Number(port);user=String(user||'').trim();password=String(password||'').trim()
+// noPassword : ligne « hôte:port · identifiant » (affichage du site ou d'AdsPower) : le proxy est
+// enregistré avec un mot de passe vide, ce qui suffit pour le relier à un profil existant.
+function proxyFrom(host,port,user,password,noPassword=false){
+  host=String(host||'').trim().toLowerCase();port=Number(port);user=String(user||'').trim();password=noPassword?'':String(password||'').trim()
   if(host.length>253||!HOST.test(host))return {error:'adresse invalide'}
   if(!/^\d{1,5}$/.test(String(port))||port<1||port>65535)return {error:'port invalide'}
   if(!user||user.length>200||control.test(user))return {error:'identifiant manquant ou invalide'}
-  if(!password||password.length>200||control.test(password))return {error:'mot de passe manquant ou invalide'}
+  if(!noPassword&&(!password||password.length>200||control.test(password)))return {error:'mot de passe manquant ou invalide'}
   return {proxy:{adresse:host,port,username:proxyUser(host,user),password,fournisseur:providerOf(host)}}
 }
 // Découpe une commande en mots comme un terminal : guillemets simples ou doubles, \ pour protéger un caractère.
@@ -79,7 +81,8 @@ function logicalLines(text){
   return lines
 }
 // Une ligne par proxy : « hôte:port:identifiant:motdepasse » (export AdsPower, Decodo, Oxylabs),
-// « identifiant:motdepasse@hôte:port » (avec ou sans « http:// »), ou la commande curl d'Oxylabs.
+// « identifiant:motdepasse@hôte:port » (avec ou sans « http:// »), la commande curl d'Oxylabs, ou sans mot de passe
+// « hôte:port · identifiant » (comme affiché sur le site et dans AdsPower) / « hôte:port:identifiant ».
 export function parseProxyLines(text){
   const proxies=[],errors=[],seen=new Set()
   for(const {line:number,text:raw} of logicalLines(text)){
@@ -93,7 +96,10 @@ export function parseProxyLines(text){
     // hôte:port d'abord : un mot de passe peut contenir « @ » ou « : ».
     const parts=bare.split(':'),at=bare.lastIndexOf('@')
     let parsed
-    if(parts.length>=4&&HOST.test(parts[0].trim().toLowerCase())&&/^\d{1,5}$/.test(parts[1].trim()))parsed=proxyFrom(parts[0],parts[1],parts[2],parts.slice(3).join(':'))
+    const shown=/^(?:https?:\/\/)?([^\s:@·]+):(\d{1,5})\s*[·•|]\s*(\S+)$/.exec(bare)
+    if(shown)parsed=proxyFrom(shown[1],shown[2],shown[3],'',true)
+    else if(parts.length===3&&HOST.test(parts[0].trim().toLowerCase())&&/^\d{1,5}$/.test(parts[1].trim()))parsed=proxyFrom(parts[0],parts[1],parts[2],'',true)
+    else if(parts.length>=4&&HOST.test(parts[0].trim().toLowerCase())&&/^\d{1,5}$/.test(parts[1].trim()))parsed=proxyFrom(parts[0],parts[1],parts[2],parts.slice(3).join(':'))
     else if(at>0){const [host,port,...extra]=bare.slice(at+1).split(':'),credentials=bare.slice(0,at),colon=credentials.indexOf(':');parsed=extra.length||colon<1?{error:'format non reconnu'}:proxyFrom(host,port,credentials.slice(0,colon),credentials.slice(colon+1))}
     else parsed={error:'format attendu hôte:port:identifiant:motdepasse'}
     if(parsed.error){errors.push({line:number,message:parsed.error});continue}

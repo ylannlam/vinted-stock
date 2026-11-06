@@ -76,6 +76,13 @@ test('proxy usage flags shared IPs from the database and from AdsPower profiles'
   assert.equal(proxyUsage(proxies,[],[{id:'x',number:'9',proxy:{host:'disp.oxylabs.io',port:8001,user:'user-disp_zzz'}}]).get('free').state,'free')
 })
 
+test('proxies shown as « hôte:port · identifiant » are accepted without password',()=>{
+  const {proxies,errors}=parseProxyLines('disp.oxylabs.io:8001 · disp_38bc6771\nisp.decodo.com:10006 · spa4ooalj5\ndisp.oxylabs.io:8001:disp_aaaa1111\ndisp.oxylabs.io:8001:disp_bbbb2222:pw')
+  assert.deepEqual(errors,[])
+  assert.deepEqual(proxies.map(p=>[p.adresse,p.port,p.username,p.password]),[['disp.oxylabs.io',8001,'user-disp_38bc6771',''],['isp.decodo.com',10006,'spa4ooalj5',''],['disp.oxylabs.io',8001,'user-disp_aaaa1111',''],['disp.oxylabs.io',8001,'user-disp_bbbb2222','pw']])
+  assert.equal(parseProxyLines('pas un proxy').errors.length,1);assert.equal(parseProxyLines('disp.oxylabs.io:99999 · disp_x').errors.length,1)
+})
+
 test('an Oxylabs proxy is recognised whether AdsPower shows its username with or without « user- »',()=>{
   const proxies=[{id:'ox',adresse:'disp.oxylabs.io',port:8001,username:'user-disp_3f4afccd'},{id:'other',adresse:'disp.oxylabs.io',port:8001,username:'user-disp_2c1fa533'}]
   for(const user of ['disp_3f4afccd','user-disp_3f4afccd'])assert.equal(savedProxyFor({host:'disp.oxylabs.io',port:8001,user},proxies).id,'ox')
@@ -120,7 +127,7 @@ test('the store reads proxies without passwords and links profiles through one d
   const calls=[]
   // Lists resolve to no rows; .single() returns the one proxy whose password is requested.
   const secretRow={adresse:'disp.oxylabs.io',port:8001,username:'user-disp_a',password:'secret'}
-  const query=table=>{const q={};for(const m of ['select','order','is','eq','limit','range','upsert','insert'])q[m]=(...args)=>{calls.push([table,m,...args]);return q};q.single=async()=>({data:secretRow,error:null});q.then=(resolve,reject)=>Promise.resolve({data:[],error:null,count:0}).then(resolve,reject);return q}
+  const query=table=>{const q={};for(const m of ['select','order','is','eq','limit','range','upsert','insert','update'])q[m]=(...args)=>{calls.push([table,m,...args]);return q};q.single=async()=>({data:secretRow,error:null});q.then=(resolve,reject)=>Promise.resolve({data:[],error:null,count:0}).then(resolve,reject);return q}
   const client={from:query,rpc:async(name,args)=>{calls.push(['rpc',name,args]);return {data:{pseudo:'A'},error:null}}}
   // The real Supabase client is replaced: only the fake client above is ever used.
   const compiled=await build({entryPoints:[fileURLToPath(new URL('../src/lib/adspowerFactoryStore.js',import.meta.url))],bundle:true,write:false,platform:'node',format:'esm',plugins:[{name:'no-supabase',setup(b){b.onLoad({filter:/src[\\/]lib[\\/]supabase\.js$/},()=>({contents:'export const supabase=null'}))}}]})
@@ -134,6 +141,8 @@ test('the store reads proxies without passwords and links profiles through one d
   await store.precheck('acc','px');assert.deepEqual(calls.at(-1),['rpc','link_adspower_profile',{p_account:'acc',p_proxy:'px'}])
   await store.addProxies([{adresse:'a.io',port:1,username:'u',password:'p'}])
   assert.deepEqual(calls.find(c=>c[1]==='upsert').slice(3),[{onConflict:'adresse,port,username',ignoreDuplicates:true}])
+  const fills=calls.filter(c=>c[1]==='update');assert.deepEqual(fills.map(c=>c[2]),[{password:'p'}],'a full line completes a proxy saved without password')
+  calls.length=0;await store.addProxies([{adresse:'a.io',port:1,username:'u',password:''}]);assert.equal(calls.some(c=>c[1]==='update'),false,'a line without password never overwrites')
 })
 
 test('the section creates, links and replaces fingerprints, and never recreates an unlinked profile',async()=>{
