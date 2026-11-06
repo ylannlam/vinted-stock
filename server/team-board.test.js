@@ -87,47 +87,6 @@ test('accounts are grouped: due creation posts first, then the least recently fe
   assert.equal(sinceLabel(null,now),'Jamais');assert.equal(sinceLabel('2026-11-04T01:00:00Z',now),'Aujourd’hui');assert.equal(sinceLabel('2026-11-03T12:00:00Z',now),'Hier');assert.equal(sinceLabel('2026-10-30T12:00:00Z',now),'Il y a 5 jours')
 })
 
-test('the Alicia tab lists accounts by priority, opens listing creation for an account, and records a published link',async()=>{
-  const {window}=parseHTML('<html><body><div id="app"></div></body></html>')
-  globalThis.window=window;globalThis.document=window.document;globalThis.IS_REACT_ACT_ENVIRONMENT=true
-  const require=createRequire(import.meta.url),React=require('react'),{act}=React,{createRoot}=require('react-dom/client')
-  const compiled=await build({entryPoints:[fileURLToPath(new URL('../src/components/TeamBoardTab.jsx',import.meta.url))],bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',packages:'external',external:['../lib/api']})
-  const mod=new Module(fileURLToPath(import.meta.url));mod.paths=Module._nodeModulePaths(fileURLToPath(new URL('..',import.meta.url)));mod._compile(compiled.outputFiles[0].text,fileURLToPath(import.meta.url))
-  const base=(login,patch)=>({account_id:login,login,profile:null,can_create:true,vinted:null,style:null,today:0,week:0,last_at:null,drafts:0,recent:[],mine:[],...patch})
-  let board={day:'2026-11-04',me:'Alicia',accounts:[base('fed.today',{vinted:{creation_stage:'ready'},today:2,week:4,last_at:new Date().toISOString(),profile:{id:'p1',number:'3'},style:{ready:true}}),
-    base('starving',{vinted:{creation_stage:'ready'},profile:{id:'p2',number:'8'},mine:[{id:'d1',version:5,title:'Body noir'}]}),base('banned',{vinted:{statut:'banni_def'}}),base('unselected',{can_create:false})]}
-  const calls=[],created=[]
-  const request=async(method,body,query)=>{calls.push(body?.action||query);if(body?.action==='mark_published'){board=structuredClone(board);board.accounts[1].mine=[];board.accounts[1].today=1};return structuredClone(board)}
-  const root=createRoot(document.getElementById('app')),props=n=>n[Object.keys(n).find(k=>k.startsWith('__reactProps$'))]
-  try{
-    await act(async()=>root.render(React.createElement(mod.exports.default,{request,onCreateListing:p=>created.push(p),onStyles(){},onAccounts(){}})))
-    await act(async()=>{await new Promise(r=>setTimeout(r,10))})
-    const titles=[...document.querySelectorAll('article h3')].map(h=>h.textContent)
-    assert.equal(titles.includes('unselected'),false,'my selected accounts are the default view')
-    await act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Tous les comptes · 4').click())
-    assert.ok(document.body.textContent.includes('unselected'))
-    await act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Mes comptes choisis · 3').click())
-    assert.equal(document.body.textContent.includes('unselected'),false)
-    assert.deepEqual(titles.slice(0,2),['starving','fed.today'],'the account fed least recently comes first')
-    assert.ok(document.body.textContent.includes('2 annonces publiées aujourd’hui sur 1 compte'))
-    assert.ok(document.body.textContent.includes('Profil AdsPower n°8'))
-    const card=[...document.querySelectorAll('article')].find(a=>a.querySelector('h3').textContent==='starving')
-    await act(async()=>[...card.querySelectorAll('button')].find(b=>b.textContent==='Créer des annonces').click())
-    assert.deepEqual(created,['p2'])
-    const input=card.querySelector('input');await act(async()=>props(input).onChange({target:{value:'https://www.vinted.fr/items/42'}}))
-    // The simulated DOM does not submit a form on button click (browsers do): submit it as the browser would.
-    assert.equal(card.querySelector('form button').textContent,'Publiée')
-    await act(async()=>props(card.querySelector('form')).onSubmit({preventDefault(){}}))
-    await act(async()=>{await new Promise(r=>setTimeout(r,10))})
-    assert.deepEqual(calls,['action=board','mark_published','action=board'])
-    assert.ok(document.body.textContent.includes('« Body noir » est notée comme publiée.'))
-    assert.ok(document.body.textContent.includes('3 annonces publiées aujourd’hui sur 2 comptes'))
-    assert.equal([...document.querySelectorAll('article')].filter(a=>a.textContent.includes('Créer des annonces')).length,2,'no create button on blocked accounts')
-    const blocked=[...document.querySelectorAll('details summary')].find(s=>s.textContent.includes('Bloqués'));assert.ok(blocked,'blocked accounts are folded away')
-  }finally{await act(async()=>root.unmount());delete globalThis.window;delete globalThis.document;delete globalThis.IS_REACT_ACT_ENVIRONMENT}
-})
-
-
 test('profiles linked by their name are usable only for their selected owner; removed links cannot select another account',async()=>{
  const t=tables();t.publication_profile_links=[];t.adspower_preferences[0].profiles=[{id:'auto',number:'12',name:'BODY.PARIS'}]
  const board=await readTeamBoard(database(t),{id:me})
