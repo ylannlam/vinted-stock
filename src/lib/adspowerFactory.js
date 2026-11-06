@@ -103,8 +103,11 @@ export function parseProxyLines(text){
   }
   return {proxies,errors}
 }
-export const proxyKey=p=>`${String(p.adresse).toLowerCase()}:${Number(p.port)}:${p.username}`
-const liveProxyKey=p=>p?.host?`${p.host.toLowerCase()}:${Number(p.port)}:${p.user}`:null
+// AdsPower peut afficher l'identifiant Oxylabs avec ou sans « user- » : la clé ajoute toujours le préfixe
+// (sans effet sur un identifiant qui l'a déjà), sinon le proxy du profil n'est jamais reconnu sur le site.
+const keyOf=(host,port,user)=>{const h=String(host).toLowerCase();return `${h}:${Number(port)}:${proxyUser(h,String(user??'').trim())}`}
+export const proxyKey=p=>keyOf(p.adresse,p.port,p.username)
+const liveProxyKey=p=>p?.host?keyOf(p.host,p.port,p.user):null
 
 // Qui utilise chaque proxy : comptes Vinted (base) et profils AdsPower (lus sur ce PC).
 // Deux comptes, deux profils, ou un profil qui n'est pas celui du compte = proxy partagé.

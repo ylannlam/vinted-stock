@@ -76,6 +76,16 @@ test('proxy usage flags shared IPs from the database and from AdsPower profiles'
   assert.equal(proxyUsage(proxies,[],[{id:'x',number:'9',proxy:{host:'disp.oxylabs.io',port:8001,user:'user-disp_zzz'}}]).get('free').state,'free')
 })
 
+test('an Oxylabs proxy is recognised whether AdsPower shows its username with or without « user- »',()=>{
+  const proxies=[{id:'ox',adresse:'disp.oxylabs.io',port:8001,username:'user-disp_3f4afccd'},{id:'other',adresse:'disp.oxylabs.io',port:8001,username:'user-disp_2c1fa533'}]
+  for(const user of ['disp_3f4afccd','user-disp_3f4afccd'])assert.equal(savedProxyFor({host:'disp.oxylabs.io',port:8001,user},proxies).id,'ox')
+  assert.equal(savedProxyFor({host:'disp.oxylabs.io',port:8001,user:'disp_unknown'},proxies),null)
+  const accounts=[{id:'a',pseudo:'clea010102',proxy_id:null,ads_power_num:'81'}]
+  const live=[{id:'p81',number:'81',proxy:{host:'disp.oxylabs.io',port:8001,user:'disp_3f4afccd'}}]
+  assert.equal(proxyUsage(proxies,accounts,live).get('ox').state,'used','the profile uses the proxy even without the prefix')
+  assert.equal(proxyForLink(accounts[0],{id:'p81',number:'81'},accounts,proxies,live.map(r=>({id:'p81',proxy:r.proxy}))),'ox')
+})
+
 test('only active accounts without a profile can be equipped; an existing proxy is kept',()=>{
   const accounts=[{id:'z',pseudo:'Zoé',creation_stage:'post1'},{id:'r',pseudo:'Rose',creation_stage:'ready'},{id:'n',pseudo:'Nina',ads_power_num:'4'},{id:'s',pseudo:'Sam',is_shadowbanned:true},{id:'g',pseudo:'Gone',deleted_at:'2026-01-01'},{id:'k',pseudo:'Kim',creation_stage:'ready',proxy_id:'p2'}]
   assert.deepEqual(creatableAccounts(accounts).map(a=>a.id),['k','r','z'])
