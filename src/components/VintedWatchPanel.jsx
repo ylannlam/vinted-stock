@@ -29,8 +29,8 @@ export default function VintedWatchPanel({request=vintedWatchRequest}){
   {error&&<p role="alert" className="text-sm text-red-700">{error}</p>}
   {keys&&<p className="text-xs text-slate-600">{active.length?`${active.length} extension(s) active(s) · dernier signal ${when(seen.map(k=>k.last_seen_at).sort().at(-1))}${seen[0]?.last_login?` (${seen.sort((a,b)=>String(b.last_seen_at).localeCompare(String(a.last_seen_at)))[0].last_login})`:''}`:'Aucune extension installée pour l’instant.'}</p>}
   {open&&<ol className="list-decimal space-y-1 pl-5 text-sm text-slate-700">
-   <li>Dans AdsPower, ouvre <strong>Extensions</strong> (menu de gauche), puis <strong>Ajouter une extension</strong> → <strong>Importer depuis un fichier local</strong> et choisis le zip téléchargé.</li>
-   <li>Coche <strong>tous les profils</strong> (ou le groupe de tes comptes Vinted) pour l’activer partout.</li>
+   <li>Dans AdsPower, ouvre <strong>Extensions</strong> (menu de gauche), puis <strong>Ajouter une extension</strong> → <strong>Téléverser un fichier</strong> et choisis le zip téléchargé.</li>
+   <li>Active son <strong>interrupteur</strong> : elle se charge alors dans tous tes profils, nouveaux compris, à leur prochain lancement. Pour une nouvelle version, utilise <strong>··· → Mise à jour</strong> sur la même extension.</li>
    <li>C’est tout : l’extension reconnaît seule le compte Vinted connecté dans chaque profil, et vérifie son état à chaque page Vinted ouverte et toutes les 45 min tant que le profil est ouvert.</li>
   </ol>}
   {active.length>0&&<details><summary className="cursor-pointer text-xs text-slate-500">Extensions téléchargées ({active.length})</summary><ul className="mt-2 space-y-1 text-xs">{active.map(k=><li key={k.id} className="flex items-center justify-between gap-2"><span>Téléchargée le {when(k.created_at)} · dernier signal {when(k.last_seen_at)}</span><button className="text-red-700 underline" disabled={busy} onClick={()=>revoke(k.id)}>Désactiver</button></li>)}</ul></details>}
