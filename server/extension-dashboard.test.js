@@ -19,5 +19,5 @@ test('diagnostic never exports credentials, references, article titles or histor
 })
 test('update notice compares full numeric versions and leaves newer builds alone',()=>{
   for(const version of ['0.5.0','0.4.0','0.3.9',undefined,'invalid'])assert.equal(extensionNeedsUpdate(version),true)
-  for(const version of ['0.7.1','0.7.1','0.10.0','1.0.0'])assert.equal(extensionNeedsUpdate(version),false)
+  for(const version of ['0.8.0','0.8.0','0.10.0','1.0.0'])assert.equal(extensionNeedsUpdate(version),false)
 })

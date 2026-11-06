@@ -13,6 +13,27 @@ export const orderStatus=value=>{
   if(/^(emballage|en traitement|en cours de traitement|traitement|en preparation|paye[es]*)$/.test(s))return 'processing'
   return 'unknown'
 }
+// Un colis tel que lu sur Shein : numéro, transporteur, étape, étapes de suivi datées (page « Suivre »).
+function trackUrl(value){try{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password&&!u.port&&value.length<=300?u.href:null}catch{return null}}
+export function parcelObservation(p,items,at){
+  const events=(Array.isArray(p.events)?p.events:[]).slice(0,40).map(e=>({at:Number.isFinite(Date.parse(e?.at))?new Date(e.at).toISOString():null,place:clean(e?.place,80),text:clean(e?.text,300)})).filter(e=>e.at&&e.text&&Date.parse(e.at)<=at+86400000).sort((a,b)=>b.at.localeCompare(a.at))
+  const steps=(Array.isArray(p.steps)?p.steps:[]).slice(0,8).map(x=>({name:clean(x?.name,60),done:x?.done===true})).filter(x=>x.name)
+  return {tracking_number:p.tracking_number.toUpperCase(),carrier:clean(p.carrier,60),package_no:/^[A-Z0-9-]{1,40}$/i.test(p.package_no||'')?p.package_no:null,
+    status_text:clean(p.status_text,200),eta:clean(p.eta,150),delivered:p.delivered===true,track_url:typeof p.track_url==='string'?trackUrl(p.track_url):null,
+    skus:[...new Set((Array.isArray(p.skus)?p.skus:[]).filter(sku=>items.some(i=>i.sku===sku)))],steps,events,last_event_at:events[0]?.at||null,tracked:events.length>0,
+    observed_at:new Date(at).toISOString()}
+}
+// Une lecture sans la page « Suivre » ne doit pas effacer les étapes déjà connues d'un colis.
+export function mergeParcels(incoming,previous){
+  const old=new Map((Array.isArray(previous)?previous:[]).map(p=>[p.tracking_number,p]))
+  return incoming.map(p=>{
+    const before=old.get(p.tracking_number)
+    if(p.tracked||!before)return p
+    return {...before,...p,carrier:p.carrier||before.carrier,status_text:before.status_text||p.status_text,track_url:p.track_url||before.track_url||null,
+      delivered:before.delivered===true,steps:before.steps||[],events:before.events||[],last_event_at:before.last_event_at||null,tracked:!!before.tracked,
+      skus:p.skus.length?p.skus:(before.skus||[])}
+  })
+}
 export function validateSheinOrder(body,now=Date.now()) {
   if(!body||JSON.stringify(body).length>150000||!/^G[A-Z0-9]{7,39}$/.test(body.ref||''))throw new AppError('Commande Shein illisible.')
   const at=Date.parse(body.observed_at)
@@ -39,7 +60,7 @@ export function validateSheinOrder(body,now=Date.now()) {
     grouped.set(id,current)
   }
   const items=[...grouped.values()].map(({statuses,status_texts,...item})=>({...item,status_text:[...new Set(status_texts)].join(' · ').slice(0,500),status:statuses.includes('exception')?'exception':statuses.every(s=>s==='delivered')?'delivered':statuses.every(s=>['shipped','delivered'].includes(s))?'shipped':statuses.every(s=>['processing','shipped','delivered'].includes(s))?'processing':statuses.includes('unpaid')?'unpaid':'unknown'}))
-  const parcels=(Array.isArray(body.parcels)?body.parcels:[]).slice(0,30).filter(p=>/^[A-Z0-9-]{6,40}$/i.test(p.tracking_number||'')&&/\d/.test(p.tracking_number)).map(p=>({tracking_number:p.tracking_number.toUpperCase(),carrier:clean(p.carrier,60),status_text:clean(p.status_text,200),eta:clean(p.eta,150),skus:[...new Set((Array.isArray(p.skus)?p.skus:[]).filter(sku=>items.some(i=>i.sku===sku)))],observed_at:new Date(at).toISOString()}))
+  const parcels=(Array.isArray(body.parcels)?body.parcels:[]).slice(0,30).filter(p=>/^[A-Z0-9-]{6,40}$/i.test(p?.tracking_number||'')&&/\d/.test(p.tracking_number)).map(p=>parcelObservation(p,items,at))
   const validMoney=n=>typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=100000&&Math.abs(n*100-Math.round(n*100))<1e-7
   const p=body.payment
   // A displayed total on an unpaid/unclear order is not evidence of payment.
@@ -53,6 +74,10 @@ export function validateSheinOrder(body,now=Date.now()) {
 export async function importSheinOrder(db,device,body) {
   if(!device.enabled)throw new AppError('Ce navigateur est en pause sur le site.',409)
   const order=validateSheinOrder(body)
+  if(order.parcels.some(p=>!p.tracked)){
+    const {data,error}=await db.from('shein_orders').select('shipment_observations').eq('ref',order.ref).maybeSingle();check(error)
+    order.parcels=mergeParcels(order.parcels,data?.shipment_observations)
+  }
   const r=await db.rpc('import_shein_order_v2',{p_order:order,p_device:device.id})
   if(r.error?.message?.includes('order_outside_period'))throw new AppError('Cette commande est antérieure au début de ton suivi.',409)
   if(r.error?.message?.includes('shein_items_missing'))throw new AppError('Des articles déjà relevés manquent dans cette lecture (un colis n’a peut-être pas été lu). Le relevé précédent est conservé : vérifie la commande sur Shein puis relis-la.',409)

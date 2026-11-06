@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Stock Vinted — bibliothèque Shein",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "minimum_chrome_version": "120",
   "description": "Récupérer les fiches et commandes Shein pour suivre les achats de tes ventes Stock Vinted.",
   "permissions": ["storage", "alarms", "scripting", "sidePanel"],

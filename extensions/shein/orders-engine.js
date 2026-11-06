@@ -1,5 +1,7 @@
 export const ORDER_LIST='https://fr.shein.com/user/orders/list?from=navTop'
-export const orderState=()=>({enabled:false,needsConnection:false,phase:'idle',tabId:null,queue:[],seen:[],pages:0,cursor:0,done:0,total:0,errors:[],outbox:null,nextAt:0,retryAt:0,failures:0,message:'Active la lecture de tes commandes Shein.',lastCompletedAt:null,lastFullAt:null})
+export const TRACK_EVERY=25*60000
+export const trackPage=ref=>`https://fr.shein.com/orders/track?billno=${encodeURIComponent(ref)}`
+export const orderState=()=>({enabled:false,needsConnection:false,phase:'idle',tabId:null,queue:[],seen:[],pages:0,cursor:0,done:0,total:0,errors:[],outbox:null,nextAt:0,retryAt:0,failures:0,message:'Active la lecture de tes commandes Shein.',lastCompletedAt:null,lastFullAt:null,trackedAt:{},pendingDetail:null})
 const errors={login_required:'Connecte-toi à Shein, puis reprends ici.',human_check:'Shein demande une vérification. Termine-la dans l’onglet puis reprends ici.',order_unreadable:'Commande incomplète ou illisible.',page_unavailable:'Page indisponible.',reference_mismatch:'La page ne correspond pas à la commande attendue.'}
 export function orderReference(value) {
   const input=String(value||'').trim()
@@ -11,6 +13,30 @@ export function createOrderEngine(port) {
   let s
   const load=async()=>{const old=await port.load();s={...orderState(),...old};if(old.cursor==null)s.cursor=old.done||0}
   const save=async patch=>{Object.assign(s,patch);await port.save(s)}
+  // Suivi lu sur la page « Suivre » : numéros, étapes et événements ajoutés au relevé de la commande.
+  function withTracking(detail,track){
+    const parcels=new Map((detail.parcels||[]).map(p=>[p.tracking_number,{...p}]))
+    for(const pkg of track?.packages||[]){
+      const known=parcels.get(pkg.tracking_number)||[...parcels.values()].find(p=>pkg.package_no&&p.package_no===pkg.package_no)
+      const skus=known?.skus||(track.packages.length===1&&parcels.size<=1?detail.items.filter(i=>i.status_text==='Expédiés').map(i=>i.sku):[])
+      if(known&&known.tracking_number!==pkg.tracking_number)parcels.delete(known.tracking_number)
+      parcels.set(pkg.tracking_number,{...known,...pkg,skus:[...new Set(skus)],eta:pkg.eta||known?.eta||''})
+    }
+    const delivered=new Set([...parcels.values()].filter(p=>p.delivered).flatMap(p=>p.skus))
+    const items=detail.items.map(i=>i.status_text==='Expédiés'&&delivered.has(i.sku)?{...i,status_text:'Livré'}:i)
+    return {...detail,items,parcels:[...parcels.values()],tracked:!!track}
+  }
+  const trackDue=(ref,detail)=>detail.parcels?.length>0&&(s.mode==='targeted'||!(s.trackedAt||{})[ref]||port.now()-s.trackedAt[ref]>TRACK_EVERY)
+  async function readTracking(detail){
+    const ref=s.queue[s.cursor]
+    await save({pendingDetail:detail,message:`Lecture du suivi ${s.cursor+1} / ${s.total}…`})
+    await navigate(trackPage(ref),'track')
+  }
+  async function trackDone(detail,track){
+    const ref=s.queue[s.cursor],stamps={...(s.trackedAt||{})}
+    if(track){stamps[ref]=port.now();for(const k of Object.keys(stamps).sort((a,b)=>stamps[a]-stamps[b]).slice(0,-300))delete stamps[k]}
+    await save({outbox:withTracking(detail,track),pendingDetail:null,trackedAt:stamps,phase:'sending'});await deliver()
+  }
   const report=async(state='running')=>{if(s.runId)await port.api({action:'orders_report',run_id:s.runId,state,discovered:s.total,read:s.done,errors:s.errors,mode:s.mode})}
   async function navigate(target,phase) {
     if(!await port.tab(s.tabId))await save({tabId:await port.createTab()})
@@ -40,9 +66,9 @@ export function createOrderEngine(port) {
     }
   }
   async function skip(code,message) {
-    const ref=['detail','sections','section_click','sending'].includes(s.phase)?s.queue[s.cursor]:null
+    const ref=['detail','sections','section_click','sending','track'].includes(s.phase)?s.queue[s.cursor]:null
     const entry={ref:ref||null,code,message:message||errors[code]||'Lecture à vérifier.'}
-    await save({errors:[...s.errors.filter(e=>e.ref!==entry.ref),entry].slice(-200),outbox:null,...(ref?{cursor:s.cursor+1}:{listComplete:false}),retryAt:0,phase:'advance',reportPending:true})
+    await save({errors:[...s.errors.filter(e=>e.ref!==entry.ref),entry].slice(-200),outbox:null,pendingDetail:null,...(ref?{cursor:s.cursor+1}:{listComplete:false}),retryAt:0,phase:'advance',reportPending:true})
     await report();await save({reportPending:false});await nextOrder()
   }
   async function deliver() {
@@ -65,15 +91,17 @@ export function createOrderEngine(port) {
     if(s.phase==='finish')return nextOrder()
     if(s.phase==='navigate')return navigate(s.target,s.nextPhase)
     const tab=await port.tab(s.tabId)
-    if(!tab)return navigate(s.target||ORDER_LIST,['detail','sections','section_click'].includes(s.phase)?'detail':'list')
+    if(!tab)return s.phase==='track'?navigate(s.target,'track'):navigate(s.target||ORDER_LIST,['detail','sections','section_click'].includes(s.phase)?'detail':'list')
     if(s.phase==='section_click')return selectSection()
-    if(tab.status!=='complete'){if(port.now()-s.since>90000)return skip('page_unavailable');return}
+    if(tab.status!=='complete'){if(port.now()-s.since>90000)return s.phase==='track'&&s.pendingDetail?trackDone(s.pendingDetail,null):skip('page_unavailable');return}
     const result=await port.read(s.tabId)
     if(result?.error) {
       if(['login_required','human_check'].includes(result.error)){
         await save({phase:'blocked',blockedCode:result.error,resumePhase:s.phase,message:errors[result.error]});await report('blocked');return
       }
       if(port.now()-s.since<45000)return
+      // Sans la page « Suivre », la commande est enregistrée avec les numéros lus sur sa page.
+      if(s.phase==='track'&&s.pendingDetail)return trackDone(s.pendingDetail,null)
       return skip(result.error)
     }
     if(s.phase==='list_wait') {
@@ -99,11 +127,16 @@ export function createOrderEngine(port) {
       } else await nextOrder()
     } else if(s.phase==='detail') {
       if(result.kind!=='detail'||result.ref!==s.queue[s.cursor])return skip('reference_mismatch')
+      if(result.source==='json'){if(trackDue(result.ref,result))return readTracking(result);await save({outbox:withTracking(result,null),phase:'sending'});return deliver()}
       if(result.sections?.length>1){
         if(result.sections.length>30||new Set(result.sections).size!==result.sections.length)return skip('order_unreadable')
         await save({sectionLabels:result.sections,sectionIndex:0,detailParts:[],phase:'section_click'});return selectSection()
       }
       await save({outbox:result,phase:'sending'});await deliver()
+    } else if(s.phase==='track') {
+      if(!s.pendingDetail)return nextOrder()
+      if(result.kind!=='track'||result.ref!==s.queue[s.cursor]){if(port.now()-s.since<45000)return;return trackDone(s.pendingDetail,null)}
+      return trackDone(s.pendingDetail,result)
     } else if(s.phase==='sections') {
       if(result.kind!=='detail'||result.ref!==s.queue[s.cursor])return skip('reference_mismatch')
       if(result.section!==s.sectionLabels[s.sectionIndex]){if(port.now()-s.since>45000)return skip('order_unreadable','Un groupe de la commande reste illisible. Aucun article n’a été retiré du relevé précédent.');return}

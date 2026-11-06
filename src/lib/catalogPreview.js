@@ -26,12 +26,12 @@ links.push({sku:'sz-AJOUT-1',product_id:'11111111-1111-4111-8111-111111111115',u
 let pricing={tiers:[{max:6,price:31},{max:10,price:39},{max:14,price:49},{max:18,price:64}],above:4.4},lastDotbSync=new Date(Date.now()-3600000).toISOString()
 const devices=[],jobs=Array.from({length:4},(_,i)=>({id:crypto.randomUUID(),reference_key:`sku:sz-DEMO-${i+1}`,input:`sz-DEMO-${i+1}`,expected_sku:`sz-DEMO-${i+1}`,status:['completed','completed','running','queued'][i],message:null,created_at:new Date(Date.now()-(i+1)*60000).toISOString()}))
 const connectionDemo=new URLSearchParams(location.search).get('connect-demo')
-let browserState={version:'0.7.1',connected:!connectionDemo,enabled:!connectionDemo,phase:connectionDemo?'idle':'extract',job:connectionDemo?null:jobs[2],completed:2,lastContactAt:Date.now(),message:'Récupération des photos et du lien Shein…'}
+let browserState={version:'0.8.0',connected:!connectionDemo,enabled:!connectionDemo,phase:connectionDemo?'idle':'extract',job:connectionDemo?null:jobs[2],completed:2,lastContactAt:Date.now(),message:'Récupération des photos et du lien Shein…'}
 export async function collectorBridgePreview(action='status') {
   if(action==='connect')browserState={...browserState,connected:true,device_id:devices.at(-1)?.id}
   if(action==='start'||action==='resume')browserState={...browserState,enabled:true,phase:'idle',message:'En attente de tes liens ou SKU.'}
   if(action==='pause')browserState={...browserState,enabled:false,message:'Import en pause.'}
-  return structuredClone({...browserState,version:'0.7.1',orders:sheinBridgePreview(action),lastContactAt:Date.now()})
+  return structuredClone({...browserState,version:'0.8.0',orders:sheinBridgePreview(action),lastContactAt:Date.now()})
 }
 export async function collectorPreview(method='GET',body) {
   if(body?.action==='create_device'&&connectionDemo==='full')throw Error('Cinq PC sont déjà associés. Déconnecte un ancien PC pour en ajouter un autre.')

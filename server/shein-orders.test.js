@@ -148,3 +148,79 @@ test('expired snapshots restart discovery after explicit resume instead of retry
   assert.equal(h.state.phase,'blocked');assert.equal(h.state.outbox,null)
   h.setError(null);await engine.command('resume');assert.equal(h.state.phase,'list')
 })
+
+// Pages Shein réelles (anonymisées) : la page embarque ses données, lues sans dépendre de l'affichage.
+function page(file,href){
+  const old={document:globalThis.document,location:globalThis.location,DOMParser:globalThis.DOMParser}
+  const html=readFileSync(new URL(`../tests/fixtures/${file}`,import.meta.url),'utf8'),dom=parseHTML(html)
+  globalThis.document=dom.document;globalThis.location={href};globalThis.DOMParser=class{parseFromString(s){return parseHTML(`<html><body>${s}</body></html>`).document}}
+  try{return readSheinOrders()}finally{Object.assign(globalThis,old)}
+}
+test('order page data: tracking number, exact unit prices, real total paid and statuses without clicking any tab',()=>{
+  const r=page('shein-order-json.html','https://fr.shein.com/user/orders/detail/GTESTJSON0001')
+  assert.equal(r.source,'json');assert.equal(r.order_date,'2026-11-01');assert.deepEqual(r.sections,[])
+  assert.deepEqual(r.payment,{paid_total:31.5,shipping:3.9,currency:'EUR',source:'order_summary'})
+  assert.equal(r.items[0].product_url,'https://fr.shein.com/SHEIN-Belle-Robe-p-328855779.html','the real product link of the page is kept')
+  assert.match(r.items[1].product_url,/^https:\/\/fr\.shein\.com\/Flirla-[^/]+-p-45969235\.html$/)
+  assert.equal(r.items[0].status_text,'Expédiés');assert.equal(r.items[0].eta,'06-12 nov.')
+  assert.equal(r.parcels.length,1);assert.equal(r.parcels[0].tracking_number,'GFFR00000000000001');assert.equal(r.parcels[0].carrier,'GOFO')
+  assert.deepEqual(r.parcels[0].skus,['sz25092721773738883','sz2410092319181622'])
+  const v=validateSheinOrder({...r,observed_at:new Date().toISOString()})
+  const pair=v.items.find(i=>i.sku==='sztest0003')
+  assert.equal(pair.quantity,2);assert.equal(pair.unit_price,9.1,'two units at the same exact price keep their unit price');assert.equal(pair.status,'processing')
+  assert.equal(v.items.find(i=>i.sku==='sztest0004').status,'exception','an unknown code with a refund record is a refund')
+  assert.equal(v.payment.source,'order_summary_review','a refunded line keeps the total for review only')
+  assert.ok(v.items.every(i=>i.photo?.startsWith('https://')))
+})
+test('track page data: carrier, GOFO link, steps and dated events',()=>{
+  const r=page('shein-track.html','https://fr.shein.com/orders/track?billno=GTESTJSON0001')
+  assert.equal(r.kind,'track');assert.equal(r.packages.length,1)
+  const p=r.packages[0]
+  assert.equal(p.tracking_number,'GFFR00000000000001');assert.equal(p.carrier,'GOFO');assert.equal(p.track_url,'https://www.gofo.com/fr/tracking-results/?id=GFFR00000000000001')
+  assert.equal(p.status_text,'En cours de livraison');assert.equal(p.delivered,false);assert.equal(p.steps.length,5)
+  assert.equal(p.events[0].at,'2026-11-06T12:52:51.000Z');assert.equal(p.events[1].place,'Ville');assert.equal(p.events[1].text,'Le chauffeur est sorti pour la livraison')
+  assert.ok(!p.events.some(e=>/<p>/.test(e.text)),'HTML is reduced to text')
+  assert.equal(page('shein-track.html','https://fr.shein.com/orders/track?billno=GOTHER000001').error,'reference_mismatch')
+})
+test('a tracking read attaches steps to the parcel, and a later read without them keeps the known steps',async()=>{
+  const {parcelObservation,mergeParcels}=await import('./shein-orders.js')
+  const items=[{sku:'a'}],at=Date.now()
+  const rich=parcelObservation({tracking_number:'gffr1234567',carrier:'GOFO',status_text:'En cours de livraison',events:[{at:new Date(at-3600000).toISOString(),place:'Marseille',text:'Arrivé'}],steps:[{name:'Livré',done:false}],skus:['a','zz'],track_url:'javascript:alert(1)'},items,at)
+  assert.equal(rich.tracking_number,'GFFR1234567');assert.equal(rich.tracked,true);assert.deepEqual(rich.skus,['a']);assert.equal(rich.track_url,null)
+  const bare=parcelObservation({tracking_number:'GFFR1234567',carrier:'',skus:['a']},items,at+1000)
+  const [merged]=mergeParcels([bare],[rich])
+  assert.equal(merged.events.length,1);assert.equal(merged.status_text,'En cours de livraison');assert.equal(merged.carrier,'GOFO');assert.equal(merged.observed_at,bare.observed_at)
+})
+test('a shipped order also opens its « Suivre » page; the parcel steps reach the import; no new visit within 25 minutes',async()=>{
+  const h=harness(),engine=createOrderEngine(h.port)
+  const detail=page('shein-order-json.html','https://fr.shein.com/user/orders/detail/GTESTJSON0001')
+  const track=page('shein-track.html','https://fr.shein.com/orders/track?billno=GTESTJSON0001')
+  const listOne={kind:'list',orders:[{ref:'GTESTJSON0001',order_date:'2026-11-02'}],has_next:false}
+  await engine.command('start');h.setResult(listOne);await engine.tick()
+  h.setResult(detail);await engine.tick()
+  assert.equal(h.state.phase,'track');assert.equal(h.nav.at(-1),'https://fr.shein.com/orders/track?billno=GTESTJSON0001')
+  h.setResult(track);await engine.tick()
+  const sent=h.calls.find(c=>c.action==='orders_import').order
+  assert.equal(sent.parcels[0].events.length>5,true);assert.equal(sent.parcels[0].status_text,'En cours de livraison');assert.equal(sent.tracked,true)
+  assert.equal(h.state.phase,'done')
+  h.advance(600001);await engine.tick();h.setResult(listOne);await engine.tick();h.setResult(detail);await engine.tick()
+  assert.notEqual(h.state.phase,'track','tracking is refreshed at most every 25 minutes');assert.equal(h.calls.filter(c=>c.action==='orders_import').length,2)
+})
+test('a « Suivre » page that does not answer still saves the order with its tracking numbers',async()=>{
+  const h=harness(),engine=createOrderEngine(h.port)
+  await engine.command('start');h.setResult({kind:'list',orders:[{ref:'GTESTJSON0001',order_date:'2026-11-02'}],has_next:false});await engine.tick()
+  h.setResult(page('shein-order-json.html','https://fr.shein.com/user/orders/detail/GTESTJSON0001'));await engine.tick()
+  h.setResult({error:'page_unavailable'});await engine.tick();assert.equal(h.state.phase,'track')
+  h.advance(45001);await engine.tick()
+  const sent=h.calls.find(c=>c.action==='orders_import').order
+  assert.equal(sent.parcels[0].tracking_number,'GFFR00000000000001');assert.equal(sent.tracked,false);assert.equal(h.state.errors.length,0)
+})
+test('a delivered parcel marks its items as delivered',async()=>{
+  const h=harness(),engine=createOrderEngine(h.port)
+  const track=page('shein-track.html','https://fr.shein.com/orders/track?billno=GTESTJSON0001');track.packages[0].delivered=true
+  await engine.command('start');h.setResult({kind:'list',orders:[{ref:'GTESTJSON0001',order_date:'2026-11-02'}],has_next:false});await engine.tick()
+  h.setResult(page('shein-order-json.html','https://fr.shein.com/user/orders/detail/GTESTJSON0001'));await engine.tick();h.setResult(track);await engine.tick()
+  const sent=h.calls.find(c=>c.action==='orders_import').order
+  assert.deepEqual(sent.items.filter(i=>i.status_text==='Livré').map(i=>i.sku),['sz25092721773738883','sz2410092319181622'])
+  assert.equal(validateSheinOrder({...sent,observed_at:new Date().toISOString()}).items.find(i=>i.sku==='sz2410092319181622').status,'delivered')
+})

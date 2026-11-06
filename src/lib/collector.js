@@ -1,6 +1,6 @@
 import { supplierLink, sheinSearchUrl } from './catalog.js'
 
-export const extensionVersion='0.7.1'
+export const extensionVersion='0.8.0'
 export function extensionNeedsUpdate(version) {
   if(!/^\d+\.\d+\.\d+$/.test(version||''))return true
   const installed=version.split('.').map(Number),current=extensionVersion.split('.').map(Number)

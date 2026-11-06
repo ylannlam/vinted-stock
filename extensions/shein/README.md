@@ -1,4 +1,4 @@
-# Assistant Shein — 0.7.1
+# Assistant Shein — 0.8.0
 
 Les fiches se pilotent dans **Catalogue**, et les achats dans **Ventes → Mes commandes Shein**, sur https://vinted-stock.vercel.app. L’extension utilise ses propres onglets.
 
@@ -45,6 +45,13 @@ Chrome ou Edge 120+. Seuls fr.shein.com, www.shein.com et vinted-stock.vercel.ap
 Le code d’association reste dans le stockage local protégé de l’extension, expire après 90 jours et peut être révoqué depuis le catalogue. Les requêtes authentifiées vont uniquement au point d’accès fixe `/api/collector` de ton site, sans redirection ni cookies. Aucun mot de passe, clé Dotb, historique de navigation ou cookie n’est lu. Aucun achat ni changement d’annonce n’est effectué.
 
 L’accès à Shein dépend de ta session et des contrôles du fournisseur. Une connexion réussie ne garantit pas que toutes les fiches seront accessibles.
+
+## Nouveautés 0.8.0
+- Les commandes sont lues à partir des données que la page Shein contient elle-même, et non plus de son affichage : tous les articles d'une commande sont lus d'un coup, sans cliquer sur les onglets « Colis ».
+- Le numéro de suivi, le transporteur (GOFO, Colissimo…) et le total réellement payé (livraison comprise) sont relevés sur chaque commande.
+- Pour une commande expédiée, l'extension ouvre aussi la page « Suivre » de Shein, au plus une fois toutes les 25 minutes, et en relève l'étape actuelle et l'historique daté du colis. Un colis livré passe ses articles en « Livré ».
+- Le prix payé par exemplaire est connu même quand un article est acheté en plusieurs exemplaires au même prix.
+- Si la page « Suivre » ne répond pas, la commande est quand même enregistrée avec son numéro de suivi ; l'historique déjà connu est conservé.
 
 ## Nouveautés 0.7.1
 - Les onglets « En cours de traitement » et « Colis » d’une même commande sont tous parcourus avant son enregistrement. Un onglet illisible conserve le relevé précédent et signale la commande.
