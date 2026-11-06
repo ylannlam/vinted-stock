@@ -9,7 +9,7 @@ export function healthView({report=null,alerts=[],native=null},now=Date.now()){
   for(const a of alerts){
     // A human confirmation acknowledges earlier alerts, but never later ones.
     if(a.resolved||report&&validTime(a.created_at)<=validTime(report.checked_at))continue
-    candidates.push({status:a.status,until_date:a.until_date,reason:[a.title,a.body].filter(Boolean).join(' — '),checked_at:a.created_at,source:'dotb'})
+    candidates.push({status:a.status,until_date:a.until_date,reason:[a.title,a.body].filter(Boolean).join(' — '),checked_at:a.created_at,source:a.kind?.startsWith('page_')?'page':'dotb'})
   }
   if(native&&!native.deleted_at){
     const status=({banni_temp:'temporary',banni_def:'permanent',suspendu:'blocked'})[native.statut]||(native.creation_stage==='blocked'?'blocked':native.is_shadowbanned?'restricted':null)

@@ -210,3 +210,16 @@ test('real Vinted notices: automation block, unblock, 5-day restriction, permane
   assert.equal(healthView({alerts:openAlerts([restricted])},Date.parse('2026-11-06T12:00:00Z')).status,'restricted')
   assert.equal(healthView({alerts:openAlerts([restricted])},Date.parse('2026-11-09T12:00:00Z')).status,'review','on the end date the account is shown as to check')
 })
+test('a Vinted page reading overrides older Dotb alerts and confirms access for a day',async()=>{
+ const {openAlerts}=await import('./account-health.js')
+ const dotb={id:'d',kind:'vinted_notice',status:'temporary',resolved:false,created_at:'2026-11-06T20:33:00Z'}
+ const banner={id:'p',kind:'page_banner',status:'restricted',until_date:'2026-11-07',resolved:false,created_at:'2026-11-06T20:56:00Z',observed_at:'2026-11-06T21:40:00Z'}
+ const now=Date.parse('2026-11-06T22:00:00Z')
+ assert.deepEqual(openAlerts([dotb,banner],now).map(a=>a.id),['p'])
+ const h=healthView({alerts:openAlerts([dotb,banner],now)},now);assert.equal(h.status,'restricted');assert.equal(h.source,'page')
+ const ok={id:'o',kind:'page_ok',status:'ok',resolved:true,created_at:'2026-11-06T21:00:00Z',observed_at:'2026-11-06T21:00:00Z'}
+ assert.equal(healthView({alerts:openAlerts([dotb,ok],now)},now).label,'Accès confirmé')
+ const later={...dotb,id:'l',created_at:'2026-11-06T21:30:00Z'}
+ assert.equal(healthView({alerts:openAlerts([ok,later],now)},now).status,'temporary','a newer Dotb alert still wins')
+ assert.equal(healthView({alerts:openAlerts([ok],Date.parse('2026-11-08T12:00:00Z'))}).status,'unknown','an old confirmation expires')
+})

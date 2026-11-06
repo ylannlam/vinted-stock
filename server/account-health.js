@@ -136,16 +136,26 @@ export function healthNativeLink(account,profile,native){
   return {account:matching.length===1?matching[0]:null,by:matching.length===1?(byNumber.length?'profile_number':'pseudo'):null,profile_number:number||null,ambiguous:matching.length>1}
 }
 // Un message « Ton compte a été débloqué » efface les blocages et restrictions antérieurs du même compte.
-export function openAlerts(rows){
-  const recovered=rows.filter(r=>r.kind==='recovered').map(r=>Date.parse(r.created_at)).filter(Number.isFinite)
-  const last=recovered.length?Math.max(...recovered):null
-  return rows.filter(r=>r.kind!=='recovered'&&!r.resolved&&(last===null||Date.parse(r.created_at)>last))
+// Un relevé de la page Vinted (extension de veille) fait foi : il remplace toutes les alertes Dotb plus anciennes.
+// « Aucune restriction » ne vaut qu'un jour : au-delà, l'état redevient non vérifié.
+export const PAGE_KINDS=['page_ok','page_banner']
+const PAGE_OK_TTL=24*3600000
+export function openAlerts(rows,now=Date.now()){
+  const time=r=>Date.parse(r.created_at)
+  const recovered=rows.filter(r=>r.kind==='recovered').map(time).filter(Number.isFinite)
+  const page=rows.filter(r=>PAGE_KINDS.includes(r.kind)).sort((a,b)=>Date.parse(b.observed_at||b.created_at)-Date.parse(a.observed_at||a.created_at))[0]||null
+  const pageAt=page?Date.parse(page.observed_at||page.created_at):null
+  const last=Math.max(...recovered,pageAt??-Infinity)
+  const dotb=rows.filter(r=>!PAGE_KINDS.includes(r.kind)&&r.kind!=='recovered'&&!r.resolved&&(!Number.isFinite(last)||time(r)>last))
+  if(!page)return dotb
+  if(page.kind==='page_ok')return now-pageAt<PAGE_OK_TTL?[...dotb,{...page,resolved:false,created_at:page.observed_at||page.created_at}]:dotb
+  return [...dotb,page]
 }
 export async function readHealth(db,{ownerId}={}){
   const [accounts,reports,alerts,native,sync,links,prefs]=await Promise.all([
     readBoardRows(()=>db.from('publication_accounts').select('id,login,source_present',{count:'exact'}).eq('source_present',true).order('id')),
     readBoardRows(()=>db.from('account_health_reports').select('account_id,status,reason,until_at,until_date,version,checked_at',{count:'exact'}).order('account_id')),
-    readBoardRows(()=>db.from('account_health_alerts').select('id,account_id,status,kind,title,body,resolved,created_at,observed_at,until_date',{count:'exact'}).or('resolved.eq.false,kind.eq.recovered').order('id')),
+    readBoardRows(()=>db.from('account_health_alerts').select('id,account_id,status,kind,title,body,resolved,created_at,observed_at,until_date',{count:'exact'}).or('resolved.eq.false,kind.in.(recovered,page_ok,page_banner)').order('id')),
     readBoardRows(()=>db.from('vinted_accounts').select('id,pseudo,statut,creation_stage,deban_at,blocked_at,deleted_at,is_shadowbanned,ads_power_num',{count:'exact'}).is('deleted_at',null).order('id')),
     db.from('account_health_sync').select('last_completed_at,last_attempt_at,next_allowed_at,error,partial').eq('id',true).single(),
     readBoardRows(()=>db.from('publication_profile_links').select('owner_id,profile_id,account_id',{count:'exact'}).order('owner_id').order('profile_id')),

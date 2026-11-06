@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from 'react'
 import {healthView,healthLabels,healthHasDeadline,remainingHealthTime} from '../lib/accountHealth'
 import {buttonClass,primaryClass,fieldClass} from './WorkspaceUI'
 const date=v=>v?new Date(v).toLocaleString('fr-FR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'Non renseignée'
-const sources={manual:'Confirmé à la main',dotb:'Signalé par Dotb',accounts:'Suivi Comptes'}
+const sources={manual:'Confirmé à la main',dotb:'Signalé par Dotb',accounts:'Suivi Comptes',page:'Vu sur Vinted'}
 export function HealthBadge({entry,now,onEdit}){
   const h=healthView(entry||{},now)
   return <button type="button" disabled={!onEdit} onClick={onEdit} className={`rounded-xl border px-3 py-2 text-left text-xs ${h.attention?'border-amber-300 bg-amber-50 text-amber-950':h.status==='ok'?'border-teal-200 bg-teal-50 text-teal-900':'border-slate-200 bg-slate-50 text-slate-600'}`}>
@@ -39,7 +39,7 @@ export function HealthSummary({tracker,ids=null,onEdit,showList=false}){
   const accounts=(tracker.data?.accounts||[]).filter(a=>!ids||ids.includes(a.id)),attention=accounts.filter(a=>healthView(a,tracker.now).attention),sync=tracker.data?.sync
   return <section className={`rounded-2xl border p-4 sm:p-5 space-y-3 ${attention.length?'border-amber-200 bg-amber-50/60':'border-slate-200 bg-white'}`} aria-label="État des comptes Vinted">
     <header className="flex flex-wrap justify-between gap-3"><div><h2 className="font-semibold">État des comptes Vinted{attention.length?` · ${attention.length} à vérifier`:''}</h2><p className="text-xs text-slate-500 mt-1">Bannissements et restrictions signalés par Dotb, actualisés toutes les 5 minutes pendant que cet onglet est ouvert. Certains messages Vinted ne sont pas transmis par Dotb : signale alors la restriction sur le compte.</p></div><button className={buttonClass} disabled={tracker.busy} onClick={()=>tracker.refresh()}>{tracker.busy?'Lecture des alertes…':'Actualiser les alertes'}</button></header>
-    <p className="text-xs text-slate-500">Dernière lecture réussie : {date(sync?.last_completed_at)}. Sans alerte, l’état reste non vérifié.</p>
+    <p className="text-xs text-slate-500">Dernière lecture réussie : {date(sync?.last_completed_at)}. Les profils AdsPower avec l’extension de veille confirment l’état à chaque page Vinted ouverte.</p>
     {(tracker.error||sync?.error)&&<p role="alert" className="text-sm text-amber-900">{tracker.error||sync.error}</p>}
     {sync?.partial&&<p role="status" className="text-sm text-amber-900">Seules les alertes les plus récentes ont été lues. Les anciens signalements restent conservés.</p>}
     {!!attention.length&&<ul className="flex flex-wrap gap-2">{attention.map(a=><li key={a.id}><button className="text-sm font-medium underline text-amber-950" onClick={()=>onEdit(a)}>{a.login} · {healthView(a,tracker.now).label}</button></li>)}</ul>}

@@ -54,7 +54,7 @@ export async function recordWatch(db,key,report){
   const before=check(await db.from('account_health_alerts').select('status,kind,until_date,created_at').eq('id',id).maybeSingle())
   const title=report.status==='ok'?'Aucun bandeau sur la page du compte':report.message.split(/(?<=\d{4})\s|\.\s/)[0]?.slice(0,200)||'Bandeau Vinted'
   const row=report.status==='ok'
-    ?{id,account_id:account.id,status:'review',kind:'recovered',title,body:'Vérifié sur la page Vinted du compte.',resolved:true,until_date:null,
+    ?{id,account_id:account.id,status:'ok',kind:'page_ok',title,body:'Vérifié sur la page Vinted du compte.',resolved:true,until_date:null,
       created_at:report.observed_at,observed_at:report.observed_at}
     :{id,account_id:account.id,status:report.status,kind:'page_banner',title,body:report.message,resolved:false,until_date:report.until_date,
       // Même bandeau qu'au relevé précédent : on garde sa date d'apparition (pas de nouvelle alerte).

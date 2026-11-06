@@ -59,7 +59,7 @@ test('a banner becomes the account state; the same banner keeps its first date; 
   assert.equal(row.id,bannerAlertId('acc-1'));assert.equal(row.kind,'page_banner');assert.equal(row.until_date,'2026-11-07');assert.equal(row.created_at,'2026-11-06T20:00:00.000Z')
   assert.equal(row.title,'Compte restreint jusqu\'au 07/11/2026')
   await recordWatch(db,{id:'k1'},{...base,status:'ok',until_date:null,message:'',observed_at:'2026-11-08T09:00:00.000Z'})
-  assert.equal(state.account_health_alerts.length,1);assert.equal(state.account_health_alerts[0].kind,'recovered');assert.equal(state.account_health_alerts[0].created_at,'2026-11-08T09:00:00.000Z')
+  assert.equal(state.account_health_alerts.length,1);assert.equal(state.account_health_alerts[0].kind,'page_ok');assert.equal(state.account_health_alerts[0].created_at,'2026-11-08T09:00:00.000Z')
   assert.equal(state.vinted_watch_keys[0].last_login,'liloumln2')
   assert.equal((await recordWatch(db,{id:'k1'},{...base,member_id:'999',login:'inconnu',observed_at:'2026-11-08T09:00:00.000Z'})).saved,false)
 })

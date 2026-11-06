@@ -11,7 +11,7 @@ export default function AccountAlertBanner({onOpen,request}){
  const {data,now}=useAccountHealth(request)
  const [seen,setSeen]=useState(()=>{try{return Number(localStorage.getItem(KEY))||0}catch{return 0}})
  const fresh=(data?.accounts||[]).map(a=>({a,h:healthView(a,now)}))
-  .filter(({h})=>h.attention&&h.source==='dotb'&&!['review','verification'].includes(h.status)&&Date.parse(h.checked_at)>seen)
+  .filter(({h})=>h.attention&&['dotb','page'].includes(h.source)&&!['review','verification'].includes(h.status)&&Date.parse(h.checked_at)>seen)
   .sort((x,y)=>Date.parse(y.h.checked_at)-Date.parse(x.h.checked_at))
  if(!fresh.length)return null
  const dismiss=()=>{const at=Date.now();try{localStorage.setItem(KEY,String(at))}catch{};setSeen(at)}
