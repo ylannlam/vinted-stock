@@ -5,6 +5,8 @@ import {ASSET_BUCKET,uploadTarget,ensureAssetBucket} from './resources.js'
 import {validateListingPhoto} from '../src/lib/listingStudio.js'
 import {readTeamBoard,readBoardRows,markPublished,vintedItemId} from './team-board.js'
 import {readListingPicker} from './listing-picker.js'
+import {readPlanner,planListings} from './publication-planner.js'
+import {readAiUsage,saveAiPrice} from './ai-usage.js'
 import {lookupListingSku,sheinListingFacts} from './library.js'
 import {readListingSettings,dotbAccounts,saveListingSettings,listingTitleExamples,reserveListingSlot} from './listing-settings.js'
 import {applyListingPresets,LISTING_AI_MODELS} from '../src/lib/listingSettings.js'
@@ -119,6 +121,36 @@ export async function soldCatalogIds(db,now=Date.now()){
  try{const rows=check(await db.from('sales_lines').select('catalog_id:source->>catalog_id').not('source->>catalog_id','is',null).order('updated_at',{ascending:false}).limit(400))||[];ids=[...new Set(rows.map(r=>Number(r.catalog_id)).filter(n=>Number.isSafeInteger(n)&&n>0))]}catch{}
  soldCache={at:now,ids};return ids
 }
+// Dépenses IA : jetons de chaque rédaction. Un échec d'enregistrement ne bloque jamais l'annonce.
+export async function recordAiUsage(db,usage,{listing=null,account=null,user=null}={}){
+ if(!usage?.model)return
+ const tokens=v=>Math.min(10000000,Math.max(0,Math.round(Number(v)||0)))
+ try{await db.from('ai_usage').insert({feature:'listing_text',model:String(usage.model).slice(0,100),input_tokens:tokens(usage.input_tokens),output_tokens:tokens(usage.output_tokens),listing_id:isId(listing)?listing:null,account_id:isId(account)?account:null,user_id:isId(user)?user:null})}catch{}
+}
+
+// Validation complète puis réservation du créneau : envoi immédiat (Annonces) ou heure choisie (Publication).
+async function queueListing(db,user,row,{mode,notBefore=null,read,settings,accounts=null,requireBridge=false}){
+ if(!['live','draft',undefined].includes(mode))throw new AppError('Choisis « en ligne » ou « brouillon Vinted ».')
+ const list=accounts||listingAccounts(await read('accounts')),account=await requireSelectedAccount(db,user.id,row.fields.account_id,list)
+ if(requireBridge&&!account?.connected)throw new AppError('Ouvre ce compte dans AdsPower et active son Bridge Dotb avant de publier.',409)
+ const [options,colors,photos]=await Promise.all([listingMetadata(`catalogs/${row.fields.catalog_id}/options?country=FR&locale=fr`,read),listingMetadata('colors?country=FR',read),verifiedPhotos(db,user.id,row.photos)])
+ const payload=listingPayload(row.fields,photos,options,colors.data,account)
+ if(row.fields.brand_id!==1){const brands=await listingMetadata(`brands?q=${encodeURIComponent(row.fields.brand_title)}&limit=25`,read);if(!brands.data?.some(b=>b.id===row.fields.brand_id))throw new AppError('Sélectionne à nouveau la marque dans les résultats.')}
+ if(row.dotb_item_id){const item=validateRemoteItem(await read(`items/${row.dotb_item_id}`),row);if(item.status!=='pending'||item.vinted_id||item.scheduled_publish_at)throw new AppError('Cette annonce est déjà en cours de publication. Consulte Dotb.',409)}
+ // Choix fait au moment de l'envoi : en ligne directement (par défaut) ou brouillon Vinted.
+ if((mode!=='draft')!==(row.dotb_publish!==false))row=await updateListing(db,row,{dotb_publish:mode!=='draft'})
+ return reserveListingSlot(db,row,payload,(await settings(db,row.fields.account_id)).effective.spacing_minutes,notBefore)
+}
+
+// Annule une programmation encore à venir : la fiche reste dans Dotb et redevient modifiable ici.
+async function unscheduleListing(db,row,read){
+ if(row.state!=='scheduled'||!row.dotb_item_id)throw new AppError('Cette annonce n’est pas programmée.',409)
+ if(Date.parse(row.scheduled_at||row.planned_at)<Date.now()+120000)throw new AppError('La publication commence dans moins de 2 minutes : elle ne peut plus être annulée ici.',409)
+ try{await read(`items/${row.dotb_item_id}/schedule`,{method:'DELETE'})}
+ catch(e){if(e.upstreamStatus===404)return inspectPublish(db,row,read);throw e}
+ return updateListing(db,row,{state:'draft',planned_at:null,scheduled_at:null,inflight:null,lease:null,lease_until:null,last_error:null,message:'Programmation annulée. La fiche reste prête : tu peux la reprogrammer.'})
+}
+
 export async function handleListingStudio(req,{db,user},{read=dotbListingRequest,generate=generateListingText,allowDotb=dotbPublishingEnabled(),settings=readListingSettings,examples=listingTitleExamples,soldCatalogs=soldCatalogIds}={}){
  const action=req.query?.action||req.body?.action||'list',body=req.body||{}
  // Dotb publie seulement si le serveur l'autorise ET si l'interrupteur du compte est allumé.
@@ -155,6 +187,9 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
    return {account_id:accountId,settings:presets,dotb_publish_enabled:allowDotb,dotb:allowDotb&&presets.effective.dotb===true,drafts:await Promise.all(rows.map(r=>expose(db,r)))}
   }
   if(action==='settings')return settings(db,req.query.account_id)
+  // Onglet Publication : fiches prêtes, comptes, annonces déjà prévues.
+  if(action==='planner')return readPlanner(db,user,{read,allowDotb})
+  if(action==='ai_usage')return readAiUsage(db,req.query)
   if(action==='list'){
    const page=Number(req.query.page||0);if(!Number.isSafeInteger(page)||page<0||page>1000)throw new AppError('Page invalide.')
    const result=await db.from(TABLE).select('*',{count:'exact'}).eq('owner_id',user.id).order('updated_at',{ascending:false}).order('id').range(page*20,page*20+19)
@@ -178,6 +213,14 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
  }
  // Fiche Shein du SKU saisi : mesures et prix conseillé depuis la bibliothèque, sinon recherche par le PC.
  if(action==='shein')return lookupListingSku(db,user,{sku:body.sku,size:body.size,queue:body.queue===true?true:body.queue==='auto'?'auto':false})
+ if(action==='ai_price')return {price:await saveAiPrice(db,body)}
+ if(action==='plan'){
+  if(!allowDotb)throw new AppError(manualPublishingMessage,409)
+  return planListings(db,user,body,{read,queue:async(row,options)=>{
+   if(!await dotbFor(row.fields.account_id))throw new AppError('La publication via Dotb est coupée pour ce compte (réglages des annonces).',409)
+   return queueListing(db,user,row,{...options,read,settings})
+  }})
+ }
  if(!isId(body.id))throw new AppError('Brouillon invalide.')
  let row=check(await db.from(TABLE).select('*').eq('owner_id',user.id).eq('id',body.id).maybeSingle())
  if(action==='create'){
@@ -187,6 +230,10 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
   return {draft:await expose(db,row)}
  }
  if(!row)throw new AppError('Brouillon introuvable.',404)
+ if(action==='unschedule'){
+  if(body.version!==row.version||pending(row))throw new AppError('Cette annonce a changé. Actualise la liste.',409)
+  return {draft:await expose(db,await unscheduleListing(db,row,read))}
+ }
  if(action==='step')return {draft:await expose(db,await listingStep(db,row,{read,allowDotb:row.state==='preparing'?await dotbFor(row.fields.account_id):allowDotb}))}
  if(action==='refresh'){
   if(!row.dotb_item_id||pending(row)||row.checked_at&&Date.parse(row.checked_at)>Date.now()-10000)return {draft:await expose(db,row)}
@@ -228,6 +275,7 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
    const urls=check(signed).map(x=>x.signedUrl);if(urls.some(u=>!u))throw new AppError('Une photo est indisponible. Ajoute-la à nouveau.')
    const roots=catalogRoots(catalogs.data,[...sold,...(row.fields.catalog_id?[row.fields.catalog_id]:[])])
    const result=await generate(row,urls,catalogs.data,colors.data,{token:listingAiToken(req),settings:presets.effective,examples:titles,roots,shein})
+   await recordAiUsage(db,result.usage,{listing:row.id,account:row.fields.account_id,user:user.id})
    // Les réglages complètent la fiche (marque, état, colis, taille Vinted) ; un choix encore valide est gardé.
    const options=result.catalog_id?await listingMetadata(`catalogs/${result.catalog_id}/options?country=FR&locale=fr`,read).catch(()=>null):null
    const sameCatalog=result.catalog_id===row.fields.catalog_id
@@ -238,16 +286,7 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
   row=await markPublished(db,row,body.url,updateListing)
  }else if(action==='publish'){
   if(body.confirmation_account_id!==row.fields.account_id)throw new AppError('Vérifie le compte ciblé avant de publier.')
-  const accounts=listingAccounts(await read('accounts')),account=await requireSelectedAccount(db,user.id,row.fields.account_id,accounts)
-  if(!account?.connected)throw new AppError('Ouvre ce compte dans AdsPower et active son Bridge Dotb avant de publier.',409)
-  const [options,colors,photos]=await Promise.all([listingMetadata(`catalogs/${row.fields.catalog_id}/options?country=FR&locale=fr`,read),listingMetadata('colors?country=FR',read),verifiedPhotos(db,user.id,row.photos)])
-  const payload=listingPayload(row.fields,photos,options,colors.data,account)
-  if(row.fields.brand_id!==1){const brands=await listingMetadata(`brands?q=${encodeURIComponent(row.fields.brand_title)}&limit=25`,read);if(!brands.data?.some(b=>b.id===row.fields.brand_id))throw new AppError('Sélectionne à nouveau la marque dans les résultats.')}
-  if(row.dotb_item_id){const item=validateRemoteItem(await read(`items/${row.dotb_item_id}`),row);if(item.status!=='pending'||item.vinted_id||item.scheduled_publish_at)throw new AppError('Cette annonce est déjà en cours de publication. Consulte Dotb.',409)}
-  // Choix fait au moment de l'envoi : en ligne directement (par défaut) ou brouillon Vinted.
-  if(!['live','draft',undefined].includes(body.mode))throw new AppError('Choisis « en ligne » ou « brouillon Vinted ».')
-  if((body.mode!=='draft')!==(row.dotb_publish!==false))row=await updateListing(db,row,{dotb_publish:body.mode!=='draft'})
-  row=await reserveListingSlot(db,row,payload,(await settings(db,row.fields.account_id)).effective.spacing_minutes)
+  row=await queueListing(db,user,row,{mode:body.mode,read,settings,requireBridge:true})
  }else throw new AppError('Action inconnue.')
  return {draft:await expose(db,row)}
 }

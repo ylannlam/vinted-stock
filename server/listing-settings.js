@@ -49,8 +49,16 @@ export async function listingTitleExamples(db,accountId){
 }
 
 // Le verrou par compte et la réservation sont dans la même transaction, même depuis deux onglets.
-export async function reserveListingSlot(db,row,payload,spacing){
- const rows=check(await db.rpc('reserve_listing_slot',{p_id:row.id,p_owner:row.owner_id,p_version:row.version,p_payload:payload,p_spacing:spacing}))
+export async function reserveListingSlot(db,row,payload,spacing,notBefore=null){
+ const rows=check(await db.rpc('reserve_listing_slot',{p_id:row.id,p_owner:row.owner_id,p_version:row.version,p_payload:payload,p_spacing:spacing,...(notBefore?{p_not_before:notBefore}:{})}))
  if(!rows?.[0])throw new AppError('Cette fiche a changé. Actualise la session avant de reprendre l’envoi.',409)
  return rows[0]
+}
+
+// Réglages effectifs de tous les comptes en une seule lecture (onglet Publication).
+export async function allListingSettings(db){
+ const rows=await readRows(db.from(TABLE).select('scope,settings'))
+ const global=rows.find(r=>r.scope==='default')?.settings||null
+ const accounts=new Map(rows.filter(r=>typeof r.scope==='string'&&r.scope!=='default').map(r=>[r.scope,effectiveListingSettings(global,r.settings)]))
+ return {effective:id=>accounts.get(String(id||'').toLowerCase())||effectiveListingSettings(global,null)}
 }

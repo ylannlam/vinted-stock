@@ -20,3 +20,4 @@ export const TAB_HISTORY = '__history__'
 
 export const TAB_ADSPOWER = '__adspower__'
 export const TAB_LISTINGS = '__listings__'
+export const TAB_PUBLICATION = '__publication__'

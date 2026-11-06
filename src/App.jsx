@@ -4,6 +4,7 @@ const BudgetTab=lazy(()=>import('./components/BudgetTab'))
 const CatalogueTab=lazy(()=>import('./components/CatalogueTab'))
 const ResourcesTab=lazy(()=>import('./components/ResourcesTab'))
 const ListingStudio=lazy(()=>import('./components/ListingStudio'))
+const PublicationTab=lazy(()=>import('./components/PublicationTab'))
 import { captureDraft } from './lib/catalog'
 import { TAB_ADSPOWER, TAB_LISTINGS, TAB_SALES, TAB_BUDGET, TAB_CATALOG, TAB_RESOURCES } from './constants'
 import { useState, useEffect, useRef, lazy, Suspense } from 'react'
@@ -12,7 +13,7 @@ import {readAllRows} from './lib/workspace'
 import {clearViewCache,setViewCacheScope} from './lib/viewCache'
 import {ErrorNotice,PageBoundary} from './components/WorkspaceUI'
 import {workspaceErrors} from '../server/workspace'
-import {TAB_HOME,TAB_HISTORY} from './constants'
+import {TAB_HOME,TAB_HISTORY,TAB_PUBLICATION} from './constants'
 const HomeTab=lazy(()=>import('./components/HomeTab'))
 const HistoryTab=lazy(()=>import('./components/HistoryTab'))
 const PhotoPreparation=lazy(()=>import('./components/PhotoPreparation'))
@@ -534,6 +535,7 @@ export default function App() {
       {activeTab===TAB_HISTORY&&<HistoryTab isAdmin={isAdmin} onRestored={()=>{fetchItems();fetchCommandes()}}/>}
       {activeTab === TAB_BUDGET && isAdmin && <BudgetTab onOpenSale={row=>setActiveTab(TAB_SALES,{line:row.id})} />}
       {activeTab===TAB_LISTINGS&&isAdmin&&<main className="workspace-page max-w-screen-2xl mx-auto p-4 sm:p-6 text-slate-800"><ListingStudio key={JSON.stringify(navigationFilters)} initialProfile={navigationFilters.profile} initialSku={navigationFilters.sku} onAccounts={()=>setActiveTab(TAB_ADSPOWER)} onStyles={()=>setActiveTab(TAB_RESOURCES,{section:'accounts'})}/></main>}
+      {activeTab===TAB_PUBLICATION&&isAdmin&&<PublicationTab onOpenListings={()=>setActiveTab(TAB_LISTINGS)}/>}
       {activeTab === TAB_RESOURCES && isAdmin && <ResourcesTab key={JSON.stringify(navigationFilters)} initialSection={navigationFilters.section} initialProfile={navigationFilters.profile} onAccounts={()=>setActiveTab(TAB_ADSPOWER)} />}
       {activeTab === TAB_SALES && <SalesTab key={JSON.stringify(navigationFilters)} isAdmin={isAdmin} initialFilters={navigationFilters} onPreparePhoto={setPhotoArticle} />}
       {activeTab === TAB_CATALOG && (userRole==='admin'||userRole==='stock') && <CatalogueTab isAdmin={isAdmin} onPreparePhoto={isAdmin?setPhotoArticle:undefined} onCreateListing={isAdmin?sku=>setActiveTab(TAB_LISTINGS,{sku}):undefined} />}

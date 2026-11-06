@@ -35,7 +35,7 @@ end $$;
 do $$
 declare member uuid; a text:=gen_random_uuid()::text; first_id uuid:=gen_random_uuid(); second_id uuid:=gen_random_uuid(); first_slot timestamptz; second_slot timestamptz;
 begin
- if has_function_privilege('authenticated','public.reserve_listing_slot(uuid,uuid,integer,jsonb,integer)','execute') then raise exception 'reservation exposed';end if;
+ if has_function_privilege('authenticated','public.reserve_listing_slot(uuid,uuid,integer,jsonb,integer,timestamptz)','execute') then raise exception 'reservation exposed';end if;
  select id into member from public.profiles limit 1;
  if member is null then raise exception 'seed one test profile before running';end if;
  insert into public.listing_drafts(id,owner_id,fields) values(first_id,member,jsonb_build_object('account_id',a)),(second_id,member,jsonb_build_object('account_id',a));
