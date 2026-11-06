@@ -217,7 +217,7 @@ test('a Vinted page reading overrides older Dotb alerts and confirms access for 
  const now=Date.parse('2026-11-06T22:00:00Z')
  assert.deepEqual(openAlerts([dotb,banner],now).map(a=>a.id),['p'])
  const h=healthView({alerts:openAlerts([dotb,banner],now)},now);assert.equal(h.status,'restricted');assert.equal(h.source,'page')
- const ok={id:'o',kind:'page_ok',status:'ok',resolved:true,created_at:'2026-11-06T21:00:00Z',observed_at:'2026-11-06T21:00:00Z'}
+ const ok={id:'o',kind:'page_ok',status:'review',resolved:true,created_at:'2026-11-06T21:00:00Z',observed_at:'2026-11-06T21:00:00Z'}
  assert.equal(healthView({alerts:openAlerts([dotb,ok],now)},now).label,'Accès confirmé')
  const later={...dotb,id:'l',created_at:'2026-11-06T21:30:00Z'}
  assert.equal(healthView({alerts:openAlerts([ok,later],now)},now).status,'temporary','a newer Dotb alert still wins')

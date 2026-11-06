@@ -137,7 +137,7 @@ export function healthNativeLink(account,profile,native){
 }
 // Un message « Ton compte a été débloqué » efface les blocages et restrictions antérieurs du même compte.
 // Un relevé de la page Vinted (extension de veille) fait foi : il remplace toutes les alertes Dotb plus anciennes.
-// « Aucune restriction » ne vaut qu'un jour : au-delà, l'état redevient non vérifié.
+// « Aucune restriction » (stockée en status review, la base n'accepte pas ok) ne vaut qu'un jour : au-delà, l'état redevient non vérifié.
 export const PAGE_KINDS=['page_ok','page_banner']
 const PAGE_OK_TTL=24*3600000
 export function openAlerts(rows,now=Date.now()){
@@ -148,7 +148,7 @@ export function openAlerts(rows,now=Date.now()){
   const last=Math.max(...recovered,pageAt??-Infinity)
   const dotb=rows.filter(r=>!PAGE_KINDS.includes(r.kind)&&r.kind!=='recovered'&&!r.resolved&&(!Number.isFinite(last)||time(r)>last))
   if(!page)return dotb
-  if(page.kind==='page_ok')return now-pageAt<PAGE_OK_TTL?[...dotb,{...page,resolved:false,created_at:page.observed_at||page.created_at}]:dotb
+  if(page.kind==='page_ok')return now-pageAt<PAGE_OK_TTL?[...dotb,{...page,status:'ok',resolved:false,created_at:page.observed_at||page.created_at}]:dotb
   return [...dotb,page]
 }
 export async function readHealth(db,{ownerId}={}){
