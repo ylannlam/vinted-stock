@@ -3,6 +3,7 @@ import {useAccountHealth} from '../lib/useAccountHealth'
 import {healthView} from '../lib/accountHealth'
 import {publicationAccount} from '../lib/publications'
 import {HealthSummary,HealthDialog} from './AccountHealth'
+import VintedWatchPanel from './VintedWatchPanel'
 import {adsPowerRequest,COMPANION,isLaunching} from '../lib/adspower'
 import {activityView,freshCheck} from '../lib/adspowerStatus'
 import {isMobileDevice,readAdsPowerConnection} from '../lib/adspowerConnection'
@@ -21,7 +22,7 @@ const secondary='rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm
 const primary='rounded-xl bg-teal-700 px-5 py-3 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-40'
 const connectionLabels={site:'Vérification côté site',authorization:'Autorisation du site',session:'Session du site',offline:'Réseau de cet appareil',local:'Accès au connecteur local',timeout:'Délai de réponse',profiles:'Lecture des profils AdsPower',connector:'Réponse du connecteur',response:'Réponse du connecteur'}
 const connectionTime=time=>new Date(time).toLocaleString('fr-FR')
-export default function AdsPowerTab({request=adsPowerRequest,owner='preview',publications=publicationRequest,onCreateListing,healthRequest,mobile=isMobileDevice(),factoryStore=defaultFactoryStore}){
+export default function AdsPowerTab({request=adsPowerRequest,owner='preview',publications=publicationRequest,onCreateListing,healthRequest,watchRequest,mobile=isMobileDevice(),factoryStore=defaultFactoryStore}){
   const health=useAccountHealth(healthRequest),[healthEntry,setHealthEntry]=useState(null)
   const storageKey=`adspower-selection:${owner}`
   const [profiles,setProfiles]=useState([]),[state,setState]=useState(null),[connected,setConnected]=useState(false)
@@ -102,6 +103,7 @@ export default function AdsPowerTab({request=adsPowerRequest,owner='preview',pub
     {!mobile&&<details className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500"><summary className="cursor-pointer font-semibold text-slate-600">Diagnostic de connexion</summary><div className="mt-3 space-y-2"><p>Dernière réponse du connecteur : {lastConnection?connectionTime(lastConnection):'pas encore reçue'}</p><p>Version du connecteur : {state?.version||'non connue'}</p>{state&&<p>Lancements en attente ou en cours, tous profils : {(state.jobs||[]).filter(isLaunching).length}{!connected?' (dernière lecture réussie)':''}</p>}{lastConnectionError?<p>Dernier incident : {connectionTime(lastConnectionError.time)} · {connectionLabels[lastConnectionError.code]||'Connexion à vérifier'}. {lastConnectionError.message}</p>:<p>Aucun incident détecté depuis l’ouverture de cet onglet.</p>}<p>Ces informations sont conservées jusqu’au rechargement de la page.</p></div></details>}
     {notice&&<p role="status" className="text-sm text-teal-800">{notice}</p>}
     <HealthSummary tracker={health} ids={healthIds} onEdit={setHealthEntry} showList/>
+    {watchRequest&&<VintedWatchPanel request={watchRequest}/>}
     {healthEntry&&<HealthDialog key={healthEntry.id} entry={healthEntry} tracker={health} onClose={()=>setHealthEntry(null)}/>}
     <PublicationSummary tracking={tracking} profiles={displayed}/>
     {chooseVisible&&<AdsPowerVisibility profiles={profiles} value={shownIds} busy={selection.saving} error={selection.error} onSave={saveVisibility} onClose={()=>setChooseVisible(false)}/>}

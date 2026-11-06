@@ -26,6 +26,7 @@ import Header from './components/Header'
 import CategoryTabs from './components/CategoryTabs'
 import PublicationRunnerBadge from './components/PublicationRunnerBadge'
 import AccountAlertBanner from './components/AccountAlertBanner'
+import {vintedWatchRequest} from './components/VintedWatchPanel'
 import Gallery from './components/Gallery'
 import FilterBar from './components/FilterBar'
 import AddItemModal from './components/AddItemModal'
@@ -533,7 +534,7 @@ export default function App() {
       {(stockError||commandeError)&&<div className="max-w-screen-2xl mx-auto p-4 space-y-3"><ErrorNotice error={stockError} retry={fetchItems} busy={itemsLoading}/><ErrorNotice error={commandeError} retry={fetchCommandes}/></div>}
       {stockNotice&&<div role="status" className="max-w-screen-2xl mx-auto p-3 bg-teal-50 text-sm text-teal-800 flex justify-between gap-3">{stockNotice}<button onClick={()=>setStockNotice('')}>Fermer</button></div>}
       <Suspense fallback={<p role="status" className="p-8 text-center text-gray-500">Chargement de l’écran…</p>}><PageBoundary key={activeTab}>
-      {activeTab===TAB_ADSPOWER&&isAdmin&&<AdsPowerTab owner={user.id} onCreateListing={p=>setActiveTab(TAB_LISTINGS,{profile:p.id})}/>}
+      {activeTab===TAB_ADSPOWER&&isAdmin&&<AdsPowerTab owner={user.id} watchRequest={vintedWatchRequest} onCreateListing={p=>setActiveTab(TAB_LISTINGS,{profile:p.id})}/>}
       {activeTab===TAB_HOME&&<HomeTab isAdmin={isAdmin} onNavigate={setActiveTab}/>}
       {activeTab===TAB_HISTORY&&<HistoryTab isAdmin={isAdmin} onRestored={()=>{fetchItems();fetchCommandes()}}/>}
       {activeTab === TAB_BUDGET && isAdmin && <BudgetTab onOpenSale={row=>setActiveTab(TAB_SALES,{line:row.id})} />}

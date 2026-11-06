@@ -13,6 +13,13 @@ export default async function handler(req,res) {
   res.setHeader('Cache-Control','no-store')
   if(!['GET','POST'].includes(req.method)){res.setHeader('Allow','GET, POST');return res.status(405).end()}
   try {
+    if(req.headers.authorization?.startsWith('Bearer svwk_')) {
+      // Extension de veille des comptes Vinted (profils AdsPower) : un seul geste, signaler le bandeau du compte.
+      if(req.method!=='POST'||req.body?.action!=='watch_report')throw new AppError('Cette extension peut seulement signaler l’état d’un compte.',403)
+      const {authorizeWatch,watchReport,recordWatch}=await import('../server/vinted-watch.js')
+      const {db,key}=await authorizeWatch(req)
+      return res.json(await recordWatch(db,key,watchReport(req.body)))
+    }
     if(req.headers.authorization?.startsWith('Bearer svpc_')) {
       if(req.method!=='POST' || !deviceActions.has(req.body?.action))throw new AppError('Ce PC ne peut accéder qu’à ses récupérations Shein.',403)
       const {db,device}=await authorizeCollector(req), body=req.body
