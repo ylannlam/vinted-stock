@@ -15,6 +15,7 @@ import {refreshSalePhotos} from '../server/sale-photos.js'
 import {readDailyPurchases} from '../server/daily-purchases.js'
 import {assistantSummary} from '../server/shein-assistant.js'
 import {readIncompleteOrders} from '../server/incomplete-orders.js'
+import {syncDotbCosts} from '../server/dotb-costs.js'
 
 export const config = { maxDuration: 60 }
 const fail = error => { if (error) throw error }
@@ -94,6 +95,7 @@ export default async function handler(req, res) {
       if(req.body?.action==='shipment_refresh')return res.json(await refreshShipment(db,req.body.id))
       if (role !== 'admin') throw new AppError('Seul un administrateur peut importer les ventes.',403)
       if(req.body?.action==='automation')return res.json(await enableSalesAutomation(db))
+      if(req.body?.action==='dotb_costs'){if(role!=='admin')throw new AppError('Réservé à l’administrateur.',403);return res.json(await syncDotbCosts(db))}
       if (!process.env.DOTB_API_TOKEN) throw new AppError('La connexion Dotb reste à activer dans les réglages du serveur.',503)
       const tracking=await readTrackingPeriod(db)
       const lease = randomUUID(), now = new Date().toISOString()

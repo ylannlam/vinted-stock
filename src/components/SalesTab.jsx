@@ -10,6 +10,7 @@ import {ErrorNotice,Pagination,fieldClass,buttonClass,primaryClass} from './Work
 import {confirmPurchase,draftSupplierUrl} from '../lib/saleDetails'
 import {commonNextStage} from '../lib/workspace'
 import CollectionManager from './CollectionManager'
+import {useDotbCosts} from '../lib/useDotbCosts'
 const SheinOrders=lazy(()=>import('./SheinOrders'))
 const DailyPurchaseCart=lazy(()=>import('./DailyPurchaseCart'))
 const defaultRequest = (...args) => import('../lib/api').then(m => m.salesRequest(...args))
@@ -33,6 +34,7 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
   const [purchaseLine,setPurchaseLine]=useState(null),[purchaseReference,setPurchaseReference]=useState('')
   const [selecting,setSelecting]=useState(false),[filtersOpen,setFiltersOpen]=useState(false),[settingsOpen,setSettingsOpen]=useState(false)
   const activationAttempted=useRef(false)
+  const dotbCosts=useDotbCosts(request,isAdmin)
   async function load(force=false) {
     const seq=++sequence.current
     const params=new URLSearchParams({view:'page',...JSON.parse(filterKey)})
@@ -163,6 +165,7 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
     </section>}
 
     <ErrorNotice error={!skuEditing&&!editing&&!batch&&!purchaseLine?error:null} retry={()=>run(()=>load(true))} busy={busy}/>
+    {isAdmin&&dotbCosts.message&&<p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Prix d’achat vers Dotb : {dotbCosts.message}{dotbCosts.pending?` (${dotbCosts.pending} en attente)`:''}</p>}
     {notice&&<p role="status" className="rounded-xl bg-teal-50 px-4 py-3 text-sm text-teal-800">{notice}</p>}
     {data.setup_required?<p className="bg-amber-50 p-3 rounded-lg text-sm">Le suivi doit être activé avant le premier import.</p>:data.connected===false&&<p className="bg-amber-50 p-3 rounded-lg text-sm">La connexion Dotb n’est pas encore activée. Les ventes déjà importées restent consultables.</p>}
     <nav aria-label="Ventes, panier, commandes ou colis" className="workspace-view-tabs"><button className={'pb-3 text-sm font-semibold border-b-2 '+(view==='sales'?'border-teal-700 text-teal-800':'border-transparent text-slate-500')} onClick={()=>setShowShipments(false)}>Mes ventes</button><button className={'pb-3 text-sm font-semibold border-b-2 '+(showCart?'border-teal-700 text-teal-800':'border-transparent text-slate-500')} onClick={()=>setView('cart')}>Panier du jour</button><button className={'pb-3 text-sm font-semibold border-b-2 '+(showOrders?'border-teal-700 text-teal-800':'border-transparent text-slate-500')} onClick={()=>setView('orders')}>Mes commandes Shein</button><button className={'pb-3 text-sm font-semibold border-b-2 '+(showShipments?'border-teal-700 text-teal-800':'border-transparent text-slate-500')} onClick={()=>setShowShipments(true)}>Mes colis Shein</button></nav>
