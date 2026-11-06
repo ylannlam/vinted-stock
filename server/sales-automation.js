@@ -4,6 +4,9 @@ import {enrichSoldSizes} from './sold-sizes.js'
 
 export const WEBHOOK_URL = 'https://vinted-stock.vercel.app/api/dotb-webhook'
 export const ORDER_EVENTS = ['order.created','order.status_changed','order.claim_opened']
+// Alertes de compte (restriction, bannissement, captcha) reçues en direct. Version 2 des abonnements.
+export const SUBSCRIBED_EVENTS = [...ORDER_EVENTS,'notification.created']
+export const EVENTS_VERSION = 2
 const check = error => { if(error) throw error }
 
 export function verifyDotbWebhook(raw, headers, secret, now = Date.now()) {
@@ -22,6 +25,10 @@ export function verifyDotbWebhook(raw, headers, secret, now = Date.now()) {
   try { event=JSON.parse(raw.toString('utf8')) } catch { throw new AppError('Événement invalide.') }
   if(!isId(event?.id)||event.api_version!=='v1'||!Number.isFinite(Date.parse(event.created_at)))throw new AppError('Événement invalide.')
   if(event.type==='webhook.test')return {id:event.id,type:event.type,created_at:event.created_at,order_id:null}
+  if(event.type==='notification.created'){
+    if(!isId(event.data?.id))throw new AppError('Alerte Dotb invalide.')
+    return {id:event.id,type:event.type,created_at:event.created_at,order_id:null,notification:event.data}
+  }
   if(!ORDER_EVENTS.includes(event.type))throw new AppError('Événement non pris en charge.')
   const orderId=event.data?.order_id??event.data?.order?.id??event.data?.id
   if(!isId(orderId))throw new AppError('Identifiant de vente absent.')
@@ -53,8 +60,11 @@ export async function receiveOrderEvent(db,event,{fetcher=fetch,token=process.en
 }
 
 export async function automationStatus(db) {
-  const r=await db.from('dotb_sales_automation').select('endpoint_id,enabled,last_received_at,last_error').eq('id',true).single();check(r.error)
-  return {enabled:!!r.data.enabled,configured:!!r.data.endpoint_id,last_received_at:r.data.last_received_at,error:r.data.last_error}
+  let r=await db.from('dotb_sales_automation').select('endpoint_id,enabled,last_received_at,last_error,events_version').eq('id',true).single()
+  if(r.error&&/events_version/.test(r.error.message||''))r=await db.from('dotb_sales_automation').select('endpoint_id,enabled,last_received_at,last_error').eq('id',true).single()
+  check(r.error)
+  return {enabled:!!r.data.enabled,configured:!!r.data.endpoint_id,last_received_at:r.data.last_received_at,error:r.data.last_error,
+    outdated:!!r.data.endpoint_id&&r.data.events_version!==undefined&&r.data.events_version<EVENTS_VERSION}
 }
 
 export async function enableSalesAutomation(db,options={}) {
@@ -63,20 +73,25 @@ export async function enableSalesAutomation(db,options={}) {
     .eq('id',true).lt('locked_until',now).select('*').maybeSingle();check(locked.error)
   if(!locked.data)throw new AppError('La connexion est en cours. Réessaie dans quelques secondes.',409)
   const current=locked.data
-  let created=null,saved=false
+  let created=null,saved=false,version=1
   try{
     const list=await dotbRequest('webhook-endpoints',options)
     if(!Array.isArray(list?.data))throw new AppError('Réponse Dotb inattendue.',502)
     let endpoint=list.data.find(e=>e.id===current.endpoint_id&&e.url===WEBHOOK_URL)
     if(endpoint&&current.signing_secret){
-      endpoint=await dotbRequest(`webhook-endpoints/${endpoint.id}`,{...options,method:'PATCH',body:{status:'enabled',event_types:ORDER_EVENTS}})
+      try{endpoint=await dotbRequest(`webhook-endpoints/${endpoint.id}`,{...options,method:'PATCH',body:{status:'enabled',event_types:SUBSCRIBED_EVENTS}});version=EVENTS_VERSION}
+      catch{endpoint=await dotbRequest(`webhook-endpoints/${endpoint.id}`,{...options,method:'PATCH',body:{status:'enabled',event_types:ORDER_EVENTS}})}
     }else{
       if(list.data.some(e=>e.url===WEBHOOK_URL))throw new AppError('Une connexion existe déjà pour ce site. Son association doit être réparée.',409)
-      endpoint=await dotbRequest('webhook-endpoints',{...options,method:'POST',body:{url:WEBHOOK_URL,event_types:ORDER_EVENTS,description:'Stock Vinted · réception automatique des ventes'}})
+      const create=types=>dotbRequest('webhook-endpoints',{...options,method:'POST',body:{url:WEBHOOK_URL,event_types:types,description:'Stock Vinted · ventes et alertes de compte'}})
+      try{endpoint=await create(SUBSCRIBED_EVENTS);version=EVENTS_VERSION}catch{endpoint=await create(ORDER_EVENTS)}
       if(!isId(endpoint?.id)||!/^whsec_[A-Za-z0-9+/=]+$/.test(endpoint.secret||''))throw new AppError('Association Dotb incomplète.',502)
       created=endpoint
     }
-    const result=await db.from('dotb_sales_automation').update({endpoint_id:endpoint.id,signing_secret:created?.secret||current.signing_secret,enabled:true,last_error:null}).eq('id',true).eq('lease',lease).select('id').single();check(result.error);saved=true
+    const patch={endpoint_id:endpoint.id,signing_secret:created?.secret||current.signing_secret,enabled:true,last_error:null}
+    let result=await db.from('dotb_sales_automation').update({...patch,events_version:version}).eq('id',true).eq('lease',lease).select('id').single()
+    if(result.error&&/events_version/.test(result.error.message||''))result=await db.from('dotb_sales_automation').update(patch).eq('id',true).eq('lease',lease).select('id').single()
+    check(result.error);saved=true
     return {enabled:true}
   }catch(error){
     if(created&&!saved)await dotbRequest(`webhook-endpoints/${created.id}`,{...options,method:'DELETE'}).catch(()=>{})

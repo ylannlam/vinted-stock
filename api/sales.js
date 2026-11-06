@@ -101,7 +101,13 @@ export default async function handler(req, res) {
       if(req.body?.action==='shipment_refresh')return res.json(await refreshShipment(db,req.body.id))
       if (role !== 'admin') throw new AppError('Seul un administrateur peut importer les ventes.',403)
       if(req.body?.action==='automation')return res.json(await enableSalesAutomation(db))
-      if(req.body?.action==='dotb_costs'){if(role!=='admin')throw new AppError('Réservé à l’administrateur.',403);return res.json(await syncDotbCosts(db))}
+      if(req.body?.action==='dotb_costs'){
+        if(role!=='admin')throw new AppError('Réservé à l’administrateur.',403)
+        // Tâche de fond de l'onglet Ventes : prix d'achat vers Dotb et relecture des alertes de compte (au plus toutes les 5 min).
+        const {syncHealth}=await import('../server/account-health.js')
+        const [costs]=await Promise.all([syncDotbCosts(db),syncHealth(db).catch(()=>null)])
+        return res.json(costs)
+      }
       if (!process.env.DOTB_API_TOKEN) throw new AppError('La connexion Dotb reste à activer dans les réglages du serveur.',503)
       const tracking=await readTrackingPeriod(db)
       const lease = randomUUID(), now = new Date().toISOString()

@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { AppError } from '../server/dotb.js'
 import { verifyDotbWebhook, receiveOrderEvent } from '../server/sales-automation.js'
+import { receiveNotification } from '../server/account-health.js'
 
 export const config={api:{bodyParser:false},maxDuration:15}
 
@@ -18,6 +19,7 @@ export default async function handler(req,res){
     if(state.error)throw state.error
     if(!state.data.enabled||!state.data.signing_secret)throw new AppError('Connexion inactive.',503)
     const event=verifyDotbWebhook(Buffer.concat(chunks),req.headers,state.data.signing_secret)
+    if(event.type==='notification.created')return res.json(await receiveNotification(db,event.notification))
     return res.json(await receiveOrderEvent(db,event))
   }catch(error){
     console.error('dotb_webhook_failed',{code:error.code||'unknown',status:error.status||500})

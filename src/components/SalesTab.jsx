@@ -87,7 +87,7 @@ export default function SalesTab({ isAdmin, request = defaultRequest, collectorR
     return ()=>{active=false;clearInterval(timer)}
   },[busy,detailId,detailSku,savedDetailSku,request])
   useEffect(()=>{
-    if(!isAdmin||!data.connected||!data.automation||data.automation.configured||data.automation.error||activationAttempted.current)return
+    if(!isAdmin||!data.connected||!data.automation||data.automation.configured&&!data.automation.outdated||data.automation.error&&!data.automation.outdated||activationAttempted.current)return
     activationAttempted.current=true
     run(async()=>{await request('POST',{action:'automation'});await load()})
   },[data.automation,isAdmin,data.connected])

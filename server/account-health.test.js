@@ -87,7 +87,8 @@ test('notification sync is read-only on Dotb, follows pages and persists resolve
   const db=dbMock(),calls=[]
   const fetcher=async(url,opts)=>{calls.push({url,opts});assert.equal(opts.method,undefined);const q=new URL(url).searchParams;return {ok:true,json:async()=>q.get('group')!=='vinted'?{data:[],has_more:false}:q.get('cursor')?{data:[alert({resolved:true,title:'Accès rétabli'})],has_more:false}:{data:[alert()],has_more:true,next_cursor:'next'}}}
   assert.deepEqual(await syncHealth(db,{fetcher,token:'test',now}),{refreshed:true})
-  assert.equal(calls.length,4);assert.ok(calls.every(c=>!c.url.includes('live-')))
+  assert.equal(calls.length,5);assert.ok(calls.every(c=>!c.url.includes('live-')))
+  assert.ok(calls.some(c=>new URL(c.url).searchParams.get('group')==='smart_agent'))
   assert.ok(calls.some(c=>new URL(c.url).searchParams.get('group')==='dotb'))
   assert.ok(db.writes.some(w=>w.table==='account_health_alerts'&&w.mode==='upsert'))
   assert.ok(db.writes.some(w=>Array.isArray(w.patch)&&w.patch.some(n=>n.id===id&&n.resolved===true)))
@@ -151,4 +152,40 @@ test('native restrictions are never assigned from duplicated or archived account
   assert.equal(healthNativeLink(a,null,[{pseudo:'MODE.PARIS'},{pseudo:'mode.paris'}]).account,null)
   assert.equal(healthNativeLink(a,profile,[archived]).account,null)
   assert.equal(healthNativeLink(a,{number:'123'},[{id:'pseudo',pseudo:'MODE.PARIS'}]).by,'pseudo')
+})
+
+test('the Dotb alert type is read first: restriction, ban, lifted restriction; listing alerts are ignored',async()=>{
+  const {kindStatus}=await import('./account-health.js')
+  assert.equal(kindStatus('vinted_account_restricted'),'restricted')
+  assert.equal(kindStatus('account.banned'),'blocked')
+  assert.equal(kindStatus('account_suspended','suspension définitive'),'permanent')
+  assert.equal(kindStatus('account_restriction_lifted'),'recovered')
+  for(const kind of ['item_blocked','listing_restricted','order_created','publish_failed','daily_limit_reached',''])assert.equal(kindStatus(kind),null)
+  assert.equal(normalizeHealthAlert(alert({kind:'vinted_account_restricted',title:'Alerte',body:'',severity:'warning'})).status,'restricted')
+  assert.equal(normalizeHealthAlert(alert({kind:'vinted_account_restricted',params:{restricted_until:'2026-11-09T10:00:00Z'},title:'Alerte'})).until_date,'2026-11-09')
+  assert.equal(normalizeHealthAlert(alert({kind:'account_restriction_lifted',title:'Ton compte est restreint'})),null)
+  assert.equal(normalizeHealthAlert(alert({kind:'item_blocked',title:'Annonce bloquée'})),null)
+  assert.equal(normalizeHealthAlert(alert({kind:'captcha_required',group:'smart_agent',title:'Vérification'})).status,'verification')
+})
+test('wordings naming the account or titled as a restriction are detected, with their end date',()=>{
+  const r=normalizeHealthAlert(alert({title:'Restriction de compte',body:'Le compte lilyaapm est restreint jusqu’au 05/11/2026.',severity:'warning'}))
+  assert.equal(r.status,'restricted');assert.equal(r.until_date,'2026-11-05')
+  assert.equal(normalizeHealthAlert(alert({title:'Compte restreint : fleurlicia',severity:'warning'})).status,'restricted')
+  assert.equal(normalizeHealthAlert(alert({title:'Info',body:'Ton compte fait l’objet d’une restriction jusqu’au 9 novembre 2026',severity:'info'})).until_date,'2026-11-09')
+  assert.equal(normalizeHealthAlert(alert({title:'Le compte lauriepmn a été désactivé',severity:'warning'})).status,'blocked')
+  assert.equal(normalizeHealthAlert(alert({title:'Suspension définitive du compte',severity:'warning'})).status,'permanent')
+  assert.equal(normalizeHealthAlert(alert({group:'smart_agent',title:'Votre compte est restreint',severity:'warning'})).status,'restricted')
+})
+test('every account notification is archived, and a live webhook alert updates the account at once',async()=>{
+  const {archiveRow,receiveNotification}=await import('./account-health.js')
+  const row=archiveRow(alert({kind:'vinted_account_restricted',params:{until:'2026-11-09'}}),'2026-11-04T18:00:00.000Z')
+  assert.deepEqual([row.grp,row.kind,row.account_id,row.params.until],['vinted','vinted_account_restricted',account,'2026-11-09'])
+  assert.equal(archiveRow(alert({group:'orders'})),null,'order notifications are not archived')
+  const writes=[]
+  const db={from:table=>({upsert:async rows=>{writes.push({table,rows});return {error:null}},select:()=>({in:async()=>({data:[],error:null})})})}
+  const r=await receiveNotification(db,alert({title:'Votre compte est restreint'}),now)
+  assert.equal(r.alert,'restricted')
+  assert.deepEqual(writes.map(w=>w.table),['dotb_notifications','account_health_alerts'])
+  const before={from:table=>({upsert:async rows=>table==='dotb_notifications'?{error:{code:'42P01'}}:(writes.push({table,rows}),{error:null}),select:()=>({in:async()=>({data:[],error:null})})})}
+  assert.equal((await receiveNotification(before,alert(),now)).alert,'temporary','a database not yet updated still detects the account')
 })

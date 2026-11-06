@@ -6,28 +6,92 @@ const check=r=>{if(r.error)throw r.error;return r.data}
 const fold=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[’']/g,' ')
 const iso=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?new Date(v).toISOString():null
 const validDate=v=>typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&iso(`${v}T12:00:00Z`)?.slice(0,10)===v
-export function restrictionDate(text){
-  const dates=[...fold(text).matchAll(/\bjusqu\s*(?:au|a|a la date du)\s+(\d{2})\/(\d{2})\/(\d{4})\b/g)].map(([,d,m,y])=>`${y}-${m}-${d}`)
+const MONTHS=['janvier','fevrier','mars','avril','mai','juin','juillet','aout','septembre','octobre','novembre','decembre']
+export function restrictionDate(text,params=null){
+  const t=fold(text)
+  const dates=[...t.matchAll(/\b(?:jusqu\s*(?:au|a|a la date du)|until)\s+(\d{1,2})\/(\d{1,2})\/(\d{4})\b/g)].map(([,d,m,y])=>`${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`)
+  for(const [,d,month,y] of t.matchAll(/\bjusqu\s*(?:au|a)\s+(?:(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+)?(\d{1,2})(?:er)?\s+([a-z]+)\s+(\d{4})\b/g)){
+    const m=MONTHS.indexOf(month);if(m>=0)dates.push(`${y}-${String(m+1).padStart(2,'0')}-${d.padStart(2,'0')}`)
+  }
+  // Paramètres structurés de Dotb (fin de restriction), quand ils existent.
+  if(params&&typeof params==='object')for(const [key,value] of Object.entries(params)){
+    if(/until|end|expir|lift|fin/i.test(key)&&typeof value==='string'&&Number.isFinite(Date.parse(value)))dates.push(parisHealthDay(Date.parse(value)))
+  }
   const unique=[...new Set(dates)];return unique.length===1&&validDate(unique[0])?unique[0]:null
+}
+// Type d'alerte Dotb (kind, ex. « account_restricted ») : plus fiable que le texte quand il est explicite.
+export function kindStatus(kind,text=''){
+  const k=fold(String(kind||'').replace(/[_.:-]+/g,' '))
+  text=fold(text)
+  if(!k||/\b(?:item|items|listing|listings|annonce|article|order|orders|commande|publish|publication|photo|message|offer|offre)\b/.test(k))return null
+  if(/\b(?:lifted|unbanned|unblocked|restored|reactivated|recovered|resolved|leve|levee|retabli)\b/.test(k))return 'recovered'
+  if(/\b(?:ban|banned|suspend|suspended|suspension|deactivated|deactivation|disabled|terminated|closed|blocked|block)\b/.test(k))return /perman|definit/.test(k+' '+text)?'permanent':/temporar|temporair/.test(k+' '+text)?'temporary':'blocked'
+  if(/\b(?:restrict|restricted|restriction|restrictions|limited)\b/.test(k))return 'restricted'
+  if(/\b(?:captcha|captchas|verification|verify|challenge|otp|2fa)\b/.test(k))return 'verification'
+  return null
 }
 export function normalizeHealthAlert(n,observedAt=new Date().toISOString()){
   if(!n||!isId(n.id)||!isId(n.vinted_account_id)||!iso(n.created_at)||typeof n.resolved!=='boolean')return null
   const title=typeof n.title==='string'?n.title.slice(0,500):'',body=typeof n.body==='string'?n.body.slice(0,1500):'',text=fold(`${title} ${body}`)
+  const kind=typeof n.kind==='string'?n.kind.slice(0,80):''
   let status
-  if(n.group==='captchas')status='verification'
-  else if(['vinted','dotb'].includes(n.group)){
+  const byKind=['vinted','dotb','smart_agent','captchas'].includes(n.group)?kindStatus(kind,text):null
+  if(byKind==='recovered')return null
+  if(byKind)status=byKind
+  else if(n.group==='captchas')status='verification'
+  else if(['vinted','dotb','smart_agent'].includes(n.group)){
     // No guesses from a 403, a disconnected bridge, a removed listing or a general warning.
     const recovered=/\b(?:restrictions?|limitations?) (?:ont ete |sont )?(?:levees?|supprimees?)\b|\b(?:restrictions?|limitations?) (?:have been |are )?(?:lifted|removed)\b|\b(?:aucune restriction|no restrictions?|n est plus (?:restreint|bloque)|no longer (?:restricted|blocked))\b/.test(text)
     if(recovered)return null
     const conditional=/\b(?:si|if|lorsque|when) (?:votre|ton|your) (?:compte|account)|\b(?:pourrait|pourraient|risque de|risquez de|may be|might be|could be|en cas de)\b/.test(text)
-    const restricted=/\b(?:votre|ton|ce|le) compte(?: vinted)? (?:a ete |est |reste )?(?:temporairement |partiellement )?(?:restreint|limite)\b|\b(?:your|this) account (?:has been |is |remains )?(?:temporarily |partially )?(?:restricted|limited)\b|\bnous avons (?:temporairement |partiellement )?(?:restreint|limite) (?:votre|ton) compte\b|\b(?:certaines |les )?fonctionnalites (?:de votre compte |de ton compte )?(?:ont ete |sont )?(?:temporairement |partiellement )?(?:restreintes|limitees|suspendues)\b|\b(?:votre acces|your access) (?:a certaines fonctionnalites|to some features) (?:est |is )?(?:temporairement |temporarily )?(?:limite|restreint|limited|restricted)\b|\bvous ne pouvez (?:temporairement )?plus (?:publier|vendre|acheter|envoyer des messages)\b/.test(text)||/^(?:compte(?: vinted)?|account) (?:temporairement |partiellement |temporarily |partially )?(?:restreint|limite|restricted|limited)(?:[.!]|\s+jusqu\b.*|\s+until\b.*)?$/.test(fold(title).trim())
-    const accountBan=/(?:votre|ton|ce|le) compte(?: vinted)? (?:a ete|est) (?:[a-z]+ ){0,3}(?:banni|bloque|suspendu)\b|(?:your|this) account (?:is|has been) (?:[a-z]+ ){0,3}(?:banned|blocked|suspended)\b/.test(text)||/^(?:compte(?: vinted)?|account) (?:(?:temporairement|definitivement|temporarily|permanently) )?(?:banni|bloque|suspendu|banned|blocked|suspended)[.!]?$/.test(fold(title).trim())
+    const restricted=/\b(?:votre|ton|ce|le|du) compte(?: vinted)?(?: [a-z0-9@._-]+){0,2}? (?:a ete |est |reste )?(?:temporairement |partiellement )?(?:restreint|limite)\b|\b(?:your|this) account (?:has been |is |remains )?(?:temporarily |partially )?(?:restricted|limited)\b|\bnous avons (?:temporairement |partiellement )?(?:restreint|limite) (?:votre|ton) compte\b|\b(?:certaines |les )?fonctionnalites (?:de votre compte |de ton compte )?(?:ont ete |sont )?(?:temporairement |partiellement )?(?:restreintes|limitees|suspendues)\b|\b(?:votre acces|your access) (?:a certaines fonctionnalites|to some features) (?:est |is )?(?:temporairement |temporarily )?(?:limite|restreint|limited|restricted)\b|\bvous ne pouvez (?:temporairement )?plus (?:publier|vendre|acheter|envoyer des messages)\b/.test(text)||/^(?:compte(?: vinted)?|account) (?:temporairement |partiellement |temporarily |partially )?(?:restreint|limite|restricted|limited)(?:[.!]|\s*[:-].*|\s+jusqu\b.*|\s+until\b.*)?$/.test(fold(title).trim())||/^(?:restriction|limitation)s? (?:temporaire |partielle )?(?:de|du|sur (?:le|votre|ton)) compte\b/.test(fold(title).trim())||/\b(?:votre|ton|ce|le) compte(?: [a-z0-9@._-]+){0,2}? fait l objet d une (?:restriction|limitation)\b/.test(text)
+    const accountBan=/(?:votre|ton|ce|le|du) compte(?: vinted)?(?: [a-z0-9@._-]+){0,2}? (?:a ete|est) (?:[a-z]+ ){0,3}(?:banni|bloque|suspendu|desactive|ferme)\b|(?:your|this) account (?:is|has been) (?:[a-z]+ ){0,3}(?:banned|blocked|suspended)\b/.test(text)||/^(?:compte(?: vinted)?|account) (?:(?:temporairement|definitivement|temporarily|permanently) )?(?:banni|bloque|suspendu|desactive|banned|blocked|suspended|deactivated)(?:[.!]|\s*[:-].*)?$/.test(fold(title).trim())||/^(?:suspension|bannissement|blocage|desactivation) (?:temporaire |definitive? )?(?:de|du) compte\b/.test(fold(title).trim())
     if(accountBan&&!conditional)status=/definitiv|permanent/.test(text)?'permanent':/temporair|temporar/.test(text)?'temporary':'blocked'
     else if(restricted&&!conditional)status='restricted'
     else if(n.severity==='blocking'&&!/\b(annonce|article|item|listing)\b/.test(text))status='review'
   }
   if(!status)return null
-  return {id:n.id.toLowerCase(),account_id:n.vinted_account_id.toLowerCase(),status,title,body,resolved:n.resolved,created_at:iso(n.created_at),observed_at:observedAt,until_date:healthHasDeadline(status)?restrictionDate(`${title} ${body}`):null}
+  return {id:n.id.toLowerCase(),account_id:n.vinted_account_id.toLowerCase(),status,kind,title,body,resolved:n.resolved,created_at:iso(n.created_at),observed_at:observedAt,until_date:healthHasDeadline(status)?restrictionDate(`${title} ${body}`,n.params):null}
+}
+// Archive brute (sans données acheteur) : ce que Dotb a réellement envoyé, pour vérifier et affiner la détection.
+export function archiveRow(n,observedAt=new Date().toISOString()){
+  if(!n||!isId(n.id)||!iso(n.created_at)||!['vinted','dotb','captchas','smart_agent'].includes(n.group))return null
+  let params={}
+  try{const text=JSON.stringify(n.params&&typeof n.params==='object'?n.params:{});params=text.length<=4000?JSON.parse(text):{truncated:true}}catch{}
+  return {id:n.id.toLowerCase(),account_id:isId(n.vinted_account_id)?n.vinted_account_id.toLowerCase():null,grp:n.group,kind:typeof n.kind==='string'?n.kind.slice(0,80):'',
+    severity:['info','warning','blocking'].includes(n.severity)?n.severity:'info',title:typeof n.title==='string'?n.title.slice(0,500):'',body:typeof n.body==='string'?n.body.slice(0,1500):'',
+    params,resolved:n.resolved===true,created_at:iso(n.created_at),observed_at:observedAt}
+}
+async function archive(db,list,observedAt){
+  const rows=list.map(n=>archiveRow(n,observedAt)).filter(Boolean)
+  if(!rows.length)return
+  const r=await db.from('dotb_notifications').upsert(rows,{onConflict:'id'})
+  // L'archive est un plus : une base pas encore à jour ne bloque pas la détection.
+  if(r.error&&!['42P01','PGRST205'].includes(r.error.code))throw r.error
+}
+async function saveAlerts(db,list,observedAt){
+  const rows=list.map(n=>normalizeHealthAlert(n,observedAt)).filter(Boolean)
+  if(rows.length){
+    let r=await db.from('account_health_alerts').upsert(rows,{onConflict:'id'})
+    if(r.error&&/kind/.test(r.error.message||''))r=await db.from('account_health_alerts').upsert(rows.map(({kind,...row})=>row),{onConflict:'id'})
+    check(r)
+  }
+  // A resolved alert can change its wording. Close its previous record by ID,
+  // even when the new wording no longer looks like a restriction.
+  const closed=new Map(list.filter(n=>n?.resolved===true&&isId(n.id)&&isId(n.vinted_account_id)).map(n=>[n.id.toLowerCase(),n.vinted_account_id.toLowerCase()]))
+  if(closed.size){
+    const existing=check(await db.from('account_health_alerts').select('id,account_id,status,title,body,created_at,until_date').in('id',[...closed.keys()]))||[]
+    const resolved=existing.filter(n=>closed.get(n.id)===n.account_id).map(n=>({...n,resolved:true,observed_at:observedAt}))
+    if(resolved.length)check(await db.from('account_health_alerts').upsert(resolved,{onConflict:'id'}))
+  }
+  return rows
+}
+// Alerte reçue en direct par webhook (notification.created).
+export async function receiveNotification(db,notification,now=Date.now()){
+  const observed=new Date(now).toISOString()
+  await archive(db,[notification],observed)
+  const rows=await saveAlerts(db,[notification],observed)
+  return {received:true,alert:rows[0]?.status||null}
 }
 export function healthReportInput(body,now=Date.now()){
   if(!isId(body?.account_id)||!Number.isSafeInteger(body.version)||body.version<0||!['ok','temporary','restricted','permanent','blocked','review'].includes(body.status))throw new AppError('Compte ou statut invalide.')
@@ -72,7 +136,7 @@ export async function syncHealth(db,{fetcher=fetch,token=process.env.DOTB_API_TO
   try{
     if(!token)throw new AppError('La connexion Dotb reste à configurer.',503)
     let partial=false
-    for(const group of ['vinted','captchas','dotb']){
+    for(const group of ['vinted','captchas','dotb','smart_agent']){
       let cursor='';const seen=new Set()
       for(let page=0;page<3;page++){
         const query=new URLSearchParams({group,locale:'fr',limit:'100',...(cursor?{cursor}:{})})
@@ -83,16 +147,8 @@ export async function syncHealth(db,{fetcher=fetch,token=process.env.DOTB_API_TO
         }
         const data=await response.json()
         if(!Array.isArray(data?.data)||data.data.length>100||typeof data.has_more!=='boolean'||data.has_more&&(!data.data.length||typeof data.next_cursor!=='string'||!data.next_cursor||seen.has(data.next_cursor)))throw new AppError('La liste des alertes Dotb est incomplète.',502)
-        const rows=data.data.map(n=>normalizeHealthAlert(n,started)).filter(Boolean)
-        if(rows.length)check(await db.from('account_health_alerts').upsert(rows,{onConflict:'id'}))
-        // A resolved alert can change its wording. Close its previous record by ID,
-        // even when the new wording no longer looks like a restriction.
-        const closed=new Map(data.data.filter(n=>n?.resolved===true&&isId(n.id)&&isId(n.vinted_account_id)).map(n=>[n.id.toLowerCase(),n.vinted_account_id.toLowerCase()]))
-        if(closed.size){
-          const existing=check(await db.from('account_health_alerts').select('id,account_id,status,title,body,created_at,until_date').in('id',[...closed.keys()]))||[]
-          const resolved=existing.filter(n=>closed.get(n.id)===n.account_id).map(n=>({...n,resolved:true,observed_at:started}))
-          if(resolved.length)check(await db.from('account_health_alerts').upsert(resolved,{onConflict:'id'}))
-        }
+        await archive(db,data.data,started)
+        await saveAlerts(db,data.data,started)
         if(!data.has_more)break
         cursor=data.next_cursor;seen.add(cursor)
         if(page===2)partial=true

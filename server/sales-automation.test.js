@@ -51,12 +51,27 @@ test('public webhook endpoint rejects unsigned calls before database access',asy
   await webhook({method:'POST',headers:{}},res)
   assert.equal(res.code,401)
 })
-test('setup saves signing material only on the server and limits events to orders',async()=>{
+test('setup saves signing material only on the server and subscribes to orders and account alerts',async()=>{
   const patches=[],requests=[]
   const db={from(){let patch;const q={update(p){patch=p;patches.push(p);return q},eq(){return q},lt(){return q},select(){return q},async maybeSingle(){return {data:{}}},async single(){return {data:{id:true}}},then(resolve){return Promise.resolve({error:null}).then(resolve)}};return q}}
   const fetcher=async(url,options)=>{requests.push({url,options});return {ok:true,json:async()=>options.method==='POST'?{id:orderId,secret}:{data:[]}}}
   assert.deepEqual(await enableSalesAutomation(db,{fetcher,token:'test'}),{enabled:true})
   assert.equal(JSON.parse(requests[1].options.body).url,WEBHOOK_URL)
-  assert.deepEqual(JSON.parse(requests[1].options.body).event_types,['order.created','order.status_changed','order.claim_opened'])
-  assert.equal(patches.find(p=>p.enabled)?.signing_secret,secret)
+  assert.deepEqual(JSON.parse(requests[1].options.body).event_types,['order.created','order.status_changed','order.claim_opened','notification.created'])
+  assert.equal(patches.find(p=>p.enabled)?.signing_secret,secret);assert.equal(patches.find(p=>p.enabled)?.events_version,2)
+})
+test('a key that cannot read notifications keeps the order events only',async()=>{
+  const patches=[],requests=[]
+  const db={from(){let patch;const q={update(p){patch=p;patches.push(p);return q},eq(){return q},lt(){return q},select(){return q},async maybeSingle(){return {data:{}}},async single(){return {data:{id:true}}},then(resolve){return Promise.resolve({error:null}).then(resolve)}};return q}}
+  const fetcher=async(url,options)=>{requests.push({url,options});if(options.method==='POST'&&JSON.parse(options.body).event_types.includes('notification.created'))return {ok:false,status:422};return {ok:true,json:async()=>options.method==='POST'?{id:orderId,secret}:{data:[]}}}
+  assert.deepEqual(await enableSalesAutomation(db,{fetcher,token:'test'}),{enabled:true})
+  assert.deepEqual(JSON.parse(requests.at(-1).options.body).event_types,['order.created','order.status_changed','order.claim_opened'])
+  assert.equal(patches.find(p=>p.enabled)?.events_version,1)
+})
+test('a signed account alert is accepted by the webhook and passed on as is',()=>{
+  const event={id:orderId,type:'notification.created',api_version:'v1',created_at:new Date().toISOString(),data:{id:orderId,group:'vinted',title:'Votre compte est restreint'}}
+  const raw=Buffer.from(JSON.stringify(event)),stamp=String(Math.floor(Date.now()/1000))
+  const signature='v1,'+createHmac('sha256',Buffer.from(secret.slice(6),'base64')).update(`${orderId}.${stamp}.`).update(raw).digest('base64')
+  const parsed=verifyDotbWebhook(raw,{'webhook-id':orderId,'webhook-timestamp':stamp,'webhook-signature':signature},secret)
+  assert.equal(parsed.type,'notification.created');assert.equal(parsed.notification.title,'Votre compte est restreint')
 })
