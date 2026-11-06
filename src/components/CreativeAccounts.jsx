@@ -9,7 +9,11 @@ const input='w-full border border-gray-300 rounded-lg px-3 py-2.5 bg-white text-
 const button='inline-flex items-center justify-center rounded-lg border px-3 py-2 text-sm bg-white hover:bg-gray-50 disabled:opacity-40'
 const primary=`${button} !bg-teal-700 !text-white !border-teal-700 hover:!bg-teal-800`
 
-export default function CreativeAccounts({resources,request=defaultRequest,onLibrary,onDownload}) {
+const FILTERS=[['all','Tous'],['ok','Actifs'],['attention','À surveiller'],['incomplete','DA à compléter']]
+const defaultStats=()=>import('../lib/api').then(m=>m.listingStudioRequest('GET',undefined,'action=picker'))
+
+export default function CreativeAccounts({resources,request=defaultRequest,statsRequest=defaultStats,onLibrary,onDownload}) {
+ const [stats,setStats]=useState({}),[filter,setFilter]=useState('all')
  const [accounts,setAccounts]=useState([]),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false)
  const [error,setError]=useState(''),[notice,setNotice]=useState(''),[search,setSearch]=useState('')
  const [selection,setSelection]=useState(null),[selectionSearch,setSelectionSearch]=useState(''),[selectionFilter,setSelectionFilter]=useState('all')
@@ -17,6 +21,15 @@ export default function CreativeAccounts({resources,request=defaultRequest,onLib
  const operation=useRef(false),alive=useRef(true)
  const backgrounds=resources.filter(r=>r.kind==='background'&&!r.archived_at)
  const visible=filterCreativeAccounts(accounts,search)
+ function matches(account,key){
+  const health=stats[account.id]?.health
+  if(key==='ok')return health&&!health.attention
+  if(key==='attention')return !!health?.attention
+  if(key==='incomplete')return !directionReady(account,resources.find(r=>r.id===account.background_id))
+  return true
+ }
+ const shown=visible.filter(a=>matches(a,filter))
+ useEffect(()=>{let live=true;statsRequest().then(r=>{if(live)setStats(r?.accounts||{})}).catch(()=>{});return()=>{live=false}},[statsRequest])
  async function load() {
   const first=await request(),all=[...first.accounts],size=first.page_size||250
   for(let offset=size;offset<first.count;offset+=size){const next=await request('GET',undefined,`?offset=${offset}`);all.push(...next.accounts)}
@@ -63,24 +76,21 @@ export default function CreativeAccounts({resources,request=defaultRequest,onLib
  const selectorRows=selection?filterCreativeAccounts(selection,selectionSearch,selectionFilter):[]
  return <section className="space-y-5" aria-label="Directions artistiques par compte">
   <div className="flex flex-wrap justify-between items-start gap-4">
-   <div><h2 className="text-xl font-semibold">Une DA par compte</h2><p className="text-sm text-gray-500 mt-1">Choisis tes comptes, puis retrouve leur fond et leurs prompts avant / arrière.</p></div>
-   <div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={()=>run(load)}>Actualiser les DA</button><button className={button} disabled={busy||loading} onClick={()=>openSelection()}>Choisir mes comptes</button><button className={primary} disabled={busy} onClick={()=>run(sync)}>{busy?'Chargement…':'Récupérer depuis Dotb'}</button></div>
+   <div><h2 className="text-xl font-semibold">Comptes Vinted</h2><p className="text-sm text-gray-500 mt-1">Chaque compte, son fond, ses prompts avant / arrière et ses publications du jour.</p></div>
+   <div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={()=>run(load)}>Actualiser</button><button className={button} disabled={busy||loading} onClick={()=>openSelection()}>Choisir mes comptes</button><button className={primary} disabled={busy} onClick={()=>run(sync)}>{busy?'Chargement…':'Récupérer depuis Dotb'}</button></div>
   </div>
-  <p className="rounded-xl border border-teal-100 bg-teal-50 p-4 text-sm text-teal-900">Seuls les comptes que tu coches apparaissent ici. Laisse les comptes bannis ou inutilisés de côté. Dotb ne fournit pas leur statut de bannissement ; tes choix sont conservés à chaque récupération.</p>
   {!selection&&!editing&&error&&<p role="alert" className="rounded-lg bg-red-50 text-red-800 p-3 text-sm">{error}</p>}
   {!selection&&!editing&&notice&&<p role="status" className="text-sm text-teal-800">{notice}</p>}
   <div className="flex flex-wrap gap-3 items-center"><input className={`${input} max-w-lg`} aria-label="Rechercher dans mes DA" placeholder="Rechercher un compte sélectionné…" value={search} onChange={e=>setSearch(e.target.value)}/><span className="text-xs text-gray-500">{accounts.filter(a=>a.enabled).length} sélectionnés · {accounts.filter(a=>!a.enabled).length} de côté</span></div>
-  {loading?<p role="status" className="py-10 text-center text-gray-500">Chargement des comptes…</p>:<div className="grid lg:grid-cols-2 gap-5">{visible.map(account=>{
-   const background=resources.find(r=>r.id===account.background_id),prompts=directionPrompts(account,background)
-   return <article key={account.id} className="rounded-2xl border bg-white p-4 space-y-4">
-    <header className="flex flex-wrap justify-between items-center gap-3"><div><h3 className="font-semibold break-all">{account.login}</h3><p className="text-xs text-gray-500">{account.country||'Compte Dotb'}{!account.source_present?' · Absent de la dernière liste Dotb':''}</p></div><button className={button} disabled={busy} onClick={()=>edit(account)}>Configurer la DA</button></header>
-    <p className={`text-xs rounded-lg px-3 py-2 ${directionReady(account,background)?'text-teal-800 bg-teal-50':'text-amber-900 bg-amber-50'}`}>{directionReady(account,background)?'DA prête · fond et deux prompts renseignés':'DA à compléter · vérifie le fond et les prompts avant / arrière'}</p>
-    <div className="grid sm:grid-cols-[150px_1fr] gap-4">
-     <div>{thumbOf(background)?<img src={thumbOf(background)} loading="lazy" alt={`Fond de ${account.login}`} className="w-full h-52 object-contain bg-stone-100 rounded-lg"/>:<div className="h-40 grid place-items-center bg-stone-100 rounded-lg text-xs text-gray-500 text-center p-3">{background?'Aperçu indisponible':'Aucun fond associé'}</div>}<p className="text-xs font-medium mt-2 break-words">{background?.title||'Choisis un fond dans Configurer la DA'}</p>{background?.archived_at&&<p className="text-xs text-amber-700">Fond archivé : choisis un autre fond.</p>}{background?.image_path&&<button className={`${button} mt-2 !text-xs w-full`} disabled={busy} onClick={()=>onDownload(background)}>Télécharger le fond</button>}</div>
-     <div className="space-y-3">{[['front','Avant','prompt_front'],['back','Arrière','prompt_back']].map(([side,label,field])=><div key={side} className="border rounded-lg p-3"><div className="flex justify-between items-center gap-2"><span className="text-sm font-medium">{label}</span><button className={`${button} !text-xs`} disabled={!prompts[side].trim()} onClick={()=>copy(prompts[side],`Prompt ${label.toLowerCase()}`)}>Copier · {label}</button></div><p className="text-[11px] text-gray-500 mt-1">{account[field]===null?'Repris du fond':'Personnalisé pour ce compte'}</p><textarea aria-label={`Prompt ${label.toLowerCase()} de ${account.login}`} className={`${input} mt-2 h-24 !text-xs`} readOnly value={prompts[side]} placeholder="À compléter dans la DA ou dans le fond." onFocus={e=>e.target.select()}/></div>)}</div>
-    </div>
-    {account.notes&&<p className="text-sm text-gray-600 whitespace-pre-wrap break-words">{account.notes}</p>}
-    <button className="text-xs text-gray-500 underline" disabled={busy} onClick={()=>setAside(account)}>Mettre ce compte de côté</button>
+  <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrer les comptes">{FILTERS.map(([key,label])=>{const n=accounts.filter(a=>a.enabled&&matches(a,key)).length;return <button key={key} aria-pressed={filter===key} onClick={()=>setFilter(key)} className={`rounded-full px-3 py-1.5 text-xs font-medium ${filter===key?'bg-teal-700 text-white':'bg-white border text-slate-600 hover:bg-slate-50'}`}>{label} ({n})</button>})}</div>
+  {loading?<p role="status" className="py-10 text-center text-gray-500">Chargement des comptes…</p>:<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">{shown.map(account=>{
+   const background=resources.find(r=>r.id===account.background_id),prompts=directionPrompts(account,background),ready=directionReady(account,background)
+   const s=stats[account.id]||{},health=s.health,tone=!health?'bg-slate-100 text-slate-500':health.attention?'bg-rose-50 text-rose-700':'bg-teal-50 text-teal-800'
+   return <article key={account.id} className="rounded-xl border bg-white p-3 flex flex-col gap-2.5">
+    <div className="flex items-start gap-2"><div className="min-w-0 flex-1"><h3 className="font-semibold text-sm truncate" title={account.login}>{account.login}</h3><p className="text-[11px] text-gray-500">{account.country||'Compte Dotb'}{!account.source_present?' · absent de Dotb':''}</p></div><span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${tone}`}>{health?.label||'État inconnu'}</span></div>
+    <div className="flex items-center gap-2.5">{thumbOf(background)?<img src={thumbOf(background)} loading="lazy" alt="" className="h-14 w-11 rounded-md object-cover bg-stone-100 shrink-0"/>:<span className="h-14 w-11 rounded-md bg-stone-100 shrink-0"/>}<div className="min-w-0"><p className="text-xs truncate">{background?.title||'Aucun fond'}</p><p className={`text-[11px] ${ready?'text-teal-700':'text-amber-700'}`}>{ready?'DA prête':'DA à compléter'}</p></div></div>
+    <div className="flex flex-wrap gap-1.5 text-[11px]"><span className="rounded-full bg-emerald-50 text-emerald-800 px-2 py-0.5">{s.today||0} posté{s.today>1?'s':''} auj.</span><span className="rounded-full bg-amber-50 text-amber-800 px-2 py-0.5">{s.in_progress||0} en cours</span>{s.week>0&&<span className="rounded-full bg-slate-100 text-slate-600 px-2 py-0.5">{s.week} cette semaine</span>}</div>
+    <div className="mt-auto flex flex-wrap gap-1.5"><button className={`${button} !px-2.5 !py-1.5 !text-xs`} disabled={busy} onClick={()=>edit(account)}>DA</button>{[['front','Avant'],['back','Arrière']].map(([side,label])=><button key={side} className={`${button} !px-2.5 !py-1.5 !text-xs`} disabled={!prompts[side].trim()} title={`Copier le prompt ${label.toLowerCase()}`} onClick={()=>copy(prompts[side],`Prompt ${label.toLowerCase()}`)}>⧉ {label}</button>)}<button className={`${button} !px-2 !py-1.5 !text-xs ml-auto text-gray-500`} disabled={busy} title="Mettre ce compte de côté" aria-label={`Mettre ${account.login} de côté`} onClick={()=>setAside(account)}>⊘</button></div>
    </article>
   })}</div>}
   {!loading&&!visible.length&&<div className="text-center rounded-2xl border border-dashed p-8 space-y-3"><p className="text-sm text-gray-500">{search?'Aucun compte sélectionné ne correspond.':accounts.length?'Choisis les comptes que tu veux utiliser pour préparer tes photos.':'Récupère tes comptes Dotb, puis coche uniquement ceux que tu veux utiliser.'}</p><button className={primary} disabled={busy} onClick={()=>accounts.length?openSelection():run(sync)}>{accounts.length?'Choisir mes comptes':'Récupérer mes comptes Dotb'}</button></div>}
