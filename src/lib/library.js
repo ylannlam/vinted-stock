@@ -123,3 +123,28 @@ export function withMeasures(description,facts) {
   if(at<0)return `${text}\n\n${block}`
   return [...lines.slice(0,at),block,'',...lines.slice(at)].join('\n').replace(/\n{3,}/g,'\n\n')
 }
+
+// Meilleures ventes : ventes regroupées par SKU sur la période (jours, ou null pour tout), les plus vendus d'abord.
+export function bestSellers({items=[],products=[],links=[],sales=[]}={},{days=30,now=Date.now()}={}) {
+  const since=days?now-days*86400000:-Infinity,groups=new Map()
+  // Depuis le début : le total par SKU calculé par la base (toutes devises), complété par la dernière vente connue.
+  if(!days)for(const s of sales){
+    const sku=String(s.sku||'').trim();if(!sku)continue
+    const key=sku.toLowerCase(),g=groups.get(key)||{sku,count:0,revenue:0,priced:0,last:0,photo:null,title:'',total:true}
+    g.count+=Number(s.quantity)||0;g.revenue+=Number(s.revenue)||0;g.priced+=Number(s.known_prices)||0;g.last=Math.max(g.last,Date.parse(s.last_sale)||0)
+    groups.set(key,g)
+  }
+  for(const item of items) {
+    const sku=String(item.sku||'').trim(),at=Date.parse(item.sold_at)
+    if(!sku||!(at>=since))continue
+    const key=sku.toLowerCase(),g=groups.get(key)||{sku,count:0,revenue:0,priced:0,last:0,photo:null,title:''}
+    if(!g.total){g.count++;if(item.price!=null&&Number.isFinite(Number(item.price))){g.revenue+=Number(item.price);g.priced++}}
+    if(at>=g.last||!g.photo){g.last=Math.max(g.last,at);g.photo=item.photo_url||g.photo;g.title=item.title||g.title}
+    groups.set(key,g)
+  }
+  const bySku=new Map(links.map(l=>[String(l.sku).toLowerCase(),l.product_id]))
+  return [...groups.entries()].map(([key,g])=>{
+    const product=products.find(p=>p.id===bySku.get(key))||products.find(p=>String(p.supplier_sku||'').toLowerCase()===key)||null
+    return {...g,product,photo:product?.photo_url||g.photo,title:product?.title||g.title||g.sku}
+  }).sort((a,b)=>b.count-a.count||b.last-a.last)
+}

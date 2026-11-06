@@ -1,3 +1,5 @@
+import {useState} from 'react'
+import {bestSellers} from '../lib/library'
 import ArticlePhotos from './ArticlePhotos'
 import {observationChange,missingProductFields} from '../lib/catalog'
 import {safeUrl,money} from '../lib/fulfillment'
@@ -36,7 +38,24 @@ export default function CatalogueLibrary({products,data,busy,onDetails}) {
   })}</div>
 }
 
-export function BestSellerList({data,search,onDetails}) {
-  const rows=(data.sales||[]).filter(s=>s.sku.toLowerCase().includes(search.toLowerCase())).sort((a,b)=>Number(b.quantity)-Number(a.quantity))
-  return <section className="rounded-xl border bg-white overflow-x-auto"><p className="p-4 text-sm text-gray-500">Les ventes importées sont regroupées par SKU. Les annulations et retours sont exclus. Les ventes sans SKU restent visibles dans Mes ventes et ne sont pas attribuées au hasard.</p><table className="w-full text-left text-sm"><thead className="bg-gray-50"><tr>{['Produit / SKU','Ventes','Chiffre d’affaires connu','Dernière vente'].map(h=><th key={h} className="p-4 font-medium">{h}</th>)}</tr></thead><tbody>{rows.map(s=>{const link=data.links.find(l=>l.sku===s.sku),p=data.products.find(p=>p.id===link?.product_id||p.supplier_sku===s.sku);return <tr key={`${s.sku}-${s.currency}`} className="border-t"><td className="p-4">{p?<button className="text-teal-700 underline text-left" onClick={()=>onDetails(p)}>{p.title}</button>:s.sku}<p className="font-mono text-xs text-gray-500 mt-1">{s.sku}</p></td><td className="p-4">{s.quantity}</td><td className="p-4">{s.currency?money(s.revenue,s.currency):'Devise non renseignée'}{Number(s.known_prices)<Number(s.quantity)&&<p className="text-xs text-amber-700">Montant incomplet</p>}</td><td className="p-4 text-xs">{date(s.last_sale)}</td></tr>})}</tbody></table>{!rows.length&&<p className="text-center text-sm text-gray-500 p-10">Aucune vente avec SKU importée pour cette recherche. Les prochaines ventes portant tes SKU alimenteront ce classement.</p>}</section>
+const PERIODS=[[7,'7 jours'],[30,'30 jours'],[90,'90 jours'],[null,'Depuis le début']]
+const ago=ms=>{const d=Math.floor((Date.now()-ms)/86400000);return d<1?'aujourd’hui':d===1?'hier':`il y a ${d} j`}
+export function BestSellerList({data,search,onDetails,onCreateListing}) {
+  const [days,setDays]=useState(30)
+  const all=bestSellers(data,{days}),q=search.trim().toLowerCase()
+  const rows=all.filter(r=>!q||`${r.sku} ${r.title}`.toLowerCase().includes(q))
+  return <section className="space-y-4">
+    <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-gray-500">Les SKU les plus vendus (annulations et retours exclus). Un clic sur « Reposter » prépare une annonce avec le SKU.</p>
+      <div className="flex flex-wrap gap-1.5">{PERIODS.map(([d,label])=><button key={label} aria-pressed={days===d} onClick={()=>setDays(d)} className={`rounded-full px-3 py-1.5 text-xs font-medium ${days===d?'bg-teal-700 text-white':'border bg-white text-gray-600'}`}>{label}</button>)}</div></div>
+    {rows.length?<div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">{rows.slice(0,60).map((r,i)=><article key={r.sku} className="rounded-xl border bg-white overflow-hidden flex flex-col">
+      <div className="relative aspect-[3/4] bg-stone-100">{safeUrl(r.photo)?<img src={safeUrl(r.photo)} alt="" loading="lazy" className="h-full w-full object-cover"/>:null}
+        <span className="absolute left-2 top-2 rounded-full bg-white/95 px-2 py-0.5 text-xs font-bold">#{i+1}</span>
+        <span className="absolute right-2 top-2 rounded-full bg-teal-700 px-2.5 py-0.5 text-xs font-semibold text-white">{r.count} vente{r.count>1?'s':''}</span></div>
+      <div className="p-3 flex flex-col gap-1.5 flex-1"><p className="text-sm font-medium line-clamp-2">{r.title}</p><p className="font-mono text-[11px] text-gray-500 truncate">{r.sku}</p>
+        <div className="flex flex-wrap gap-x-3 text-xs text-gray-600">{r.priced>0&&<span>{money(r.revenue,'EUR')}{r.priced<r.count?' (partiel)':''}</span>}{r.product?.price!=null&&<span>Shein {money(r.product.price,'EUR')}</span>}</div>
+        <p className="text-[11px] text-gray-500">Dernière vente {ago(r.last)}</p>
+        <div className="mt-auto flex gap-1.5 pt-1">{r.product&&<button className="flex-1 rounded-lg border px-2 py-1.5 text-xs bg-white hover:bg-gray-50" onClick={()=>onDetails(r.product)}>Fiche</button>}{onCreateListing&&<button className="flex-1 rounded-lg bg-teal-700 px-2 py-1.5 text-xs font-medium text-white hover:bg-teal-800" onClick={()=>onCreateListing(r.sku)}>Reposter</button>}</div></div>
+    </article>)}</div>
+    :<p className="rounded-xl border border-dashed bg-white p-10 text-center text-sm text-gray-500">{q?'Aucune vente pour cette recherche.':days?`Aucune vente avec SKU sur ${days} jours. Essaie une période plus longue.`:'Aucune vente avec SKU pour l’instant. Les prochaines ventes portant tes SKU alimenteront ce classement.'}</p>}
+  </section>
 }
