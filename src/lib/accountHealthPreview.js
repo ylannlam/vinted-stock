@@ -4,7 +4,9 @@ let accounts=[
   {id:'a1',login:'camille.dressing',report:{status:'ok',version:1,checked_at:ago(2),reason:'Accès vérifié dans Vinted.'},alerts:[]},
   {id:'a2',login:'lea.vintage',report:{status:'restricted',version:1,checked_at:ago(1),until_at:ago(-23),reason:'Publication et messages temporairement limités par Vinted.'},alerts:[]},
   {id:'a3',login:'jade.mode',report:null,alerts:[{id:'alert-demo',status:'verification',title:'Vérification demandée',body:'Un captcha est à résoudre dans Vinted.',created_at:ago(1),resolved:false}]},
-  ...['nina.closet','sarah.style','emma.shop'].map((login,i)=>({id:`a${i+4}`,login,report:null,alerts:[]}))
+  {id:'a4',login:'nina.closet',report:null,alerts:[{id:'alert-demo-2',status:'restricted',kind:'vinted_notice',title:'Restriction de vente pendant 5 jours',body:'Par conséquent, nous t’imposons une restriction de 5 jours.',created_at:ago(3),until_date:new Date(Date.now()+4*86400000).toISOString().slice(0,10),resolved:false}]},
+  {id:'a5',login:'sarah.style',report:null,alerts:[{id:'alert-demo-3',status:'temporary',kind:'vinted_notice',title:'Compte bloqué : automatisation détectée',body:'Salut, on a remarqué une activité automatisée sur ton compte.',created_at:ago(0.5),resolved:false}]},
+  {id:'a6',login:'emma.shop',report:null,alerts:[]}
 ]
 export async function accountHealthPreview(method='GET',body){
   if(body?.action==='report'){

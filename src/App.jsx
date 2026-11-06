@@ -25,6 +25,7 @@ import { usePersistedState } from './lib/usePersistedState'
 import Header from './components/Header'
 import CategoryTabs from './components/CategoryTabs'
 import PublicationRunnerBadge from './components/PublicationRunnerBadge'
+import AccountAlertBanner from './components/AccountAlertBanner'
 import Gallery from './components/Gallery'
 import FilterBar from './components/FilterBar'
 import AddItemModal from './components/AddItemModal'
@@ -527,6 +528,7 @@ export default function App() {
         userRole={userRole}
         sentCount={items.filter(i=>i.status==='envoye').length}
       />
+      {isAdmin&&<AccountAlertBanner onOpen={()=>setActiveTab(TAB_ADSPOWER)}/>}
 
       {(stockError||commandeError)&&<div className="max-w-screen-2xl mx-auto p-4 space-y-3"><ErrorNotice error={stockError} retry={fetchItems} busy={itemsLoading}/><ErrorNotice error={commandeError} retry={fetchCommandes}/></div>}
       {stockNotice&&<div role="status" className="max-w-screen-2xl mx-auto p-3 bg-teal-50 text-sm text-teal-800 flex justify-between gap-3">{stockNotice}<button onClick={()=>setStockNotice('')}>Fermer</button></div>}
