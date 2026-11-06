@@ -142,6 +142,11 @@ export default async function handler(req, res) {
       const {error}=await db.rpc('unlink_supplier_shipment',{p_id:body.id,p_line:body.line,p_version:body.updated_at,p_user:user.id});fail(error)
       return res.json({saved:true})
     }
+    if(body.action==='undo_receive'){
+      if(!isId(body.order_id)||!Array.isArray(body.lines)||!body.lines.length||body.lines.length>400||body.lines.some(l=>!l||typeof l.id!=='string'||!l.id||l.id.length>80||!Number.isFinite(Date.parse(l.updated_at))))throw new AppError('Articles invalides.')
+      const {error}=await db.rpc('undo_reception',{p_order:body.order_id,p_lines:body.lines,p_user:user.id});fail(error)
+      return res.json({saved:true})
+    }
     if(body.action==='receive'||body.action==='pack'){
       const {receiveLine,packOrder}=await import('../server/reception.js')
       return res.json(body.action==='receive'?await receiveLine(db,user.id,body):await packOrder(db,user.id,body))
