@@ -5,10 +5,13 @@ import CreativeAccounts from './CreativeAccounts'
 import {PromptList,AiSpending} from './AtelierParts'
 import {filterResources,validateImage} from '../lib/resources'
 import {stableThumbs,missingThumbs,thumbOf,resourceImageKey,mergeThumbnails} from '../lib/resourceThumbs'
+import {backgroundUsage} from '../lib/creativeAccounts'
 
 const defaultRequest=(...args)=>import('../lib/api').then(m=>m.resourcesRequest(...args))
 const defaultListingRequest=(...args)=>import('../lib/api').then(m=>m.listingStudioRequest(...args))
-const SECTIONS=[['accounts','Comptes Vinted'],['prompts','Prompts'],['fonds','Fonds'],['spend','Dépenses IA']]
+const SECTIONS=[['accounts','Comptes'],['fonds','Fonds'],['prompts','Prompts'],['spend','Dépenses IA']]
+const SUBTITLES={accounts:'Choisis un compte : son fond et ses prompts sont prêts à copier.',fonds:'Tes fonds de pièce et leurs prompts avant / arrière.',prompts:'Tous tes prompts au même endroit, un clic pour copier.',spend:'Ce que coûte la rédaction automatique des annonces.'}
+const defaultAccountsRequest=(...args)=>import('../lib/api').then(m=>m.creativeAccountsRequest(...args))
 const defaultUpload=(...args)=>import('../lib/api').then(m=>m.uploadResourceImage(...args))
 const input='w-full border border-gray-300 rounded-lg px-3 py-2.5 bg-white text-sm focus:outline-teal-600'
 const button='inline-flex items-center justify-center gap-2 border rounded-lg px-3 py-2 text-sm bg-white hover:bg-gray-50 disabled:opacity-40'
@@ -47,7 +50,7 @@ function ImageField({editing,file,onFile,onRemove,busy}) {
   </div>
 }
 
-export default function ResourcesTab({request=defaultRequest,upload=defaultUpload,accountsRequest,listingRequest=defaultListingRequest,initialSection}) {
+export default function ResourcesTab({request=defaultRequest,upload=defaultUpload,accountsRequest=defaultAccountsRequest,listingRequest=defaultListingRequest,initialSection}) {
   const [section,setSection]=useState(SECTIONS.some(([k])=>k===initialSection)?initialSection:initialSection==='library'?'fonds':'accounts')
   const statsRequest=useMemo(()=>()=>listingRequest('GET',undefined,'action=picker'),[listingRequest])
   const [rows,setRows]=useCachedState(request,'resources',[]),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false)
@@ -56,7 +59,10 @@ export default function ResourcesTab({request=defaultRequest,upload=defaultUploa
   const [editing,setEditing]=useState(null),[file,setFile]=useState(null),[dirty,setDirty]=useState(false),[detailId,setDetailId]=useState(null)
   const [download,setDownload]=useState(null),[savingLabel,setSavingLabel]=useState('')
   const alive=useRef(true),operation=useRef(false),uploadCache=useRef(null),thumbing=useRef(false)
-  const [thumbRound,setThumbRound]=useState(0)
+  const [thumbRound,setThumbRound]=useState(0),[accountList,setAccountList]=useState(null)
+  const usage=useMemo(()=>backgroundUsage(accountList||[]),[accountList])
+  // L’onglet Fonds affiche quels comptes utilisent chaque fond, même sans passer par Comptes.
+  useEffect(()=>{if(section!=='fonds'||accountList)return;let live=true;accountsRequest().then(r=>{if(live)setAccountList(r.accounts||[])}).catch(()=>{});return()=>{live=false}},[section,accountList,accountsRequest])
   const active=rows.filter(r=>!r.archived_at),detail=rows.find(r=>r.id===detailId)
   const categories=[...new Set(rows.map(r=>r.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'fr'))
   const visible=filterResources(rows,{tab,search,category,favorites,sort})
@@ -128,17 +134,21 @@ export default function ResourcesTab({request=defaultRequest,upload=defaultUploa
     try{await navigator.clipboard.writeText(row[key]);setNotice(row.kind==='background'?`Prompt ${key==='content_back'?'arrière':'avant'} copié.`:'Prompt copié.');setError('')}
     catch{setDetailId(row.id);setError('La copie automatique est indisponible. Sélectionne le texte du prompt ci-dessous pour le copier.')}
   }
-  async function prepareDownload(row) {
+  async function prepareDownload(row,{open=true}={}) {
     const result=await request('POST',{action:'download',id:row.id})
-    setDownload({id:row.id,url:result.url});setDetailId(row.id)
+    if(open){setDownload({id:row.id,url:result.url});setDetailId(row.id)}
     const link=document.createElement('a');link.href=result.url;link.download='';link.rel='noreferrer';document.body.appendChild(link);link.click();link.remove()
     setNotice('Téléchargement demandé. Le lien reste disponible si ton navigateur ne l’a pas démarré.')
   }
   return <main className="workspace-page max-w-screen-2xl mx-auto p-4 sm:p-6 space-y-5 text-slate-800">
-    <nav aria-label="Organisation de l’atelier" className="flex flex-wrap gap-2">{SECTIONS.map(([key,label])=><button key={key} aria-pressed={section===key} className={`rounded-full px-4 py-2 text-sm font-medium ${section===key?'bg-teal-700 text-white':'bg-white border text-slate-600 hover:bg-slate-50'}`} onClick={()=>{setSection(key);setError('');setNotice('');if(key==='fonds')setTab('background')}}>{label}</button>)}</nav>
+    <header className="flex flex-wrap items-end justify-between gap-4">
+      <div><h1 className="text-2xl font-bold">Atelier photo</h1><p className="text-sm text-slate-500 mt-1">{SUBTITLES[section]}</p></div>
+      <nav aria-label="Organisation de l’atelier" className="inline-flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1">{SECTIONS.map(([key,label])=>{const n=key==='accounts'?accountList?.filter(a=>a.enabled).length:key==='fonds'?active.filter(r=>r.kind==='background').length:key==='prompts'?active.filter(r=>r.kind==='prompt').length:null
+        return <button key={key} aria-pressed={section===key} className={`rounded-lg px-4 py-2 text-sm font-medium ${section===key?'bg-white text-teal-800 shadow-sm':'text-slate-600 hover:text-slate-900'}`} onClick={()=>{setSection(key);setError('');setNotice('');if(key==='fonds')setTab('background')}}>{label}{n!=null&&<span className="ml-1.5 text-xs text-slate-400">{n}</span>}</button>})}</nav>
+    </header>
     {section==='prompts'&&(error||notice)&&<p role={error?'alert':'status'} className={`text-sm ${error?'text-red-800':'text-teal-800'}`}>{error||notice}</p>}
-    {section==='accounts'?<CreativeAccounts resources={rows} request={accountsRequest} statsRequest={statsRequest} onLibrary={()=>{setSection('fonds');setTab('background')}} onDownload={row=>run(()=>prepareDownload(row))}/>:section==='prompts'?<PromptList rows={rows} onEdit={openEditor} onNew={()=>openEditor('prompt')} onCopy={(row,key)=>copy(row,key)}/>:section==='spend'?<AiSpending request={listingRequest}/>:<>
-    <header className="flex flex-wrap justify-between items-center gap-4"><div><p className="text-xs font-semibold tracking-widest text-teal-700 uppercase mb-1">Ton atelier photo</p><h1 className="text-2xl font-bold">Fonds</h1><p className="text-sm text-gray-500 mt-1">Tes fonds de pièce et leurs prompts avant / arrière.</p></div><div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={()=>run(load)}>Actualiser</button><button className={button} disabled={busy} onClick={()=>openEditor('prompt')}>+ Nouveau prompt</button><button className={primary} disabled={busy} onClick={()=>openEditor('background')}>+ Ajouter un fond</button></div></header>
+    {section==='accounts'?<CreativeAccounts resources={rows} request={accountsRequest} statsRequest={statsRequest} onAccounts={setAccountList} onLibrary={()=>{setSection('fonds');setTab('background')}} onDownload={row=>run(()=>prepareDownload(row,{open:false}))}/>:section==='prompts'?<PromptList rows={rows} onEdit={openEditor} onNew={()=>openEditor('prompt')} onCopy={(row,key)=>copy(row,key)}/>:section==='spend'?<AiSpending request={listingRequest}/>:<>
+    <div className="flex flex-wrap justify-end items-center gap-2"><div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={()=>run(load)}>Actualiser</button><button className={button} disabled={busy} onClick={()=>openEditor('prompt')}>+ Nouveau prompt</button><button className={primary} disabled={busy} onClick={()=>openEditor('background')}>+ Ajouter un fond</button></div></div>
 
     {!editing&&!detail&&error&&<p role="alert" className="rounded-xl bg-red-50 border border-red-200 text-red-800 p-3 text-sm">{error}</p>}
     {!detail&&notice&&<p role="status" className="text-sm text-teal-800">{notice}</p>}
@@ -147,11 +157,11 @@ export default function ResourcesTab({request=defaultRequest,upload=defaultUploa
     {loading&&!rows.length?<p role="status" className="py-12 text-center text-gray-500">Chargement de ta bibliothèque…</p>:<>
       <div className="article-grid resource-grid">{visible.slice(0,limit).map(row=><article key={row.id} className="bg-white border rounded-2xl overflow-hidden flex flex-col">
         <button className="w-full text-left relative" onClick={()=>{setDetailId(row.id);setError('');setDownload(null)}} aria-label={`Ouvrir ${row.title}`}>
-          {row.image_path?<ResourceImage url={thumbOf(row)} title={row.title} className="w-full h-72 sm:h-80 object-contain bg-stone-100 p-2"/>:<div className="h-72 sm:h-80 p-6 bg-gradient-to-br from-teal-50 to-slate-100 overflow-hidden"><span className="text-4xl leading-none text-teal-600" aria-hidden="true">“</span><p className="text-sm leading-relaxed text-slate-700 line-clamp-6 whitespace-pre-wrap">{row.content}</p></div>}
+          {row.image_path?<ResourceImage url={thumbOf(row)} title={row.title} className="w-full aspect-[3/4] object-contain bg-stone-100 p-2"/>:<div className="aspect-[3/4] p-6 bg-gradient-to-br from-teal-50 to-slate-100 overflow-hidden"><span className="text-4xl leading-none text-teal-600" aria-hidden="true">“</span><p className="text-sm leading-relaxed text-slate-700 line-clamp-6 whitespace-pre-wrap">{row.content}</p></div>}
           <span className="absolute top-3 left-3 bg-white/95 border rounded-full px-2.5 py-1 text-xs">{row.kind==='background'?'Fond':'Prompt'}</span>
           {row.image_path&&<span className="absolute bottom-3 right-3 bg-white/95 border rounded-full px-3 py-1 text-xs">Voir en grand ↗</span>}
         </button>
-        <div className="p-4 flex flex-col flex-1 gap-3"><div className="flex justify-between items-start gap-3"><div className="min-w-0"><h2 className="font-semibold break-words">{row.title}</h2><p className="text-xs text-gray-500 mt-1">{row.category||'Sans catégorie'}</p></div><button className="text-xl text-amber-600 shrink-0 px-1" aria-label={`${row.favorite?'Retirer des':'Ajouter aux'} favoris : ${row.title}`} aria-pressed={row.favorite} disabled={busy} onClick={()=>run(()=>change(row,'favorite',{favorite:!row.favorite}))}>{row.favorite?'★':'☆'}</button></div>
+        <div className="p-4 flex flex-col flex-1 gap-3"><div className="flex justify-between items-start gap-3"><div className="min-w-0"><h2 className="font-semibold break-words">{row.title}</h2><p className="text-xs text-gray-500 mt-1">{row.category||'Sans catégorie'}</p>{row.kind==='background'&&accountList&&<p className="text-xs mt-1 text-teal-800 line-clamp-2" title={usage.get(row.id)?.join(', ')}>{usage.get(row.id)?.length?`Utilisé par ${usage.get(row.id).join(', ')}`:<span className="text-slate-400">Aucun compte ne l’utilise</span>}</p>}</div><button className="text-xl text-amber-600 shrink-0 px-1" aria-label={`${row.favorite?'Retirer des':'Ajouter aux'} favoris : ${row.title}`} aria-pressed={row.favorite} disabled={busy} onClick={()=>run(()=>change(row,'favorite',{favorite:!row.favorite}))}>{row.favorite?'★':'☆'}</button></div>
           <div className="mt-auto pt-2">{row.archived_at?<button className={primary+' w-full'} disabled={busy} onClick={()=>run(()=>change(row,'archive',{archived:false}))}>Restaurer</button>:row.kind==='background'?<button className={primary+' w-full'} onClick={()=>{setDetailId(row.id);setError('');setDownload(null)}}>Utiliser ce fond</button>:<button className={primary+' w-full'} onClick={()=>copy(row)}>Copier le prompt</button>}<button className="article-details-link mt-3 mx-auto" onClick={()=>{setDetailId(row.id);setError('');setDownload(null)}}>Voir les détails ↗</button></div>
         </div>
       </article>)}</div>

@@ -52,3 +52,12 @@ test('API preserves form on selection conflict and validates a referenced backgr
  const conflict=response();await run({method:'PATCH',body:{action:'select',changes:[{id,version:1,enabled:true}]}},conflict);assert.equal(conflict.code,409)
  const wrongKind=response();await run({method:'PATCH',body:{...form,action:'save'}},wrongKind);assert.equal(wrongKind.code,400)
 })
+test('Atelier sorts usable accounts first, blocked ones last, and counts background usage',async()=>{
+ const {sortAtelierAccounts,accountTone,backgroundUsage}=await import('../src/lib/creativeAccounts.js')
+ const accounts=[{id:'a',login:'zoe',enabled:true,background_id:'f1'},{id:'b',login:'anna',enabled:true,background_id:'f1'},{id:'c',login:'bea',enabled:true},{id:'d',login:'cleo',enabled:false,background_id:'f1'}]
+ const stats={a:{health:{status:'ok',attention:false}},b:{health:{status:'restricted',label:'Compte restreint',attention:true}}}
+ assert.deepEqual(sortAtelierAccounts(accounts,stats).map(a=>a.login),['zoe','bea','cleo','anna'])
+ assert.equal(accountTone(stats.b.health).label,'Compte restreint')
+ assert.equal(accountTone(null).key,'unknown')
+ assert.deepEqual(backgroundUsage(accounts).get('f1'),['zoe','anna'])
+})

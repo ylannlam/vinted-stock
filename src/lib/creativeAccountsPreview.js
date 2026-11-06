@@ -1,5 +1,7 @@
 const ids=['30303030-3030-4030-8030-303030303030','40404040-4040-4040-8040-404040404040','50505050-5050-4050-8050-505050505050']
-const accounts=[]
+// Démo : quelques comptes déjà choisis, dont un sans DA, pour montrer l’atelier rempli.
+const demo=[['33333333-3333-4333-8333-333333333333','camille.mode','10101010-1010-4010-8010-101010101010'],['55555555-5555-4555-8555-555555555501','lea.vintage','10101010-1010-4010-8010-101010101010'],['55555555-5555-4555-8555-555555555502','maison.jade',null],['55555555-5555-4555-8555-555555555503','nina.closet','10101010-1010-4010-8010-101010101010'],['55555555-5555-4555-8555-555555555504','sofia.dress',null]]
+const accounts=demo.map(([id,login,background_id])=>({id,login,country:'FR',source_present:true,enabled:true,background_id,prompt_front:null,prompt_back:login==='nina.closet'?'Montre le dos de l’article, même lumière, même fond.':null,notes:'',version:1}))
 export async function creativeAccountsPreview(method='GET',body){
  if(method==='GET')return {accounts:structuredClone(accounts),count:accounts.length,page_size:250}
  if(body.action==='sync'){
