@@ -138,7 +138,8 @@ function kernelAttempts(chrome,{versions:allowed,latest}){
   return attempts
 }
 
-// Seule l'empreinte est envoyée : proxy, cookies, onglets et session du profil restent intacts.
+// Seule l'empreinte est envoyée (ni proxy ni cookies). AdsPower peut malgré tout effacer la session
+// du profil quand son empreinte change : le compte Vinted est alors déconnecté.
 export async function replaceFingerprint(ads,id,{random=Math.random,dispatch=async()=>{}}={}){
   if(!validProfile(id))throw new LocalError('Profil invalide.')
   const current=await readUserAgent(ads,id),chrome=chromeMajor(current)

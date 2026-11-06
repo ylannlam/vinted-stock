@@ -36,8 +36,9 @@ Dans l'onglet AdsPower, la section « Profils et proxys » permet :
 - d'enregistrer tes proxys (Decodo, Oxylabs ou autre) en les collant une fois ;
 - de créer un profil AdsPower pour un compte Vinted, avec un proxy libre et une
   empreinte cohérente avec ce PC (Windows 11, carte NVIDIA, résolution courante) ;
-- de remplacer l'empreinte d'un profil existant. Le proxy, les cookies et la session
-  du profil sont gardés. Le profil doit être fermé. L'ancienne empreinte ne peut pas
+- de remplacer l'empreinte d'un profil existant. Le proxy est gardé, mais AdsPower
+  peut effacer la session du profil : le compte Vinted est alors déconnecté et
+  l'historique vidé. Le profil doit être fermé. L'ancienne empreinte ne peut pas
   être restaurée.
 Le mot de passe du proxy passe du site à ce connecteur puis à AdsPower, uniquement
 sur ce PC. Les empreintes sont prévues pour ce PC : n'ouvre pas ces profils sur un Mac.

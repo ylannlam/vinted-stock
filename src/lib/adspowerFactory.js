@@ -114,7 +114,8 @@ export function proxyUsage(proxies,accounts,adsProfiles=[]){
   for(const proxy of proxies){
     const users=accounts.filter(a=>a.proxy_id===proxy.id&&!a.deleted_at).map(a=>({id:a.id,pseudo:a.pseudo,number:a.ads_power_num||''}))
     const profiles=byKey.get(proxyKey(proxy))||[]
-    const mismatch=users.length===1&&profiles.length===1&&String(profiles[0].number)!==String(users[0].number)
+    // Un compte pas encore relié dont le proxy sert à un seul profil n'est pas un partage : il reste à relier.
+    const mismatch=users.length===1&&profiles.length===1&&users[0].number!==''&&String(profiles[0].number)!==String(users[0].number)
     const state=users.length>1||profiles.length>1||mismatch?'shared':users.length||profiles.length?'used':'free'
     usage.set(proxy.id,{accounts:users,profiles,state})
   }
@@ -122,9 +123,23 @@ export function proxyUsage(proxies,accounts,adsProfiles=[]){
 }
 export const freeProxies=(proxies,usage)=>proxies.filter(p=>usage.get(p.id)?.state==='free')
 
-// Comptes à équiper : actifs, hors Shadowban, sans numéro AdsPower. Les comptes prêts d'abord.
+// Comptes « en service » : ni corbeille, ni Shadowban, ni banni ou suspendu. Les profils des
+// autres comptes ne sont pas à gérer au quotidien.
+const OUT_OF_SERVICE=new Set(['banni_def','banni_temp','suspendu'])
+export const inService=a=>!!a&&!a.deleted_at&&!a.is_shadowbanned&&!OUT_OF_SERVICE.has(a.statut)
+export function serviceAccounts(accounts){
+  return accounts.filter(inService).sort((a,b)=>Number(b.statut==='actif')-Number(a.statut==='actif')||String(a.pseudo).localeCompare(String(b.pseudo),'fr'))
+}
+const stateLabels={banni_def:'Banni',banni_temp:'Banni temporairement',suspendu:'Suspendu',en_preparation:'En préparation'}
+// Compte affiché à côté d'un profil qui n'est pas celui d'un compte en service.
+export function ownerLabel(account){
+  if(!account)return 'Aucun compte relié'
+  if(account.is_shadowbanned)return `${account.pseudo} · Shadowban`
+  return stateLabels[account.statut]?`${account.pseudo} · ${stateLabels[account.statut]}`:account.pseudo
+}
+// Comptes à équiper : en service, sans numéro AdsPower. Les comptes prêts d'abord.
 export function creatableAccounts(accounts){
-  return accounts.filter(a=>!a.deleted_at&&!a.is_shadowbanned&&!String(a.ads_power_num||'').trim())
+  return accounts.filter(a=>inService(a)&&!String(a.ads_power_num||'').trim())
     .sort((a,b)=>Number(b.creation_stage==='ready')-Number(a.creation_stage==='ready')||String(a.pseudo).localeCompare(String(b.pseudo),'fr'))
 }
 // Un compte qui a déjà un proxy le garde ; sinon on propose le premier proxy libre.
@@ -153,6 +168,26 @@ export function recentChange(entry,now=Date.now()){
 export const accountForProfile=(profile,accounts)=>accounts.find(a=>!a.deleted_at&&String(a.ads_power_num||'').trim()===String(profile.number))||null
 // Profils AdsPower qui portent déjà le pseudo du compte sans être reliés à un compte :
 // il faut les relier (« N° AdsPower » du compte), pas en créer un deuxième.
+export const linkedProfile=(account,profiles)=>{const number=String(account?.ads_power_num??'').trim();return number?profiles.find(p=>String(p.number)===number)||null:null}
+export const liveProxyOf=(profile,adsProxies)=>adsProxies.find(r=>r.id===profile?.id)?.proxy||null
+export const savedProxyFor=(live,proxies)=>{const key=liveProxyKey(live);return key?proxies.find(p=>proxyKey(p)===key)||null:null}
+// Profils qu'on peut relier à ce compte : ceux qu'aucun autre compte n'utilise. En tête, le profil
+// qui utilise déjà le proxy du compte (match 2), puis ceux qui portent son pseudo (match 1) :
+// « lilou_lio/OUI » correspond au compte lilou_lio.
+const baseName=name=>profileName(name).toLocaleLowerCase('fr').split(/\s*[/|]\s*/)[0]
+export function profileChoices(account,profiles,accounts,adsProxies=[],proxies=[]){
+  if(!account)return []
+  const pseudo=profileName(account.pseudo).toLocaleLowerCase('fr'),own=proxies.find(p=>p.id===account.proxy_id)
+  const match=p=>{const live=liveProxyKey(liveProxyOf(p,adsProxies));return own&&live===proxyKey(own)?2:pseudo&&baseName(p.name)===pseudo?1:0}
+  return profiles.filter(p=>{const owner=accountForProfile(p,accounts);return !owner||owner.id===account.id})
+    .map(p=>({...p,match:match(p)})).sort((a,b)=>b.match-a.match||(Number(b.number)||0)-(Number(a.number)||0))
+}
+// Le proxy suit le profil : en reliant un compte, on enregistre sur le compte le proxy que le profil
+// utilise dans AdsPower, s'il est enregistré sur le site et qu'aucun autre compte ne l'a.
+export function proxyForLink(account,profile,accounts,proxies,adsProxies){
+  const saved=savedProxyFor(liveProxyOf(profile,adsProxies),proxies)
+  return saved&&!accounts.some(a=>!a.deleted_at&&a.id!==account.id&&a.proxy_id===saved.id)?saved.id:null
+}
 export function unlinkedProfilesNamed(account,profiles,accounts){
   const wanted=profileName(account?.pseudo).toLocaleLowerCase('fr')
   if(!wanted)return []

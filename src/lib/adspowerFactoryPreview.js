@@ -6,10 +6,12 @@ const proxies=[
   {id:'px4',nom:null,adresse:'disp.oxylabs.io',port:8001,username:'user-disp_demo0002',fournisseur:'Oxylabs',created_at:'2026-11-02T10:00:00Z'},
 ]
 const accounts=[
-  {id:'a1',pseudo:'Dressing Camille',ads_power_num:'01',proxy_id:'px1',creation_stage:'ready',is_shadowbanned:false},
-  {id:'a2',pseudo:'Atelier Léa',ads_power_num:'02',proxy_id:'px2',creation_stage:'ready',is_shadowbanned:false},
-  {id:'a3',pseudo:'Nouveau compte',ads_power_num:null,proxy_id:null,creation_stage:'ready',is_shadowbanned:false},
-  {id:'a4',pseudo:'Compte en isolement',ads_power_num:null,proxy_id:null,creation_stage:'post2',is_shadowbanned:false},
+  {id:'a1',pseudo:'Dressing Camille',statut:'actif',ads_power_num:'01',proxy_id:'px1',creation_stage:'ready',is_shadowbanned:false},
+  {id:'a2',pseudo:'Atelier Léa',statut:'actif',ads_power_num:'02',proxy_id:'px2',creation_stage:'ready',is_shadowbanned:false},
+  {id:'a3',pseudo:'Dressing Emma',statut:'actif',ads_power_num:null,proxy_id:null,creation_stage:'ready',is_shadowbanned:false},
+  {id:'a4',pseudo:'Compte en isolement',statut:'en_preparation',ads_power_num:null,proxy_id:null,creation_stage:'post2',is_shadowbanned:false},
+  {id:'a5',pseudo:'Studio Louise',statut:'banni_def',ads_power_num:'05',proxy_id:null,creation_stage:'blocked',is_shadowbanned:false},
+  {id:'a6',pseudo:'Dressing Alice',statut:'actif',ads_power_num:'06',proxy_id:null,creation_stage:null,is_shadowbanned:true},
 ]
 const log=[{profile_id:'demo-1',profile_no:'02',action:'update',resolution:'1920_1080',threads:8,gpu:'NVIDIA GeForce RTX 3060',chrome_major:141,created_at:new Date(Date.now()-2*86400000).toISOString()}]
 const copy=value=>structuredClone(value)
@@ -20,4 +22,6 @@ export const factoryPreviewStore={
   async precheck(accountId,proxyId){if(accounts.some(a=>a.proxy_id===proxyId&&a.id!==accountId))throw Error('Ce proxy est déjà utilisé par un autre compte.')},
   async link(accountId,proxyId,profile){const a=accounts.find(x=>x.id===accountId);Object.assign(a,{ads_power_num:profile.profile_no,proxy_id:proxyId});log.unshift({profile_id:profile.profile_id,profile_no:profile.profile_no,action:'create',resolution:profile.resolution,threads:profile.threads,gpu:profile.gpu,chrome_major:profile.chrome,created_at:new Date().toISOString()});return copy(a)},
   async logFingerprint(entry){log.unshift({...entry,created_at:new Date().toISOString()})},
+  async linkExisting(accountId,number,proxyId){const a=accounts.find(x=>x.id===accountId);if(number&&accounts.some(x=>x.id!==accountId&&x.ads_power_num===String(number)))throw Error(`Le profil n° ${number} est déjà relié.`);Object.assign(a,{ads_power_num:number,proxy_id:proxyId});return copy(a)},
+  async deleteProxy(id){if(accounts.some(a=>a.proxy_id===id))throw Error('Ce proxy est encore enregistré sur un compte.');proxies.splice(proxies.findIndex(p=>p.id===id),1)},
 }
