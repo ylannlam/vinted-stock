@@ -1,4 +1,4 @@
-// Agent Stock Vinted, côté page Vinted (monde de la page, pour utiliser la session déjà ouverte du compte).
+// YlaVint, côté page Vinted (monde de la page, pour utiliser la session déjà ouverte du compte).
 // 1. Exécute les tâches reçues de l'extension avec les « recettes » apprises sur le vrai site Vinted.
 // 2. Mode apprentissage (activé à la main dans le popup) : relève la forme des requêtes que Vinted fait lui-même.
 // Jamais de cookie ni de jeton envoyé hors de Vinted ; ce script ne connaît pas la clé du site.
@@ -82,7 +82,7 @@
   function wardrobeItem(i) {
     return {id: i.id, title: i.title, price: amount(i.price), currency: i.price?.currency_code || i.currency,
       photo_url: i.photo?.url || i.photos?.[0]?.url || null, is_hidden: hiddenFlag(i), is_closed: !!i.is_closed, is_draft: !!i.is_draft,
-      is_sold: !!(i.is_sold || i.item_closing_action === 'sold'), created_at: i.created_at_ts || i.created_at || null}
+      is_sold: !!(i.is_sold || i.item_closing_action === 'sold'), created_at: i.created_at_ts || i.created_at || i.photo?.high_resolution?.timestamp || i.photos?.[0]?.high_resolution?.timestamp || null}
   }
   function orderRow(o) {
     const t = o.transaction || o
@@ -91,7 +91,8 @@
       title: o.title || o.item_title || o.item?.title || t.item_title || '', price: amount(o.price || o.total_item_price || o.item?.price || t.price),
       currency: (o.price || o.item?.price)?.currency_code || 'EUR', order_date: o.date || o.created_at || t.created_at || o.updated_at || null,
       item_ids: [o.item_id, o.item?.id, ...(o.item_ids || [])].filter(Boolean),
-      shipment_id: o.shipment_id || o.shipment?.id || t.shipment_id || null}
+      shipment_id: o.shipment_id || o.shipment?.id || t.shipment_id || null, conversation_id: o.conversation_id || t.conversation_id || null,
+      photo_url: o.photo?.url || o.item?.photo?.url || o.photos?.[0]?.url || null}
     row.label_ready = !!(row.shipment_id || /exp[ée]di|envoy|ship|label|bordereau/i.test(status)) && !/annul|cancel|rembours|refund|termin|complete|livr/i.test(status)
     return row
   }
@@ -112,10 +113,83 @@
     return {items, complete}
   }
   async function syncOrders(task) {
-    const data = await call(task.recipes.orders_list)
+    const data = await call(task.recipes.orders_list, {query: {page: 1, per_page: 20}})
     const orders = firstArray(data).map(orderRow).filter(o => o.transaction_id)
+    // Détail d'une vente (articles du lot, envoi) : seulement pour les ventes pas encore détaillées, et si la lecture a été apprise.
+    const detailed = new Set((task.payload?.detailed || []).map(String))
+    if (task.recipes.order_detail) for (const o of orders.filter(o => !detailed.has(String(o.transaction_id))).slice(0, 8)) {
+      try {
+        await pause(1500, 4000)
+        const d = await call(task.recipes.order_detail, {ids: {id: o.transaction_id}}), t = d.transaction || d
+        const items = [t.item_id, t.item?.id, ...(Array.isArray(t.items) ? t.items.map(i => i.id) : []), ...(Array.isArray(t.order?.items) ? t.order.items.map(i => i.id || i.item_id) : [])].filter(Boolean)
+        if (items.length) o.item_ids = [...new Set(items.map(String))]
+        o.shipment_id = o.shipment_id || t.shipment?.id || t.shipment_id || null
+        o.conversation_id = o.conversation_id || t.conversation_id || null
+        if (!o.title) o.title = t.item_title || t.item?.title || ''
+      } catch (e) { if (e instanceof Stop && e.code !== 'vinted_error') throw e }
+    }
     for (const o of orders) memory.orders.set(String(o.transaction_id), o)
     return {orders}
+  }
+
+  // ---------- Messagerie ----------
+  const photoUrl = p => typeof p === 'string' ? p : p?.url || p?.thumbnails?.[0]?.url || null
+  const hashOf = text => { let h = 0; for (const c of String(text)) h = (h * 31 + c.charCodeAt(0)) | 0; return 'h' + (h >>> 0).toString(36) }
+  function messageRow(m, me) {
+    const e = m.entity && typeof m.entity === 'object' ? m.entity : m
+    const type = String(m.entity_type || m.type || e.type || '')
+    const kind = /offer/i.test(type) ? 'offer' : /action/i.test(type) ? 'action' : /status/i.test(type) ? 'status' : (e.photos?.length && !e.body) ? 'photo' : 'message'
+    let body = e.body ?? e.text ?? e.message ?? e.title ?? ''
+    if (kind === 'offer' && !body) body = `Offre : ${amount(e.price || e.offer_price) ?? ''} €`
+    if (kind === 'action' && e.subtitle) body = `${body} — ${e.subtitle}`
+    const user = e.user_id ?? m.user_id ?? e.sender_id ?? e.user?.id
+    const sent = m.created_at_ts ?? m.created_at ?? e.created_at_ts ?? e.created_at ?? e.sent_at ?? null
+    const id = e.id ?? m.id ?? hashOf(`${sent}|${body}`)
+    return {id: String(id), from_me: m.is_own === true || e.is_own === true || (user != null && String(user) === String(me)), body: String(body || ''), kind, sent_at: sent}
+  }
+  function conversationRow(entry, detail, me) {
+    const c = detail?.conversation || detail || {}, other = c.opposite_user || entry.opposite_user || {}
+    const t = c.transaction || null, item = c.item || t?.item || null
+    return {id: entry.id || c.id, other: {id: other.id, login: other.login, photo: photoUrl(other.photo)},
+      unread: entry.unread === true || entry.is_unread === true || Number(entry.unread_count) > 0 || c.read_by_current_user === false,
+      updated_at: entry.updated_at || c.updated_at || null, preview: entry.description || entry.last_message?.body || '',
+      item: {id: item?.id || t?.item_id || null, title: item?.title || t?.item_title || c.subtitle || entry.item_title || null,
+        price: item?.price || t?.offer_price || t?.item_price || null, photo: photoUrl(item?.photo || item?.photos?.[0] || entry.item_photos?.[0])},
+      transaction: t ? {id: t.id, status: t.status_title || t.status || t.transaction_user_status || null} : null,
+      allow_reply: c.allow_reply !== false && c.is_replyable !== false,
+      messages: detail ? firstArray(c.messages ? {messages: c.messages} : c).map(m => messageRow(m, me)).filter(m => m.body || m.kind !== 'message') : null}
+  }
+  async function scanInbox(task) {
+    const p = task.payload || {}, known = p.known || {}, forced = new Set((p.conversation_ids || []).map(String)), me = task.member_id
+    const first = !Object.keys(known).length
+    const list = []
+    for (let page = 1; page <= (first && !forced.size ? 2 : 1); page++) {
+      const data = await call(task.recipes.inbox_list, {query: {page, per_page: 20}})
+      const rows = Array.isArray(data.conversations) ? data.conversations : firstArray(data)
+      list.push(...rows)
+      if (rows.length < 20) break
+      await pause(1500, 3500)
+    }
+    const changed = list.filter(c => c && (forced.has(String(c.id)) || known[String(c.id)] !== String(c.updated_at ?? ''))).slice(0, first ? 15 : 10)
+    for (const id of forced) if (!list.some(c => String(c.id) === id)) changed.push({id})
+    const out = new Map(list.filter(c => c?.id).map(c => [String(c.id), conversationRow(c, null, me)]))
+    for (const c of changed) {
+      await pause(1500, 4000)
+      try {
+        const detail = await call(task.recipes.conversation_read, {ids: {id: c.id}})
+        out.set(String(c.id), conversationRow(c, detail, me))
+        progress()
+      } catch (e) { if (!(e instanceof Stop) || !['vinted_error', 'failed'].includes(e.code)) throw e }
+    }
+    return {conversations: [...out.values()]}
+  }
+  async function replyMessage(task) {
+    const {conversation_id, body} = task.payload, R = task.recipes
+    if (!body) throw new Stop('failed', 'Message vide.')
+    if (!R.message_send) throw new Stop('no_recipe', 'Envoi de message pas encore appris.')
+    const r = await call(R.message_send, {ids: {id: conversation_id}, json: fillShape(R.message_send.template, [[/^(body|message|text|content)$/, body], [/photo/, []]])})
+    const m = r.reply || r.message || r.conversation?.messages?.slice(-1)?.[0]?.entity || r
+    return {conversation_id: String(conversation_id), message_id: m?.id != null ? String(m.id) : null}
   }
   async function fetchBytes(url) {
     const u = new URL(url, location.origin)
@@ -265,7 +339,8 @@
   async function run(task) {
     currentTask = task
     const runners = {scan_wardrobe: scanWardrobe, sync_orders: syncOrders, fetch_label: fetchLabel, scan_likes: scanLikes,
-      publish_item: publish, unmask_item: t => editItem(t, {unmask: true}), reprice_item: t => editItem(t, {unmask: false}), like_message: likeMessage}
+      publish_item: publish, unmask_item: t => editItem(t, {unmask: true}), reprice_item: t => editItem(t, {unmask: false}), like_message: likeMessage,
+      sync_inbox: scanInbox, reply_message: replyMessage}
     try {
       if (!runners[task.kind]) throw new Stop('failed', 'Tâche inconnue.')
       return {ok: true, result: await runners[task.kind](task)}
@@ -285,6 +360,9 @@
     ['conversation_create', /^POST$/, /^\/api\/v2\/conversations$/],
     ['message_send', /^POST$/, /^\/api\/v2\/conversations\/\{id\}\/replies$/],
     ['order_label', /^GET$/, /label/],
+    ['inbox_list', /^GET$/, /^\/api\/v2\/inbox$/],
+    ['conversation_read', /^GET$/, /^\/api\/v2\/conversations\/\{id\}$/],
+    ['order_detail', /^GET$/, /^\/api\/v2\/transactions\/\{id\}$/],
     ['orders_list', /^GET$/, /my_orders|\/orders$|\/transactions$/],
     ['likes_list', /^GET$/, /notifications/],
   ]
@@ -365,7 +443,7 @@
     if (d.type === 'run' && d.task && !currentTask) post({type: 'result', id: d.id, payload: await run(d.task)})
     else if (d.type === 'run') post({type: 'result', id: d.id, payload: {ok: false, code: 'busy', error: 'Une tâche est déjà en cours dans cet onglet.'}})
   })
-  globalThis.__svAgent = {version: 2}
+  globalThis.__svAgent = {version: 3}
   // Pour les tests : fonctions pures.
-  globalThis.__svAgentTest = {fillItem, wardrobeItem, orderRow, shape, fillShape, hiddenFlag}
+  globalThis.__svAgentTest = {fillItem, wardrobeItem, orderRow, shape, fillShape, hiddenFlag, messageRow, conversationRow}
 })()

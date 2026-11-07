@@ -184,7 +184,8 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
    const accountId=req.query.account_id.toLowerCase(),since=Date.now()-86400000
    const cutoff=new Date(since).toISOString()
    const [presets,rows]=await Promise.all([settings(db,accountId),readBoardRows(()=>db.from(TABLE).select('*',{count:'exact'}).eq('owner_id',user.id).eq('fields->>account_id',accountId).or(`state.neq.published,published_at.gt.${cutoff},and(published_at.is.null,updated_at.gt.${cutoff})`).order('created_at',{ascending:false}).order('id'))])
-   return {account_id:accountId,settings:presets,dotb_publish_enabled:allowDotb,dotb:allowDotb&&presets.effective.dotb===true,drafts:await Promise.all(rows.map(r=>expose(db,r)))}
+   const ylavint=await import('./ylavint.js').then(m=>m.ylavintPublishReady(db,accountId)).catch(()=>false)
+   return {account_id:accountId,settings:presets,dotb_publish_enabled:allowDotb,dotb:allowDotb&&presets.effective.dotb===true,ylavint,drafts:await Promise.all(rows.map(r=>expose(db,r)))}
   }
   if(action==='settings')return settings(db,req.query.account_id)
   // Onglet Publication : fiches prêtes, comptes, annonces déjà prévues.
@@ -230,6 +231,19 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
   return {draft:await expose(db,row)}
  }
  if(!row)throw new AppError('Brouillon introuvable.',404)
+ // Publication confiée à YlaVint (pas de fiche chez Dotb) : la tâche est retirée de la file tant qu'elle n'a pas commencé.
+ if((action==='unschedule'&&row.state==='scheduled'&&!row.dotb_item_id)||action==='ylavint_cancel'){
+  if(body.version!==row.version||pending(row))throw new AppError('Cette annonce a changé. Actualise la liste.',409)
+  const {cancelStudioPublish}=await import('./ylavint.js')
+  return {draft:await expose(db,await cancelStudioPublish(db,row))}
+ }
+ if(action==='ylavint_publish'){
+  if(body.version!==row.version||pending(row))throw new AppError('Cette fiche est en cours de traitement ou a changé. Rouvre le brouillon.',409)
+  if(row.state!=='draft')throw new AppError('Cette annonce a déjà été transmise. Consulte son suivi.',409)
+  if(body.confirmation_account_id!==row.fields.account_id)throw new AppError('Vérifie le compte ciblé avant de publier.')
+  const {queueStudioPublish}=await import('./ylavint.js')
+  return {draft:await expose(db,await queueStudioPublish(db,user,row,{mode:body.mode}))}
+ }
  if(action==='unschedule'){
   if(body.version!==row.version||pending(row))throw new AppError('Cette annonce a changé. Actualise la liste.',409)
   return {draft:await expose(db,await unscheduleListing(db,row,read))}

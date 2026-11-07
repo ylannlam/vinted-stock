@@ -1,6 +1,7 @@
 import {SITE, TOKEN} from './config.js'
 
-// Agent Stock Vinted : veille du compte (bandeau Vinted) + exécution des tâches du site, une à la fois.
+// YlaVint : le Bridge du profil. Veille du compte (bandeau Vinted) + exécution des tâches du site, une à la fois.
+// Le gros bouton du popup allume ou coupe le Bridge de ce profil.
 const VERSION = chrome.runtime.getManifest().version
 const WATCH_EVERY = 45 // minutes entre deux vérifications du compte
 const get = async key => (await chrome.storage.local.get(key))[key]
@@ -9,8 +10,20 @@ const schedule = () => {
   chrome.alarms.create('watch', {delayInMinutes: 2, periodInMinutes: WATCH_EVERY})
   chrome.alarms.create('agent', {delayInMinutes: 1, periodInMinutes: 1})
 }
-chrome.runtime.onInstalled.addListener(schedule)
-chrome.runtime.onStartup.addListener(schedule)
+const bridgeOn = async () => (await get('bridge')) !== false
+// Badge de l'icône : messages non lus, pause, Bridge coupé.
+async function badge() {
+  const {agent, bridge} = await chrome.storage.local.get(['agent', 'bridge'])
+  let text = '', color = '#08664c'
+  if (bridge === false) { text = 'OFF'; color = '#79756f' }
+  else if (['paused', 'error', 'logged_out'].includes(agent?.state)) { text = '!'; color = '#c2410c' }
+  else if (agent?.unread > 0) { text = agent.unread > 99 ? '99+' : String(agent.unread); color = '#c83469' }
+  await chrome.action.setBadgeText({text}).catch(() => {})
+  await chrome.action.setBadgeBackgroundColor({color}).catch(() => {})
+}
+chrome.storage.onChanged.addListener(changes => { if (changes.agent || changes.bridge) badge() })
+chrome.runtime.onInstalled.addListener(() => { schedule(); badge() })
+chrome.runtime.onStartup.addListener(() => { schedule(); badge() })
 
 async function site(action, body) {
   const response = await fetch(`${SITE}/api/collector`, {method: 'POST', redirect: 'error', credentials: 'omit',
@@ -27,6 +40,7 @@ async function journal(entry) {
 
 // ---------- Veille du compte ----------
 chrome.alarms.onAlarm.addListener(async alarm => {
+  if (!(await bridgeOn())) return
   if (alarm.name === 'watch') {
     const tab = await chrome.tabs.create({url: 'https://www.vinted.fr/', active: false})
     await set({check_tab: tab.id})
@@ -54,6 +68,7 @@ async function vintedTab() {
   return tabs.find(t => t.status === 'complete' && t.id !== checkTab && !t.discarded) || null
 }
 async function tick() {
+  if (!(await bridgeOn())) { agentState = {state: 'off', message: 'Bridge coupé dans ce profil.', at: Date.now()}; return set({agent: agentState}) }
   if (Date.now() < busyUntil) return
   const next = (await get('agent_next')) || 0
   if (Date.now() < next) return
@@ -65,7 +80,8 @@ async function tick() {
   busyUntil = Date.now() + 200000
   try {
     const r = await site('agent_poll', {member_id: who.member_id, login: who.login})
-    agentState = {state: r.state, message: r.reason || r.message || null, login: r.account || who.login, at: Date.now()}
+    agentState = {state: r.state, message: r.reason || r.message || null, login: r.account || who.login, at: Date.now(),
+      unread: Number.isFinite(r.unread) ? r.unread : agentState?.unread || 0, features: r.features || agentState?.features || []}
     await set({agent: agentState, agent_next: Date.now() + (r.wait_seconds || 60) * 1000 - 5000})
     if (r.state !== 'task' || !r.task) return
     const task = {...r.task, member_id: who.member_id}
@@ -85,6 +101,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     const o = message.observation
     if (!o?.member_id) return // pas connecté, ou page sans données du compte
     ;(async () => {
+      if (!(await bridgeOn())) return
       await report(o).catch(async e => set({last: {...((await get('last')) || {}), ok: false, error: e.message || 'Site injoignable', at: Date.now()}}))
       if (sender.tab.id === (await get('check_tab'))) chrome.tabs.remove(sender.tab.id).catch(() => {})
     })()
@@ -141,6 +158,16 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       const item = ((await get('seen')) || []).find(s => s.id === message.id)
       if (!item) return reply({ok: false})
       await learn(message.kind, item.recipe); reply({ok: true})
+    })()
+    return true
+  }
+  if (message?.type === 'set_bridge') {
+    (async () => {
+      await set({bridge: message.on === true, agent_next: 0})
+      await journal({level: message.on ? 'info' : 'warn', text: message.on ? 'Bridge YlaVint allumé.' : 'Bridge YlaVint coupé.'})
+      if (message.on) await tick().catch(() => {})
+      else await set({agent: {state: 'off', message: 'Bridge coupé dans ce profil.', at: Date.now()}})
+      reply({ok: true})
     })()
     return true
   }

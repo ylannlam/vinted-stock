@@ -18,7 +18,7 @@ globalThis.window = {
 }
 globalThis.location = {origin: 'https://www.vinted.fr', href: 'https://www.vinted.fr/'}
 globalThis.document = {cookie: 'anon_id=anon-1', querySelector: () => ({content: 'csrf-1'}), scripts: []}
-await import('../extensions/vinted-agent/page.js')
+await import('../extensions/ylavint/page.js')
 const T = globalThis.__svAgentTest
 
 async function run(task) {
@@ -87,10 +87,50 @@ test('orders are read whatever their exact layout', () => {
   assert.equal(T.orderRow({id: 1, status: 'Commande terminée', shipment_id: 3}).label_ready, false)
 })
 test('the extension files are valid scripts and the manifest declares the page script in the page world', () => {
-  for (const f of ['worker.js', 'content.js', 'popup.js', 'read.js', 'page.js']) execFileSync(process.execPath, ['--check', new URL(`../extensions/vinted-agent/${f}`, import.meta.url).pathname])
-  const m = JSON.parse(readFileSync(new URL('../extensions/vinted-agent/manifest.json', import.meta.url), 'utf8'))
+  for (const f of ['worker.js', 'content.js', 'popup.js', 'read.js', 'page.js']) execFileSync(process.execPath, ['--check', new URL(`../extensions/ylavint/${f}`, import.meta.url).pathname])
+  const m = JSON.parse(readFileSync(new URL('../extensions/ylavint/manifest.json', import.meta.url), 'utf8'))
   assert.equal(m.manifest_version, 3)
   assert.deepEqual(m.content_scripts.map(c => c.world || 'ISOLATED'), ['MAIN', 'ISOLATED'])
-  const page = readFileSync(new URL('../extensions/vinted-agent/page.js', import.meta.url), 'utf8')
+  const page = readFileSync(new URL('../extensions/ylavint/page.js', import.meta.url), 'utf8')
   assert.ok(!page.includes('config.js') && !page.includes('svwk_') && !page.includes('vinted-stock.vercel.app'), 'the site key and address never reach the Vinted page')
+})
+test('inbox: list read, only changed conversations opened, messages tagged mine / theirs', async () => {
+  calls.length = 0
+  vinted = async url => {
+    const u = new URL(url)
+    if (u.pathname === '/api/v2/inbox') return {status: 200, body: {conversations: [
+      {id: 11, updated_at: '2026-11-07T15:00:00+01:00', unread: true, description: 'Elle taille comment ?', opposite_user: {id: 77, login: 'acheteuse', photo: {url: 'https://images1.vinted.net/u.jpg'}}},
+      {id: 12, updated_at: '2026-11-06T10:00:00+01:00', unread: false, description: 'Merci', opposite_user: {id: 78, login: 'autre'}}]}}
+    if (u.pathname === '/api/v2/conversations/11') return {status: 200, body: {conversation: {id: 11, allow_reply: true, opposite_user: {id: 77, login: 'acheteuse'},
+      transaction: {id: 900, status: 'Payée', item_id: 5, item_title: 'Robe'},
+      messages: [{entity_type: 'message', entity: {id: 1, body: 'Bonjour', user_id: 77}, created_at_ts: '2026-11-07T14:50:00+01:00'},
+        {entity_type: 'message', entity: {id: 2, body: 'Bonjour !', user_id: 3206068112}, created_at_ts: '2026-11-07T14:55:00+01:00'},
+        {entity_type: 'offer_request_message', entity: {id: 3, price: {amount: '20.0'}, user_id: 77}, created_at_ts: '2026-11-07T14:58:00+01:00'}]}}}
+    return {status: 404, body: {}}
+  }
+  const recipes = {inbox_list: {method: 'GET', path: '/api/v2/inbox'}, conversation_read: {method: 'GET', path: '/api/v2/conversations/{id}'}}
+  const r = await run({kind: 'sync_inbox', member_id: '3206068112', payload: {known: {12: '2026-11-06T10:00:00+01:00', 99: 'x'}}, recipes})
+  assert.equal(r.ok, true)
+  const [a, b] = r.result.conversations
+  assert.equal(calls.filter(c => c.url.includes('/conversations/')).length, 1, 'unchanged conversation 12 not reopened')
+  assert.deepEqual(a.messages.map(m => [m.id, m.from_me, m.kind]), [['1', false, 'message'], ['2', true, 'message'], ['3', false, 'offer']])
+  assert.match(a.messages[2].body, /20/); assert.equal(a.transaction.id, 900); assert.equal(a.item.title, 'Robe'); assert.equal(a.unread, true)
+  assert.equal(b.messages, null); assert.equal(b.preview, 'Merci')
+})
+test('a reply is sent with the learned message recipe, never without it', async () => {
+  calls.length = 0
+  vinted = async (url, init) => init.method === 'POST' ? {status: 200, body: {reply: {id: 4242}}} : {status: 404, body: {}}
+  const recipes = {message_send: {method: 'POST', path: '/api/v2/conversations/{id}/replies', body: 'json', template: {reply: {body: '', photo_temp_uuids: [], is_personal_data_sharing_check_skipped: false}}}}
+  const r = await run({kind: 'reply_message', payload: {conversation_id: '11', body: 'Oui, dispo !'}, recipes})
+  assert.deepEqual(r, {ok: true, result: {conversation_id: '11', message_id: '4242'}})
+  const post = calls.at(-1)
+  assert.match(post.url, /\/api\/v2\/conversations\/11\/replies$/)
+  assert.deepEqual(JSON.parse(post.body), {reply: {body: 'Oui, dispo !', photo_temp_uuids: [], is_personal_data_sharing_check_skipped: false}})
+  assert.equal(post.headers['x-csrf-token'], 'csrf-1')
+  assert.equal((await run({kind: 'reply_message', payload: {conversation_id: '11', body: 'x'}, recipes: {}})).code, 'no_recipe')
+})
+test('the extension ships its icons and the YlaVint name', () => {
+  const m = JSON.parse(readFileSync(new URL('../extensions/ylavint/manifest.json', import.meta.url), 'utf8'))
+  assert.equal(m.name, 'YlaVint')
+  for (const p of Object.values(m.icons)) assert.ok(readFileSync(new URL(`../extensions/ylavint/${p}`, import.meta.url)).subarray(1, 4).toString() === 'PNG')
 })

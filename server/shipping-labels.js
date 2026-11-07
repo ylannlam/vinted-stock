@@ -32,6 +32,13 @@ export async function shippingLabel(db,id,{fetcher=fetch,readOrder=dotbRequest,c
   if(!line||!isId(line.order_id))throw new AppError('Cette vente n’est plus disponible dans la période suivie.',404)
   if(blocked.has(line.order?.status))throw new AppError('Cette vente est annulée, suspendue ou en retour. Son bordereau ne doit pas être utilisé.',409)
   let url=line.order?.label_url
+  // Vente lue par YlaVint : le bordereau vient du stockage du site, pas de Dotb.
+  let bytes=null
+  if(!url||String(url).startsWith('ylavint:')){
+    const {ylavintLabelBytes}=await import('./ylavint.js')
+    const order=url?null:(await db.from('sales_orders').select('transaction_id').eq('id',line.order_id).maybeSingle()).data
+    bytes=await ylavintLabelBytes(db,url,line.order_id,order?.transaction_id)
+  }
   async function refresh(){
     const order=await readOrder(`orders/${line.order_id}`,{fetcher})
     if(order?.id!==line.order_id)throw new AppError('Le bordereau ne correspond pas à cette vente.',502)
@@ -41,12 +48,13 @@ export async function shippingLabel(db,id,{fetcher=fetch,readOrder=dotbRequest,c
     const saved=await db.from('sales_orders').update({label_url:url}).eq('id',line.order_id)
     if(saved.error)throw saved.error
   }
-  let refreshed=false
-  if(!url){await refresh();refreshed=true}
-  let bytes
-  try{bytes=await downloadLabel(url,fetcher)}catch(error){
-    if(error.status!==410||refreshed)throw error
-    await refresh();bytes=await downloadLabel(url,fetcher)
+  if(!bytes){
+    let refreshed=false
+    if(!url){await refresh();refreshed=true}
+    try{bytes=await downloadLabel(url,fetcher)}catch(error){
+      if(error.status!==410||refreshed)throw error
+      await refresh();bytes=await downloadLabel(url,fetcher)
+    }
   }
   const prepare=convert||(await import('./shipping-label-pdf.js')).thermalLabel
   // Titres des articles de la commande (un lot peut en contenir plusieurs), écrits sous l'étiquette.

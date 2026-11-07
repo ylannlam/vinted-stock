@@ -10,7 +10,7 @@ import {zipFiles} from '../src/lib/zip.js'
 const check=r=>{if(r.error)throw r.error;return r.data}
 const hash=value=>createHash('sha256').update(value).digest('hex')
 // Depuis la version 2, l'extension téléchargée est l'agent complet (veille du compte comprise).
-export const WATCH_FILES=['manifest.json','read.js','content.js','page.js','worker.js','popup.html','popup.js','config.js']
+export const WATCH_FILES=['manifest.json','read.js','content.js','page.js','worker.js','popup.html','popup.js','config.js','icons/16.png','icons/32.png','icons/48.png','icons/128.png']
 export function newWatchToken(){const id=randomUUID(),token=`svwk_${id}.${randomBytes(32).toString('base64url')}`;return {id,token,token_hash:hash(token)}}
 export function readWatchToken(value){
   const m=typeof value==='string'&&value.match(/^Bearer (svwk_([0-9a-f-]{36})\.[A-Za-z0-9_-]{43})$/)
@@ -65,7 +65,7 @@ export async function recordWatch(db,key,report){
 }
 
 // Téléchargement : une clé neuve, intégrée dans config.js de l'archive.
-export function watchArchive(token,read=name=>readFileSync(join(process.cwd(),'extensions','vinted-agent',name),'utf8')){
+export function watchArchive(token,read=name=>name.endsWith('.png')?new Uint8Array(readFileSync(join(process.cwd(),'extensions','ylavint',name))):readFileSync(join(process.cwd(),'extensions','ylavint',name),'utf8')){
   return zipFiles(WATCH_FILES.map(name=>({name,data:name==='config.js'?read(name).replace('__STOCK_VINTED_WATCH_TOKEN__',token):read(name)})))
 }
 export async function handleWatch(req,{db,user}){
@@ -76,7 +76,7 @@ export async function handleWatch(req,{db,user}){
   if(req.body?.action==='download'){
     const t=newWatchToken()
     check(await db.from('vinted_watch_keys').insert({id:t.id,token_hash:t.token_hash,created_by:user.id}))
-    return {filename:'stock-vinted-agent.zip',zip_base64:Buffer.from(watchArchive(t.token)).toString('base64')}
+    return {filename:'ylavint.zip',zip_base64:Buffer.from(watchArchive(t.token)).toString('base64')}
   }
   if(req.body?.action==='revoke'){
     if(!isId(req.body.id))throw new AppError('Clé invalide.')

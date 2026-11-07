@@ -22,8 +22,8 @@ export default function VintedWatchPanel({request=vintedWatchRequest}){
  const active=(keys||[]).filter(k=>!k.revoked_at),seen=active.filter(k=>k.last_seen_at)
  return <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 space-y-3" aria-label="Veille des comptes Vinted">
   <header className="flex flex-wrap items-start justify-between gap-3">
-   <div><h2 className="font-semibold">Extension Agent Vinted · veille des comptes</h2>
-    <p className="mt-1 text-xs text-slate-500">Une seule extension dans tes profils AdsPower : elle lit l’état du compte que Vinted met dans ses pages (« Compte restreint jusqu’au … », compte bloqué), à chaque page Vinted ouverte et toutes les 45 min, et exécute les tâches de l’onglet Agent pour les comptes où tu l’as activé. Elle remplace l’ancienne extension de veille : mets-la à jour avec le nouveau zip.</p></div>
+   <div><h2 className="font-semibold">Extension YlaVint · le Bridge de tes comptes</h2>
+    <p className="mt-1 text-xs text-slate-500">Une seule extension dans tes profils AdsPower, avec son gros bouton YlaVint : veille des comptes (« Compte restreint jusqu’au … », compte bloqué), messagerie, ventes et bordereaux, dressing, démasquage, prix, publication et likes pour les comptes que tu actives dans l’onglet YlaVint. Elle remplace l’ancienne extension Agent / veille : mets-la à jour avec ce zip.</p></div>
    <div className="flex gap-2"><button className={primaryClass} disabled={busy} onClick={download}>{busy?'Préparation…':'Télécharger l’extension'}</button><button className={buttonClass} onClick={()=>setOpen(!open)} aria-expanded={open}>Installation</button></div>
   </header>
   {error&&<p role="alert" className="text-sm text-red-700">{error}</p>}
@@ -31,7 +31,7 @@ export default function VintedWatchPanel({request=vintedWatchRequest}){
   {open&&<ol className="list-decimal space-y-1 pl-5 text-sm text-slate-700">
    <li>Dans AdsPower, ouvre <strong>Extensions</strong> (menu de gauche), puis <strong>Ajouter une extension</strong> → <strong>Téléverser un fichier</strong> et choisis le zip téléchargé.</li>
    <li>Active son <strong>interrupteur</strong> : elle se charge alors dans tous tes profils, nouveaux compris, à leur prochain lancement. Pour une nouvelle version, utilise <strong>··· → Mise à jour</strong> sur la même extension.</li>
-   <li>L’extension reconnaît seule le compte Vinted connecté dans chaque profil. Elle ne fait rien d’autre que la veille tant que l’agent n’est pas activé pour ce compte dans l’onglet Agent.</li>
+   <li>L’extension reconnaît seule le compte Vinted connecté dans chaque profil. Elle ne fait rien d’autre que la veille tant que le compte n’est pas activé dans l’onglet YlaVint. Le gros bouton du popup coupe ou rallume YlaVint dans le profil.</li>
    <li>Pour apprendre une action : ouvre le popup de l’extension dans un profil de test, active le <strong>mode apprentissage</strong>, puis fais le geste une fois à la main sur Vinted (liste dans l’onglet Agent).</li>
   </ol>}
   {active.length>0&&<details><summary className="cursor-pointer text-xs text-slate-500">Extensions téléchargées ({active.length})</summary><ul className="mt-2 space-y-1 text-xs">{active.map(k=><li key={k.id} className="flex items-center justify-between gap-2"><span>Téléchargée le {when(k.created_at)} · dernier signal {when(k.last_seen_at)}</span><button className="text-red-700 underline" disabled={busy} onClick={()=>revoke(k.id)}>Désactiver</button></li>)}</ul></details>}

@@ -1,0 +1,56 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>YlaVint</title><style>
+:root{--green:#08664c;--ink:#262a25;--muted:#79756f;--line:#ece8e1;--pink:#c83469}
+*{box-sizing:border-box}body{font:13px/1.4 system-ui,-apple-system,Segoe UI,sans-serif;margin:0;width:360px;color:var(--ink);background:#faf8f5}
+header{display:flex;align-items:center;gap:8px;padding:12px 14px 0}header img{width:22px;height:22px}header b{font-size:15px;letter-spacing:.01em}header span{margin-left:auto;font-size:11px;color:var(--muted)}
+.hero{display:flex;flex-direction:column;align-items:center;padding:14px 14px 10px}
+#bridge{width:148px;height:148px;border-radius:50%;border:0;cursor:pointer;font:800 26px/1 system-ui,sans-serif;letter-spacing:.02em;color:#fff;
+ background:radial-gradient(circle at 35% 30%,#1fa37c,var(--green) 62%);box-shadow:0 10px 28px #08664c55,inset 0 -6px 14px #0003;transition:transform .12s,filter .12s}
+#bridge:hover{transform:scale(1.03)}#bridge:active{transform:scale(.97)}
+#bridge small{display:block;margin-top:8px;font:600 11px system-ui;letter-spacing:.06em;text-transform:uppercase;opacity:.9}
+#bridge.off{background:radial-gradient(circle at 35% 30%,#a8a39b,#79756f 62%);box-shadow:0 8px 20px #0002,inset 0 -6px 14px #0002}
+#bridge.warn{background:radial-gradient(circle at 35% 30%,#f59e0b,#c2410c 65%);box-shadow:0 10px 28px #c2410c55}
+#account{margin-top:12px;font-weight:600;font-size:14px}#status{color:var(--muted);font-size:12px;text-align:center;margin-top:2px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:4px 14px 10px}
+.chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:3px 9px;font-size:11px;color:var(--muted)}.chip.on{color:var(--green);border-color:#cfe6da;background:#f1f8f4}.chip.bad{color:#b42318;border-color:#f3c9c5;background:#fdf2f1}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:0 14px 12px}
+.grid button{font:inherit;font-weight:600;border:1px solid var(--line);background:#fff;border-radius:12px;padding:9px 8px;cursor:pointer;text-align:left}
+.grid button:hover{border-color:#cfe6da;background:#f6fbf8}.grid button em{float:right;font-style:normal;background:var(--pink);color:#fff;border-radius:999px;padding:0 6px;font-size:11px}
+details{margin:0 14px 10px;border:1px solid var(--line);border-radius:12px;background:#fff}summary{cursor:pointer;padding:8px 10px;font-weight:600;font-size:12px}
+.box{padding:0 10px 10px}h2{font-size:11px;margin:10px 0 4px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+p{margin:4px 0}.ok{color:var(--green)}.bad{color:#b42318}.muted{color:var(--muted);font-size:12px}
+.small{font:inherit;font-size:12px;border:1px solid #d6d3cd;background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer}.small.on{background:#1f2937;color:#fff;border-color:#1f2937}
+ul{list-style:none;padding:0;margin:0}li{padding:3px 0;border-bottom:1px solid #f3f0eb;font-size:12px}select{font:inherit;font-size:12px;max-width:150px}
+code{font-size:11px;word-break:break-all}.row{display:flex;gap:6px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+footer{padding:0 14px 12px;font-size:11px;color:var(--muted);text-align:center}
+</style></head>
+<body>
+<header><img src="icons/48.png" alt=""><b>YlaVint</b><span id="version"></span></header>
+<div class="hero">
+  <button id="bridge" type="button" aria-pressed="true">YlaVint<small id="bridgeLabel">Bridge allumé</small></button>
+  <p id="account">Compte : —</p>
+  <p id="status">—</p>
+</div>
+<div class="chips" id="chips"></div>
+<div class="grid">
+  <button data-open="messagerie">Messagerie <em id="unread" hidden>0</em></button>
+  <button data-open="dressing">Dressing</button>
+  <button data-open="ventes">Ventes</button>
+  <button data-open="reglages">Réglages</button>
+</div>
+<details id="more">
+  <summary>Veille, apprentissage et journal</summary>
+  <div class="box">
+    <p id="state">Veille : —</p>
+    <p id="agent">Agent : —</p>
+    <p id="error" class="bad"></p>
+    <div class="row"><button class="small" id="now">Vérifier maintenant</button><button class="small" id="learn">Mode apprentissage : coupé</button></div>
+    <div id="learning" hidden>
+      <p class="muted">Fais une fois le geste à la main sur Vinted (voir YlaVint → Réglages sur le site). Les requêtes reconnues sont apprises toutes seules ; sinon, attribue-les ci-dessous.</p>
+      <h2>Requêtes vues</h2><ul id="seen"></ul>
+    </div>
+    <h2>Appris dans ce profil</h2><ul id="learned"><li class="muted">Rien pour l’instant.</li></ul>
+    <h2>Dernières actions</h2><ul id="history"><li class="muted">Aucune action.</li></ul>
+  </div>
+</details>
+<footer>YlaVint n’agit que sur les comptes activés sur ton site, dans tes plafonds, et se met en pause tout seul à la moindre alerte Vinted.</footer>
+<script src="popup.js" type="module"></script></body></html>

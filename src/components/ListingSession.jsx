@@ -49,7 +49,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
  const skuToUse=useRef(initialSku),statusSync=useRef(false),syncLatest=useRef(null)
  const cards=useRef(new Map()),optionCache=useRef(new Map()),alive=useRef(true),settingsRef=useRef(null),dragDepth=useRef(0)
  const [order,setOrder]=useState([]),[,setTick]=useState(0)
- const [settings,setSettings]=useState(null),[dotb,setDotb]=useState(false),[serverDotb,setServerDotb]=useState(!!meta.dotb_publish_enabled)
+ const [ylavint,setYlavint]=useState(false),[settings,setSettings]=useState(null),[dotb,setDotb]=useState(false),[serverDotb,setServerDotb]=useState(!!meta.dotb_publish_enabled)
  const [loading,setLoading]=useState(true),[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(initialSku?`SKU ${initialSku} prêt : ajoute les photos de l’article, il sera repris sur la fiche avec ses mesures Shein.`:'')
  const [dropped,setDropped]=useState(null),[showSettings,setShowSettings]=useState(false),[copied,setCopied]=useState('')
  const [selected,setSelected]=useState(null),[filter,setFilter]=useState('all'),[dragging,setDragging]=useState(false),[zone,setZone]=useState(null),[photoIndex,setPhotoIndex]=useState(0)
@@ -115,7 +115,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
   for(const [id,value] of optionCache.current)if(value instanceof Error)optionCache.current.delete(id)
   const result=await request('GET',undefined,`action=session&account_id=${account.id}`)
   if(!alive.current)return
-  settingsRef.current=result.settings;setSettings(result.settings);setDotb(!!result.dotb);setServerDotb(!!result.dotb_publish_enabled)
+  settingsRef.current=result.settings;setSettings(result.settings);setDotb(!!result.dotb);setYlavint(!!result.ylavint);setServerDotb(!!result.dotb_publish_enabled)
   setOrder(result.drafts.map(row=>remember(row).id))
   await syncStatuses(result.drafts.map(row=>cards.current.get(row.id)))
  }
@@ -259,6 +259,13 @@ export default function ListingSession({request,upload,account,meta,initialSku='
   if(!target)throw Error('Ce compte ne fait plus partie de ta sélection AdsPower.')
   if(!target.connected)throw Error('Ouvre ce compte dans AdsPower et active son Bridge Dotb, puis réessaie.')
  }
+ // YlaVint : la fiche part dans la file du Bridge YlaVint du compte (plafonds et plage horaire du compte).
+ const sendYlavint=(card,mode='live')=>act(card,'Envoi à YlaVint…',async()=>{
+  const issues=listingIssues(card.fields,card.photos,optionsFor(card.fields.catalog_id))
+  if(issues.length)throw Error(`Complète ${issues.map(i=>i.label).join(', ')}.`)
+  const {draft}=await request('POST',{action:'ylavint_publish',id:card.id,version:card.row.version,confirmation_account_id:account.id,mode});accept(card,draft)
+ }).catch(()=>{})
+ const cancelYlavint=card=>act(card,'Annulation…',async()=>{const {draft}=await request('POST',{action:'ylavint_cancel',id:card.id,version:card.row.version});accept(card,draft)}).catch(()=>{})
  const sendOne=(card,mode)=>withBusy('Vérification du Bridge…',async()=>{await bridgeReady();await act(card,'Envoi à Dotb…',()=>sendDotb(card,mode))})
  async function sendAll(mode){
   const ready=list().filter(c=>cardStage(c,optionsFor(c.fields.catalog_id))==='ready')
@@ -439,6 +446,11 @@ export default function ListingSession({request,upload,account,meta,initialSku='
  // Suivi Dotb : création, photos, puis mise en ligne ou brouillon à l'heure prévue.
  function dotbStatus(card){
   const r=card.row,draftMode=r.dotb_publish===false,locked=!!card.busy
+  if(!r.dotb_item_id&&['scheduled','attention'].includes(r.state))return <section aria-label="Suivi YlaVint" className="space-y-3 rounded-2xl border border-[#cfe6da] bg-white p-4 sm:p-5">
+   <p className="flex items-center gap-2 text-sm font-semibold text-[#08664c]"><span className="grid h-6 w-6 place-items-center rounded-lg bg-[#08664c] text-xs font-black text-white">Y</span>Publication par YlaVint</p>
+   <p className={`rounded-xl px-4 py-3 text-sm ${r.state==='attention'?'bg-amber-50 text-amber-950':'bg-[#f1f8f4] text-[#08664c]'}`}>{r.last_error||r.message}</p>
+   <div className="flex flex-wrap gap-2">{r.state==='scheduled'&&<button className={ghost} disabled={locked} onClick={()=>refresh(card)}>Actualiser</button>}<button className={ghost} disabled={locked} onClick={()=>cancelYlavint(card)}>{r.state==='attention'?'Remettre en brouillon':'Annuler la publication'}</button></div>
+  </section>
   const stepsDone=[['Fiche créée chez Dotb',!!r.dotb_item_id],['Photos envoyées',!!r.dotb_item_id&&r.uploaded>=card.photos.length],[draftMode?`Brouillon prévu${r.scheduled_at?` ${hour(r.scheduled_at)}`:''}`:`Mise en ligne prévue${r.scheduled_at?` ${hour(r.scheduled_at)}`:''}`,['scheduled','published','vinted_draft'].includes(r.state)],[draftMode?'Brouillon sur Vinted':'En ligne sur Vinted',['published','vinted_draft'].includes(r.state)]]
   return <section aria-label="Suivi de l’envoi Dotb" className="space-y-4 rounded-2xl border border-[#e8e4dd] bg-white p-4 sm:p-5">
    <p className={`rounded-xl px-4 py-3 text-sm ${r.state==='attention'||r.last_error?'bg-amber-50 text-amber-950':'bg-[#f1f6fb] text-[#1d3b5c]'}`}>{r.last_error||r.message}</p>
@@ -458,7 +470,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
     {stage==='prepare'&&<button className={solid} disabled={locked||!!busy} onClick={()=>prepareOne(card)}>{card.busy||'Rédiger avec l’IA'}</button>}
     {stage==='loading'&&<span className="text-xs text-[#79756f]">Chargement des options…</span>}
     {stage==='review'&&<><span className="text-xs text-amber-900">{issues.length} choix à faire : {issues.map(i=>i.label).join(', ')}</span><button className={solid} disabled>Publier</button></>}
-    {stage==='ready'&&<>{dotb&&<><button className={ghost} disabled={locked||!!busy} onClick={()=>sendOne(card,'draft')}>Brouillon Vinted via Dotb</button><button className={ghost} disabled={locked||!!busy} onClick={()=>sendOne(card,'live')}>En ligne via Dotb</button></>}{!card.publishing&&<button className={solid} disabled={locked} onClick={()=>{card.publishing=true;render()}}>Publier sur Vinted</button>}</>}
+    {stage==='ready'&&<>{ylavint&&<button className={solid} disabled={locked||!!busy} onClick={()=>sendYlavint(card,'live')}>Publier avec YlaVint</button>}{dotb&&<><button className={ghost} disabled={locked||!!busy} onClick={()=>sendOne(card,'draft')}>Brouillon Vinted via Dotb</button><button className={ghost} disabled={locked||!!busy} onClick={()=>sendOne(card,'live')}>En ligne via Dotb</button></>}{!card.publishing&&<button className={ylavint?ghost:solid} disabled={locked} onClick={()=>{card.publishing=true;render()}}>{ylavint?'Publier à la main':'Publier sur Vinted'}</button>}</>}
     {(stage==='dotb'||stage==='published')&&next&&<button className={ghost} onClick={()=>select(next)}>Article suivant</button>}
    </div>
   </div>

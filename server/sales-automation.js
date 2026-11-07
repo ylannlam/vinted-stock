@@ -54,6 +54,8 @@ export async function receiveOrderEvent(db,event,{fetcher=fetch,token=process.en
     const order=await dotbRequest(`orders/${event.order_id}?include=items,account`,{fetcher,token})
     if(order?.id!==event.order_id)throw new AppError('La vente reçue ne correspond pas à la vente demandée.',502)
     normalized=await enrichSoldSizes(normalizeOrders([order],fetchedAt),{fetcher,token})
+    // Vente déjà rangée par YlaVint pour ce compte : pas de doublon.
+    normalized=await (await import('./ylavint.js')).withoutYlavintOwned(db,normalized)
   }
   const saved=await db.rpc('receive_dotb_order_event',{p_event:event,p_orders:normalized.orders,p_lines:normalized.lines});check(saved.error)
   return {received:true,duplicate:!saved.data}

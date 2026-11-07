@@ -121,7 +121,8 @@ export default async function handler(req, res) {
         if (!state.cursor) { const { error: resetError } = await db.from('dotb_sync_state').update({ processed: 0 }).eq('lease',lease); fail(resetError) }
         const fetchedAt=new Date().toISOString()
         const page = await readDotbPage(state.cursor,fetch,process.env.DOTB_API_TOKEN,tracking.starts_at)
-        const { orders, lines } = await enrichSoldSizes(normalizeOrders(page.data,fetchedAt))
+        const { withoutYlavintOwned } = await import('../server/ylavint.js')
+        const { orders, lines } = await withoutYlavintOwned(db, await enrichSoldSizes(normalizeOrders(page.data,fetchedAt)))
         const { error: importError } = await db.rpc('import_dotb_page', {
           p_orders: orders, p_lines: lines, p_cursor: page.has_more ? page.next_cursor : null, p_lease: lease,
         })
