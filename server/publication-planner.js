@@ -36,7 +36,7 @@ export async function readPlanner(db,user,{read,allowDotb}){
  const signed=photoPaths.length?check(await db.storage.from(ASSET_BUCKET).createSignedUrls(photoPaths,3600)):[]
  const thumbs=new Map(signed.map(x=>[x.path,x.signedUrl]))
  const view=r=>({id:r.id,version:r.version,state:r.state,account_id:r.fields?.account_id||null,title:r.fields?.title||'',sku:r.fields?.sku||null,size:r.fields?.size_text||'',price:r.fields?.price||null,
-  photo:thumbs.get(r.photos?.[0]?.path)||null,photos:r.photos?.length||0,planned_at:r.planned_at,scheduled_at:r.scheduled_at,message:r.message,last_error:r.last_error,
+  photo:thumbs.get(r.photos?.[0]?.path)||null,photos:r.photos?.length||0,dotb_item_id:r.dotb_item_id,planned_at:r.planned_at,scheduled_at:r.scheduled_at,message:r.message,last_error:r.last_error,
   busy:!!(r.lease_until&&Date.parse(r.lease_until)>Date.now()),live:r.dotb_publish!==false,created_at:r.created_at,issues:r.state==='draft'?draftIssues(r):[]})
  const accounts=selected.accounts.map(a=>{
   const h=healthBy.get(a.id),settings=presets.effective(a.id)

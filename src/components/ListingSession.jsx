@@ -1,3 +1,4 @@
+import {syncListingStatuses} from '../lib/listingStatusSync'
 import ListingSheinHint from './ListingSheinHint'
 import {useEffect,useMemo,useRef,useState} from 'react'
 import ListingSettingsPanel from './ListingSettingsPanel'
@@ -45,7 +46,7 @@ export function groupFiles(files,size){
 }
 
 export default function ListingSession({request,upload,account,meta,initialSku='',onBack,onOpenDraft}){
- const skuToUse=useRef(initialSku)
+ const skuToUse=useRef(initialSku),statusSync=useRef(false),syncLatest=useRef(null)
  const cards=useRef(new Map()),optionCache=useRef(new Map()),alive=useRef(true),settingsRef=useRef(null),dragDepth=useRef(0)
  const [order,setOrder]=useState([]),[,setTick]=useState(0)
  const [settings,setSettings]=useState(null),[dotb,setDotb]=useState(false),[serverDotb,setServerDotb]=useState(!!meta.dotb_publish_enabled)
@@ -116,13 +117,28 @@ export default function ListingSession({request,upload,account,meta,initialSku='
   if(!alive.current)return
   settingsRef.current=result.settings;setSettings(result.settings);setDotb(!!result.dotb);setServerDotb(!!result.dotb_publish_enabled)
   setOrder(result.drafts.map(row=>remember(row).id))
+  await syncStatuses(result.drafts.map(row=>cards.current.get(row.id)))
  }
  useEffect(()=>{setLoading(true);load().catch(e=>setError(e.message)).finally(()=>{if(alive.current)setLoading(false)})},[account.id])
- // Les annonces planifiées par Dotb sont revérifiées chaque minute tant que la page est ouverte.
+ // Vérifie dès l'ouverture, au retour sur la page et périodiquement, sans renvoyer d'annonce.
+ async function syncStatuses(targets=list()){
+  if(statusSync.current)return
+  statusSync.current=true
+  try{
+   await syncListingStatuses(targets.filter(c=>!c.busy&&!c.dirty).map(c=>c.row),
+    (method,body)=>{const card=cards.current.get(body.id);return queue(card,()=>request(method,body))},
+    {active:()=>alive.current,onDraft:row=>{const card=cards.current.get(row.id);if(card){accept(card,row);card.error='';render()}},
+     onError:(row,e)=>{const card=cards.current.get(row.id);if(card){card.error='Statut non vérifié : '+e.message;render()}}})
+  }finally{statusSync.current=false}
+ }
+ syncLatest.current=()=>syncStatuses()
  useEffect(()=>{
-  const timer=setInterval(()=>{if(document.visibilityState!=='visible')return;for(const card of list())if(card.row.state==='scheduled'&&!card.busy)queue(card,async()=>accept(card,(await request('POST',{action:'refresh',id:card.id})).draft)).catch(()=>{}).finally(render)},60000)
-  return()=>clearInterval(timer)
- },[order])
+  const check=()=>{if(document.visibilityState!=='hidden')syncLatest.current?.()}
+  const timer=setInterval(check,30000)
+  window.addEventListener('focus',check);document.addEventListener('visibilitychange',check)
+  return()=>{clearInterval(timer);window.removeEventListener('focus',check);document.removeEventListener('visibilitychange',check)}
+ },[])
+
  useEffect(()=>{const warn=e=>{if(list().some(c=>c.dirty||c.busy)||busy){e.preventDefault();e.returnValue=''}};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn)})
 
  async function withBusy(label,fn){if(busy)return;setBusy(label);setError('');setNotice('');try{await fn()}catch(e){if(alive.current)setError(e.message)}finally{if(alive.current)setBusy('')}}
@@ -261,7 +277,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
  const rows=list(),staged=rows.map(c=>[c,cardStage(c,optionsFor(c.fields.catalog_id))])
  const stageById=new Map(staged.map(([c,s])=>[c.id,s]))
  const counts=Object.fromEntries(STEPS.map(s=>[s.key,staged.filter(([,x])=>stepOf(x)===s.key).length]))
- const visible=staged.filter(([,s])=>filter==='all'||stepOf(s)===filter)
+ const visible=staged.filter(([,s])=>filter==='all'?s!=='published':stepOf(s)===filter)
  const working=!!busy||rows.some(c=>c.busy)
  const toPrepare=rows.filter(c=>c.row.state==='draft'&&!c.fields.title?.trim()&&!generationIssues(c.fields,c.photos).length).length
  const firstActive=visible.find(([,s])=>s!=='published')?.[0]||visible[0]?.[0]||null
@@ -489,7 +505,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
   </header>
 
   <nav aria-label="Étapes des articles" className="relative flex gap-1 overflow-x-auto rounded-2xl border border-[#e8e4dd] bg-[#fffefa] p-1 shadow-[0_3px_10px_#4c3d2610]">
-   <button type="button" aria-pressed={filter==='all'} onClick={()=>setFilter('all')} className={`shrink-0 rounded-xl px-3.5 py-2 text-sm ${filter==='all'?'bg-[#323630] text-white':'text-[#5d615a] hover:bg-[#f6f3ee]'}`}>Tous <span className="ml-1 tabular-nums opacity-70">{rows.length}</span></button>
+   <button type="button" aria-pressed={filter==='all'} onClick={()=>setFilter('all')} className={`shrink-0 rounded-xl px-3.5 py-2 text-sm ${filter==='all'?'bg-[#323630] text-white':'text-[#5d615a] hover:bg-[#f6f3ee]'}`}>À traiter <span className="ml-1 tabular-nums opacity-70">{rows.length-counts.published}</span></button>
    {steps.map((s,i)=><button type="button" key={s.key} aria-pressed={filter===s.key} title={s.hint} onClick={()=>setFilter(filter===s.key?'all':s.key)} className={`flex shrink-0 items-center gap-2 rounded-xl px-3.5 py-2 text-sm ${filter===s.key?'bg-[#323630] text-white':counts[s.key]?'text-[#323630] hover:bg-[#f6f3ee]':'text-[#a8a39b] hover:bg-[#f6f3ee]'}`}><span className={`h-2 w-2 rounded-full ${s.dot}`} aria-hidden="true"/><span className="sr-only">Étape {i+1} :</span>{s.label}<span className="font-semibold tabular-nums">{counts[s.key]}</span></button>)}
   </nav>
 
@@ -513,10 +529,10 @@ export default function ListingSession({request,upload,account,meta,initialSku='
      {toPrepare>0&&<button className={solid} disabled={!!busy} onClick={()=>withBusy('Rédaction…',prepareAll)}>Rédiger les {toPrepare} article{toPrepare>1?'s':''} avec l’IA</button>}
      {dotb&&counts.ready>0&&<><button className={ghost} disabled={!!busy} onClick={()=>withBusy('Envoi à Dotb…',()=>sendAll('draft'))}>Tout en brouillon Vinted ({counts.ready})</button><button className={ghost} disabled={!!busy} onClick={()=>withBusy('Envoi à Dotb…',()=>sendAll('live'))}>Tout publier en ligne via Dotb ({counts.ready})</button></>}
     </div>}
-    {loading?<p role="status" className="px-2 py-6 text-sm text-[#79756f]">Chargement de la session…</p>:<ul className="max-h-[22rem] space-y-1 overflow-y-auto pr-1 lg:max-h-[calc(100vh-22rem)]">{visible.map(([c,s])=>queueItem(c,s))}{!visible.length&&<li className="px-2 py-6 text-sm text-[#79756f]">{rows.length?'Aucun article à cette étape.':'Aucun article pour l’instant.'}</li>}</ul>}
+    {loading?<p role="status" className="px-2 py-6 text-sm text-[#79756f]">Chargement de la session…</p>:<ul className="max-h-[22rem] space-y-1 overflow-y-auto pr-1 lg:max-h-[calc(100vh-22rem)]">{visible.map(([c,s])=>queueItem(c,s))}{!visible.length&&<li className="px-2 py-6 text-sm text-[#79756f]">{filter==='all'?'Aucune annonce à traiter.':rows.length?'Aucun article à cette étape.':'Aucun article pour l’instant.'}</li>}</ul>}
    </aside>
 
-   <div className="min-w-0">{loading?null:current?detail(current):<div className="grid min-h-[22rem] place-items-center rounded-3xl border border-dashed border-[#d6d0c6] bg-[#fffefa] p-8 text-center"><div className="max-w-sm"><p className="text-lg font-semibold">Aucun article en cours sur ce compte</p><p className="mt-2 text-sm text-[#79756f]">Glisse les photos de tes articles sur la page, colle-les avec Ctrl+V, ou clique sur « Ajouter des articles ». Une photo glissée sur un article déjà ouvert s’ajoute à cet article. Indique le SKU, la taille et le prix de chaque article : l’IA rédige aussitôt, pendant que tu passes au suivant.</p></div></div>}</div>
+   <div className="min-w-0">{loading?null:current?detail(current):<div className="grid min-h-[22rem] place-items-center rounded-3xl border border-dashed border-[#d6d0c6] bg-[#fffefa] p-8 text-center"><div className="max-w-sm"><p className="text-lg font-semibold">{filter==='all'?'Aucune annonce à traiter sur ce compte':'Aucun article à cette étape'}</p><p className="mt-2 text-sm text-[#79756f]">{counts.published?'Les annonces publiées sont rangées dans « En ligne ». Tu peux ajouter un nouvel article.':'Glisse tes photos, colle-les avec Ctrl+V ou clique sur « Ajouter des articles », puis indique le SKU, la taille et le prix.'}</p></div></div>}</div>
   </div>
 
   {showSettings&&settings&&<div className="fixed inset-0 z-50 flex justify-end bg-[#323630]/25" onClick={e=>{if(e.target===e.currentTarget)setShowSettings(false)}}><div role="dialog" aria-modal="true" aria-label="Réglages des annonces" className="h-full w-full max-w-xl overflow-y-auto bg-[#faf8f5] p-3 sm:p-5 shadow-2xl"><ListingSettingsPanel key={JSON.stringify(settings)} settings={settings} account={account} request={request} serverDotb={serverDotb} aiModels={meta.ai_models} onClose={()=>setShowSettings(false)} onSaved={value=>{settingsRef.current=value;setSettings(value);setDotb(serverDotb&&value.effective.dotb===true);setShowSettings(false);setNotice('Réglages enregistrés. Ils s’appliquent aux prochains articles rédigés.')}}/></div></div>}

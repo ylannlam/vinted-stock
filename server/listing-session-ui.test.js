@@ -69,7 +69,7 @@ test('photos dropped together become one or several articles, in file-name order
  assert.deepEqual(ui.groupFiles([png('b-02.png'),png('a-01.png'),png('b-01.png'),png('a-02.png')],2).map(g=>g.map(f=>f.name)),[['a-01.png','a-02.png'],['b-01.png','b-02.png']])
  try{
   await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request:s.request,upload:s.upload,account,meta,onBack(){},onOpenDraft(){}})))
-  assert.ok(document.body.textContent.includes('Aucun article en cours'))
+  assert.ok(document.body.textContent.includes('Aucune annonce à traiter'))
   await addFiles(ui,[png('b-02.png'),png('a-01.png'),png('b-01.png'),png('a-02.png')])
   assert.ok(document.body.textContent.includes('4 photos sélectionnées'))
   assert.ok(ui.button('2 articles de 2 photos'),'pairs offered (front/back)')
@@ -294,5 +294,35 @@ test('retrying settings after a partial save preserves the new shared version',a
   assert.equal(attempts.filter(b=>b.scope===account.id).length,2)
   assert.ok(attempts.every(b=>b.version===0))
   assert.match(document.body.textContent,/Réglages enregistrés/)
+ }finally{await ui.unmount()}
+})
+
+test('already published listings leave the default queue and remain available under En ligne',async()=>{
+ const ui=await mount(),s=server()
+ for(const id of ['done-a','done-b'])s.rows.set(id,{id,version:1,state:'published',fields:{...emptyListing(),account_id:account.id,title:id},photos:[]})
+ try{
+  await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request:s.request,upload:s.upload,account,meta,onBack(){},onOpenDraft(){}})))
+  assert.equal(queue().length,0);assert.equal(article(),null)
+  assert.match(rail('À traiter'),/0$/);assert.match(rail('En ligne'),/2$/)
+  const online=[...document.querySelectorAll('nav button')].find(b=>b.textContent.includes('En ligne'))
+  await ui.act(async()=>online.click());assert.equal(queue().length,2)
+  assert.equal(s.calls.some(c=>c.action==='publish'),false)
+ }finally{await ui.unmount()}
+})
+
+test('opening and refreshing the session reconciles scheduled listings immediately without publishing again',async()=>{
+ const ui=await mount(),s=server({dotb:true});let published=false
+ for(const id of ['first','second'])s.rows.set(id,{id,version:1,state:'scheduled',dotb_item_id:`remote-${id}`,fields:{...emptyListing(),account_id:account.id,title:id},photos:[]})
+ const request=async(method,body,query)=>{
+  if(body?.action==='refresh'&&(body.id==='first'||published)){const row=s.rows.get(body.id);row.state='published';row.version++}
+  return s.request(method,body,query)
+ }
+ try{
+  await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request,upload:s.upload,account,meta,onBack(){},onOpenDraft(){}})))
+  assert.equal(s.calls.filter(c=>c.action==='refresh').length,2,'no one-minute wait')
+  assert.equal(queue().length,1);assert.match(rail('En ligne'),/1$/)
+  published=true;await ui.click('Actualiser')
+  assert.equal(queue().length,0);assert.equal(article(),null);assert.match(rail('En ligne'),/2$/)
+  assert.equal(s.calls.some(c=>['publish','step'].includes(c.action)),false)
  }finally{await ui.unmount()}
 })

@@ -1,3 +1,4 @@
+import {syncListingStatuses} from '../lib/listingStatusSync'
 import {useEffect,useMemo,useRef,useState,useSyncExternalStore} from 'react'
 import {PLAN_DEFAULTS,planPublications,parisDate,dayLabel,timeLabel,SKU_GAP_MINUTES} from '../lib/publicationPlan'
 import {buttonClass,primaryClass,fieldClass} from './WorkspaceUI'
@@ -29,18 +30,33 @@ export default function PublicationTab({request=defaultRequest,onOpenListings,st
  const [excluded,setExcluded]=useState(()=>new Set(saved.excluded||[])),[onlyConnected,setOnlyConnected]=useState(!!saved.onlyConnected)
  const [plan,setPlan]=useState(null),[planError,setPlanError]=useState('')
  const [picked,setPicked]=useState(()=>new Set())
- const alive=useRef(true),seenRuns=useRef(run.finished)
+ const alive=useRef(true),seenRuns=useRef(run.finished),loadingRef=useRef(false),pollLatest=useRef(null)
  useEffect(()=>{alive.current=true;load();return()=>{alive.current=false}},[])
  // L'envoi vit hors de cet écran : quand il se termine, on relit les fiches.
  useEffect(()=>{if(run.finished!==seenRuns.current){seenRuns.current=run.finished;setPlan(null);setPicked(new Set());load()}},[run.finished])
  useEffect(()=>{keep({settings,excluded:[...excluded],onlyConnected})},[settings,excluded,onlyConnected])
  useEffect(()=>setPlan(null),[settings,excluded,onlyConnected,data])
 
- async function load(){
+ pollLatest.current=()=>{if(!plan&&!run.running)load(true)}
+ useEffect(()=>{
+  const check=()=>{if(document.visibilityState!=='hidden')pollLatest.current?.()}
+  const timer=setInterval(check,30000)
+  window.addEventListener('focus',check);document.addEventListener('visibilitychange',check)
+  return()=>{clearInterval(timer);window.removeEventListener('focus',check);document.removeEventListener('visibilitychange',check)}
+ },[])
+ async function load(background=false){
+  if(loadingRef.current)return
+  loadingRef.current=true
   setLoading(true);setLoadError('')
-  try{const value=await request('GET',undefined,'action=planner');if(alive.current)setData(value)}
+  try{
+   let value=await request('GET',undefined,'action=planner')
+   const errors=[];let checked=false
+   await syncListingStatuses([...(value.scheduled||[]),...(value.queue||[])],request,{active:()=>alive.current,onDraft:()=>{checked=true},onError:(_row,e)=>errors.push(e.message)})
+   if(checked&&alive.current)value=await request('GET',undefined,'action=planner')
+   if(alive.current){setData(value);if(errors.length)setLoadError('Certains statuts restent à vérifier : '+errors[0])}
+  }
   catch(e){if(alive.current)setLoadError(e.message||'Impossible de charger la publication.')}
-  finally{if(alive.current)setLoading(false)}
+  finally{loadingRef.current=false;if(alive.current)setLoading(false)}
  }
  const accounts=useMemo(()=>new Map((data?.accounts||[]).map(a=>[a.id,a])),[data])
  const login=id=>accounts.get(id)?.login||'Compte non sélectionné'
