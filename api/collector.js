@@ -14,11 +14,21 @@ export default async function handler(req,res) {
   if(!['GET','POST'].includes(req.method)){res.setHeader('Allow','GET, POST');return res.status(405).end()}
   try {
     if(req.headers.authorization?.startsWith('Bearer svwk_')) {
-      // Extension de veille des comptes Vinted (profils AdsPower) : un seul geste, signaler le bandeau du compte.
-      if(req.method!=='POST'||req.body?.action!=='watch_report')throw new AppError('Cette extension peut seulement signaler l’état d’un compte.',403)
+      // Extension des profils AdsPower : veille du compte (bandeau Vinted) et, depuis la version 2, agent Vinted.
+      const action=req.body?.action
+      if(req.method!=='POST'||!['watch_report','agent_poll','agent_result','agent_learn'].includes(action))throw new AppError('Action non autorisée pour cette extension.',403)
       const {authorizeWatch,watchReport,recordWatch}=await import('../server/vinted-watch.js')
       const {db,key}=await authorizeWatch(req)
-      return res.json(await recordWatch(db,key,watchReport(req.body)))
+      const agent=await import('../server/vinted-agent.js')
+      if(action==='watch_report'){
+        const report=watchReport(req.body),saved=await recordWatch(db,key,report)
+        // Un bandeau « restreint » ou « bloqué » arrête immédiatement l'agent de ce compte.
+        const paused=await agent.pauseOnAlert(db,report).catch(e=>{console.error('agent_pause_failed',{code:e.code||'unknown'});return false})
+        return res.json({...saved,agent_paused:paused})
+      }
+      if(action==='agent_poll')return res.json(await agent.agentPoll(db,key,req.body))
+      if(action==='agent_result')return res.json(await agent.agentResult(db,key,req.body))
+      return res.json(await agent.agentLearn(db,key,req.body))
     }
     if(req.headers.authorization?.startsWith('Bearer svpc_')) {
       if(req.method!=='POST' || !deviceActions.has(req.body?.action))throw new AppError('Ce PC ne peut accéder qu’à ses récupérations Shein.',403)
@@ -114,7 +124,7 @@ export default async function handler(req,res) {
   } catch(error) {
     if(error.message?.includes('unsold_reference'))return res.status(409).json({error:'Cette référence ne correspond à aucune vente suivie. Les fiches sont préparées automatiquement depuis les ventes.'})
     console.error('collector_request_failed',{code:error.code||'unknown',status:error.status||500})
-    const conflict=/collection_lease_expired|collection_product_mismatch|device_revoked/.test(error.message||'')
+    const conflict=/collection_lease_expired|collection_product_mismatch|device_revoked|agent_lease_expired/.test(error.message||'')
     return res.status(conflict?409:error.status||500).json({error:conflict?'Cette récupération ou l’association du PC a expiré. Actualisez le site.':error instanceof AppError?error.message:'La récupération est momentanément indisponible. Les fiches existantes sont conservées.'})
   }
 }

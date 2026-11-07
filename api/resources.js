@@ -15,6 +15,7 @@ return async function handler(req,res) {
     if(req.query?.scope==='health'){const {handleAccountHealth}=await import('../server/account-health.js');return res.json(await handleAccountHealth(req,auth))}
     if(req.query?.scope==='listings')return res.json(await handleListingStudio(req,auth))
     if(req.query?.scope==='watch'){const {handleWatch}=await import('../server/vinted-watch.js');return res.json(await handleWatch(req,auth))}
+    if(req.query?.scope==='agent'){if(auth.role!=='admin')throw new AppError('Seul un administrateur peut piloter l’agent.',403);const {handleAgent}=await import('../server/vinted-agent.js');return res.json(await handleAgent(req,auth))}
     if(req.method==='GET') {
       const offset=Number(req.query?.offset||0)
       if(!Number.isSafeInteger(offset)||offset<0||offset>100000)throw new AppError('Page invalide.')

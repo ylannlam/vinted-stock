@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {parseHTML} from 'linkedom'
 import {watchReport,bannerAlertId,recordWatch,watchArchive,readWatchToken,newWatchToken,WATCH_FILES} from './vinted-watch.js'
-import '../extensions/vinted-watch/read.js'
+import '../extensions/vinted-agent/read.js'
 
 const page=(html,href)=>{const {document}=parseHTML(`<!doctype html><html><body>${html}</body></html>`);return globalThis.readVintedAccount(document,href)}
 // Données Next.js telles que Vinted les met dans chaque page (structure réelle, valeurs fictives).
@@ -65,7 +65,7 @@ test('a banner becomes the account state; the same banner keeps its first date; 
 })
 test('the downloaded archive is a valid extension carrying its own key',()=>{
   const dir=mkdtempSync(join(tmpdir(),'watch-')),zip=join(dir,'x.zip')
-  writeFileSync(zip,watchArchive('svwk_test-token',name=>readFileSync(new URL(`../extensions/vinted-watch/${name}`,import.meta.url),'utf8')))
+  writeFileSync(zip,watchArchive('svwk_test-token',name=>readFileSync(new URL(`../extensions/vinted-agent/${name}`,import.meta.url),'utf8')))
   const list=execFileSync('unzip',['-l',zip]).toString()
   for(const name of WATCH_FILES)assert.match(list,new RegExp(name.replace('.','\\.')))
   assert.match(execFileSync('unzip',['-p',zip,'config.js']).toString(),/svwk_test-token/)
