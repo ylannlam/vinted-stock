@@ -200,7 +200,8 @@
         ${dsw('likes.skip_unrated', 'Ignorer les membres sans évaluation')}
         <label class="f">Membres ignorés</label><textarea class="in" data-plist="likes.ignored" placeholder="pseudo1, pseudo2">${esc((L.ignored || []).join(', '))}</textarea><span class="count">Pseudos Vinted séparés par des virgules.</span></div>
       <div class="box"><h4>⏱ Paramètres de délai</h4>${dsel('likes.wait_minutes', delays.some(([v]) => v === L.wait_minutes) ? delays : [...delays, [L.wait_minutes, `${L.wait_minutes} minutes`]], 'Délai avant d’envoyer un message après un J’aime')}
-        <label class="f">Messages aux likes par jour</label>${dnum('limits.like_message_per_day', 'min="0" max="100"')}</div>`)
+        <label class="f">Délai entre chaque envoi (pour faire humain)</label><div class="inline">entre ${dnum('messaging.action_gap_min', 'min="5" max="3600"')} et ${dnum('messaging.action_gap_max', 'min="5" max="3600"')} secondes</div>
+        <p class="note">Chaque message (likes, réponses, commandes) part après un temps tiré au hasard dans cette plage. Pas de limite par jour.</p></div>`)
   }
   function pageAgent() {
     const s = settings(), m = s.messaging || S.data.defaults.messaging
@@ -296,7 +297,10 @@
           <span class="note">${esc(acc()?.login || '')}</span><button class="ghost" data-theme>${S.theme === 'dark' ? '☀' : '☾'}</button></div>
           <div class="body">${S.error ? `<div class="err">${esc(S.error)}</div>` : ''}${S.notice ? `<div class="ok">${esc(S.notice)}</div>` : ''}${pages[S.page]()}</div></div></div>`
     }
+    // Garder la position de lecture : un clic ne renvoie plus en haut de la page.
+    const scroller = box.querySelector('.body'), top = scroller?.scrollTop || 0
     box.innerHTML = html
+    const after = box.querySelector('.body'); if (after && top) after.scrollTop = top
   }
 
   async function openPage(page) {

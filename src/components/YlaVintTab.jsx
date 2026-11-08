@@ -54,9 +54,10 @@ function AccountSettings({account,defaults,onSave,busy,only}){
   {show('messaging')&&<fieldset className="grid grid-cols-2 gap-3 sm:grid-cols-3"><Legend>Messagerie</Legend>
    <Num label="Relire toutes les" value={form.messaging.sync_minutes} min={2} max={120} suffix="min" onChange={v=>set('messaging','sync_minutes',v)}/>
    <Num label="Réponses / jour" value={form.messaging.reply_per_day} max={300} onChange={v=>set('messaging','reply_per_day',v)}/>
-   <Num label="Écart entre deux réponses" value={form.messaging.reply_gap_seconds} min={10} max={600} suffix="s" onChange={v=>set('messaging','reply_gap_seconds',v)}/>
+   <Num label="Délai entre deux envois : min" value={form.messaging.action_gap_min} min={5} max={3600} suffix="s" onChange={v=>set('messaging','action_gap_min',v)}/>
+   <Num label="Délai entre deux envois : max" value={form.messaging.action_gap_max} min={5} max={3600} suffix="s" onChange={v=>set('messaging','action_gap_max',v)}/>
   </fieldset>}
-  {show('likes')&&<LikesSettings likes={form.likes} onChange={likes=>setForm(f=>({...f,likes}))} perDay={form.limits.like_message_per_day} onPerDay={v=>set('limits','like_message_per_day',v)}/>}
+  {show('likes')&&<LikesSettings likes={form.likes} onChange={likes=>setForm(f=>({...f,likes}))} gap={form.messaging} onGap={(k,v)=>set('messaging',k,v)}/>}
   {show('order_flow')&&<FlowSettings flow={form.order_flow} onChange={order_flow=>setForm(f=>({...f,order_flow}))} features={form.features} onFeature={(k,v)=>set('features',k,v)}/>}
   {show('limits')&&<fieldset className="grid grid-cols-2 gap-3 sm:grid-cols-4"><Legend>Plafonds des modifications (heure de Paris)</Legend>
    <Num label="De" value={form.limits.from_hour} max={23} suffix="h" onChange={v=>set('limits','from_hour',v)}/>
@@ -66,7 +67,6 @@ function AccountSettings({account,defaults,onSave,busy,only}){
    <Num label="Démasquages / jour" value={form.limits.unmask_item_per_day} max={100} onChange={v=>set('limits','unmask_item_per_day',v)}/>
    <Num label="Baisses de prix / jour" value={form.limits.reprice_item_per_day} max={100} onChange={v=>set('limits','reprice_item_per_day',v)}/>
    <Num label="Publications / jour" value={form.limits.publish_item_per_day} max={100} onChange={v=>set('limits','publish_item_per_day',v)}/>
-   <Num label="Messages aux likes / jour" value={form.limits.like_message_per_day} max={100} onChange={v=>set('limits','like_message_per_day',v)}/>
   </fieldset>}
   {show('unmask')&&<fieldset className="grid grid-cols-2 gap-3 sm:grid-cols-5"><Legend>Démasquage</Legend>
    <Num label="Baisse par réparation" value={form.unmask.price_drop} step={0.5} max={10} suffix="€" onChange={v=>set('unmask','price_drop',v)}/>
@@ -253,7 +253,7 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
 
    {section==='likes'&&<><PageTitle title="Likes d’articles" hint="Quand un membre like une annonce, YlaVint lui envoie ton message après le délai choisi. Choisis un compte dont tu veux répliquer les réglages sur les autres, ou configure-les un par un."/>
     <AutomationTable kind="likes" accounts={accounts} data={data} busy={busy} act={act} setConfigure={setConfigure}
-     chips={a=><><Pill tone={on(a,'likes')?'green':'zinc'} icon="●">Likes {on(a,'likes')?'Activé':'Désactivé'}</Pill><Pill icon="💬">{((a.settings||data.defaults).likes.messages||[]).length||1} message(s)</Pill><Pill icon="⏱">{(a.settings||data.defaults).likes.wait_minutes?`Après ${(a.settings||data.defaults).likes.wait_minutes} min`:'Aucun délai'}</Pill><Pill icon="↗">{(a.settings||data.defaults).limits.like_message_per_day}/jour</Pill></>}/></>}
+     chips={a=><><Pill tone={on(a,'likes')?'green':'zinc'} icon="●">Likes {on(a,'likes')?'Activé':'Désactivé'}</Pill><Pill icon="💬">{((a.settings||data.defaults).likes.messages||[]).length||1} message(s)</Pill><Pill icon="⏱">{(a.settings||data.defaults).likes.wait_minutes?`Après ${(a.settings||data.defaults).likes.wait_minutes} min`:'Aucun délai'}</Pill><Pill icon="↔">{(a.settings||data.defaults).messaging?.action_gap_min??30}–{(a.settings||data.defaults).messaging?.action_gap_max??45} s entre deux envois</Pill></>}/></>}
 
    {section==='flux'&&<><PageTitle title="Flux de commande" hint="Expédition, délai, retrait et finalisation, comme dans Dotb. Les ventes sont relues toutes les 30 min ; chaque action part une seule fois par vente, dans les plafonds du compte."/>
     <AutomationTable kind="flux" accounts={accounts} data={data} busy={busy} act={act} setConfigure={setConfigure}

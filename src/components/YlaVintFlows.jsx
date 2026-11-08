@@ -39,7 +39,7 @@ function Discount({value,onChange}){
 }
 
 // ---------- Likes d'articles ----------
-export function LikesSettings({likes,onChange,perDay,onPerDay}){
+export function LikesSettings({likes,onChange,gap,onGap}){
  const L=likes,set=(k,v)=>onChange({...L,[k]:v})
  const steps=L.messages?.length?L.messages:[newStep()]
  const setStep=(i,patch)=>set('messages',steps.map((s,j)=>j===i?{...s,...patch}:s))
@@ -77,7 +77,8 @@ export function LikesSettings({likes,onChange,perDay,onPerDay}){
   </Box>
   <Box title="Paramètres de délai" icon="⏱">
    <Field label="Délai avant d’envoyer un message après un J’aime" hint="Les J’aime en attente sont conservés même si le profil se ferme."><Select value={L.wait_minutes} onChange={v=>set('wait_minutes',v)} options={LIKE_DELAYS.some(([v])=>v===L.wait_minutes)?LIKE_DELAYS:[...LIKE_DELAYS,[L.wait_minutes,`${L.wait_minutes} minutes`]]}/></Field>
-   {onPerDay&&<Field label="Messages aux likes par jour (plafond du compte)"><input type="number" className={compactClass+' w-24'} min={0} max={100} value={perDay} onChange={e=>onPerDay(Number(e.target.value))}/></Field>}
+   {onGap&&<Field label="Délai entre chaque envoi (pour faire humain)" hint="Chaque message (likes, réponses, commandes) part après un temps tiré au hasard dans cette plage. Pas de limite par jour.">
+    <span className="flex items-center gap-2 text-sm text-zinc-300">entre <input type="number" className={compactClass+' w-20'} min={5} max={3600} value={gap?.action_gap_min??30} onChange={e=>onGap('action_gap_min',e.target.value===''?'':Number(e.target.value))}/> et <input type="number" className={compactClass+' w-20'} min={5} max={3600} value={gap?.action_gap_max??45} onChange={e=>onGap('action_gap_max',e.target.value===''?'':Number(e.target.value))}/> secondes</span></Field>}
   </Box>
  </div>
 }

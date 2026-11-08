@@ -188,6 +188,12 @@ export async function agentPoll(db,key,body,now=Date.now()){
     return {state:'disabled',account:account.login,wait_seconds:600}
   }
   if(version&&version!==row.extension_version)await db.from('vinted_agent_settings').update({extension_version:version}).eq('account_id',account.id)
+  // Pause « compte déconnecté » : l'extension vient de lire le compte connecté, donc la session est revenue.
+  if(row.paused&&row.pause_reason===STOP.logged_out&&member){
+    check(await db.from('vinted_agent_settings').update({paused:false,pause_reason:null,paused_at:null}).eq('account_id',account.id).eq('paused',true))
+    await agentLog(db,{account_id:account.id,event:'resumed',message:'Session Vinted retrouvée : YlaVint reprend tout seul.'})
+    row.paused=false
+  }
   const settings=effectiveSettings(row)
   if(!row.paused){
     const recent=check(await db.from('vinted_agent_tasks').select('kind,created_at').eq('account_id',account.id).in('kind',SCANS).neq('state','cancelled').order('created_at',{ascending:false}).limit(40))
@@ -197,7 +203,9 @@ export async function agentPoll(db,key,body,now=Date.now()){
   }
   const claimed=check(await db.rpc('claim_vinted_agent_task',{p_account:account.id}))
   const extra=await (await import('./ylavint.js')).pollExtras(db,account,settings,{paused:row.paused}).catch(e=>{console.error('ylavint_poll_extra_failed',{code:e.code||e.status||'unknown'});return {}})
-  const idleWait=settings.features.inbox||settings.features.ai?60:120
+  // Des messages attendent l'écart entre deux envois : on repasse vite pour tenir le délai réglé (30 à 45 s par défaut).
+  const waiting=claimed?.state==='idle'?(await db.from('vinted_agent_tasks').select('id',{count:'exact',head:true}).eq('account_id',account.id).eq('state','queued').in('kind',['reply_message','like_message','order_message']).lte('not_before',new Date(now).toISOString())).count||0:0
+  const idleWait=waiting?Math.max(10,Math.min(30,Math.round((settings.messaging.action_gap_min||30)/3))):settings.features.inbox||settings.features.ai?60:120
   if(claimed?.state!=='task')return {state:claimed?.state||'idle',reason:claimed?.reason||null,account:account.login,...extra,wait_seconds:{paused:600,disabled:1800,busy:45}[claimed?.state]||idleWait}
   const bundle=await taskBundle(db,claimed.task,settings)
   if(bundle.missing.length){
@@ -225,6 +233,11 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
   const label=KINDS[task.kind].label
   if(body.ok!==true){
     const code=typeof body.code==='string'?body.code:'failed',detail=text(body.error,300)
+    if(code==='logged_out'&&!task.writes){
+      await finish(db,task,'queued',null,'Session Vinted expirée : nouvel essai plus tard.')
+      await log('warn','logged_out','Session Vinted expirée pendant une lecture : nouvel essai au prochain passage.',{kind:task.kind})
+      return {saved:true}
+    }
     if(STOP[code]){
       await finish(db,task,task.writes?'failed':'queued',null,STOP[code])
       await pauseAccount(db,task.account_id,STOP[code],{event:code,details:{kind:task.kind,detail}})

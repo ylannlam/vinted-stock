@@ -32,7 +32,13 @@
     const e = json?.errors?.[0]
     return String(json?.message_code || '') + ' ' + String(e?.value || e?.message || json?.message || json?.error || text || '').slice(0, 250)
   }
-  async function call(recipe, {ids = {}, query = {}, json = null, form = null, raw = false} = {}) {
+  async function call(recipe, opts = {}) {
+    try { return await callOnce(recipe, opts) }
+    catch (e) { if (!(e instanceof Stop) || e.code !== 'logged_out' || opts.retried) throw e }
+    await sleep(4000); memory.csrf = null
+    return callOnce(recipe, {...opts, retried: true})
+  }
+  async function callOnce(recipe, {ids = {}, query = {}, json = null, form = null, raw = false} = {}) {
     if (!recipe) throw new Stop('no_recipe', 'Action pas encore apprise.')
     const path = recipe.path.replace(/\{id\}/g, () => { const v = ids.id; if (!/^\d{1,18}$/.test(String(v))) throw new Stop('failed', 'Identifiant manquant.'); return v })
     const url = new URL(path, location.origin)

@@ -23,19 +23,16 @@ export async function planLikes(db,task,likes,settings,{now=Date.now(),rand=Math
   for(const h of history){const u=byUser.get(h.user_id)||{count:0,last:0};u.count++;u.last=Math.max(u.last,Date.parse(h.sent_at||h.created_at)||0);byUser.set(h.user_id,u)}
   for(const c of perItem)byItem.set(c.item_id,(byItem.get(c.item_id)||0)+1)
   const ignored=new Set(L.ignored),rows=[],tasks=[]
-  let budget=settings.limits.like_message_per_day
   for(const l of fresh){
     const u=byUser.get(l.user_id)||{count:0,last:0}
     let skip=null
     if(l.login&&ignored.has(l.login.toLowerCase()))skip='ignored'
     else if(u.last&&u.last>now-L.cooldown_days*DAY)skip='cooldown'
     else if(L.per_item.enabled&&(byItem.get(l.item_id)||0)>=L.per_item.max)skip='per_item'
-    else if(budget<=0)skip='budget'
-    if(skip==='budget')continue // reviendra à la prochaine lecture des likes
     const step=Math.min(u.count,L.messages.length-1)
     rows.push({account_id:account,item_id:l.item_id,user_id:l.user_id,login:l.login||null,state:skip?'skipped':'queued',step:skip?null:step})
     if(skip)continue
-    budget--;byUser.set(l.user_id,{count:u.count+1,last:now});byItem.set(l.item_id,(byItem.get(l.item_id)||0)+1)
+    byUser.set(l.user_id,{count:u.count+1,last:now});byItem.set(l.item_id,(byItem.get(l.item_id)||0)+1)
     tasks.push({account_id:account,kind:'like_message',dedupe_key:`like:${account}:${l.item_id}:${l.user_id}`,
       not_before:nowIso(now+L.wait_minutes*60000+jitter(0,L.wait_minutes?20:3,rand)),payload:{item_id:l.item_id,user_id:l.user_id,login:l.login||null,step}})
   }

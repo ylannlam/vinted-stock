@@ -72,20 +72,20 @@ export const DEFAULTS={
     cancel:{enabled:false,minutes_before:30},
     pickup:{enabled:false,first_days:1,first:'Bonjour @username, ton colis est arrivé au point relais :)',second_days:3,second:''},
     review:{enabled:false,after_days:1,text:'Parfait, merci !',end_message:''},delete_sold:false},
-  messaging:{sync_minutes:5,reply_per_day:80,reply_gap_seconds:40},
+  messaging:{sync_minutes:5,reply_per_day:80,reply_gap_seconds:40,action_gap_min:30,action_gap_max:45},
 }
 const BOUNDS={
-  limits:{writes_per_day:[0,200],unmask_item_per_day:[0,100],reprice_item_per_day:[0,100],publish_item_per_day:[0,100],like_message_per_day:[0,100],
+  limits:{writes_per_day:[0,200],unmask_item_per_day:[0,100],reprice_item_per_day:[0,100],publish_item_per_day:[0,100],like_message_per_day:[0,1000000],
     order_message_per_day:[0,200],order_extension_per_day:[0,100],order_cancel_per_day:[0,50],order_review_per_day:[0,200],item_delete_per_day:[0,100],min_gap_minutes:[1,240],from_hour:[0,23],to_hour:[0,23]},
   unmask:{price_drop:[0,10],max_drop:[0,50],floor:[1,1000],max_repairs:[0,10],wait_hours:[1,168]},
   pricing:{after_days:[1,90],step:[0.5,20],every_days:[1,60],max_drop:[0,200],floor:[1,1000]},
   likes:{wait_minutes:[0,1440],cooldown_days:[0,365]},
-  messaging:{sync_minutes:[2,120],reply_per_day:[0,300],reply_gap_seconds:[10,600]},
+  messaging:{sync_minutes:[2,120],reply_per_day:[0,300],reply_gap_seconds:[10,600],action_gap_min:[5,3600],action_gap_max:[5,3600]},
 }
 const LABELS={writes_per_day:'modifications par jour',min_gap_minutes:'écart entre deux modifications',from_hour:'heure de début',to_hour:'heure de fin',
   price_drop:'baisse par réparation',max_drop:'baisse maximale',floor:'prix plancher',max_repairs:'réparations maximales',wait_hours:'attente entre deux réparations',
   after_days:'délai avant la première baisse',step:'baisse',every_days:'écart entre deux baisses',wait_minutes:'attente après le like',
-  sync_minutes:'la lecture de la messagerie',reply_per_day:'les réponses par jour',reply_gap_seconds:'l’écart entre deux réponses'}
+  sync_minutes:'la lecture de la messagerie',reply_per_day:'les réponses par jour',reply_gap_seconds:'l’écart entre deux réponses',action_gap_min:'le délai minimum entre deux envois (secondes)',action_gap_max:'le délai maximum entre deux envois (secondes)'}
 
 export function normalizeSettings(input={}){
   const out=structuredClone(DEFAULTS)
@@ -99,6 +99,7 @@ export function normalizeSettings(input={}){
   }
   normalizeLikes(input.likes||{},out.likes)
   out.order_flow=normalizeFlow(input.order_flow||{})
+  if(out.messaging.action_gap_max<out.messaging.action_gap_min)throw new AppError('Le délai maximum entre deux envois doit être au moins égal au minimum.')
   if(out.unmask.floor<1||out.pricing.floor<1)throw new AppError('Le prix plancher doit être d’au moins 1 €.')
   return out
 }
