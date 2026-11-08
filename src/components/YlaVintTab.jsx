@@ -33,6 +33,11 @@ const ALIASES={ventes:'commandes',ia:'agent'}
 // Dans le site : « #ylavint/messagerie ». Dans l'interface à part (/ylavint) : « #messagerie ».
 function readSection(){const parts=window.location.hash.slice(1).split('?')[0].split('/').filter(Boolean);const sub=parts[0]==='ylavint'?parts[1]:parts[0];const k=ALIASES[sub]||sub;return KEYS.includes(k)?k:'accueil'}
 
+// Plage horaire façon Dotb : 0 = seulement les nouveaux, sinon les dernières heures puis les nouveaux.
+const HISTORY=[2,6,12,24,48,72,96,120,144,168]
+const historyLabel=h=>h===24?'Traiter le dernier jour':h%24===0?`Traiter les ${h/24} derniers jours`:`Traiter les ${h} dernières heures`
+const HistorySelect=({label,what,value,onChange})=>{const v=Number(value)||0,opts=[0,...HISTORY,...(v&&!HISTORY.includes(v)?[v]:[])]
+ return <label className="block text-xs text-zinc-400">{label}<select className="mt-1 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100" value={v} onChange={e=>onChange(Number(e.target.value))}>{opts.map(h=><option key={h} value={h}>{h?historyLabel(h):`Traiter uniquement les ${what}`}</option>)}</select></label>}
 const Num=({label,value,onChange,step=1,min=0,max,suffix})=><label className="block text-xs text-zinc-400">{label}
  <span className="mt-1 flex items-center gap-1"><input type="number" className={fieldClass+' py-1.5'} value={value} step={step} min={min} max={max} onChange={e=>onChange(e.target.value===''?'':Number(e.target.value))}/>{suffix&&<span className="text-zinc-500">{suffix}</span>}</span></label>
 const Legend=({children})=><legend className="col-span-full text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{children}</legend>
@@ -58,10 +63,12 @@ function AccountSettings({account,defaults,onSave,busy,only}){
    <Num label="Délai entre deux envois : min" value={form.messaging.action_gap_min} min={5} max={3600} suffix="s" onChange={v=>set('messaging','action_gap_min',v)}/>
    <Num label="Délai entre deux envois : max" value={form.messaging.action_gap_max} min={5} max={3600} suffix="s" onChange={v=>set('messaging','action_gap_max',v)}/>
   </fieldset>}
-  {(show('likes')||show('messaging'))&&<fieldset className="space-y-3"><Legend>Historique à traiter à l’activation</Legend>
-   <p className="text-xs text-zinc-400">0 = nouveaux uniquement. 12 = les 12 dernières heures, puis les nouveaux. Appliqué à l’activation ou au changement de la durée, sans refaire les actions déjà effectuées.</p>
-   {show('likes')&&<Num label="Likes" value={form.likes.history_hours??0} min={0} max={720} suffix="h" onChange={v=>set('likes','history_hours',v)}/>}
-   {show('messaging')&&<><Num label="Messages" value={form.messaging.history_hours??0} min={0} max={720} suffix="h" onChange={v=>set('messaging','history_hours',v)}/><Num label="Offres" value={form.messaging.offers?.history_hours??0} min={0} max={720} suffix="h" onChange={v=>set('messaging','offers',{...defaults.messaging.offers,...form.messaging.offers,history_hours:v})}/></>}
+  {(show('likes')||show('messaging'))&&<fieldset className="space-y-3"><Legend>Plage horaire de conversation</Legend>
+   <p className="text-xs text-zinc-400">Appliqué à l’activation ou au changement de plage, sans refaire les actions déjà effectuées.</p>
+   <div className="grid gap-3 sm:grid-cols-3">
+   {show('likes')&&<HistorySelect label="Likes" what="nouvelles notifications" value={form.likes.history_hours??0} onChange={v=>set('likes','history_hours',v)}/>}
+   {show('messaging')&&<><HistorySelect label="Messages (Smart Agent)" what="nouveaux messages" value={form.messaging.history_hours??0} onChange={v=>set('messaging','history_hours',v)}/><HistorySelect label="Offres" what="nouvelles offres" value={form.messaging.offers?.history_hours??0} onChange={v=>set('messaging','offers',{...defaults.messaging.offers,...form.messaging.offers,history_hours:v})}/></>}
+   </div>
   </fieldset>}
   {show('messaging')&&<fieldset className="space-y-3"><Legend>Acceptation automatique des offres</Legend>
    <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!form.messaging.offers?.enabled} onChange={e=>set('messaging','offers',{...defaults.messaging.offers,...form.messaging.offers,enabled:e.target.checked})}/> Accepter les offres qui atteignent mes seuils</label>

@@ -540,7 +540,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
       {sizes.map(n=><button key={n} className={ghost} onClick={()=>withBusy('Ajout des articles…',()=>addArticles(groupFiles(dropped,n)))}>{dropped.length/n} articles de {n} photos</button>)}
       <button className={ghost} onClick={()=>withBusy('Ajout des articles…',()=>addArticles(groupFiles(dropped,1)))}>{dropped.length} articles (1 photo chacun)</button></div>
      <div className="flex items-center justify-between"><p className="text-xs text-[#79756f]">Regroupées dans l’ordre des noms de fichiers.</p><button className={quiet+' !text-xs'} onClick={()=>setDropped(null)}>Annuler</button></div></div>}
-    <ListingPublisher compact value={provider} onChange={setProvider} disabled={!!busy} ylavint={publisher} dotb={dotb}/>
+    <ListingPublisher compact value={provider} onChange={setProvider} disabled={!!busy} ylavint={publisher} dotb={dotb} accountId={account.id} onEnabled={()=>load().catch(e=>setError(e.message))}/>
     {(toPrepare>0||((provider==='ylavint'?ylavint:dotb)&&counts.ready>0))&&<div className="grid gap-1.5">
      {toPrepare>0&&<button className={solid} disabled={!!busy} onClick={()=>withBusy('Rédaction…',prepareAll)}>Rédiger les {toPrepare} article{toPrepare>1?'s':''} avec l’IA</button>}
      {(provider==='ylavint'?ylavint:dotb)&&counts.ready>0&&<><button className={ghost} disabled={!!busy} onClick={()=>withBusy('Envoi des annonces…',()=>sendAll('draft'))}>Tout en brouillon Vinted ({counts.ready})</button><button className={ghost} disabled={!!busy} onClick={()=>withBusy('Envoi des annonces…',()=>sendAll('live'))}>Tout publier avec {provider==='ylavint'?'YlaVint':'Dotb'} ({counts.ready})</button></>}

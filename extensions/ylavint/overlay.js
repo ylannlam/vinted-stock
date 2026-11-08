@@ -90,7 +90,7 @@
   </style><div class="t" id="t"></div>`
   const box = root.getElementById('t')
 
-  const S = {open: false, menu: false, page: 'auto', tab: 'likes', data: null, wardrobe: null, sales: null, error: '', notice: '', busy: false, theme: 'light', bridge: true, agent: null, q: '', status: '', flowTab: 'shipping'}
+  const S = {open: false, menu: false, page: 'auto', tab: 'likes', data: null, wardrobe: null, sales: null, error: '', notice: '', busy: false, theme: 'light', bridge: true, agent: null, q: '', status: '', flowTab: 'shipping', hist: {}}
   const PAGES = {auto: 'Automatisations', likes: 'Messages aux likes', agent: 'Smart Agent', flow: 'Flux de commandes', unmask: 'Démasquage & prix', dressing: 'Dressing', orders: 'Commandes'}
 
   async function refresh() {
@@ -118,10 +118,17 @@
     if (s.paused) return 'En pause'
     return features.some(f => s.features[f]) || features.includes('ai') && s.messaging?.offers?.enabled ? 'En attente…' : 'Arrêté'
   }
+  // Choix de la plage sur la carte, avant « Activer » (comme Dotb).
+  const histKey = features => features.includes('likes') ? 'likes' : features.includes('ai') ? 'ai' : null
+  function histSelect(features, running) {
+    const k = histKey(features); if (!k || !S.data) return ''
+    const cur = S.hist[k] ?? (k === 'likes' ? settings().likes?.history_hours : settings().messaging?.history_hours) ?? 0
+    return `<label class="f">Plage horaire de conversation</label><select class="in" data-hist="${k}" ${running ? 'disabled' : ''}>${withValue(historyOpts(k === 'ai' ? 'messages' : 'notifications'), cur).map(([v, l]) => `<option value="${v}" ${Number(cur) === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`
+  }
   function card(title, desc, features, chips, extraTag = 'live') {
     const running = (features.some(f => on(f)) || features.includes('ai') && settings().enabled && settings().messaging?.offers?.enabled) && !acc()?.settings?.paused
     return `<div class="card"><h3>${esc(title)}<span class="tag ${running ? 'live' : ''}">${running ? esc(extraTag) : 'arrêt'}</span></h3><p>${esc(desc)}</p>
-      <div class="state">${esc(stateOf(features))}</div><div class="chips">${chips.map(c => `<span class="chip">${esc(c)}</span>`).join('')}</div>
+      <div class="state">${esc(stateOf(features))}</div><div class="chips">${chips.map(c => `<span class="chip">${esc(c)}</span>`).join('')}</div>${histSelect(features, running)}
       <button class="btn ${running ? '' : 'gray'}" data-toggle="${features.join(',')}" ${S.busy || !S.data ? 'disabled' : ''}>${running ? '❚❚ Pause' : '▶ Activer'}</button></div>`
   }
 
@@ -173,7 +180,10 @@
       ${d.mode === 'simple' ? `<div class="box"><b style="font-size:13px">Montant de la réduction</b><div class="inline" style="margin-top:6px">${dnum(base + '.amount', 'step="0.5" min="0.5"')}${dsel(base + '.unit', [['eur', '€'], ['pct', '%']])}${dsel(base + '.rounding', [['none', 'Pas d’arrondi'], ['half', 'Arrondi à 0,50 €'], ['euro', 'Arrondi à l’euro']])}</div>
       <p class="note">Offre calculée sur le prix du moment, jamais sous 1 €.</p></div>` : ''}`
   }
-  const historyField=(path,label)=>`<label class="f">${label} — historique à traiter (heures)</label><div class="inline">${dnum(path+'.history_hours','min="0" max="720"')} h</div><p class="note">0 = seulement les nouveaux. 12 = les 12 dernières heures, puis les nouveaux. Appliqué à l’activation ou au changement de cette durée ; aucune action déjà effectuée n’est rejouée.</p>`
+  // Plage horaire façon Dotb : 0 = seulement les nouveaux, sinon les dernières heures puis les nouveaux.
+  const historyOpts = (what = 'notifications') => [[0, `Traiter uniquement les ${what === 'messages' ? 'nouveaux messages' : what === 'offres' ? 'nouvelles offres' : 'nouvelles notifications'}`], [2, 'Traiter les 2 dernières heures'], [6, 'Traiter les 6 dernières heures'], [12, 'Traiter les 12 dernières heures'], [24, 'Traiter le dernier jour'], ...[2, 3, 4, 5, 6, 7].map(n => [n * 24, `Traiter les ${n} derniers jours`])]
+  const withValue = (opts, v) => opts.some(([x]) => x === Number(v)) || v == null ? opts : [...opts, [Number(v), `Traiter les ${v} dernières heures`]]
+  const historyField = (path, label, what) => `<label class="f">${esc(label)} — plage horaire de conversation</label><select class="in" data-ps="${path}.history_hours">${withValue(historyOpts(what), getPath(draft(), path + '.history_hours') ?? 0).map(([v, l]) => `<option value="${v}" ${Number(getPath(draft(), path + '.history_hours') ?? 0) === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select><p class="note">Appliqué à l’activation ou au changement de plage ; aucune action déjà faite n’est rejouée.</p>`
   function draftForm(title, sub, body) {
     if (!S.data) return '<p class="note">Chargement…</p>'
     return `<h1>${esc(title)}</h1><p class="sub">${esc(sub)}</p><div class="form">${dsw('enabled', 'YlaVint actif sur ce compte', 'Sans cela, aucune automatisation ne tourne sur ce compte.')}${body}
@@ -184,7 +194,7 @@
     const L = draft().likes, steps = L.messages?.length ? L.messages : (L.messages = [newStep()])
     const delays = [[0, 'Aucun délai'], [5, '5 minutes'], [15, '15 minutes'], [30, '30 minutes'], [60, '1 heure'], [120, '2 heures'], [360, '6 heures'], [720, '12 heures'], [1440, '24 heures']]
     return draftForm('Automatisation des J’aime d’articles', 'Réponses automatiques quand des membres aiment tes articles.', `
-      ${dsw('features.likes', 'Messages aux likes', 'Envoyer un message aux membres qui likent un article')}${historyField('likes','Likes')}
+      ${dsw('features.likes', 'Messages aux likes', 'Envoyer un message aux membres qui likent un article')}${historyField('likes','Likes','notifications')}
       <div class="info"><b>Comment ça marche ?</b><ul><li>Les messages sont envoyés dans l’ordre, à chaque like d’un même membre.</li><li>Bob aime l’article A → message 1. Bob aime l’article B → message 2.</li>
         <li>S’il n’y a que 2 messages, la rotation s’arrête au message 2.</li><li>Aucun message au même membre pendant les jours choisis plus bas.</li></ul></div>
       ${steps.map((st, i) => `<div class="box"><div class="inline"><h4 style="flex:1">Ce message / cette offre sera envoyé(e) au ${['premier', 'deuxième', 'troisième'][i]} article aimé</h4>${steps.length > 1 ? `<button class="ghost" data-delmsg="${i}">Supprimer</button>` : ''}</div>
@@ -214,9 +224,9 @@
       <label class="f">Relire la messagerie toutes les (secondes)</label>${dnum('messaging.sync_seconds','min="20" max="7200"')}
       ${dsw('messaging.reply_unlimited','Réponses par jour illimitées','L’intervalle entre les envois reste respecté.')}
       ${!m.reply_unlimited?`<label class="f">Réponses par jour</label>${dnum('messaging.reply_per_day','min="0" max="300"')}`:''}
-      ${historyField('messaging','Messages')}
+      ${historyField('messaging','Messages','messages')}
       <div class="box"><h4>Acceptation automatique des offres</h4>
-        ${dsw('messaging.offers.enabled', 'Accepter les offres qui me conviennent', 'Accepte les offres formelles sur Vinted selon tes seuils, sans envoyer de message.')}${historyField('messaging.offers','Offres')}
+        ${dsw('messaging.offers.enabled', 'Accepter les offres qui me conviennent', 'Accepte les offres formelles sur Vinted selon tes seuils, sans envoyer de message.')}${historyField('messaging.offers','Offres','offres')}
         <label class="f">Remise maximale — article seul</label><div class="inline">${dnum('messaging.offers.single_discount','min="0" max="80" step="0.5"')} %</div>
         <label class="f">Remise maximale — lot</label><div class="inline">${dnum('messaging.offers.bundle_discount','min="0" max="80" step="0.5"')} %</div>
         <p class="note">Exemple sur un article à 50 € : acceptation à partir de ${(Math.ceil(5000*(1-o.single_discount/100))/100).toFixed(2).replace('.',',')} €. Le seuil n’est jamais arrondi vers le bas.</p>
@@ -350,8 +360,7 @@
       if (r) { S.draft = null; render() } return }
     if (d.toggle) { const fs = d.toggle.split(','), running = (fs.some(on) || fs.includes('ai') && settings().enabled && settings().messaging?.offers?.enabled) && !acc()?.settings?.paused
       if (acc()?.settings?.paused && !running) return act('resume', {}, 'YlaVint relancé sur ce compte.')
-      let historyHours=null
-      if(!running&&(fs.includes('likes')||fs.includes('ai'))){const choice=prompt('Historique à traiter en heures (0 : uniquement les nouveaux ; 12 : les 12 dernières heures)', '0');if(choice===null)return;historyHours=Number(choice);if(!Number.isInteger(historyHours)||historyHours<0||historyHours>720){alert('Choisis un nombre d’heures entre 0 et 720.');return}}
+      const hk = histKey(fs), historyHours = !running && hk ? Number(S.hist[hk] ?? (hk === 'likes' ? settings().likes?.history_hours : settings().messaging?.history_hours) ?? 0) : null
       return saveSettings(s => { if(historyHours!==null){if(fs.includes('likes'))s.likes.history_hours=historyHours;if(fs.includes('ai')){s.messaging.history_hours=historyHours;if(s.messaging.offers?.enabled)s.messaging.offers.history_hours=historyHours}} if (!running) s.enabled = true; for (const f of fs) s.features[f] = !running; if (running && fs.includes('ai') && s.messaging?.offers) s.messaging.offers.enabled=false }, running ? 'Automatisation mise en pause.' : 'Automatisation activée.') }
     if ('save' in d) { const s = collect(); return act('save_settings', {enabled: s.enabled, version: acc()?.settings?.version, settings: {features: s.features, limits: s.limits, unmask: s.unmask, pricing: s.pricing, likes: s.likes, messaging: s.messaging || S.data.defaults.messaging, order_flow: s.order_flow || S.data.defaults.order_flow}}, 'Paramètres enregistrés.') }
     if (d.reload) { await act('enqueue', {kind: d.reload}, 'Lecture demandée : elle arrive dans quelques minutes.'); return }
@@ -370,6 +379,7 @@
     const el = e.target
     if (el.matches('[data-status]')) { S.status = el.value; render() }
     if (el.dataset.pb) { setPath(draft(), el.dataset.pb, el.checked); render() }
+    if (el.dataset.hist) { S.hist[el.dataset.hist] = Number(el.value); return }
     if (el.dataset.ps) { setPath(draft(), el.dataset.ps, /^-?\d+(\.\d+)?$/.test(el.value) ? Number(el.value) : el.value); render() }
   })
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && (S.open || S.menu)) { S.open = false; S.menu = false; render() } })

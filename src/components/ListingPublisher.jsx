@@ -1,7 +1,12 @@
+import {useState} from 'react'
 import {listingStateLabels} from '../lib/listingStudio'
 
-export default function ListingPublisher({value,onChange,disabled=false,ylavint,dotb,compact=false}){
+export default function ListingPublisher({value,onChange,disabled=false,ylavint,dotb,compact=false,accountId,onEnabled}){
  const name=`publisher-${compact?'compact':'full'}`
+ const [enabling,setEnabling]=useState(false),[enableError,setEnableError]=useState('')
+ // YlaVint ou la publication coupés sur ce compte : on les allume d'ici, sans passer par les réglages.
+ const canEnable=value==='ylavint'&&ylavint&&!ylavint.ready&&accountId&&/^Active /.test(ylavint.reason||'')
+ const enable=async()=>{setEnabling(true);setEnableError('');try{await (await import('../lib/api')).resourcesRequest('POST',{action:'enable_publish',account_id:accountId},'?scope=agent');await onEnabled?.()}catch(e){setEnableError(e.message)}finally{setEnabling(false)}}
  return <fieldset disabled={disabled} className="space-y-2">
   <legend className="mb-2 text-sm font-semibold">Publier avec</legend>
   <div className="grid gap-2 sm:grid-cols-2">{[['ylavint','YlaVint','Ton extension dans le profil AdsPower ciblé.'],['dotb','Dotb','Le parcours Dotb reste disponible.']].map(([id,label,hint])=><label key={id} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm ${value===id?'border-teal-600 bg-teal-50':'border-slate-200 bg-white'}`}>
@@ -9,6 +14,8 @@ export default function ListingPublisher({value,onChange,disabled=false,ylavint,
    <span><strong className="block">{label}</strong><span className="mt-1 block text-xs text-slate-600">{hint}</span></span>
   </label>)}</div>
   {value==='ylavint'&&ylavint&&<p role="status" className="text-xs text-slate-600">{ylavint.waiting||ylavint.reason||'Bridge YlaVint présent.'} {ylavint.ready&&`Plafond : ${ylavint.limit} publication(s) par jour. ${ylavint.from_hour===ylavint.to_hour?'Toute la journée.':`Créneau : ${ylavint.from_hour} h – ${ylavint.to_hour} h.`}`} {!ylavint.ready&&<a href="/ylavint" target="_blank" rel="noreferrer" className="underline">Ouvrir les réglages YlaVint ↗</a>}</p>}
+  {canEnable&&<button type="button" className="w-full rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50" disabled={enabling} onClick={enable}>{enabling?'Activation…':'Activer la publication YlaVint sur ce compte'}</button>}
+  {enableError&&<p role="alert" className="text-xs text-red-700">{enableError}</p>}
   {value==='dotb'&&dotb===false&&<p className="text-xs text-amber-800">Dotb est désactivé pour ce compte ou sur le site. Tes réglages Dotb sont conservés pour le réutiliser plus tard.</p>}
  </fieldset>
 }

@@ -436,6 +436,19 @@ export async function handleAgent(req,{db,user}){
     }catch(e){errors.push({login:target.login,error:e.message})}}))
     return {copied,errors}
   }
+  // Bouton « Activer la publication YlaVint » de l'atelier : allume YlaVint et la publication sur ce compte, rien d'autre.
+  if(body.action==='enable_publish'){
+    if(!account)throw new AppError('Choisis un compte.')
+    const exists=check(await db.from('publication_accounts').select('id').eq('id',account).maybeSingle());if(!exists)throw new AppError('Compte introuvable.',404)
+    const current=check(await db.from('vinted_agent_settings').select('*').eq('account_id',account).maybeSingle())
+    const settings=effectiveSettings(current)
+    settings.features.publish=true
+    const row={enabled:true,features:settings.features,updated_at:new Date().toISOString(),updated_by:user?.id||null,version:(current?.version||0)+1}
+    if(current){const saved=check(await db.from('vinted_agent_settings').update(row).eq('account_id',account).eq('version',current.version).select('account_id'));if(!saved.length)throw new AppError('Réglages modifiés entre-temps : réessaie.',409)}
+    else check(await db.from('vinted_agent_settings').insert({account_id:account,...settings,...row}))
+    await agentLog(db,{account_id:account,event:'settings',message:'Publication YlaVint activée depuis l’atelier.'})
+    return {saved:true,version:row.version}
+  }
   if(body.action==='save_settings'){
     if(!account)throw new AppError('Choisis un compte.')
     const exists=check(await db.from('publication_accounts').select('id').eq('id',account).maybeSingle());if(!exists)throw new AppError('Compte introuvable.',404)
