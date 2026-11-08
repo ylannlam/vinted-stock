@@ -6,6 +6,21 @@
   send()
   setTimeout(send, 4000) // le bandeau peut s'afficher après le chargement
 
+  // Compte connecté : lu dans la page ; certaines pages (messagerie, commandes) n'en portent pas les données,
+  // on relit alors la page d'accueil Vinted (une seule fois par onglet).
+  let home = null
+  async function identity() {
+    let r = null
+    try { r = globalThis.readVintedAccount() } catch {}
+    if (r?.member_id) return r
+    if (!home) home = fetch('/', {credentials: 'include'}).then(x => x.ok ? x.text() : '').then(html => {
+      const doc = new DOMParser().parseFromString(html, 'text/html')
+      const found = globalThis.readVintedAccount(doc, 'https://www.vinted.fr/')
+      return found?.member_id ? {...found, status: r?.status && r.status !== 'ok' ? r.status : found.status} : null
+    }).catch(() => null)
+    return (await home) || r
+  }
+  globalThis.ylvIdentity = identity
   const toPage = msg => window.postMessage({source: 'sva-ext', ...msg}, location.origin)
   const pending = new Map()
   window.addEventListener('message', e => {
@@ -18,7 +33,7 @@
       .then(payload => toPage({type: 'bytes', id: d.id, payload}), () => toPage({type: 'bytes', id: d.id, payload: {error: 'Téléchargement impossible.'}}))
   })
   chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
-    if (msg?.type === 'identity') { try { reply(globalThis.readVintedAccount()) } catch { reply(null) } return }
+    if (msg?.type === 'identity') { identity().then(reply, () => reply(null)); return true }
     if (msg?.type === 'learning') { toPage({type: 'learning', on: msg.on === true}); return }
     if (msg?.type === 'run' && msg.task) {
       const id = crypto.randomUUID()

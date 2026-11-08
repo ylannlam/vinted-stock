@@ -132,7 +132,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (message?.type === 'ylv_site') {
     if (!PANEL_OPS.has(message.op)) { reply({error: 'Action refusée.'}); return }
     ;(async () => {
-      const who = message.member_id ? {member_id: message.member_id, login: message.login} : await identity(null)
+      const who = message.member_id ? {member_id: message.member_id, login: message.login} : await identity(sender.tab.id)
       if (!who?.member_id) return reply({error: 'Compte Vinted pas encore reconnu : ouvre ton profil Vinted une fois dans ce profil AdsPower.'})
       return site('agent_self', {op: message.op, payload: message.payload || {}, member_id: who.member_id, login: who.login}).then(reply, e => reply({error: e.message || 'Site injoignable.'}))
     })()
