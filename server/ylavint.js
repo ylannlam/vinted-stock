@@ -457,7 +457,7 @@ export async function ylavintView(req,{db}){
   }
   if(view==='sales'){
     const account=accountOf(q.account_id)
-    let query=db.from('vinted_agent_orders').select('transaction_id,account_id,status,title,price,currency,order_date,label_path,label_fetched_at,sales_order_id,item_ids,seen_at').order('order_date',{ascending:false,nullsFirst:false}).limit(200)
+    let query=db.from('vinted_agent_orders').select('transaction_id,account_id,status,title,price,currency,order_date,label_path,label_fetched_at,sales_order_id,item_ids,seen_at').order('order_date',{ascending:false,nullsFirst:false}).limit(500)
     if(account)query=query.eq('account_id',account)
     const [orders,names]=await Promise.all([query.then(check),logins(db)])
     return {orders:orders.map(o=>({...o,login:names.get(o.account_id)||null,normalized:orderStatus(o.status)}))}

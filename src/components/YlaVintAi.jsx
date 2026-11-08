@@ -1,5 +1,5 @@
 import {useEffect,useState} from 'react'
-import {buttonClass,primaryClass,fieldClass} from './WorkspaceUI'
+import {buttonClass,primaryClass,fieldClass} from './YlaVintUI'
 import {Section} from './YlaVintTab'
 
 const EXAMPLE=`Je vends des vêtements femme neufs ou comme neufs.

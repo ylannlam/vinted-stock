@@ -209,3 +209,33 @@ select.library-category { cursor: pointer; }
 .sales-pipeline-step:first-child { border-radius: 15px 0 0 15px; }
 .sales-pipeline-step:last-child { border-radius: 0 15px 15px 0; }
 .sale-parcel { margin-top: 2px; }
+
+/* YlaVint : thème sombre. Les rubriques écrites en clair (messagerie, agent IA, panneau d'extension) sont recolorées ici. */
+.ylv { color-scheme: dark; }
+.ylv .bg-white { background-color: #1c1c1f; }
+.ylv .bg-slate-50, .ylv .bg-slate-50\/60, .ylv .bg-\[\#faf8f5\] { background-color: #141416; }
+.ylv .bg-slate-100 { background-color: #27272a; }
+.ylv .bg-slate-800 { background-color: #f4f4f5; color: #18181b; }
+.ylv .border-slate-100, .ylv .border-slate-200, .ylv .border-slate-300 { border-color: #27272a; }
+.ylv .divide-slate-50 > * + *, .ylv .divide-slate-100 > * + * { border-color: #27272a; }
+.ylv .ring-slate-100, .ylv .ring-slate-200 { --tw-ring-color: #27272a; }
+.ylv .text-slate-900, .ylv .text-slate-800, .ylv .text-slate-700 { color: #fafafa; }
+.ylv .text-slate-600, .ylv .text-slate-500 { color: #a1a1aa; }
+.ylv .text-slate-400 { color: #71717a; }
+.ylv .hover\:bg-slate-50:hover, .ylv .hover\:bg-slate-100:hover { background-color: #27272a; }
+.ylv .bg-teal-50, .ylv .bg-teal-50\/60 { background-color: rgb(59 130 246 / .12); }
+.ylv .text-teal-700, .ylv .text-teal-800 { color: #93c5fd; }
+.ylv .border-teal-600, .ylv .border-teal-200 { border-color: #3b82f6; }
+.ylv .bg-teal-700, .ylv .bg-\[\#08664c\] { background-color: #2563eb; }
+.ylv .bg-violet-50, .ylv .bg-violet-50\/60 { background-color: rgb(139 92 246 / .12); }
+.ylv .border-violet-100 { border-color: rgb(139 92 246 / .25); }
+.ylv .text-violet-700 { color: #c4b5fd; }
+.ylv .bg-amber-50 { background-color: rgb(245 158 11 / .12); }
+.ylv .border-amber-200 { border-color: rgb(245 158 11 / .3); }
+.ylv .text-amber-800, .ylv .text-amber-900, .ylv .text-amber-950 { color: #fcd34d; }
+.ylv .bg-rose-50, .ylv .bg-red-50 { background-color: rgb(244 63 94 / .12); }
+.ylv .text-rose-700, .ylv .text-red-700 { color: #fda4af; }
+.ylv .bg-emerald-50 { background-color: rgb(16 185 129 / .12); }
+.ylv .text-emerald-700 { color: #6ee7b7; }
+.ylv .ring-rose-300 { --tw-ring-color: #f43f5e; }
+.ylv input[type=checkbox], .ylv input[type=radio] { accent-color: #3b82f6; }

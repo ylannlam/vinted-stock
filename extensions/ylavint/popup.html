@@ -1,27 +1,27 @@
 <!doctype html><html lang="fr"><head><meta charset="utf-8"><title>YlaVint</title><style>
-:root{--green:#08664c;--ink:#262a25;--muted:#79756f;--line:#ece8e1;--pink:#c83469}
-*{box-sizing:border-box}body{font:13px/1.4 system-ui,-apple-system,Segoe UI,sans-serif;margin:0;width:360px;color:var(--ink);background:#faf8f5}
-header{display:flex;align-items:center;gap:8px;padding:12px 14px 0}header img{width:22px;height:22px}header b{font-size:15px;letter-spacing:.01em}header span{margin-left:auto;font-size:11px;color:var(--muted)}
-.hero{display:flex;flex-direction:column;align-items:center;padding:14px 14px 10px}
-#bridge{width:148px;height:148px;border-radius:50%;border:0;cursor:pointer;font:800 26px/1 system-ui,sans-serif;letter-spacing:.02em;color:#fff;
- background:radial-gradient(circle at 35% 30%,#1fa37c,var(--green) 62%);box-shadow:0 10px 28px #08664c55,inset 0 -6px 14px #0003;transition:transform .12s,filter .12s}
+:root{--bg:#0a0a0b;--card:#1c1c1f;--line:#2a2a2e;--ink:#fafafa;--muted:#a1a1aa;--blue:#2563eb}
+*{box-sizing:border-box}body{font:13px/1.4 system-ui,-apple-system,Segoe UI,sans-serif;margin:0;width:360px;color:var(--ink);background:var(--bg)}
+header{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line);background:#111113}header img{width:22px;height:22px;border-radius:6px}header b{font-size:15px}header span{margin-left:auto;font-size:11px;color:var(--muted)}
+.hero{display:flex;flex-direction:column;align-items:center;padding:18px 14px 10px}
+#bridge{width:148px;height:148px;border-radius:50%;border:0;cursor:pointer;font:800 26px/1 system-ui,sans-serif;color:#fff;
+ background:radial-gradient(circle at 35% 30%,#60a5fa,#2563eb 62%);box-shadow:0 0 0 6px #2563eb22,0 12px 32px #2563eb66,inset 0 -6px 14px #0004;transition:transform .12s}
 #bridge:hover{transform:scale(1.03)}#bridge:active{transform:scale(.97)}
 #bridge small{display:block;margin-top:8px;font:600 11px system-ui;letter-spacing:.06em;text-transform:uppercase;opacity:.9}
-#bridge.off{background:radial-gradient(circle at 35% 30%,#a8a39b,#79756f 62%);box-shadow:0 8px 20px #0002,inset 0 -6px 14px #0002}
-#bridge.warn{background:radial-gradient(circle at 35% 30%,#f59e0b,#c2410c 65%);box-shadow:0 10px 28px #c2410c55}
-#account{margin-top:12px;font-weight:600;font-size:14px}#status{color:var(--muted);font-size:12px;text-align:center;margin-top:2px}
-.chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:4px 14px 10px}
-.chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:3px 9px;font-size:11px;color:var(--muted)}.chip.on{color:var(--green);border-color:#cfe6da;background:#f1f8f4}.chip.bad{color:#b42318;border-color:#f3c9c5;background:#fdf2f1}
+#bridge.off{background:radial-gradient(circle at 35% 30%,#52525b,#27272a 65%);box-shadow:0 0 0 6px #27272a,inset 0 -6px 14px #0006}
+#bridge.warn{background:radial-gradient(circle at 35% 30%,#fbbf24,#c2410c 65%);box-shadow:0 0 0 6px #c2410c22,0 12px 32px #c2410c55}
+#account{margin-top:14px;font-weight:700;font-size:14px}#status{color:var(--muted);font-size:12px;text-align:center;margin-top:2px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:4px 14px 12px}
+.chip{border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;color:var(--muted);background:#27272a}.chip.on{color:#6ee7b7;background:#10b98122}.chip.bad{color:#fda4af;background:#f43f5e22}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:0 14px 12px}
-.grid button{font:inherit;font-weight:600;border:1px solid var(--line);background:#fff;border-radius:12px;padding:9px 8px;cursor:pointer;text-align:left}
-.grid button:hover{border-color:#cfe6da;background:#f6fbf8}.grid button em{float:right;font-style:normal;background:var(--pink);color:#fff;border-radius:999px;padding:0 6px;font-size:11px}
-details{margin:0 14px 10px;border:1px solid var(--line);border-radius:12px;background:#fff}summary{cursor:pointer;padding:8px 10px;font-weight:600;font-size:12px}
+.grid button{font:inherit;font-weight:600;color:var(--ink);border:1px solid var(--line);background:var(--card);border-radius:10px;padding:10px;cursor:pointer;text-align:left}
+.grid button:hover{border-color:#3f3f46;background:#232327}.grid button em{float:right;font-style:normal;background:#f43f5e;color:#fff;border-radius:999px;padding:0 6px;font-size:11px}
+details{margin:0 14px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card)}summary{cursor:pointer;padding:9px 10px;font-weight:600;font-size:12px}
 .box{padding:0 10px 10px}h2{font-size:11px;margin:10px 0 4px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
-p{margin:4px 0}.ok{color:var(--green)}.bad{color:#b42318}.muted{color:var(--muted);font-size:12px}
-.small{font:inherit;font-size:12px;border:1px solid #d6d3cd;background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer}.small.on{background:#1f2937;color:#fff;border-color:#1f2937}
-ul{list-style:none;padding:0;margin:0}li{padding:3px 0;border-bottom:1px solid #f3f0eb;font-size:12px}select{font:inherit;font-size:12px;max-width:150px}
-code{font-size:11px;word-break:break-all}.row{display:flex;gap:6px;align-items:center;justify-content:space-between;flex-wrap:wrap}
-footer{padding:0 14px 12px;font-size:11px;color:var(--muted);text-align:center}
+p{margin:4px 0}.ok{color:#6ee7b7}.bad{color:#fda4af}.muted{color:var(--muted);font-size:12px}
+.small{font:inherit;font-size:12px;color:var(--ink);border:1px solid #3f3f46;background:#18181b;border-radius:8px;padding:4px 10px;cursor:pointer}.small.on{background:var(--blue);border-color:var(--blue)}
+ul{list-style:none;padding:0;margin:0}li{padding:4px 0;border-bottom:1px solid var(--line);font-size:12px}select{font:inherit;font-size:12px;max-width:150px;background:#18181b;color:var(--ink);border:1px solid #3f3f46;border-radius:6px}
+code{font-size:11px;word-break:break-all;color:#93c5fd}.row{display:flex;gap:6px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+footer{padding:0 14px 12px;font-size:11px;color:#71717a;text-align:center}
 </style></head>
 <body>
 <header><img src="icons/48.png" alt=""><b>YlaVint</b><span id="version"></span></header>

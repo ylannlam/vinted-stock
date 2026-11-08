@@ -14,10 +14,10 @@ const bridgeOn = async () => (await get('bridge')) !== false
 // Badge de l'icône : messages non lus, pause, Bridge coupé.
 async function badge() {
   const {agent, bridge} = await chrome.storage.local.get(['agent', 'bridge'])
-  let text = '', color = '#08664c'
+  let text = '', color = '#2563eb'
   if (bridge === false) { text = 'OFF'; color = '#79756f' }
   else if (['paused', 'error', 'logged_out'].includes(agent?.state)) { text = '!'; color = '#c2410c' }
-  else if (agent?.unread > 0) { text = agent.unread > 99 ? '99+' : String(agent.unread); color = '#c83469' }
+  else if (agent?.unread > 0) { text = agent.unread > 99 ? '99+' : String(agent.unread); color = '#e11d48' }
   await chrome.action.setBadgeText({text}).catch(() => {})
   await chrome.action.setBadgeBackgroundColor({color}).catch(() => {})
 }
