@@ -126,6 +126,6 @@ export default async function handler(req,res) {
     if(error.message?.includes('unsold_reference'))return res.status(409).json({error:'Cette référence ne correspond à aucune vente suivie. Les fiches sont préparées automatiquement depuis les ventes.'})
     console.error('collector_request_failed',{code:error.code||'unknown',status:error.status||500})
     const conflict=/collection_lease_expired|collection_product_mismatch|device_revoked|agent_lease_expired/.test(error.message||'')
-    return res.status(conflict?409:error.status||500).json({error:conflict?'Cette récupération ou l’association du PC a expiré. Actualisez le site.':error instanceof AppError?error.message:'La récupération est momentanément indisponible. Les fiches existantes sont conservées.'})
+    return res.status(conflict?409:error.status||500).json({error:conflict?'Cette récupération ou l’association du PC a expiré. Actualisez le site.':error instanceof AppError?error.message:String(req.body?.action||'').startsWith('agent_')?'YlaVint est momentanément indisponible. Réessaie dans un instant.':'La récupération est momentanément indisponible. Les fiches existantes sont conservées.'})
   }
 }

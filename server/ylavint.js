@@ -558,11 +558,11 @@ export async function agentSelf(db,key,body){
   if(!account)throw new AppError('Ce compte Vinted n’est pas encore connu du site : synchronise la liste des comptes.',404)
   const user={id:null},payload=body.payload&&typeof body.payload==='object'?body.payload:{}
   if(op==='overview'){
-    const o=await agent.handleAgent({method:'GET',query:{}},{db,user})
+    const [o,extra]=await Promise.all([agent.agentOverview(db,null),overviewExtras(db).catch(()=>({}))])
     const a=o.accounts.find(x=>x.id===account.id)
     const tasks=check(await db.from('vinted_agent_tasks').select('id,kind,state,error,not_before,started_at,finished_at').eq('account_id',account.id).order('created_at',{ascending:false}).limit(80))
     const log=check(await db.from('vinted_agent_log').select('id,level,event,message,created_at').eq('account_id',account.id).order('created_at',{ascending:false}).limit(60))
-    return {account:a,defaults:o.defaults,kinds:o.kinds,ai:o.ai,unread:o.unread_by_account?.[account.id]||0,tasks,log}
+    return {account:a,defaults:o.defaults,kinds:o.kinds,ai:extra.ai||null,unread:extra.unread_by_account?.[account.id]||0,tasks,log}
   }
   if(op==='wardrobe'||op==='sales')return agent.handleAgent({method:'GET',query:{view:op,account_id:account.id}},{db,user})
   if(op==='enqueue'&&!['scan_wardrobe','sync_orders','sync_inbox','scan_likes'].includes(payload.kind))throw new AppError('Lecture inconnue.')
