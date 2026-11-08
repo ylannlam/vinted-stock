@@ -32,7 +32,7 @@ function Thread({request,conv,onBack,onChanged}){
   </header>
   {(c.item_title||c.item_photo)&&<div className="flex items-center gap-3 border-b border-slate-100 bg-slate-50/60 px-3 py-2 sm:px-4">
    {c.item_photo?<img src={c.item_photo} alt="" className="h-12 w-10 rounded-md object-cover"/>:<span className="h-12 w-10 rounded-md bg-slate-100"/>}
-   <p className="min-w-0 flex-1 truncate text-sm">{c.item_title||'Article'}</p>{c.item_price!=null&&<span className="text-sm font-semibold">{String(c.item_price).replace('.',',')} €</span>}
+   <p className="min-w-0 flex-1 truncate text-sm">{c.item_title||'Article'}</p>{c.item_price!=null&&<span className="text-sm font-semibold">{Number(c.item_price).toFixed(2).replace('.',',')} €</span>}
   </div>}
   {agent&&(!agent.enabled||agent.paused)&&<p className="bg-amber-50 px-4 py-2 text-xs text-amber-900">{!agent.enabled?'YlaVint n’est pas activé sur ce compte : les réponses ne partiront pas.':`YlaVint est en pause sur ce compte (${agent.pause_reason||'à relancer'}) : tes réponses attendront la reprise.`}</p>}
   <div className="flex-1 space-y-2 overflow-y-auto bg-[#faf8f5] px-3 py-4 sm:px-4">

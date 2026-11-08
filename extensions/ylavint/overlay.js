@@ -71,7 +71,7 @@
   .form{max-width:680px;border:1px solid var(--line);background:var(--card);border-radius:12px;padding:20px 24px}
   .row{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:12px 0}
   .row b{display:block;font-size:14px}.row span{color:var(--muted);font-size:13px}
-  .sw{position:relative;width:44px;height:24px;flex-shrink:0}.sw input{opacity:0;width:0;height:0}.sw i{position:absolute;inset:0;border-radius:12px;background:#d1d5db;cursor:pointer;transition:.15s}
+  .sw{position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0}.sw input{opacity:0;width:0;height:0}.sw i{position:absolute;inset:0;border-radius:12px;background:#d1d5db;cursor:pointer;transition:.15s}
   .sw i:before{content:"";position:absolute;width:18px;height:18px;left:3px;top:3px;border-radius:50%;background:#fff;transition:.15s}.sw input:checked+i{background:var(--blue)}.sw input:checked+i:before{transform:translateX(20px)}
   label.f{display:block;font-weight:600;font-size:13px;margin:14px 0 6px}
   input.in,textarea.in,select.in{width:100%;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:8px;padding:9px 11px;font:inherit;font-size:13px}

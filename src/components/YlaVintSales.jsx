@@ -33,7 +33,7 @@ export default function YlaVintSales({request,accounts=[]}){
     <Td className="text-blue-400">{o.login||'—'}</Td>
     <Td className="max-w-[12rem] truncate text-xs text-zinc-300" title={o.status}>{o.status||'—'}</Td>
     <Td><Pill tone={TONES[o.normalized]||'zinc'}>{ORDER_LABELS[o.normalized]||o.normalized}</Pill></Td>
-    <Td className="whitespace-nowrap font-semibold">{o.price!=null?`${String(o.price).replace('.',',')} €`:'—'}</Td>
+    <Td className="whitespace-nowrap font-semibold">{o.price!=null?`${Number(o.price).toFixed(2).replace('.',',')} €`:'—'}</Td>
     <Td>{o.sales_order_id?<Pill tone="green">Envoyée</Pill>:<Pill>—</Pill>}</Td>
     <Td>{o.label_path?<button className="text-sm text-blue-400 hover:underline" disabled={busy} onClick={()=>label(o)}>🖨 Bordereau</button>:<span className="text-xs text-zinc-500">—</span>}</Td>
    </tr>})}

@@ -10,6 +10,7 @@ import {sizeFromTitle} from '../src/lib/soldSize.js'
 
 const nowIso=(now=Date.now())=>new Date(now).toISOString()
 const MESSAGE_KINDS=new Set(['message','offer','action','status','photo'])
+const SYSTEM_KINDS=new Set(['action','status'])
 const safePhoto=v=>typeof v==='string'&&/^https:\/\/[a-z0-9.-]+\.vinted\.net\//.test(v)?v.slice(0,500):null
 const localId=()=>`local:${randomUUID()}`
 const clean=(v,max)=>typeof v==='string'?v.replace(/\r\n/g,'\n').replace(/[ \t]+\n/g,'\n').trim().slice(0,max):''
@@ -55,12 +56,13 @@ export async function applyInbox(db,task,result,{settings,now=Date.now()}={}){
   const ids=convs.map(c=>c.id)
   const before=new Map(check(await db.from('ylavint_conversations').select('*').eq('account_id',account).in('conversation_id',ids)).map(r=>[r.conversation_id,r]))
   const rows=convs.map(c=>{
-    const old=before.get(c.id),last=c.messages?.length?c.messages[c.messages.length-1]:null
+    const old=before.get(c.id),last=c.messages?.length?c.messages[c.messages.length-1]:null,human=c.messages?[...c.messages].reverse().find(m=>!SYSTEM_KINDS.has(m.kind)):undefined
     return {account_id:account,conversation_id:c.id,...merge({other_id:c.other_id,other_login:c.other_login,other_photo:c.other_photo,item_id:c.item_id,item_title:c.item_title,
       item_photo:c.item_photo,item_price:c.item_price,transaction_id:c.transaction_id,transaction_status:c.transaction_status},old),
       unread:c.unread,allow_reply:c.allow_reply,vinted_updated_at:c.messages?c.updated_at:old?.vinted_updated_at??null,
       last_message:last?.body??c.preview??old?.last_message??null,last_message_at:last?.sent_at??iso(c.updated_at)??old?.last_message_at??null,
-      last_from_me:last?last.from_me:old?.last_from_me??false,synced_at:c.messages?at:old?.synced_at??null,updated_at:at}
+      // Les messages système (paiement validé, colis envoyé…) n'attendent pas de réponse.
+      last_from_me:c.messages?(human?human.from_me:true):old?.last_from_me??false,synced_at:c.messages?at:old?.synced_at??null,updated_at:at}
   })
   check(await db.from('ylavint_conversations').upsert(rows,{onConflict:'account_id,conversation_id'}))
 
@@ -188,8 +190,8 @@ export async function generateReply(config,context,{fetcher=fetch,token=listingA
   let response
   try{response=await fetcher('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
     body:JSON.stringify({model:config.model,messages:[{role:'system',content:aiInstructions(config,context.boutique)},{role:'user',content:JSON.stringify(context)}],max_tokens:700,
-      reasoning_effort:config.model.includes('lite')?'minimal':'low',response_format:{type:'json_schema',json_schema:{name:'vinted_reply',strict:true,schema}}}),signal:AbortSignal.timeout(15000)})}
-  catch{throw new AppError('L’agent IA a mis trop de temps à répondre.',504)}
+      reasoning_effort:config.model.includes('lite')?'minimal':'low',response_format:{type:'json_schema',json_schema:{name:'vinted_reply',strict:true,schema}}}),signal:AbortSignal.timeout(24000)})}
+  catch(e){console.error('ylavint ai',e?.name,e?.message);throw new AppError(e?.name==='TimeoutError'||e?.name==='AbortError'?'L’agent IA a mis trop de temps à répondre.':'Gemini est injoignable pour le moment.',504)}
   const body=await response.json().catch(()=>null)
   if(!response.ok)throw new AppError(response.status===429?'Quota Gemini atteint.':[401,403].includes(response.status)?'La clé Gemini doit être vérifiée.':'Gemini est momentanément indisponible.',response.status===429?429:503)
   let result;try{result=JSON.parse(body?.choices?.[0]?.message?.content)}catch{throw new AppError('Réponse IA illisible.',502)}
@@ -214,7 +216,7 @@ async function recordUsage(db,usage,accountId){
 }
 // Prépare la réponse IA d'une conversation : proposition à valider, ou envoi programmé en mode « répondre seul ».
 export async function draftAi(db,conv,config,{generate=generateReply,now=Date.now(),rand=Math.random,force=false}={}){
-  const context=await aiContext(db,conv),last=[...context.conversation].reverse()[0]
+  const context=await aiContext(db,conv),last=[...context.conversation].reverse().find(m=>!SYSTEM_KINDS.has(m.type))
   if(!last||last.auteur!=='acheteur'){
     check(await db.from('ylavint_conversations').update({ai_state:'skipped',ai_reason:'Dernier message envoyé par toi.'}).eq('account_id',conv.account_id).eq('conversation_id',conv.conversation_id))
     return {state:'skipped'}

@@ -240,7 +240,7 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
      aside={<button className={primaryClass} disabled={busy||!picked.size} onClick={()=>act({action:'publish_drafts',ids:[...picked]},r=>`${r.queued} fiche(s) confiée(s) à YlaVint.${r.refused?.length?` ${r.refused.length} refusée(s) : ${[...new Set(r.refused.map(x=>x.reason))].join(' ; ')}.`:''}`).then(()=>setPicked(new Set()))}>Planifier ({picked.size})</button>}/>
     <Table head={['','Titre','Prix','Photos','Compte','État']} empty={!data.drafts.length&&'Aucune fiche prête.'}>
      {data.drafts.map(d=><tr key={d.id}><Td className="w-10"><input type="checkbox" className="accent-blue-500" aria-label={`Choisir ${d.title}`} checked={picked.has(d.id)} disabled={!publishable.has(d.account_id)} onChange={e=>setPicked(p=>{const n=new Set(p);e.target.checked?n.add(d.id):n.delete(d.id);return n})}/></Td>
-      <Td className="max-w-md truncate font-medium text-white">{d.title}</Td><Td>{d.price?`${d.price} €`:'—'}</Td><Td>{d.photos}</Td><Td className="text-blue-400">{logins.get(d.account_id)||'—'}</Td>
+      <Td className="max-w-md truncate font-medium text-white">{d.title}</Td><Td>{d.price?euro(d.price):'—'}</Td><Td>{d.photos}</Td><Td className="text-blue-400">{logins.get(d.account_id)||'—'}</Td>
       <Td>{publishable.has(d.account_id)?<Pill tone="blue">Prête</Pill>:<Pill>Publication non activée</Pill>}</Td></tr>)}
     </Table>
     <p className="pt-2 text-sm font-semibold text-white">File de publication</p>

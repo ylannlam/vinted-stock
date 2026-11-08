@@ -32,7 +32,7 @@ export default function VintedWatchPanel({request=vintedWatchRequest}){
    <li>Dans AdsPower, ouvre <strong>Extensions</strong> (menu de gauche), puis <strong>Ajouter une extension</strong> → <strong>Téléverser un fichier</strong> et choisis le zip téléchargé.</li>
    <li>Active son <strong>interrupteur</strong> : elle se charge alors dans tous tes profils, nouveaux compris, à leur prochain lancement. Pour une nouvelle version, utilise <strong>··· → Mise à jour</strong> sur la même extension.</li>
    <li>L’extension reconnaît seule le compte Vinted connecté dans chaque profil. Elle ne fait rien d’autre que la veille tant que le compte n’est pas activé dans l’onglet YlaVint. Le gros bouton du popup coupe ou rallume YlaVint dans le profil.</li>
-   <li>Pour apprendre une action : ouvre le popup de l’extension dans un profil de test, active le <strong>mode apprentissage</strong>, puis fais le geste une fois à la main sur Vinted (liste dans l’onglet Agent).</li>
+   <li>Pour apprendre une action : ouvre le popup de l’extension dans un profil de test, active le <strong>mode apprentissage</strong>, puis fais le geste une fois à la main sur Vinted (liste dans YlaVint).</li>
   </ol>}
   {active.length>0&&<details><summary className="cursor-pointer text-xs text-slate-500">Extensions téléchargées ({active.length})</summary><ul className="mt-2 space-y-1 text-xs">{active.map(k=><li key={k.id} className="flex items-center justify-between gap-2"><span>Téléchargée le {when(k.created_at)} · dernier signal {when(k.last_seen_at)}</span><button className="text-red-700 underline" disabled={busy} onClick={()=>revoke(k.id)}>Désactiver</button></li>)}</ul></details>}
  </section>
