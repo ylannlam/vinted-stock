@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {execFileSync} from 'node:child_process'
+import {fileURLToPath} from 'node:url'
 
 // Page Vinted simulée : on rejoue les tâches de l'agent contre un faux site Vinted et on regarde les requêtes envoyées.
 const calls = [], posted = []
@@ -20,6 +21,35 @@ globalThis.location = {origin: 'https://www.vinted.fr', href: 'https://www.vinte
 globalThis.document = {cookie: 'anon_id=anon-1', querySelector: () => ({content: 'csrf-1'}), scripts: []}
 await import('../extensions/ylavint/page.js')
 const T = globalThis.__svAgentTest
+
+test('notifications: offering_id is the liker; user_id is the seller', async()=>{
+  const notification={entry_type:20,body:'alice a marqué ton article comme favori',user_id:7,subject_id:9,link:'/items/9/want_it/new?offering_id=88'}
+  assert.deepEqual(T.notificationLike(notification,'7'),{item_id:'9',user_id:'88',login:'alice'})
+  assert.equal(T.notificationLike({...notification,link:'/items/9'},'7'),null)
+  calls.length=0
+  vinted=async()=>({status:200,body:{notifications:[notification],pagination:{total_pages:1}}})
+  const r=await run({kind:'scan_likes',member_id:'7',recipes:{likes_list:{method:'GET',path:'/api/v2/notifications'}}})
+  assert.equal(r.result.likes.length,1)
+  assert.match(calls[0].url,/^https:\/\/api.vinted.fr\/inbox-notifications\/v1\/notifications/)
+  assert.equal(calls[0].headers['x-csrf-token'],undefined)
+  assert.equal(calls[0].headers['x-anon-id'],undefined)
+})
+
+test('offer acceptance rechecks current status, buyer and exact price before PUT',async()=>{
+  const offer={id:'30',transaction_id:'20',buyer_id:'88',price:40,original_price:50,currency:'EUR',is_bundle:false}
+  const cfg={enabled:true,single_discount:20,bundle_discount:10}
+  const conversation={transaction:{id:20,seller_id:7,buyer_id:88,current_user_side:'seller',is_bundle:false},messages:[{entity_type:'offer_request_message',entity:{offer_request_id:30,transaction_id:20,user_id:88,current:true,status:10,price:{amount:'40',currency_code:'EUR'},original_price:{amount:'50'}}}]}
+  const recipes={conversation_read:{method:'GET',path:'/api/v2/conversations/{id}'},offer_accept:{method:'PUT',path:'/api/v2/transactions/{id}/offer_requests/{offer_id}/accept'}}
+  const task={kind:'accept_offer',member_id:'7',recipes,payload:{conversation_id:'10',offer,offer_settings:cfg}}
+  calls.length=0;vinted=async()=>({status:200,body:{conversation}})
+  assert.equal((await run(task)).result.accepted,true)
+  assert.equal(calls.at(-1).method,'PUT');assert.match(calls.at(-1).url,/transactions\/20\/offer_requests\/30\/accept$/)
+  for(const alter of [()=>conversation.messages[0].entity.status=20,()=>conversation.messages[0].entity.price.amount='39',()=>conversation.transaction.seller_id=8,()=>cfg.enabled=false]){
+    conversation.messages[0].entity.status=10;conversation.messages[0].entity.price.amount='40';conversation.transaction.seller_id=7;cfg.enabled=true
+    alter();calls.length=0
+    assert.ok((await run(task)).result.skipped);assert.ok(calls.every(c=>c.method==='GET'))
+  }
+})
 
 async function run(task) {
   const id = crypto.randomUUID()
@@ -87,7 +117,7 @@ test('orders are read whatever their exact layout', () => {
   assert.equal(T.orderRow({id: 1, status: 'Commande terminée', shipment_id: 3}).label_ready, false)
 })
 test('the extension files are valid scripts and the manifest declares the page script in the page world', () => {
-  for (const f of ['worker.js', 'content.js', 'popup.js', 'read.js', 'page.js']) execFileSync(process.execPath, ['--check', new URL(`../extensions/ylavint/${f}`, import.meta.url).pathname])
+  for (const f of ['worker.js', 'content.js', 'popup.js', 'read.js', 'page.js', 'overlay.js']) execFileSync(process.execPath, ['--check', fileURLToPath(new URL(`../extensions/ylavint/${f}`, import.meta.url))])
   const m = JSON.parse(readFileSync(new URL('../extensions/ylavint/manifest.json', import.meta.url), 'utf8'))
   assert.equal(m.manifest_version, 3)
   assert.deepEqual(m.content_scripts.map(c => c.world || 'ISOLATED'), ['MAIN', 'ISOLATED'])

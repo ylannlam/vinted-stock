@@ -40,14 +40,17 @@
   }
   async function callOnce(recipe, {ids = {}, query = {}, json = null, form = null, raw = false} = {}) {
     if (!recipe) throw new Stop('no_recipe', 'Action pas encore apprise.')
-    const path = recipe.path.replace(/\{id\}/g, () => { const v = ids.id; if (!/^\d{1,18}$/.test(String(v))) throw new Stop('failed', 'Identifiant manquant.'); return v })
-    const url = new URL(path, location.origin)
+    const path = recipe.path.replace(/\{(id|offer_id)\}/g, (_, key) => { const v = ids[key]; if (!/^\d{1,18}$/.test(String(v))) throw new Stop('failed', 'Identifiant manquant.'); return v })
+    const externalLikes = recipe.origin === 'https://api.vinted.fr' && path === '/inbox-notifications/v1/notifications' && recipe.method === 'GET'
+    if (recipe.origin && !externalLikes) throw new Stop('failed', 'Origine de requête refusée.')
+    const url = new URL(path, externalLikes ? recipe.origin : location.origin)
+    if (url.origin !== location.origin && !externalLikes) throw new Stop('failed', 'Adresse de requête refusée.')
     for (const [k, v] of Object.entries({...(recipe.query || {}), ...query})) url.searchParams.set(k, v)
     const headers = {accept: 'application/json, text/plain, */*', ...(recipe.headers || {})}
     delete headers['content-type']; delete headers['content-length']
     const token = csrf(), anon = memory.anon || cookie('anon_id')
-    if (token) headers['x-csrf-token'] = token
-    if (anon) headers['x-anon-id'] = anon
+    if (token && !externalLikes) headers['x-csrf-token'] = token
+    if (anon && !externalLikes) headers['x-anon-id'] = anon
     if (json) headers['content-type'] = 'application/json'
     let response
     try { response = await nativeFetch(url.href, {method: recipe.method, headers, body: json ? JSON.stringify(json) : form || undefined, credentials: 'include'}) }
@@ -174,6 +177,7 @@
         price: item?.price || t?.offer_price || t?.item_price || null, photo: photoUrl(item?.photo || item?.photos?.[0] || entry.item_photos?.[0])},
       transaction: t ? {id: t.id, status: t.status_title || t.status || t.transaction_user_status || null} : null,
       allow_reply: c.allow_reply !== false && c.is_replyable !== false,
+      offers: detail ? pendingOffers(c, me) : [],
       messages: detail ? firstArray(c.messages ? {messages: c.messages} : c).map(m => messageRow(m, me)).filter(m => m.body || m.kind !== 'message') : null}
   }
   async function scanInbox(task) {
@@ -208,6 +212,30 @@
     const m = r.reply || r.message || r.conversation?.messages?.slice(-1)?.[0]?.entity || r
     return {conversation_id: String(conversation_id), message_id: m?.id != null ? String(m.id) : null}
   }
+  function pendingOffers(c, me) {
+    const t=c.transaction
+    if(!t||String(t.seller_id)!==String(me)||t.current_user_side!=='seller'||t.is_completed||t.purchase_id||t.item_is_closed||typeof t.is_bundle!=='boolean')return []
+    return (c.messages||[]).filter(m=>m.entity_type==='offer_request_message').flatMap(m=>{
+      const e=m.entity||{}
+      if(e.current!==true||Number(e.status)!==10||String(e.user_id)!==String(t.buyer_id)||String(e.transaction_id)!==String(t.id))return []
+      return [{id:String(e.offer_request_id),transaction_id:String(t.id),buyer_id:String(t.buyer_id),price:amount(e.price),original_price:amount(e.original_price),
+        currency:e.price?.currency_code||e.currency,is_bundle:t.is_bundle}]
+    })
+  }
+  function offerAllowed(o, cfg) {
+    if(!cfg?.enabled||o.currency!=='EUR'||typeof o.is_bundle!=='boolean')return false
+    const p=Number(o.price),base=Number(o.original_price),pct=o.is_bundle?cfg.bundle_discount:cfg.single_discount
+    return Number.isFinite(p)&&Number.isFinite(base)&&Number.isFinite(pct)&&pct>=0&&pct<=80&&p>=1&&base>=p&&
+      Math.round(p*100)>=Math.ceil(Math.round(base*100)*(10000-Math.round(pct*100))/10000)
+  }
+  async function acceptOffer(task) {
+    const p=task.payload, R=task.recipes
+    const data=await call(R.conversation_read,{ids:{id:p.conversation_id}})
+    const offer=pendingOffers(data.conversation||data,task.member_id).find(o=>o.id===String(p.offer.id)&&o.transaction_id===String(p.offer.transaction_id)&&o.buyer_id===String(p.offer.buyer_id))
+    if(!offer||Number(offer.price)!==Number(p.offer.price)||Number(offer.original_price)!==Number(p.offer.original_price)||!offerAllowed(offer,p.offer_settings))return {skipped:'Offre modifiée, inactive ou hors des seuils.'}
+    await call(R.offer_accept,{ids:{id:offer.transaction_id,offer_id:offer.id}})
+    return {accepted:true,offer_id:offer.id,price:Number(offer.price),conversation_id:String(p.conversation_id)}
+  }
   async function fetchBytes(url) {
     const u = new URL(url, location.origin)
     if (u.origin === location.origin) {
@@ -238,18 +266,30 @@
     return {transaction_id: p.transaction_id, pdf_base64: toBase64(pdf)}
   }
   async function scanLikes(task) {
-    const data = await call(task.recipes.likes_list)
-    const likes = []
-    for (const n of firstArray(data)) {
-      const textAll = JSON.stringify(n)
-      if (!/favou?ri|favorite|aim[ée]|like/i.test(textAll)) continue
-      const link = String(n.link || n.url || n.path || '')
-      const item = n.subject_type === 'item' ? n.subject_id : n.item_id || link.match(/items\/(\d+)/)?.[1] || n.item?.id
-      const user = n.user_id || n.user?.id || n.sender_id || link.match(/member\/(\d+)/)?.[1]
-      const login = n.user?.login || n.user_login || n.sender?.login || null
-      if (item && user) likes.push({item_id: item, user_id: user, login})
+    // Anciennes recettes enregistrées : l’ancienne route /api/v2/notifications renvoie désormais 404.
+    const recipe = !task.recipes.likes_list || task.recipes.likes_list.path === '/api/v2/notifications'
+      ? {method:'GET',origin:'https://api.vinted.fr',path:'/inbox-notifications/v1/notifications',headers:{platform:'web','x-next-app':'marketplace-web',locale:'fr-FR'}} : task.recipes.likes_list
+    const likes = [], seen = new Set()
+    for (let page = 1; page <= 5; page++) {
+      const data = await call(recipe, {query:{page,per_page:50}}), rows = firstArray(data)
+      for (const n of rows) {
+        const row = notificationLike(n, task.member_id)
+        if (!row || seen.has(`${row.item_id}:${row.user_id}`)) continue
+        seen.add(`${row.item_id}:${row.user_id}`); likes.push(row)
+      }
+      if (!rows.length || !data.pagination || page >= data.pagination.total_pages) break
+      await pause(500, 1000)
     }
     return {likes}
+  }
+  function notificationLike(n, me) {
+    const link = new URL(String(n.link || n.url || n.path || ''), location.origin)
+    if (link.origin !== location.origin || !(Number(n.entry_type) === 20 || /favou?ri|aim[ée]|like/i.test(String(n.body || '')))) return null
+    const item = n.item_id || link.pathname.match(/items\/(\d+)/)?.[1] || n.item?.id
+    // user_id est le destinataire de la notification, PAS le membre qui a liké.
+    const user = link.searchParams.get('offering_id') || n.sender_id || n.sender?.id || n.user?.id
+    const login = n.sender?.login || n.user?.login || String(n.body || '').match(/^([A-Za-z0-9._-]+) a marqué /)?.[1] || null
+    return item && user && String(user) !== String(me) ? {item_id:String(item),user_id:String(user),login} : null
   }
 
   // Une photo envoyée comme le fait le formulaire Vinted (champs relevés à l'apprentissage).
@@ -438,7 +478,7 @@
     const runners = {scan_wardrobe: scanWardrobe, sync_orders: syncOrders, fetch_label: fetchLabel, scan_likes: scanLikes,
       publish_item: publish, unmask_item: t => editItem(t, {unmask: true}), reprice_item: t => editItem(t, {unmask: false}), like_message: likeMessage,
       sync_inbox: scanInbox, reply_message: replyMessage, order_message: orderMessage, order_extension: orderExtension, order_cancel: orderCancel,
-      order_review: orderReview, item_delete: itemDelete}
+      order_review: orderReview, item_delete: itemDelete, accept_offer: acceptOffer}
     try {
       if (!runners[task.kind]) throw new Stop('failed', 'Tâche inconnue.')
       return {ok: true, result: await runners[task.kind](task)}
@@ -450,7 +490,8 @@
   // ---------- Apprentissage ----------
   const SECRET = /^(cookie|authorization|x-csrf-token|x-anon-id|x-v-udt|x-datadome.*|x-client-id)$/i
   const RULES = [
-    ['offer_send', /^(POST|PUT)$/, /offer/i],
+    ['offer_accept', /^PUT$/, /^\/api\/v2\/transactions\/\{id\}\/offer_requests\/\{offer_id\}\/accept$/],
+    ['offer_send', /^POST$/, /^\/api\/v2\/transactions\/\{id\}\/offers$/],
     ['shipping_extension', /^(POST|PUT|PATCH)$/, /extend|extension|deadline|postpone|prolong/i],
     ['order_cancel', /^(POST|PUT|PATCH)$/, /cancel/i],
     ['feedback_send', /^(POST|PUT)$/, /feedback/i],
@@ -488,7 +529,7 @@
     if (all['x-csrf-token']) memory.csrf = all['x-csrf-token']
     if (all['x-anon-id']) memory.anon = all['x-anon-id']
     if (!learning) return
-    const path = url.pathname.replace(/\/\d+(?=\/|$)/g, '/{id}'), m = method.toUpperCase()
+    const path = url.pathname.replace(/\/offer_requests\/\d+(?=\/|$)/g, '/offer_requests/{offer_id}').replace(/\/\d+(?=\/|$)/g, '/{id}'), m = method.toUpperCase()
     const kind = RULES.find(([, mm, p]) => mm.test(m) && p.test(path))?.[0] || null
     const recipe = {method: m, path, status: response.status,
       query: Object.fromEntries([...url.searchParams].filter(([k, v]) => !/^(page|per_page|time|search_session_id)$/.test(k) && v.length <= 40 && !/^\d{6,}$/.test(v))),
@@ -558,5 +599,5 @@
   installWrappers()
   globalThis.__svAgent = {version: 4}
   // Pour les tests : fonctions pures.
-  globalThis.__svAgentTest = {fillItem, wardrobeItem, orderRow, shape, fillShape, hiddenFlag, messageRow, conversationRow}
+  globalThis.__svAgentTest = {fillItem, wardrobeItem, orderRow, shape, fillShape, hiddenFlag, messageRow, conversationRow, notificationLike, pendingOffers, offerAllowed}
 })()

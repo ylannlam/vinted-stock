@@ -28,9 +28,9 @@ export const jitter=(min,max,rand=Math.random)=>Math.round(minutes(min+(max-min)
 // Lectures périodiques à programmer pour ce compte, selon les fonctions actives et la dernière lecture.
 export function dueScans(settings,last={},now=Date.now()){
   const f=settings.features
-  const every={scan_wardrobe:120,sync_orders:30,scan_likes:20,sync_inbox:settings.messaging?.sync_minutes||5}
+  const every={scan_wardrobe:120,sync_orders:30,scan_likes:2,sync_inbox:settings.messaging?.sync_minutes||1}
   const o=settings.order_flow||{},flow=!!(o.confirm?.enabled||o.extension?.enabled||o.cancel?.enabled||o.pickup?.enabled||o.review?.enabled||o.delete_sold)
-  const want={scan_wardrobe:f.unmask||f.pricing||f.dressing,sync_orders:f.orders||f.labels||f.sales||flow,scan_likes:f.likes,sync_inbox:f.inbox||f.ai}
+  const want={scan_wardrobe:f.unmask||f.pricing||f.dressing,sync_orders:f.orders||f.labels||f.sales||flow,scan_likes:f.likes,sync_inbox:f.inbox||f.ai||settings.messaging?.offers?.enabled}
   return Object.entries(want).filter(([kind,on])=>on&&(!last[kind]||Date.parse(last[kind])<now-minutes(every[kind]))).map(([kind])=>kind)
 }
 export const SCANS=['scan_wardrobe','sync_orders','scan_likes','sync_inbox']
@@ -165,7 +165,8 @@ async function taskBundle(db,task,settings){
     bundle.listing={fields:draft.fields,live:task.payload.live!==false&&draft.dotb_publish!==false,photos:signed.map(s=>s.signedUrl).filter(Boolean)}
   }
   if(task.kind==='like_message')bundle.payload=await (await import('./ylavint-flows.js')).likePayload(db,task,settings)
-  if(task.kind==='sync_inbox')bundle.payload={...task.payload,known:await (await import('./ylavint.js')).knownConversations(db,task.account_id)}
+  if(task.kind==='sync_inbox')bundle.payload={...task.payload,known:task.payload?.force_details?{}:await (await import('./ylavint.js')).knownConversations(db,task.account_id)}
+  if(task.kind==='accept_offer')bundle.payload={...task.payload,offer_settings:settings.messaging.offers}
   if(task.kind==='sync_orders'){
     const known=check(await db.from('vinted_agent_orders').select('transaction_id,item_ids').eq('account_id',task.account_id).order('first_seen_at',{ascending:false}).limit(60))
     bundle.payload={...task.payload,detailed:known.filter(o=>o.item_ids?.length).map(o=>o.transaction_id)}
@@ -199,13 +200,15 @@ export async function agentPoll(db,key,body,now=Date.now()){
     const recent=check(await db.from('vinted_agent_tasks').select('kind,created_at').eq('account_id',account.id).in('kind',SCANS).neq('state','cancelled').order('created_at',{ascending:false}).limit(40))
     const last={};for(const t of recent)last[t.kind]??=t.created_at
     const can=await learned(db),due=dueScans(settings,last,now).filter(kind=>ready(kind,can))
-    if(due.length)await enqueue(db,due.map(kind=>({account_id:account.id,kind,dedupe_key:`${kind}:${account.id}`})))
+    if(due.length)await enqueue(db,due.map(kind=>({account_id:account.id,kind,priority:kind==='sync_inbox'?4:0,dedupe_key:`${kind}:${account.id}`})))
   }
-  const claimed=check(await db.rpc('claim_vinted_agent_task',{p_account:account.id}))
-  const extra=await (await import('./ylavint.js')).pollExtras(db,account,settings,{paused:row.paused}).catch(e=>{console.error('ylavint_poll_extra_failed',{code:e.code||e.status||'unknown'});return {}})
+  let claimed=check(await db.rpc('claim_vinted_agent_task',{p_account:account.id}))
+  const extra=await (await import('./ylavint.js')).pollExtras(db,account,settings,{paused:row.paused,draft:claimed?.state!=='task'}).catch(e=>{console.error('ylavint_poll_extra_failed',{code:e.code||e.status||'unknown'});return {}})
+  if(claimed?.state==='idle'&&extra.ai==='queued')claimed=check(await db.rpc('claim_vinted_agent_task',{p_account:account.id}))
   // Des messages attendent l'écart entre deux envois : on repasse vite pour tenir le délai réglé (30 à 45 s par défaut).
-  const waiting=claimed?.state==='idle'?(await db.from('vinted_agent_tasks').select('id',{count:'exact',head:true}).eq('account_id',account.id).eq('state','queued').in('kind',['reply_message','like_message','order_message']).lte('not_before',new Date(now).toISOString())).count||0:0
-  const idleWait=waiting?Math.max(10,Math.min(30,Math.round((settings.messaging.action_gap_min||30)/3))):settings.features.inbox||settings.features.ai?60:120
+  const nextMessage=claimed?.state==='idle'?check(await db.from('vinted_agent_tasks').select('not_before').eq('account_id',account.id).eq('state','queued').in('kind',['reply_message','like_message','order_message','accept_offer']).order('not_before',{ascending:true}).limit(1))[0]:null
+  const dueIn=nextMessage?Math.ceil((Date.parse(nextMessage.not_before)-Date.now())/1000):null
+  const idleWait=nextMessage?(dueIn>0?Math.max(1,Math.min(30,dueIn)):Math.max(5,Math.min(15,Math.round((settings.messaging.action_gap_min||30)/3)))):settings.features.inbox||settings.features.ai||settings.messaging.offers.enabled?30:120
   if(claimed?.state!=='task')return {state:claimed?.state||'idle',reason:claimed?.reason||null,account:account.login,...extra,wait_seconds:{paused:600,disabled:1800,busy:45}[claimed?.state]||idleWait}
   const bundle=await taskBundle(db,claimed.task,settings)
   if(bundle.missing.length){
@@ -263,6 +266,10 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
   if(task.kind==='publish_item')summary=await applyPublish(db,task,body.result)
   if(task.kind==='sync_inbox')summary=await (await import('./ylavint.js')).applyInbox(db,task,body.result,{member,settings,now})
   if(task.kind==='reply_message')summary=await (await import('./ylavint.js')).applyReply(db,task,body.result,{now})
+  if(task.kind==='accept_offer'){
+    if(!body.result?.skipped&&(body.result?.accepted!==true||String(body.result.offer_id)!==String(task.payload.offer?.id)))throw new AppError('Résultat d’offre invalide.')
+    summary={message:body.result.skipped?`Offre non acceptée : ${text(body.result.skipped,150)}`:`Offre acceptée à ${Number(task.payload.offer.price).toFixed(2).replace('.',',')} €.`}
+  }
   if(task.kind==='like_message'){
     summary=await (await import('./ylavint-flows.js')).likeDone(db,task,body.result,settings,{now,rand})
     if(!summary.skipped)await (await import('./ylavint.js')).recordLikeMessage(db,{...task,payload:{...task.payload,message:body.result?.message||null}},body.result,{now}).catch(()=>null)
@@ -414,11 +421,19 @@ export async function handleAgent(req,{db,user}){
     if(!account)throw new AppError('Choisis un compte.')
     const exists=check(await db.from('publication_accounts').select('id').eq('id',account).maybeSingle());if(!exists)throw new AppError('Compte introuvable.',404)
     const settings=normalizeSettings(body.settings||{}),enabled=body.enabled===true
-    const current=check(await db.from('vinted_agent_settings').select('version').eq('account_id',account).maybeSingle())
+    if(settings.messaging.offers.enabled){
+      const capability=await db.rpc('ylavint_offers_ready')
+      if(capability.error||capability.data!==true)throw new AppError('L’acceptation des offres attend encore l’activation de la mise à jour.',409)
+    }
+    const current=check(await db.from('vinted_agent_settings').select('version,messaging').eq('account_id',account).maybeSingle())
     if(current&&body.version!==current.version)throw new AppError('Ces réglages viennent d’être modifiés. Actualise avant d’enregistrer.',409)
     const row={account_id:account,enabled,...settings,updated_at:new Date().toISOString(),updated_by:user.id,version:(current?.version||0)+1}
     if(current)check(await db.from('vinted_agent_settings').update(row).eq('account_id',account).eq('version',current.version))
     else check(await db.from('vinted_agent_settings').insert(row))
+    if(enabled&&settings.messaging.offers.enabled&&!current?.messaging?.offers?.enabled){
+      await enqueue(db,[{account_id:account,kind:'sync_inbox',priority:4,dedupe_key:`sync_inbox:${account}`,payload:{force_details:true}}])
+      check(await db.from('vinted_agent_tasks').update({payload:{force_details:true}}).eq('account_id',account).eq('kind','sync_inbox').eq('state','queued'))
+    }
     await agentLog(db,{account_id:account,event:'settings',message:enabled?'Réglages de l’agent enregistrés (agent actif).':'Réglages enregistrés (agent arrêté).'})
     return {saved:true,version:row.version}
   }

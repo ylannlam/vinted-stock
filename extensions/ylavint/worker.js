@@ -8,7 +8,7 @@ const get = async key => (await chrome.storage.local.get(key))[key]
 const set = values => chrome.storage.local.set(values)
 const schedule = () => {
   chrome.alarms.create('watch', {delayInMinutes: 2, periodInMinutes: WATCH_EVERY})
-  chrome.alarms.create('agent', {delayInMinutes: 1, periodInMinutes: 1})
+  chrome.alarms.create('agent', {delayInMinutes: 0.5, periodInMinutes: 0.5})
 }
 const bridgeOn = async () => (await get('bridge')) !== false
 // Badge de l'icône : messages non lus, pause, Bridge coupé.
@@ -46,8 +46,8 @@ chrome.alarms.onAlarm.addListener(async alarm => {
     await set({check_tab: tab.id})
     setTimeout(() => chrome.tabs.remove(tab.id).catch(() => {}), 60000)
   }
-  // En cas d'erreur du site : nouvel essai dans 10 min seulement.
-  if (alarm.name === 'agent') tick().catch(e => set({agent: {...(agentState || {}), state: 'error', message: e.message || 'Site injoignable', at: Date.now()}, agent_next: Date.now() + 600000}))
+  // Un échec temporaire retente après une minute, sans bloquer la file pendant dix minutes.
+  if (alarm.name === 'agent') tick().catch(() => {})
 })
 async function report(o) {
   const last = (await get('last')) || {}
@@ -62,6 +62,23 @@ async function report(o) {
 
 // ---------- Agent ----------
 let agentState = null, busyUntil = 0
+let ticking = false, wakeTimer = null
+async function tick() {
+  if (ticking) return
+  ticking = true
+  try { await tickWork() }
+  catch (e) {
+    await set({agent:{...(agentState||{}),state:'error',message:e.message||'Site injoignable',at:Date.now()},agent_next:Date.now()+60000})
+    throw e
+  } finally {
+    ticking = false
+    clearTimeout(wakeTimer)
+    if (await bridgeOn()) {
+      const next = Number(await get('agent_next')) || Date.now()+30000
+      wakeTimer = setTimeout(() => tick().catch(() => {}), Math.max(1000,next-Date.now()))
+    }
+  }
+}
 // Compte connecté : lu dans la page ; sur les pages qui n'en portent pas les données (messagerie, commandes…),
 // on reprend le dernier compte lu dans ce profil (un profil AdsPower = un compte Vinted).
 async function identity(tabId) {
@@ -77,29 +94,29 @@ async function vintedTab() {
   const checkTab = await get('check_tab')
   return tabs.find(t => t.status === 'complete' && t.id !== checkTab && !t.discarded) || null
 }
-async function tick() {
+async function tickWork() {
   if (!(await bridgeOn())) { agentState = {state: 'off', message: 'Bridge coupé dans ce profil.', at: Date.now()}; return set({agent: agentState}) }
   if (Date.now() < busyUntil) return
   const next = (await get('agent_next')) || 0
   if (Date.now() < next) return
   const tab = await vintedTab()
-  if (!tab) { agentState = {state: 'no_tab', message: 'Ouvre un onglet Vinted dans ce profil.', at: Date.now()}; return set({agent: agentState}) }
+  if (!tab) { agentState = {state: 'no_tab', message: 'Ouvre un onglet Vinted dans ce profil.', at: Date.now()}; return set({agent: agentState,agent_next:Date.now()+30000}) }
   const who = await identity(tab.id)
-  if (!who?.member_id) { agentState = {state: 'logged_out', message: 'Compte Vinted non connecté dans ce profil.', at: Date.now()}; return set({agent: agentState}) }
-  if (who.status !== 'ok') { agentState = {state: 'paused', message: 'Alerte Vinted sur le compte : agent arrêté.', login: who.login, at: Date.now()}; return set({agent: agentState}) }
+  if (!who?.member_id) { agentState = {state: 'logged_out', message: 'Compte Vinted non connecté dans ce profil.', at: Date.now()}; return set({agent: agentState,agent_next:Date.now()+30000}) }
+  if (who.status !== 'ok') { agentState = {state: 'paused', message: 'Alerte Vinted sur le compte : agent arrêté.', login: who.login, at: Date.now()}; return set({agent: agentState,agent_next:Date.now()+60000}) }
   busyUntil = Date.now() + 200000
   try {
     const r = await site('agent_poll', {member_id: who.member_id, login: who.login})
     agentState = {state: r.state, message: r.reason || r.message || null, login: r.account || who.login, at: Date.now(),
       unread: Number.isFinite(r.unread) ? r.unread : agentState?.unread || 0, features: r.features || agentState?.features || []}
-    await set({agent: agentState, agent_next: Date.now() + (r.wait_seconds || 60) * 1000 - 5000})
+    await set({agent: agentState, agent_next: Date.now() + (r.wait_seconds || 30) * 1000})
     if (r.state !== 'task' || !r.task) return
     const task = {...r.task, member_id: who.member_id}
     await set({agent: {...agentState, task: task.kind}})
     const outcome = await chrome.tabs.sendMessage(tab.id, {type: 'run', task}).catch(e => ({ok: false, code: 'failed', error: e.message || 'Onglet Vinted fermé.'}))
     const saved = await site('agent_result', {task_id: task.id, lease: task.lease, member_id: who.member_id, ...outcome})
     await journal({level: outcome.ok ? 'info' : 'warn', text: outcome.ok ? (saved.message || `${task.kind} : terminé`) : `${task.kind} : ${outcome.error || outcome.code}`})
-    await set({agent: {...agentState, task: null, at: Date.now()}, agent_next: Date.now() + 15000})
+    await set({agent: {...agentState, task: null, at: Date.now()}, agent_next: Date.now() + 1000})
   } finally { busyUntil = 0 }
 }
 
@@ -134,7 +151,10 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     ;(async () => {
       const who = message.member_id ? {member_id: message.member_id, login: message.login} : await identity(sender.tab.id)
       if (!who?.member_id) return reply({error: 'Compte Vinted pas encore reconnu : ouvre ton profil Vinted une fois dans ce profil AdsPower.'})
-      return site('agent_self', {op: message.op, payload: message.payload || {}, member_id: who.member_id, login: who.login}).then(reply, e => reply({error: e.message || 'Site injoignable.'}))
+      return site('agent_self', {op: message.op, payload: message.payload || {}, member_id: who.member_id, login: who.login}).then(async result => {
+        reply(result)
+        if (['save_settings','resume','enqueue'].includes(message.op)) { await set({agent_next:0}); tick().catch(() => {}) }
+      }, e => reply({error: e.message || 'Site injoignable.'}))
     })()
     return true
   }

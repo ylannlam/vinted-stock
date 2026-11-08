@@ -52,10 +52,15 @@ function AccountSettings({account,defaults,onSave,busy,only}){
    {feats.some(([k])=>k==='sales')&&<p className="mt-2 text-xs text-zinc-500">« Ventes → onglet Ventes » remplace le webhook Dotb pour ce compte : coupe d’abord Dotb sur ce compte. Une vente déjà reçue de Dotb n’est jamais dupliquée.</p>}
   </fieldset>
   {show('messaging')&&<fieldset className="grid grid-cols-2 gap-3 sm:grid-cols-3"><Legend>Messagerie</Legend>
-   <Num label="Relire toutes les" value={form.messaging.sync_minutes} min={2} max={120} suffix="min" onChange={v=>set('messaging','sync_minutes',v)}/>
+   <Num label="Relire toutes les" value={form.messaging.sync_minutes} min={1} max={120} suffix="min" onChange={v=>set('messaging','sync_minutes',v)}/>
    <Num label="Réponses / jour" value={form.messaging.reply_per_day} max={300} onChange={v=>set('messaging','reply_per_day',v)}/>
    <Num label="Délai entre deux envois : min" value={form.messaging.action_gap_min} min={5} max={3600} suffix="s" onChange={v=>set('messaging','action_gap_min',v)}/>
    <Num label="Délai entre deux envois : max" value={form.messaging.action_gap_max} min={5} max={3600} suffix="s" onChange={v=>set('messaging','action_gap_max',v)}/>
+  </fieldset>}
+  {show('messaging')&&<fieldset className="space-y-3"><Legend>Acceptation automatique des offres</Legend>
+   <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!form.messaging.offers?.enabled} onChange={e=>set('messaging','offers',{...defaults.messaging.offers,...form.messaging.offers,enabled:e.target.checked})}/> Accepter les offres qui atteignent mes seuils</label>
+   <div className="grid grid-cols-2 gap-3">{[['single_discount','Remise maximale — article seul',0,80,'%'],['bundle_discount','Remise maximale — lot',0,80,'%'],['max_per_buyer','Offres par acheteur',1,100,''],['period_days','Sur une période de',1,30,'jours']].map(([key,label,min,max,suffix])=><Num key={key} label={label} value={form.messaging.offers?.[key]??defaults.messaging.offers?.[key]} min={min} max={max} suffix={suffix} onChange={v=>set('messaging','offers',{...defaults.messaging.offers,...form.messaging.offers,[key]:v})}/>)}</div>
+   <p className="text-xs text-zinc-400">Acceptation réelle sur Vinted, sans message. Prix et statut revérifiés avant l’action. Les offres sous le seuil et les négociations écrites restent à traiter par toi. Nécessite YlaVint 3.5.0.</p>
   </fieldset>}
   {show('likes')&&<LikesSettings likes={form.likes} onChange={likes=>setForm(f=>({...f,likes}))} gap={form.messaging} onGap={(k,v)=>set('messaging',k,v)}/>}
   {show('order_flow')&&<FlowSettings flow={form.order_flow} onChange={order_flow=>setForm(f=>({...f,order_flow}))} features={form.features} onFeature={(k,v)=>set('features',k,v)}/>}

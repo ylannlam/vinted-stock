@@ -81,6 +81,19 @@ const ACC='11111111-1111-4111-8111-111111111111',USER='22222222-2222-4222-8222-2
 const base=(extra={})=>({publication_accounts:[{id:ACC,login:'compte_demo',vinted_id:'3206068112'}],vinted_agent_settings:[{account_id:ACC,enabled:true,paused:false,features:{inbox:true,ai:true,orders:true,sales:true},limits:{},unmask:{},pricing:{},likes:{},messaging:{},version:1}],
   vinted_agent_tasks:[],vinted_agent_log:[],vinted_agent_recipes:[],vinted_agent_listings:[],vinted_agent_orders:[],vinted_agent_contacts:[],listing_drafts:[],ylavint_conversations:[],ylavint_messages:[],ylavint_config:[],sales_orders:[],sales_lines:[],publication_items:[],ai_usage:[],...extra})
 const settings=db=>effectiveSettings(db.state.vinted_agent_settings[0])
+test('poll wakes for a scheduled reply instead of adding a minute, and sends ready work before drafting',async()=>{
+ const state=base(),db=fakeDb(state),now=Date.now()
+ state.vinted_agent_settings[0].features={inbox:true,ai:true}
+ state.vinted_agent_tasks.push({id:'scan',account_id:ACC,kind:'sync_inbox',state:'done',created_at:new Date(now).toISOString()})
+ state.vinted_agent_tasks.push({id:crypto.randomUUID(),account_id:ACC,kind:'reply_message',state:'queued',priority:5,writes:true,not_before:new Date(now+20000).toISOString(),payload:{conversation_id:'9001',body:'Bonjour'}})
+ const waiting=await agentPoll(db,{}, {member_id:'3206068112'},now)
+ assert.equal(waiting.state,'idle');assert.ok(waiting.wait_seconds>0&&waiting.wait_seconds<=20)
+ state.vinted_agent_tasks[1].not_before=new Date(now-1000).toISOString()
+ state.ylavint_conversations.push({account_id:ACC,conversation_id:'9002',ai_state:'pending',last_message_at:new Date(now).toISOString()})
+ state.ylavint_config.push({key:'ai',value:{enabled:true,mode:'auto'}})
+ const ready=await agentPoll(db,{}, {member_id:'3206068112'},now)
+ assert.equal(ready.task.kind,'reply_message');assert.equal(state.ylavint_conversations[0].ai_state,'pending')
+})
 const recent=(min=5)=>new Date(Date.now()-min*60000).toISOString()
 const convo=(extra={})=>({id:'9001',other:{id:'77',login:'acheteuse',photo:'https://images1.vinted.net/a.jpg'},unread:true,updated_at:'2026-11-07T15:00:00+01:00',
   item:{id:'5551',title:'Robe satin noire',price:{amount:'25.0'},photo:'https://evil.example/x.jpg'},transaction:null,allow_reply:true,

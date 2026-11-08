@@ -116,10 +116,10 @@
     if (!S.bridge) return 'Bridge coupé'
     if (!s?.enabled) return 'Compte non activé'
     if (s.paused) return 'En pause'
-    return features.some(f => s.features[f]) ? 'En attente…' : 'Arrêté'
+    return features.some(f => s.features[f]) || features.includes('ai') && s.messaging?.offers?.enabled ? 'En attente…' : 'Arrêté'
   }
   function card(title, desc, features, chips, extraTag = 'live') {
-    const running = features.some(f => on(f)) && !acc()?.settings?.paused
+    const running = (features.some(f => on(f)) || features.includes('ai') && settings().enabled && settings().messaging?.offers?.enabled) && !acc()?.settings?.paused
     return `<div class="card"><h3>${esc(title)}<span class="tag ${running ? 'live' : ''}">${running ? esc(extraTag) : 'arrêt'}</span></h3><p>${esc(desc)}</p>
       <div class="state">${esc(stateOf(features))}</div><div class="chips">${chips.map(c => `<span class="chip">${esc(c)}</span>`).join('')}</div>
       <button class="btn ${running ? '' : 'gray'}" data-toggle="${features.join(',')}" ${S.busy || !S.data ? 'disabled' : ''}>${running ? '❚❚ Pause' : '▶ Activer'}</button></div>`
@@ -128,8 +128,8 @@
   function pageAuto() {
     const d = S.data, s = settings()
     if (!d) return `<p class="note">${S.error ? '' : 'Chargement…'}</p>`
-    const log = (d.log || []).filter(l => S.tab === 'likes' ? /like/i.test(l.event + l.message) : S.tab === 'agent' ? /ai|reply|réponse|message/i.test(l.event + l.message) : /order|vente|label|bordereau/i.test(l.event + l.message))
-    const tasks = (d.tasks || []).filter(t => S.tab === 'likes' ? ['scan_likes', 'like_message'].includes(t.kind) : S.tab === 'agent' ? ['sync_inbox', 'reply_message'].includes(t.kind) : ['sync_orders', 'fetch_label'].includes(t.kind))
+    const log = (d.log || []).filter(l => S.tab === 'likes' ? /like/i.test(l.event + l.message) : S.tab === 'agent' ? /ai|reply|réponse|message|offre/i.test(l.event + l.message) : /order|vente|label|bordereau/i.test(l.event + l.message))
+    const tasks = (d.tasks || []).filter(t => S.tab === 'likes' ? ['scan_likes', 'like_message'].includes(t.kind) : S.tab === 'agent' ? ['sync_inbox', 'reply_message','accept_offer'].includes(t.kind) : ['sync_orders', 'fetch_label'].includes(t.kind))
     const rows = [...tasks.map(t => ({at: t.finished_at || t.started_at || t.not_before, type: d.kinds?.[t.kind]?.label || t.kind, tone: t.state === 'done' ? 'p-green' : t.state === 'failed' ? 'p-red' : 'p-amber', detail: t.error || ({queued: 'en attente', running: 'en cours', done: 'terminée', failed: 'échec', cancelled: 'annulée'})[t.state]})),
       ...log.map(l => ({at: l.created_at, type: l.event, tone: l.level === 'warn' ? 'p-amber' : l.level === 'error' ? 'p-red' : 'p-blue', detail: l.message}))].sort((a, b) => Date.parse(b.at || 0) - Date.parse(a.at || 0)).slice(0, 60)
     return `<div class="info">ⓘ Les automatisations tournent depuis ce profil AdsPower, dans les plafonds du compte. Si le profil est fermé, elles attendent sa réouverture.</div>
@@ -204,11 +204,21 @@
         <p class="note">Chaque message (likes, réponses, commandes) part après un temps tiré au hasard dans cette plage. Pas de limite par jour.</p></div>`)
   }
   function pageAgent() {
-    const s = settings(), m = s.messaging || S.data.defaults.messaging
-    return settingsForm('Smart Agent', 'Messagerie centralisée et agent IA pour ce compte. Les consignes de l’agent se règlent sur le site (Smart Agent).', `
-      ${sw('features.inbox', s.features.inbox, 'Messagerie centralisée', 'Les conversations de ce compte arrivent sur ton site et ton téléphone')}
-      ${sw('features.ai', s.features.ai, 'Agent IA', `Agent ${S.data.ai?.enabled ? (S.data.ai.mode === 'auto' ? 'qui répond seul' : 'qui propose les réponses') : 'coupé sur le site'}`)}
-      <div class="grid2">${num('messaging', 'sync_minutes', 'Relire la messagerie toutes les (min)', m.sync_minutes)}${num('messaging', 'reply_per_day', 'Réponses par jour', m.reply_per_day)}</div>
+    if (!S.data) return '<p class="note">Chargement…</p>'
+    const s = draft(), m = s.messaging || (s.messaging = structuredClone(S.data.defaults.messaging))
+    const o = m.offers || (m.offers = {enabled:false,single_discount:20,bundle_discount:20,max_per_buyer:5,period_days:1})
+    return draftForm('Smart Agent', 'Réponses aux messages et acceptation des offres pour ce compte.', `
+      ${dsw('features.inbox', 'Messagerie centralisée', 'Les conversations de ce compte arrivent sur ton site et ton téléphone')}
+      ${dsw('features.ai', 'Agent IA', `Agent ${S.data.ai?.enabled ? (S.data.ai.mode === 'auto' ? 'qui répond seul' : 'qui propose les réponses') : 'coupé sur le site'}`)}
+      <div class="grid2"><div><label class="f">Relire la messagerie toutes les (min)</label>${dnum('messaging.sync_minutes','min="1" max="120"')}</div><div><label class="f">Réponses par jour</label>${dnum('messaging.reply_per_day','min="0" max="300"')}</div></div>
+      <div class="box"><h4>Acceptation automatique des offres</h4>
+        ${dsw('messaging.offers.enabled', 'Accepter les offres qui me conviennent', 'Accepte les offres formelles sur Vinted selon tes seuils, sans envoyer de message.')}
+        <label class="f">Remise maximale — article seul</label><div class="inline">${dnum('messaging.offers.single_discount','min="0" max="80" step="0.5"')} %</div>
+        <label class="f">Remise maximale — lot</label><div class="inline">${dnum('messaging.offers.bundle_discount','min="0" max="80" step="0.5"')} %</div>
+        <p class="note">Exemple sur un article à 50 € : acceptation à partir de ${(Math.ceil(5000*(1-o.single_discount/100))/100).toFixed(2).replace('.',',')} €. Le seuil n’est jamais arrondi vers le bas.</p>
+        <label class="f">Limite par acheteur</label><div class="inline">${dnum('messaging.offers.max_per_buyer','min="1" max="100"')} offres sur ${dnum('messaging.offers.period_days','min="1" max="30"')} jour(s)</div>
+        <p class="note">Le prix et le statut sont revérifiés avant chaque acceptation. Les offres sous le seuil et les négociations écrites restent à traiter par toi.</p>
+      </div>
       <p class="note" style="margin-top:12px"><a href="${SITE_URL}/ylavint#agent" target="_blank" rel="noopener">Ouvrir les consignes du Smart Agent ↗</a></p>`)
   }
   function pageFlow() {
@@ -334,9 +344,9 @@
     if ('savedraft' in d) { const s = draft()
       const r = await act('save_settings', {enabled: s.enabled, version: acc()?.settings?.version, settings: {features: s.features, limits: s.limits, unmask: s.unmask, pricing: s.pricing, likes: s.likes, messaging: s.messaging || S.data.defaults.messaging, order_flow: s.order_flow}}, 'Paramètres enregistrés.')
       if (r) { S.draft = null; render() } return }
-    if (d.toggle) { const fs = d.toggle.split(','), running = fs.some(on) && !acc()?.settings?.paused
+    if (d.toggle) { const fs = d.toggle.split(','), running = (fs.some(on) || fs.includes('ai') && settings().enabled && settings().messaging?.offers?.enabled) && !acc()?.settings?.paused
       if (acc()?.settings?.paused && !running) return act('resume', {}, 'YlaVint relancé sur ce compte.')
-      return saveSettings(s => { if (!running) s.enabled = true; for (const f of fs) s.features[f] = !running }, running ? 'Automatisation mise en pause.' : 'Automatisation activée.') }
+      return saveSettings(s => { if (!running) s.enabled = true; for (const f of fs) s.features[f] = !running; if (running && fs.includes('ai') && s.messaging?.offers) s.messaging.offers.enabled=false }, running ? 'Automatisation mise en pause.' : 'Automatisation activée.') }
     if ('save' in d) { const s = collect(); return act('save_settings', {enabled: s.enabled, version: acc()?.settings?.version, settings: {features: s.features, limits: s.limits, unmask: s.unmask, pricing: s.pricing, likes: s.likes, messaging: s.messaging || S.data.defaults.messaging, order_flow: s.order_flow || S.data.defaults.order_flow}}, 'Paramètres enregistrés.') }
     if (d.reload) { await act('enqueue', {kind: d.reload}, 'Lecture demandée : elle arrive dans quelques minutes.'); return }
     if (d.unmask) { await act('item_unmask', {item_id: d.unmask}, r => r.message || 'Démasquage demandé.'); return openPage('dressing') }

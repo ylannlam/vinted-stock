@@ -13,6 +13,7 @@ export const KINDS={
   publish_item:{writes:true,label:'Publication',needs:['photo_upload','item_create']},
   like_message:{writes:true,label:'Message après un like',needs:['conversation_create','message_send'],uses:['user_read','conversation_read']},
   reply_message:{writes:true,label:'Réponse à un acheteur',needs:['message_send']},
+  accept_offer:{writes:true,label:'Acceptation d’une offre',needs:['offer_accept','conversation_read']},
   order_message:{writes:true,label:'Message de commande',needs:['message_send']},
   order_extension:{writes:true,label:'Demande de délai',needs:['shipping_extension'],uses:['order_detail']},
   order_cancel:{writes:true,label:'Annulation de commande',needs:['order_cancel'],uses:['order_detail']},
@@ -25,7 +26,7 @@ export const OPTIONAL={like_message:['offer_send']}
 export const DEFAULT_RECIPES={
   wardrobe:{method:'GET',path:'/api/v2/wardrobe/{id}/items',query:{order:'relevance'},headers:{},body:'none'},
   orders_list:{method:'GET',path:'/api/v2/my_orders',query:{type:'sold',status:'all'},headers:{},body:'none'},
-  likes_list:{method:'GET',path:'/api/v2/notifications',query:{},headers:{},body:'none'},
+  likes_list:{method:'GET',path:'/inbox-notifications/v1/notifications',origin:'https://api.vinted.fr',query:{},headers:{platform:'web','x-next-app':'marketplace-web',locale:'fr-FR'},body:'none'},
   inbox_list:{method:'GET',path:'/api/v2/inbox',query:{},headers:{},body:'none'},
   conversation_read:{method:'GET',path:'/api/v2/conversations/{id}',query:{},headers:{},body:'none'},
   user_read:{method:'GET',path:'/api/v2/users/{id}',query:{},headers:{},body:'none'},
@@ -33,6 +34,7 @@ export const DEFAULT_RECIPES={
   conversation_create:{method:'POST',path:'/api/v2/conversations',query:{},headers:{},body:'json',template:{initiator:'seller_enters_notification',item_id:0,opposite_user_id:0}},
   message_send:{method:'POST',path:'/api/v2/conversations/{id}/replies',query:{},headers:{},body:'json',template:{reply:{body:'',photo_temp_uuids:null,is_personal_data_sharing_check_skipped:false}}},
   offer_send:{method:'POST',path:'/api/v2/transactions/{id}/offers',query:{},headers:{},body:'json',template:{offer:{price:'',currency:'EUR'}},id_from:'transaction'},
+  offer_accept:{method:'PUT',path:'/api/v2/transactions/{id}/offer_requests/{offer_id}/accept',query:{},headers:{},body:'none'},
   item_delete:{method:'POST',path:'/api/v2/items/{id}/delete',query:{},headers:{},body:'none',id_from:'item'},
   order_detail:{method:'GET',path:'/api/v2/transactions/{id}',query:{},headers:{},body:'none'},
 }
@@ -53,6 +55,7 @@ export const RECIPES={
   message_send:{label:'Envoi d’un message',how:'Envoie un message dans une conversation.'},
   user_read:{label:'Profil d’un membre',how:'Ouvre le profil d’un membre.'},
   offer_send:{label:'Envoi d’une offre',how:'Dans une conversation avec un membre qui a liké, clique sur Faire une offre et envoie-la.'},
+  offer_accept:{label:'Acceptation d’une offre',how:'Accepte une offre depuis une conversation Vinted.'},
   shipping_extension:{label:'Demande de délai d’envoi',how:'Dans une vente à expédier, demande un délai supplémentaire à l’acheteur.'},
   order_cancel:{label:'Annulation d’une vente',how:'Annule une vente à la main (choisis un motif qui correspond à la réalité).'},
   feedback_send:{label:'Évaluation d’un acheteur',how:'Laisse une évaluation à un acheteur sur une vente terminée.'},
@@ -72,7 +75,8 @@ export const DEFAULTS={
     cancel:{enabled:false,minutes_before:30},
     pickup:{enabled:false,first_days:1,first:'Bonjour @username, ton colis est arrivé au point relais :)',second_days:3,second:''},
     review:{enabled:false,after_days:1,text:'Parfait, merci !',end_message:''},delete_sold:false},
-  messaging:{sync_minutes:5,reply_per_day:80,reply_gap_seconds:40,action_gap_min:30,action_gap_max:45},
+  messaging:{sync_minutes:1,reply_per_day:80,reply_gap_seconds:40,action_gap_min:30,action_gap_max:45,
+    offers:{enabled:false,single_discount:20,bundle_discount:20,max_per_buyer:5,period_days:1}},
 }
 const BOUNDS={
   limits:{writes_per_day:[0,200],unmask_item_per_day:[0,100],reprice_item_per_day:[0,100],publish_item_per_day:[0,100],like_message_per_day:[0,1000000],
@@ -80,7 +84,7 @@ const BOUNDS={
   unmask:{price_drop:[0,10],max_drop:[0,50],floor:[1,1000],max_repairs:[0,10],wait_hours:[1,168]},
   pricing:{after_days:[1,90],step:[0.5,20],every_days:[1,60],max_drop:[0,200],floor:[1,1000]},
   likes:{wait_minutes:[0,1440],cooldown_days:[0,365]},
-  messaging:{sync_minutes:[2,120],reply_per_day:[0,300],reply_gap_seconds:[10,600],action_gap_min:[5,3600],action_gap_max:[5,3600]},
+  messaging:{sync_minutes:[1,120],reply_per_day:[0,300],reply_gap_seconds:[10,600],action_gap_min:[5,3600],action_gap_max:[5,3600]},
 }
 const LABELS={writes_per_day:'modifications par jour',min_gap_minutes:'écart entre deux modifications',from_hour:'heure de début',to_hour:'heure de fin',
   price_drop:'baisse par réparation',max_drop:'baisse maximale',floor:'prix plancher',max_repairs:'réparations maximales',wait_hours:'attente entre deux réparations',
@@ -98,6 +102,7 @@ export function normalizeSettings(input={}){
     out[group][key]=['price_drop','max_drop','floor','step'].includes(key)?Math.round(n*100)/100:Math.round(n)
   }
   normalizeLikes(input.likes||{},out.likes)
+  out.messaging.offers=normalizeOffers(input.messaging?.offers)
   out.order_flow=normalizeFlow(input.order_flow||{})
   if(out.messaging.action_gap_max<out.messaging.action_gap_min)throw new AppError('Le délai maximum entre deux envois doit être au moins égal au minimum.')
   if(out.unmask.floor<1||out.pricing.floor<1)throw new AppError('Le prix plancher doit être d’au moins 1 €.')
@@ -120,6 +125,24 @@ const num=(v,min,max,label,fallback,{round=true}={})=>{
   return round?Math.round(n):Math.round(n*100)/100
 }
 const bool=(v,fallback)=>v===undefined?fallback:v===true
+export function normalizeOffers(input={}){
+  const d=DEFAULTS.messaging.offers
+  if(!input||typeof input!=='object'||Array.isArray(input))throw new AppError('Réglages des offres invalides.')
+  if(input.enabled!==undefined&&typeof input.enabled!=='boolean')throw new AppError('Activation des offres invalide.')
+  return {enabled:input.enabled===true,
+    single_discount:num(input.single_discount,0,80,'la remise article seul (%)',d.single_discount,{round:false}),
+    bundle_discount:num(input.bundle_discount,0,80,'la remise lot (%)',d.bundle_discount,{round:false}),
+    max_per_buyer:num(input.max_per_buyer,1,100,'les offres par acheteur',d.max_per_buyer),
+    period_days:num(input.period_days,1,30,'la période des offres (jours)',d.period_days)}
+}
+export function acceptableOffer(o,config){
+  if(!config?.enabled||!o||o.currency!=='EUR'||typeof o.is_bundle!=='boolean')return false
+  const price=Number(o.price),original=Number(o.original_price)
+  if(!Number.isFinite(price)||!Number.isFinite(original)||price<1||original<1||price>original)return false
+  const pct=o.is_bundle?config.bundle_discount:config.single_discount
+  if(!Number.isFinite(pct)||pct<0||pct>80)return false
+  return Math.round(price*100)>=Math.ceil(Math.round(original*100)*(10000-Math.round(pct*100))/10000)
+}
 function discount(input={},label){
   const mode=['none','simple'].includes(input.mode)?input.mode:'none',unit=input.unit==='pct'?'pct':'eur'
   return {mode,unit,amount:num(input.amount,0.5,unit==='pct'?80:200,`${label} (montant de la réduction)`,3,{round:false}),rounding:['none','half','euro'].includes(input.rounding)?input.rounding:'none'}
