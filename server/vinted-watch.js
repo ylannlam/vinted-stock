@@ -10,7 +10,7 @@ import {zipFiles} from '../src/lib/zip.js'
 const check=r=>{if(r.error)throw r.error;return r.data}
 const hash=value=>createHash('sha256').update(value).digest('hex')
 // Depuis la version 2, l'extension téléchargée est l'agent complet (veille du compte comprise).
-export const WATCH_FILES=['manifest.json','read.js','content.js','page.js','worker.js','popup.html','popup.js','config.js','icons/16.png','icons/32.png','icons/48.png','icons/128.png']
+export const WATCH_FILES=['manifest.json','read.js','content.js','page.js','worker.js','popup.html','popup.js','config.js','overlay.js','icons/16.png','icons/32.png','icons/48.png','icons/128.png']
 export function newWatchToken(){const id=randomUUID(),token=`svwk_${id}.${randomBytes(32).toString('base64url')}`;return {id,token,token_hash:hash(token)}}
 export function readWatchToken(value){
   const m=typeof value==='string'&&value.match(/^Bearer (svwk_([0-9a-f-]{36})\.[A-Za-z0-9_-]{43})$/)

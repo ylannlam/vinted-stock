@@ -45,7 +45,7 @@ function fakeDb(state={}){
     }
     const q={select(_c,o={}){if(op!=='select')returning=true;head=!!o.head;count=!!o.count;return q},eq(k,v){filters.push(r=>String(r[k])===String(v));return q},neq(k,v){filters.push(r=>String(r[k])!==String(v));return q},
       in(k,v){filters.push(r=>v.map(String).includes(String(r[k])));return q},gte(k,v){filters.push(r=>r[k]&&r[k]>=v);return q},lt(k,v){filters.push(r=>r[k]<v);return q},
-      not(k,o,v){filters.push(r=>!(o==='is'&&v===null?r[k]==null:false));return q},or(expr){orFilter(expr);return q},
+      not(k,o,v){filters.push(r=>!(o==='is'&&v===null?r[k]==null:false));return q},is(k,v){filters.push(r=>v===null?r[k]==null:r[k]===v);return q},or(expr){orFilter(expr);return q},
       order(k,o={}){order={k,asc:o.ascending!==false};return q},limit(n){limit=n;return q},
       insert(v){op='insert';patch=v;return q},update(v){op='update';patch=v;return q},delete(){op='delete';return q},
       upsert(v,o={}){op='upsert';patch=v;conflict=(o.onConflict||'id').split(',');ignore=!!o.ignoreDuplicates;return q},
@@ -287,4 +287,19 @@ test('publishing from the listing studio goes through YlaVint only when the acco
   const t=db.state.vinted_agent_tasks[0];assert.equal(t.kind,'publish_item');assert.equal(t.payload.live,false)
   await assert.rejects(queueStudioPublish(db,{id:USER},row),/déjà/)
   assert.equal(DEFAULTS.features.inbox,false,'everything stays off until switched on')
+})
+
+test('the in-page panel only reads and changes the account logged in that profile',async()=>{
+  const {agentSelf}=await import('./ylavint.js')
+  const OTHER='44444444-4444-4444-8444-444444444444'
+  const db=fakeDb(base({publication_accounts:[{id:ACC,login:'compte_demo',vinted_id:'3206068112'},{id:OTHER,login:'autre',vinted_id:'999'}],
+    vinted_agent_log:[{id:1,account_id:ACC,level:'info',event:'x',message:'mien',created_at:new Date().toISOString()},{id:2,account_id:OTHER,level:'info',event:'x',message:'autre',created_at:new Date().toISOString()}]}))
+  const o=await agentSelf(db,'k',{op:'overview',member_id:'3206068112'})
+  assert.equal(o.account.id,ACC);assert.deepEqual(o.log.map(l=>l.message),['mien'])
+  await agentSelf(db,'k',{op:'save_settings',member_id:'3206068112',payload:{account_id:OTHER,enabled:true,version:1,settings:{features:{likes:true}}}})
+  assert.equal(db.state.vinted_agent_settings.find(s=>s.account_id===ACC).features.likes,true,'forced to the logged-in account')
+  assert.equal(db.state.vinted_agent_settings.some(s=>s.account_id===OTHER),false)
+  await assert.rejects(agentSelf(db,'k',{op:'pause_all',member_id:'3206068112'}),/refusée/)
+  await assert.rejects(agentSelf(db,'k',{op:'overview',member_id:'1'}),/pas encore connu/)
+  await assert.rejects(agentSelf(db,'k',{op:'enqueue',member_id:'3206068112',payload:{kind:'publish_item'}}),/inconnue/)
 })

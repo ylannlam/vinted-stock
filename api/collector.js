@@ -16,7 +16,7 @@ export default async function handler(req,res) {
     if(req.headers.authorization?.startsWith('Bearer svwk_')) {
       // Extension des profils AdsPower : veille du compte (bandeau Vinted) et, depuis la version 2, agent Vinted.
       const action=req.body?.action
-      if(req.method!=='POST'||!['watch_report','agent_poll','agent_result','agent_learn'].includes(action))throw new AppError('Action non autorisée pour cette extension.',403)
+      if(req.method!=='POST'||!['watch_report','agent_poll','agent_result','agent_learn','agent_self'].includes(action))throw new AppError('Action non autorisée pour cette extension.',403)
       const {authorizeWatch,watchReport,recordWatch}=await import('../server/vinted-watch.js')
       const {db,key}=await authorizeWatch(req)
       const agent=await import('../server/vinted-agent.js')
@@ -28,6 +28,7 @@ export default async function handler(req,res) {
       }
       if(action==='agent_poll')return res.json(await agent.agentPoll(db,key,req.body))
       if(action==='agent_result')return res.json(await agent.agentResult(db,key,req.body))
+      if(action==='agent_self')return res.json(await (await import('../server/ylavint.js')).agentSelf(db,key,req.body))
       return res.json(await agent.agentLearn(db,key,req.body))
     }
     if(req.headers.authorization?.startsWith('Bearer svpc_')) {

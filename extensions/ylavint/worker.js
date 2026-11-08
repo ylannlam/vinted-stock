@@ -93,6 +93,16 @@ async function tick() {
   } finally { busyUntil = 0 }
 }
 
+// Bridge du profil : allumé ou coupé depuis le popup ou le bouton YlaVint de la page.
+async function setBridge(on) {
+  await set({bridge: on, agent_next: 0})
+  await journal({level: on ? 'info' : 'warn', text: on ? 'Bridge YlaVint allumé.' : 'Bridge YlaVint coupé.'})
+  if (on) await tick().catch(() => {})
+  else await set({agent: {state: 'off', message: 'Bridge coupé dans ce profil.', at: Date.now()}})
+}
+// Panneau YlaVint dans la page : seules ces lectures et réglages du compte connecté passent par le site.
+const PANEL_OPS = new Set(['overview', 'wardrobe', 'sales', 'save_settings', 'pause', 'resume', 'enqueue', 'item_unmask', 'item_reprice'])
+
 // ---------- Messages des pages Vinted ----------
 const LABEL_TYPES = /pdf|octet-stream/
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
@@ -109,6 +119,13 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (message?.type === 'progress') { busyUntil = Math.max(busyUntil, Date.now() + 60000); return }
   if (message?.type === 'seen') { remember(message.kind, message.recipe); return }
   if (message?.type === 'fetch_bytes') { download(message.url).then(reply, e => reply({error: e.message})); return true }
+  if (message?.type === 'ylv_site') {
+    if (!PANEL_OPS.has(message.op) || !message.member_id) { reply({error: message.member_id ? 'Action refusée.' : 'Connecte-toi à Vinted dans ce profil.'}); return }
+    site('agent_self', {op: message.op, payload: message.payload || {}, member_id: message.member_id, login: message.login}).then(reply, e => reply({error: e.message || 'Site injoignable.'}))
+    return true
+  }
+  if (message?.type === 'ylv_bridge') { setBridge(message.on === true); return }
+  if (message?.type === 'ylv_open') { chrome.tabs.create({url: `${SITE}/ylavint#${String(message.section || 'accueil').replace(/[^a-z]/g, '')}`}); return }
 })
 // Téléchargement à la place de la page (photos Vinted, bordereau chez le transporteur) : images et PDF uniquement.
 async function download(url) {
@@ -161,15 +178,6 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     })()
     return true
   }
-  if (message?.type === 'set_bridge') {
-    (async () => {
-      await set({bridge: message.on === true, agent_next: 0})
-      await journal({level: message.on ? 'info' : 'warn', text: message.on ? 'Bridge YlaVint allumé.' : 'Bridge YlaVint coupé.'})
-      if (message.on) await tick().catch(() => {})
-      else await set({agent: {state: 'off', message: 'Bridge coupé dans ce profil.', at: Date.now()}})
-      reply({ok: true})
-    })()
-    return true
-  }
+  if (message?.type === 'set_bridge') { setBridge(message.on === true).then(() => reply({ok: true})); return true }
   if (message?.type === 'tick_now') { set({agent_next: 0}).then(() => tick()).then(() => reply({ok: true}), e => reply({ok: false, error: e.message})); return true }
 })

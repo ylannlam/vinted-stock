@@ -133,7 +133,7 @@ export async function pauseOnAlert(db,report){
   if(!account)return false
   return pauseAccount(db,account.id,report.message||'alerte Vinted sur le compte',{event:'alert',details:{status:report.status,until:report.until_date}})
 }
-async function accountFor(db,body){
+export async function accountFor(db,body){
   const member=vid(body?.member_id)
   if(!member)throw new AppError('Compte Vinted inconnu : ouvre une page Vinted connectée.')
   const account=check(await db.from('publication_accounts').select('id,login,vinted_id').eq('vinted_id',member).maybeSingle())
