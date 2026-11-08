@@ -29,8 +29,8 @@ async function mount(){
 }
 
 // Fake server: the same actions as /api/resources?scope=listings, nothing remote.
-function server({dotb=false,ylavint=false,slow=0}={}){
- const rows=new Map(),calls=[],live={now:0,max:0},settings={global:null,account:null,effective:{...DEFAULT_LISTING_SETTINGS,dotb,spacing_minutes:30,custom:false}}
+function server({dotb=false,ylavint=false,slow=0,publisher='ylavint',mode='live'}={}){
+ const rows=new Map(),calls=[],live={now:0,max:0},settings={global:null,account:null,effective:{...DEFAULT_LISTING_SETTINGS,dotb,spacing_minutes:30,custom:false,publisher,publish_mode:mode}}
  const expose=row=>structuredClone({...row,photos:row.photos.map(p=>({...p,url:`https://example.test/${p.path}`}))})
  const request=async(method,body,query='')=>{
   const q=new URLSearchParams(query),action=body?.action||q.get('action');calls.push({action,body:structuredClone(body)})
@@ -103,25 +103,9 @@ test('several articles are written at the same time, then published by hand line
   // Presets filled condition, parcel and Vinted size: all articles are ready.
   assert.match(rail('Prêtes'),/3$/)
   assert.match(article().querySelector('textarea.font-semibold').value,/taille M$/)
-  await ui.click('Publier à la main')
-  assert.ok(document.querySelector('section[aria-label="Publier sur Vinted"]'))
-  const copyTitle=[...document.querySelectorAll('section[aria-label="Publier sur Vinted"] li')].find(li=>li.textContent.includes('Titre')).querySelector('button:last-child')
-  await ui.act(async()=>copyTitle.click());await ui.act(()=>wait(10))
-  assert.ok(document.body.textContent.includes('Copié ✓'))
-  assert.ok(document.querySelector('button[aria-label="Titre : fait"]'),'copying ticks the line')
-  const link=[...article().querySelectorAll('input')].find(i=>i.getAttribute('aria-label')?.startsWith('Lien Vinted'))
-  const openId=[...s.rows.values()].find(r=>article().getAttribute('aria-label')===r.fields.title)?.id
-  await ui.type(link,'https://www.vinted.fr/items/42-body')
-  await ui.act(async()=>ui.props(article().querySelector('form')).onSubmit({preventDefault(){}}))
-  await ui.act(()=>wait(30))
-  const marked=s.calls.find(c=>c.action==='mark_published')
-  assert.equal(marked.body.url,'https://www.vinted.fr/items/42-body');assert.equal(typeof marked.body.version,'number')
-  assert.match(rail('En ligne'),/1$/);assert.match(rail('Prêtes'),/2$/)
-  assert.match(document.body.textContent,/est notée publiée/)
-  assert.notEqual(s.rows.get(openId)?.state==='published'&&article().getAttribute('aria-label'),undefined)
-  assert.ok(article().querySelector('textarea.font-semibold'),'the next ready article opens')
-  assert.equal(s.calls.some(c=>c.action==='publish'),false,'never sent to Dotb when the account publishes by hand')
-  assert.equal(ui.button('Tout publier avec Dotb (2)'),undefined)
+  assert.equal(ui.button('Publier à la main'),undefined,'no manual publishing any more')
+  assert.ok(ui.button('Publier avec YlaVint'),'one send button, with the shared publisher')
+  assert.equal(ui.button('Créer un brouillon Vinted'),undefined)
  }finally{await ui.unmount()}
 })
 
@@ -149,15 +133,15 @@ test('automatic writing waits for SKU, size and price, then 2 seconds without ty
 })
 
 for(const mode of ['draft','live'])test(`Dotb ${mode}: ready articles are sent one by one after checking the Bridge`,async()=>{
- const ui=await mount(),s=server({dotb:true})
+ const ui=await mount(),s=server({dotb:true,publisher:'dotb',mode})
  const ready={...emptyListing(),account_id:account.id,sku:'sku-a',size_text:'M',price:'19.90',title:'Body noir effet cuir décolleté V manches longues soirée taille M',description:'Body noir.',catalog_id:10,brand_id:1,brand_title:'Sans marque',size_id:4,status_id:2,package_size_id:1,color_ids:[1]}
  for(const id of ['aaaaaaaa-0000-4000-8000-000000000001','aaaaaaaa-0000-4000-8000-000000000002'])s.rows.set(id,{id,version:1,state:'draft',fields:{...ready},photos:[{path:`owner/${id}.png`}]})
  try{
   await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request:s.request,upload:s.upload,account,meta:{...meta,dotb_publish_enabled:true},onBack(){},onOpenDraft(){}})))
   await ui.act(()=>wait(20))
   assert.ok(document.body.textContent.includes('un écart de 30 min'))
-  await ui.act(async()=>ui.props(document.querySelector('input[value="dotb"]')).onChange())
-  await ui.click(mode==='draft'?'Tout en brouillon Vinted (2)':'Tout publier avec Dotb (2)')
+  assert.equal(document.querySelector('input[value="dotb"]'),null,'the publisher is chosen once for every account, in Réglages')
+  await ui.click(mode==='draft'?'Tout en brouillon avec Dotb (2)':'Tout publier avec Dotb (2)')
   await ui.act(()=>wait(1500))
   assert.equal(s.calls.filter(c=>c.action==='accounts').length,1,'Bridge checked once before the batch')
   assert.equal(s.calls.filter(c=>c.action==='publish').length,2)
@@ -218,7 +202,7 @@ test('a failed save keeps edits visible and blocks refresh or leaving until retr
  }finally{await ui.unmount()}
 })
 
-test('refresh retries category options, changed sizes match again, and failed copying is not reported as success',async()=>{
+test('refresh retries category options and changed sizes match again',async()=>{
  const ui=await mount(),s=server();let optionsFail=true
  const id=crypto.randomUUID()
  await s.request('POST',{action:'create',id,account_id:account.id})
@@ -228,17 +212,9 @@ test('refresh retries category options, changed sizes match again, and failed co
  try{
   await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request,upload:s.upload,account,meta,onBack(){},onOpenDraft(){}})))
   optionsFail=false;await ui.click('Actualiser')
-  assert.ok(ui.button('Publier à la main'))
+  assert.ok(ui.button('Publier avec YlaVint'))
   await ui.type(field('M'),'L')
-  assert.ok(ui.button('Publier à la main'),'changing the size keeps an available Vinted size')
-  await ui.click('Publier à la main')
-  document.execCommand=()=>false
-  const copyTitle=[...document.querySelectorAll('section[aria-label="Publier sur Vinted"] li')].find(li=>li.textContent.includes('Titre')).querySelector('button:last-child')
-  await ui.act(async()=>copyTitle.click())
-  assert.match(document.body.textContent,/copie automatique est indisponible/)
-  assert.equal(ui.button('Copié ✓'),undefined)
-  assert.ok(document.querySelector('button[aria-label="Titre : à faire"]'),'a failed copy does not tick the checklist')
-  await ui.click('Revenir à la fiche')
+  assert.ok(ui.button('Publier avec YlaVint'),'changing the size keeps an available Vinted size')
   await ui.click('← Changer de compte')
   assert.equal(s.rows.get(id).fields.size_id,5)
  }finally{await ui.unmount()}
@@ -330,15 +306,15 @@ test('opening and refreshing the session reconciles scheduled listings immediate
  }finally{await ui.unmount()}
 })
 
-for(const mode of ['live','draft'])test(`YlaVint ${mode}: both providers stay visible and batch sends only to the selected provider`,async()=>{
- const ui=await mount(),s=server({ylavint:true,dotb:true})
+for(const mode of ['live','draft'])test(`YlaVint ${mode}: the shared choice sends the batch only to YlaVint in the chosen mode`,async()=>{
+ const ui=await mount(),s=server({ylavint:true,dotb:true,mode})
  const ready={...emptyListing(),account_id:account.id,sku:'test',size_text:'M',price:'19.90',title:'Robe noire courte taille M',description:'Robe noire.',catalog_id:10,brand_id:1,brand_title:'Sans marque',size_id:4,status_id:2,package_size_id:1,color_ids:[1]}
  for(let i=0;i<2;i++){const id=crypto.randomUUID();s.rows.set(id,{id,version:1,state:'draft',fields:ready,photos:[{path:'owner/'+id+'.png'}]})}
  try{
   await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request:s.request,upload:s.upload,account,meta:{...meta,dotb_publish_enabled:true},onBack(){},onOpenDraft(){}})))
   await ui.act(()=>wait(20))
-  assert.ok(document.querySelector('input[value="dotb"]'));assert.ok(document.querySelector('input[value="ylavint"]').checked)
-  await ui.click(mode==='draft'?'Tout en brouillon Vinted (2)':'Tout publier avec YlaVint (2)')
+  assert.equal(document.querySelector('input[value="dotb"]'),null);assert.match(document.body.textContent,mode==='draft'?/YlaVint · brouillon Vinted/:/YlaVint · en ligne/)
+  await ui.click(mode==='draft'?'Tout en brouillon avec YlaVint (2)':'Tout publier avec YlaVint (2)')
   assert.equal(s.calls.filter(c=>c.action==='ylavint_publish').length,2)
   assert.ok(s.calls.filter(c=>c.action==='ylavint_publish').every(c=>c.body.mode===mode&&c.body.confirmation_account_id===account.id))
   assert.equal(s.calls.filter(c=>['publish','step'].includes(c.action)).length,0,'no Dotb writes or steps')

@@ -50,10 +50,12 @@ export default function ListingSession({request,upload,account,meta,initialSku='
  const skuToUse=useRef(initialSku),statusSync=useRef(false),syncLatest=useRef(null)
  const cards=useRef(new Map()),optionCache=useRef(new Map()),alive=useRef(true),settingsRef=useRef(null),dragDepth=useRef(0)
  const [order,setOrder]=useState([]),[,setTick]=useState(0)
- const [provider,setProvider]=useState('ylavint'),[publisher,setPublisher]=useState(null)
+ const [publisher,setPublisher]=useState(null)
  const [ylavint,setYlavint]=useState(false),[settings,setSettings]=useState(null),[dotb,setDotb]=useState(false),[serverDotb,setServerDotb]=useState(!!meta.dotb_publish_enabled)
+ // Outil (YlaVint ou Dotb) et mode (en ligne ou brouillon) : un seul choix pour tous les comptes, dans Réglages.
+ const provider=settings?.effective?.publisher==='dotb'?'dotb':'ylavint',mode=settings?.effective?.publish_mode==='draft'?'draft':'live'
  const [loading,setLoading]=useState(true),[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(initialSku?`SKU ${initialSku} prêt : ajoute les photos de l’article, il sera repris sur la fiche avec ses mesures Shein.`:'')
- const [dropped,setDropped]=useState(null),[showSettings,setShowSettings]=useState(false),[copied,setCopied]=useState('')
+ const [dropped,setDropped]=useState(null),[showSettings,setShowSettings]=useState(false)
  const [selected,setSelected]=useState(null),[filter,setFilter]=useState('all'),[dragging,setDragging]=useState(false),[zone,setZone]=useState(null),[photoIndex,setPhotoIndex]=useState(0)
  const choices=useMemo(()=>catalogChoices(meta.catalogs||[]),[meta.catalogs])
  // Rédaction automatique : dès qu'un article a ses photos et sa taille, l'IA l'écrit (3 à la fois au plus).
@@ -223,21 +225,6 @@ export default function ListingSession({request,upload,account,meta,initialSku='
   }
  })
 
- async function copy(card,key,text){
-  try{await navigator.clipboard.writeText(text)}catch{
-   // Ancien navigateur ou page non sécurisée : copie par une zone de texte temporaire.
-   const area=document.createElement('textarea')
-   try{area.value=text;document.body.appendChild(area);area.select?.();if(document.execCommand?.('copy')!==true)throw Error('copy unavailable')}catch{setError('La copie automatique est indisponible : reviens à la fiche pour sélectionner le texte.');return false}finally{area.remove()}
-  }
-  setCopied(`${card.id}:${key}`);setTimeout(()=>{if(alive.current)setCopied(v=>v===`${card.id}:${key}`?'':v)},2000)
-  return true
- }
- const download=card=>act(card,'Préparation des photos…',async()=>{
-  const {draft}=await request('GET',undefined,`action=draft&id=${card.id}`)
-  const {exportListing,downloadListingFile}=await import('../lib/listingExport')
-  downloadListingFile(await exportListing(draft,account,meta,optionsFor(draft.fields.catalog_id),{onProgress:label=>{card.busy=label;render()}}))
-  return true
- }).catch(()=>false)
  const published=card=>act(card,'Enregistrement du lien…',async()=>{
   const {draft}=await request('POST',{action:'mark_published',id:card.id,version:card.row.version,url:card.link.trim()})
   accept(card,draft);card.link=''
@@ -414,42 +401,6 @@ export default function ListingSession({request,upload,account,meta,initialSku='
  }
 
  // Mode publication : les champs dans l'ordre du formulaire « Vends ton article » de Vinted.
- function publishMode(card,options){
-  const f=card.fields,checks=card.checks||(card.checks=new Set()),tick=key=>{checks.has(key)?checks.delete(key):checks.add(key);render()}
-  const isCopied=key=>copied===`${card.id}:${key}`
-  const category=choices.find(c=>c.id===f.catalog_id)?.label
-  const lines=[
-   {key:'photos',label:'Photos',value:`${card.photos.length} photo${card.photos.length>1?'s':''}, la couverture en premier`,action:<button type="button" className={ghost+' !py-1.5'} disabled={!!card.busy} onClick={async()=>{if(await download(card)){checks.add('photos');render()}}}>Télécharger</button>},
-   {key:'title',label:'Titre',value:f.title,copy:f.title},
-   {key:'description',label:'Description',value:f.description.split('\n')[0],copy:f.description},
-   {key:'category',label:'Catégorie',value:category},
-   {key:'brand',label:'Marque',value:f.brand_id===1?'Sans marque':f.brand_title},
-   ...(listingSizes(options).length?[{key:'size',label:'Taille',value:titleOf(listingSizes(options),f.size_id)}]:[]),
-   ...(options?.conditions?.length?[{key:'condition',label:'État',value:titleOf(options.conditions,f.status_id)}]:[]),
-   {key:'color',label:'Couleur',value:f.color_ids.map(id=>titleOf(meta.colors,id)).filter(Boolean).join(', ')},
-   ...(options?.attributes||[]).filter(a=>f.item_attributes.some(v=>v.code===a.code&&v.ids.length)).map(a=>({key:`attribute-${a.code}`,label:a.title,value:f.item_attributes.find(v=>v.code===a.code).ids.map(id=>titleOf(a.options,id)).join(', ')})),
-   {key:'price',label:'Prix',value:euros(f.price),copy:String(f.price).replace('.',',')},
-   ...(options?.package_sizes?.length&&!options.parcel_measurements?[{key:'package',label:'Colis',value:titleOf(options.package_sizes,f.package_size_id)}]:[])
-  ]
-  const done=lines.filter(l=>checks.has(l.key)).length
-  return <section aria-label="Publier sur Vinted" className="overflow-hidden rounded-2xl border border-[#d9e9e1] bg-white shadow-[0_10px_30px_#4c3d2612]">
-   <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[#e8e4dd] bg-[#f3f8f5] px-4 py-4 sm:px-5">
-    <div className="min-w-0"><h2 className="text-lg font-semibold text-[#323630]">Publier sur Vinted</h2><p className="mt-1 text-sm text-[#5d615a]">Dans AdsPower, ouvre <strong className="font-semibold">#{account.profile_number||'—'} {account.login}</strong> puis « Vends tes articles ». Suis les lignes dans l’ordre du formulaire : copier une ligne la coche.</p></div>
-    <button type="button" className={quiet} onClick={()=>{card.publishing=false;render()}}>Revenir à la fiche</button>
-   </header>
-   <div className="h-1 bg-[#efebe4]" aria-hidden="true"><div className="h-full bg-[#087f5b] transition-[width] duration-300" style={{width:`${Math.round(done/lines.length*100)}%`}}/></div>
-   <ol className="divide-y divide-[#eee9e1]">{lines.map((l,i)=>{const on=checks.has(l.key);return <li key={l.key} className={`flex items-center gap-3 px-4 py-3 sm:px-5 ${on?'bg-[#fafcfb]':''}`}>
-    <button type="button" onClick={()=>tick(l.key)} aria-pressed={on} aria-label={`${l.label} : ${on?'fait':'à faire'}`} className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border text-xs font-semibold tabular-nums ${on?'border-[#087f5b] bg-[#087f5b] text-white':'border-[#d6d0c6] bg-white text-[#79756f] hover:border-[#087f5b]'}`}>{on?'✓':i+1}</button>
-    <div className="min-w-0 flex-1"><p className="text-xs text-[#79756f]">{l.label}</p><p className={`truncate text-sm ${l.value?'text-[#323630]':'text-amber-800'} ${on?'opacity-60':''}`}>{l.value||'À choisir sur Vinted'}</p></div>
-    {l.copy!=null?<button type="button" className={(isCopied(l.key)?solid:ghost)+' !py-1.5 shrink-0'} onClick={async()=>{if(await copy(card,l.key,l.copy)){checks.add(l.key);render()}}}>{isCopied(l.key)?'Copié ✓':'Copier'}</button>:l.action||null}
-   </li>})}</ol>
-   <form className="space-y-2 border-t border-[#e8e4dd] bg-[#fbfaf7] px-4 py-4 sm:px-5" onSubmit={e=>{e.preventDefault();if(card.link.trim())published(card).then(()=>{if(card.row.state==='published'){setNotice(`« ${f.title.slice(0,60)}${f.title.length>60?'…':''} » est notée publiée.`);advance(card)}})}}>
-    <label className="block text-sm font-medium text-[#323630]">Une fois publiée, colle le lien de l’annonce<input aria-label={`Lien Vinted de ${f.title}`} className={field+' mt-1.5'} inputMode="url" placeholder="https://www.vinted.fr/items/…" value={card.link} disabled={!!card.busy} onChange={e=>{card.link=e.target.value;render()}}/></label>
-    <button className={solid+' w-full'} disabled={!!card.busy||!card.link.trim()}>{card.busy||'Noter comme publiée et passer à la suivante'}</button>
-   </form>
-  </section>
- }
-
  // Suivi Dotb : création, photos, puis mise en ligne ou brouillon à l'heure prévue.
  function dotbStatus(card){
   const r=card.row,draftMode=r.dotb_publish===false,locked=!!card.busy
@@ -473,7 +424,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
     {stage==='prepare'&&<button className={solid} disabled={locked||!!busy} onClick={()=>prepareOne(card)}>{card.busy||'Rédiger avec l’IA'}</button>}
     {stage==='loading'&&<span className="text-xs text-[#79756f]">Chargement des options…</span>}
     {stage==='review'&&<><span className="text-xs text-amber-900">{issues.length} choix à faire : {issues.map(i=>i.label).join(', ')}</span><button className={solid} disabled>Publier</button></>}
-    {stage==='ready'&&<><button className={solid} disabled={locked||!!busy||!(provider==='ylavint'?ylavint:dotb)} onClick={()=>provider==='ylavint'?sendYlavint(card,'live'):sendOne(card,'live')}>Publier avec {provider==='ylavint'?'YlaVint':'Dotb'}</button><button className={ghost} disabled={locked||!!busy||!(provider==='ylavint'?ylavint:dotb)} onClick={()=>provider==='ylavint'?sendYlavint(card,'draft'):sendOne(card,'draft')}>Créer un brouillon Vinted</button>{!card.publishing&&<button className={ghost} disabled={locked} onClick={()=>{card.publishing=true;render()}}>Publier à la main</button>}</>}
+    {stage==='ready'&&<button className={solid} disabled={locked||!!busy||!(provider==='ylavint'?ylavint:dotb)} onClick={()=>provider==='ylavint'?sendYlavint(card,mode):sendOne(card,mode)}>{mode==='draft'?'Brouillon':'Publier'} avec {provider==='ylavint'?'YlaVint':'Dotb'}</button>}
     {(stage==='dotb'||stage==='published')&&next&&<button className={ghost} onClick={()=>select(next)}>Article suivant</button>}
    </div>
   </div>
@@ -481,14 +432,13 @@ export default function ListingSession({request,upload,account,meta,initialSku='
 
  function detail(card){
   const stage=stageById.get(card.id),options=optionsFor(card.fields.catalog_id),editable=card.row.state==='draft'
-  const publishing=card.publishing&&stage==='ready'
   return <article aria-label={card.fields.title||card.fields.sku||'Nouvel article'} className="min-w-0">
    <div className="grid gap-6 xl:grid-cols-[minmax(220px,300px)_minmax(0,1fr)]">
-    <div className={`mx-auto w-full max-w-[260px] xl:sticky xl:top-24 xl:max-w-none xl:self-start ${publishing?'hidden xl:block':''}`}>{gallery(card)}</div>
+    <div className={`mx-auto w-full max-w-[260px] xl:sticky xl:top-24 xl:max-w-none xl:self-start`}>{gallery(card)}</div>
     <div className="min-w-0 space-y-5">
      <div className="flex flex-wrap items-center justify-between gap-2">{pill(stage,card)}<span role="status" className="text-xs text-[#79756f]">{card.busy||(card.dirty?'Enregistrement…':editable?'Enregistré':'')}</span></div>
      {card.error&&<p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{card.error}{card.dirty&&<button className={quiet+' ml-2'} disabled={!!card.busy} onClick={()=>save(card).catch(()=>{})}>Réessayer l’enregistrement</button>}</p>}
-     {publishing?publishMode(card,options):<>
+     <>
       {essentials(card,stage)}
       {stage==='dotb'&&dotbStatus(card)}
       {stage==='published'&&<p className="rounded-xl border border-[#cfe6da] bg-[#f1f8f4] px-4 py-3 text-sm text-[#08664c]">En ligne{card.row.published_at?` depuis ${hour(card.row.published_at)}`:''}. {card.row.url&&<a className="font-medium underline underline-offset-4" href={card.row.url} target="_blank" rel="noopener noreferrer">Voir l’annonce sur Vinted</a>}</p>}
@@ -497,7 +447,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
       :editable?fiche(card,options,stage):<div className="space-y-2 rounded-2xl border border-[#e8e4dd] bg-white p-4 sm:p-5"><p className="text-[17px] font-semibold leading-snug">{card.fields.title}</p><p className="whitespace-pre-line text-sm leading-relaxed text-[#5d615a]">{card.fields.description}</p></div>}
       {editable&&<div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-[#eee9e1] pt-4">{card.fields.title&&<button type="button" className={quiet} disabled={!!card.busy||!!busy} onClick={()=>prepareOne(card)}>Refaire le texte avec l’IA</button>}<button type="button" className={quiet} onClick={()=>openFull(card)}>Ouvrir la fiche complète</button><span className="flex-1"/>
        {!card.row.dotb_item_id&&(card.confirm?<span className="flex items-center gap-2 text-sm">Retirer cet article ?<button type="button" className={ghost+' !text-rose-700'} onClick={()=>discard(card)}>Oui, retirer</button><button type="button" className={ghost} onClick={()=>{card.confirm=false;render()}}>Non</button></span>:<button type="button" className="text-sm text-rose-700 underline underline-offset-4" onClick={()=>{card.confirm=true;render()}}>Retirer de la session</button>)}</div>}
-     </>}
+     </>
     </div>
    </div>
    {actionBar(card,stage)}
@@ -515,7 +465,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
   <header className="flex flex-wrap items-end justify-between gap-4">
    <div className="min-w-0"><button className={quiet} disabled={working} onClick={()=>withBusy('Enregistrement…',async()=>{await saveAll();onBack()})}>← Changer de compte</button>
     <h1 className="mt-2 flex flex-wrap items-baseline gap-x-3 text-[28px] font-semibold leading-tight tracking-[-0.02em] text-[#323630]"><span className="tabular-nums text-[#087f5b]">#{account.profile_number||'—'}</span><span className="break-all">{account.login}</span></h1>
-    <p className="mt-1.5 text-sm text-[#79756f]">{`Choisis YlaVint ou Dotb pour envoyer tes annonces${presets?.spacing_minutes?`, avec un écart de ${presets.spacing_minutes} min`:''}.`}{presets&&<> Réglages {presets.custom?'propres à ce compte':'communs'} : {[presets.no_brand&&'sans marque',presets.condition.toLocaleLowerCase('fr'),`colis ${presets.package.toLocaleLowerCase('fr')}`].filter(Boolean).join(', ')}.</>}</p></div>
+    <p className="mt-1.5 text-sm text-[#79756f]">{`Envoi avec ${provider==='ylavint'?'YlaVint':'Dotb'}, ${mode==='draft'?'en brouillon Vinted':'en ligne'}${presets?.spacing_minutes?`, avec un écart de ${presets.spacing_minutes} min`:''}.`}{presets&&<> Réglages {presets.custom?'propres à ce compte':'communs'} : {[presets.no_brand&&'sans marque',presets.condition.toLocaleLowerCase('fr'),`colis ${presets.package.toLocaleLowerCase('fr')}`].filter(Boolean).join(', ')}.</>}</p></div>
    <div className="flex flex-wrap items-center gap-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#e3ded6] bg-white px-3 py-2 text-sm" title="L’IA écrit chaque article dès qu’il a ses photos et sa taille"><input type="checkbox" checked={autoWrite} onChange={e=>{setAutoWrite(e.target.checked);try{localStorage.setItem('listing-auto-write',e.target.checked?'on':'off')}catch{}}}/>Rédaction automatique</label><button className={ghost} aria-expanded={showSettings} disabled={!settings} onClick={()=>setShowSettings(true)}>Réglages</button><button className={ghost} disabled={working||loading} onClick={()=>withBusy('Actualisation…',load)}>Actualiser</button></div>
   </header>
 
@@ -540,10 +490,10 @@ export default function ListingSession({request,upload,account,meta,initialSku='
       {sizes.map(n=><button key={n} className={ghost} onClick={()=>withBusy('Ajout des articles…',()=>addArticles(groupFiles(dropped,n)))}>{dropped.length/n} articles de {n} photos</button>)}
       <button className={ghost} onClick={()=>withBusy('Ajout des articles…',()=>addArticles(groupFiles(dropped,1)))}>{dropped.length} articles (1 photo chacun)</button></div>
      <div className="flex items-center justify-between"><p className="text-xs text-[#79756f]">Regroupées dans l’ordre des noms de fichiers.</p><button className={quiet+' !text-xs'} onClick={()=>setDropped(null)}>Annuler</button></div></div>}
-    <ListingPublisher compact value={provider} onChange={setProvider} disabled={!!busy} ylavint={publisher} dotb={dotb} accountId={account.id} onEnabled={()=>load().catch(e=>setError(e.message))}/>
+    <ListingPublisher compact value={provider} mode={mode} onEdit={settings?()=>setShowSettings(true):undefined} disabled={!!busy} ylavint={publisher} dotb={dotb} accountId={account.id} onEnabled={()=>load().catch(e=>setError(e.message))}/>
     {(toPrepare>0||((provider==='ylavint'?ylavint:dotb)&&counts.ready>0))&&<div className="grid gap-1.5">
      {toPrepare>0&&<button className={solid} disabled={!!busy} onClick={()=>withBusy('Rédaction…',prepareAll)}>Rédiger les {toPrepare} article{toPrepare>1?'s':''} avec l’IA</button>}
-     {(provider==='ylavint'?ylavint:dotb)&&counts.ready>0&&<><button className={ghost} disabled={!!busy} onClick={()=>withBusy('Envoi des annonces…',()=>sendAll('draft'))}>Tout en brouillon Vinted ({counts.ready})</button><button className={ghost} disabled={!!busy} onClick={()=>withBusy('Envoi des annonces…',()=>sendAll('live'))}>Tout publier avec {provider==='ylavint'?'YlaVint':'Dotb'} ({counts.ready})</button></>}
+     {(provider==='ylavint'?ylavint:dotb)&&counts.ready>0&&<button className={ghost} disabled={!!busy} onClick={()=>withBusy('Envoi des annonces…',()=>sendAll(mode))}>{mode==='draft'?'Tout en brouillon':'Tout publier'} avec {provider==='ylavint'?'YlaVint':'Dotb'} ({counts.ready})</button>}
     </div>}
     {loading?<p role="status" className="px-2 py-6 text-sm text-[#79756f]">Chargement de la session…</p>:<ul className="max-h-[22rem] space-y-1 overflow-y-auto pr-1 lg:max-h-[calc(100vh-22rem)]">{visible.map(([c,s])=>queueItem(c,s))}{!visible.length&&<li className="px-2 py-6 text-sm text-[#79756f]">{filter==='all'?'Aucune annonce à traiter.':rows.length?'Aucun article à cette étape.':'Aucun article pour l’instant.'}</li>}</ul>}
    </aside>

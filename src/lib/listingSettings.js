@@ -8,9 +8,12 @@ export const LISTING_AI_MODELS=[
  {id:'gemini-3.5-flash-lite',label:'Rapide : Gemini 3.5 Flash-Lite (celui utilisé jusqu’ici)'},
  {id:'gemini-3.5-flash',label:'Plus précis : Gemini 3.5 Flash (crédits Google payants)'}
 ]
-export const DEFAULT_LISTING_SETTINGS={no_brand:true,condition:'Très bon état',package:'Petit',size_in_title:true,keywords_line:true,title_rules:'',description_footer:'',ai_model:'gemini-3.5-flash-lite'}
+export const DEFAULT_LISTING_SETTINGS={no_brand:true,condition:'Très bon état',package:'Petit',size_in_title:true,keywords_line:true,title_rules:'',description_footer:'',ai_model:'gemini-3.5-flash-lite',publisher:'ylavint',publish_mode:'live'}
 const SHARED=['no_brand','condition','package','size_in_title','keywords_line','title_rules','description_footer']
 export const MAX_SPACING_MINUTES=720
+// Outil et mode d'envoi : un seul choix pour tous les comptes.
+export const LISTING_PUBLISHERS=[['ylavint','YlaVint'],['dotb','Dotb']]
+export const LISTING_MODES=[['live','En ligne directement'],['draft','En brouillon Vinted']]
 
 function text(input,key,max,label){
  const value=input[key]??''
@@ -41,7 +44,9 @@ export function cleanListingSettings(input,{account=false}={}){
   title_rules:text(input,'title_rules',600,'Consignes pour le titre'),
   description_footer:text(input,'description_footer',600,'Fin de description')
  }
- if(!account)return {...shared,ai_model:choice(input,'ai_model',LISTING_AI_MODELS.map(m=>m.id),DEFAULT_LISTING_SETTINGS.ai_model,'le modèle de rédaction')}
+ if(!account)return {...shared,ai_model:choice(input,'ai_model',LISTING_AI_MODELS.map(m=>m.id),DEFAULT_LISTING_SETTINGS.ai_model,'le modèle de rédaction'),
+  publisher:choice(input,'publisher',LISTING_PUBLISHERS.map(p=>p[0]),DEFAULT_LISTING_SETTINGS.publisher,'l’outil de publication'),
+  publish_mode:choice(input,'publish_mode',LISTING_MODES.map(m=>m[0]),DEFAULT_LISTING_SETTINGS.publish_mode,'le mode d’envoi')}
  const spacing=input.spacing_minutes??30
  if(!Number.isSafeInteger(spacing)||spacing<0||spacing>MAX_SPACING_MINUTES)throw Error(`L’écart entre deux publications doit être compris entre 0 et ${MAX_SPACING_MINUTES} minutes.`)
  const custom=flag(input,'custom',false)

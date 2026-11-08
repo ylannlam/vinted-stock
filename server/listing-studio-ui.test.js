@@ -35,6 +35,7 @@ test('listing editor guides missing fields, confirms saves, refreshes offline ac
  const request=async(method,body,query='')=>{
   const action=body?.action||new URLSearchParams(query).get('action');calls.push({action,body:structuredClone(body)})
   if(action==='metadata'||action==='accounts')return {accounts:[{...account,connected}],catalogs:[{id:10,title:'Combinaisons'}],colors:[],ai_ready:true}
+  if(action==='settings')return {effective:{publisher:'dotb',publish_mode:'live'}}
   if(action==='options'){if(failOptions)throw Error('Options temporairement indisponibles');return options}
   if(action==='list')return {drafts:[structuredClone(row)],count:1}
   if(action==='save'){
@@ -81,7 +82,7 @@ test('listing editor guides missing fields, confirms saves, refreshes offline ac
   failSave=true
   await edit('#listing-title input','Titre après une coupure réseau')
   await click('3. Publication')
-  await act(async()=>props(document.querySelector('input[value="dotb"]')).onChange())
+  assert.equal(document.querySelector('input[value="dotb"]'),null,'the publisher comes from the shared settings')
   await click('Publier avec Dotb sur compte-test')
   assert.ok(document.body.textContent.includes('Connexion interrompue pendant la sauvegarde'))
   assert.equal(calls.some(c=>c.action==='publish'),false)
@@ -100,7 +101,7 @@ test('listing editor guides missing fields, confirms saves, refreshes offline ac
  }
 })
 
-test('with Dotb off, the last step downloads the listing folder and never asks Dotb to publish',async()=>{
+test('with Dotb chosen but off, nothing is published and there is no manual publishing',async()=>{
  const {window}=parseHTML('<html><body><div id="app"></div></body></html>')
  globalThis.window=window;globalThis.document=window.document
  globalThis.IS_REACT_ACT_ENVIRONMENT=true
@@ -114,6 +115,7 @@ test('with Dotb off, the last step downloads the listing folder and never asks D
  const request=async(method,body,query='')=>{
   const action=body?.action||new URLSearchParams(query).get('action');calls.push(action)
   if(action==='metadata'||action==='accounts')return {accounts:[account],catalogs:[{id:10,title:'Combinaisons'}],colors:[],ai_ready:true,dotb_publish_enabled:false}
+  if(action==='settings')return {effective:{publisher:'dotb',publish_mode:'live'}}
   if(action==='options')return options
   if(action==='list')return {drafts:[structuredClone(row)],count:1}
   if(action==='step')row={...row,state:'draft',last_error:null,manual_recoverable:false}
@@ -129,32 +131,19 @@ test('with Dotb off, the last step downloads the listing folder and never asks D
   await act(async()=>root.render(React.createElement(ListingStudio,{request})))
   await act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Combinaison noire M')).click())
   await act(async()=>button('3. Publication').click())
-  await act(async()=>{const node=document.querySelector('input[value="dotb"]');node[Object.keys(node).find(k=>k.startsWith('__reactProps$'))].onChange()})
-  assert.ok(document.body.textContent.includes('L’envoi automatique par Dotb est coupé'))
-  assert.equal([...document.querySelectorAll('button')].some(b=>b.textContent.startsWith('Publier sur')),false)
-  assert.equal(document.body.textContent.includes('Bridge Dotb'),false)
-  await act(async()=>button('Télécharger le dossier d’annonce').click())
-  assert.deepEqual(fetched,['https://example.test/fresh-photo.png'],'the photo link is reloaded before download')
-  assert.equal(downloads.length,1);assert.equal(downloads[0].type,'application/zip')
-  assert.ok(document.body.textContent.includes('Dossier téléchargé. Rien n’a été publié'))
+  await act(async()=>new Promise(resolve=>setTimeout(resolve,20)))
+  assert.equal(button('Télécharger le dossier d’annonce'),undefined,'no manual folder any more')
+  assert.equal([...document.querySelectorAll('form')].some(f=>f.textContent.includes('Déjà publiée sur Vinted')),false)
+  assert.ok(document.body.textContent.includes('Dotb est désactivé pour ce compte'))
+  assert.equal(button('Publier avec Dotb sur compte-test').disabled,true)
   assert.equal(calls.includes('publish'),false);assert.equal(calls.includes('step'),false)
-  // An old failed transfer that never reached Dotb recovers on open, even with last_error.
+  // An old failed transfer that never reached Dotb still recovers on open, without publishing.
   row={...row,state:'preparing',last_error:'Ancienne erreur',manual_recoverable:true}
   await act(async()=>button('Mes brouillons et publications').click())
   await act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Combinaison noire M')).click())
   await act(async()=>new Promise(resolve=>setTimeout(resolve,650)))
   assert.equal(calls.filter(a=>a==='step').length,1)
-  assert.ok(button('Télécharger le dossier d’annonce'))
   assert.equal(calls.includes('publish'),false)
-  // After publishing by hand on Vinted, the link is noted from the same panel.
-  const form=[...document.querySelectorAll('form')].find(f=>f.textContent.includes('Déjà publiée sur Vinted'))
-  assert.ok(form,'link field shown in manual mode')
-  const props=node=>node[Object.keys(node).find(key=>key.startsWith('__reactProps$'))]
-  await act(async()=>props(form.querySelector('input')).onChange({target:{value:'https://www.vinted.fr/items/42-combinaison'}}))
-  await act(async()=>props(form).onSubmit({preventDefault(){}}))
-  assert.equal(published.length,1);assert.equal(published[0].url,'https://www.vinted.fr/items/42-combinaison');assert.equal(typeof published[0].version,'number')
-  assert.ok(document.body.textContent.includes('Publiée à la main'));assert.ok(document.body.textContent.includes('Voir l’annonce sur Vinted'))
-  assert.equal(document.body.textContent.includes('Fiche créée dans Dotb'),false,'no Dotb steps for a listing published by hand')
  }finally{
   await act(async()=>root.unmount())
   globalThis.fetch=oldFetch;URL.createObjectURL=oldCreate
