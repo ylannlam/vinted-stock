@@ -60,7 +60,7 @@ $('bridge').onclick = async () => {
   await chrome.runtime.sendMessage({type: 'set_bridge', on: bridge === false})
   $('bridge').disabled = false; render()
 }
-for (const b of document.querySelectorAll('[data-open]')) b.onclick = () => chrome.tabs.create({url: `${SITE}/#ylavint/${b.dataset.open}`})
+for (const b of document.querySelectorAll('[data-open]')) b.onclick = () => chrome.tabs.create({url: `${SITE}/ylavint#${b.dataset.open}`})
 $('learn').onclick = async () => { const {learning} = await chrome.storage.local.get('learning'); await chrome.runtime.sendMessage({type: 'set_learning', on: !learning}); render() }
 $('now').onclick = async () => { $('now').disabled = true; await chrome.runtime.sendMessage({type: 'tick_now'}); $('now').disabled = false; render() }
 chrome.storage.onChanged.addListener(render)

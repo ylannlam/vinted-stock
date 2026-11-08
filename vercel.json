@@ -12,6 +12,14 @@
   },
   "rewrites": [
     {
+      "source": "/ylavint",
+      "destination": "/ylavint.html"
+    },
+    {
+      "source": "/ylavint/(.*)",
+      "destination": "/ylavint.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/"
     }

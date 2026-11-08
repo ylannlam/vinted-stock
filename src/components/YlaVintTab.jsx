@@ -29,7 +29,8 @@ const NAV=[
 ]
 const KEYS=NAV.flatMap(n=>n.children?n.children.map(c=>c[0]):[n.key])
 const ALIASES={ventes:'commandes',ia:'agent'}
-function readSection(){const [,sub]=window.location.hash.slice(1).split('?')[0].split('/');const k=ALIASES[sub]||sub;return KEYS.includes(k)?k:'accueil'}
+// Dans le site : « #ylavint/messagerie ». Dans l'interface à part (/ylavint) : « #messagerie ».
+function readSection(){const parts=window.location.hash.slice(1).split('?')[0].split('/').filter(Boolean);const sub=parts[0]==='ylavint'?parts[1]:parts[0];const k=ALIASES[sub]||sub;return KEYS.includes(k)?k:'accueil'}
 
 const Num=({label,value,onChange,step=1,min=0,max,suffix})=><label className="block text-xs text-zinc-400">{label}
  <span className="mt-1 flex items-center gap-1"><input type="number" className={fieldClass+' py-1.5'} value={value} step={step} min={min} max={max} onChange={e=>onChange(e.target.value===''?'':Number(e.target.value))}/>{suffix&&<span className="text-zinc-500">{suffix}</span>}</span></label>
@@ -143,11 +144,11 @@ function SalesChart({orders,range}){
  </svg>
 }
 
-export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWatchRequest}){
+export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWatchRequest,standalone=false,onLogout}){
  const [section,setSectionState]=useState(readSection)
  const [data,setData]=useState(null),[sales,setSales]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[notice,setNotice]=useState('')
  const [configure,setConfigure]=useState(null),[picked,setPicked]=useState(()=>new Set()),[range,setRange]=useState('7d'),[accountFilter,setAccountFilter]=useState(''),[mobileNav,setMobileNav]=useState(false)
- const setSection=s=>{setSectionState(s);setMobileNav(false);const hash=`#ylavint/${s}`;if(window.location.hash!==hash)history.replaceState(null,'',hash)}
+ const setSection=s=>{setSectionState(s);setMobileNav(false);const hash=standalone?`#${s}`:`#ylavint/${s}`;if(window.location.hash!==hash)history.replaceState(null,'',hash)}
  useEffect(()=>{const f=()=>setSectionState(readSection());window.addEventListener('hashchange',f);return()=>window.removeEventListener('hashchange',f)},[])
  const load=()=>request('GET').then(r=>{setData(r);setError('')}).catch(e=>setError(e.message))
  const loadSales=()=>request('GET',undefined,'&view=sales').then(r=>setSales(r.orders)).catch(()=>setSales([]))
@@ -163,7 +164,7 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
   return (sales||[]).filter(o=>Date.parse(o.order_date)>=start&&(!accountFilter||o.account_id===accountFilter))
  },[sales,range,accountFilter])
 
- if(!data)return <div className="ylv min-h-[70vh] bg-[#0a0a0b] p-6 text-zinc-300">{error?<p role="alert" className="text-sm text-rose-400">{error}</p>:<p className="text-sm">Chargement de YlaVint…</p>}</div>
+ if(!data)return <div className="ylv min-h-screen bg-[#0a0a0b] p-6 text-zinc-300">{error?<p role="alert" className="text-sm text-rose-400">{error}</p>:<p className="text-sm">Chargement de YlaVint…</p>}</div>
  const accounts=data.accounts,active=accounts.filter(a=>a.settings?.enabled),paused=active.filter(a=>a.settings.paused),online=accounts.filter(bridgeOnline)
  const unread=data.unread_total||0
  const valid=period.filter(o=>!['cancelled','returning'].includes(o.normalized))
@@ -187,11 +188,13 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
    <p><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-emerald-400"/>{online.length} Bridge{online.length>1?'s':''} connecté{online.length>1?'s':''}</p>
    <p>{active.length-paused.length} actif{active.length-paused.length>1?'s':''}{paused.length?` · ${paused.length} en pause`:''}</p>
    <button className="w-full rounded-lg border border-rose-500/40 px-2 py-1.5 text-rose-300 hover:bg-rose-500/10 disabled:opacity-40" disabled={busy||!active.length} onClick={()=>window.confirm('Mettre YlaVint en pause sur tous les comptes ?')&&act({action:'pause_all'},r=>`${r.paused} compte(s) mis en pause.`)}>Tout mettre en pause</button>
+   {standalone&&<div className="flex items-center justify-between gap-2 pt-1"><a className="hover:text-zinc-100" href="/">← Stock Vinted</a>{onLogout&&<button className="hover:text-zinc-100" onClick={onLogout}>Déconnexion</button>}</div>}
   </div>
  </nav>
 
- return <div className="ylv flex min-h-[calc(100vh-130px)] bg-[#0a0a0b] text-zinc-100">
-  <aside className="hidden w-60 shrink-0 border-r border-zinc-800 bg-[#111113] lg:block"><div className="sticky top-0 h-[calc(100vh-130px)] overflow-y-auto">{sidebar}</div></aside>
+ const full=standalone?'100vh':'calc(100vh - 130px)'
+ return <div className="ylv flex bg-[#0a0a0b] text-zinc-100" style={{minHeight:full}}>
+  <aside className="hidden w-60 shrink-0 border-r border-zinc-800 bg-[#111113] lg:block"><div className="sticky top-0 overflow-y-auto" style={{height:full}}>{sidebar}</div></aside>
   {mobileNav&&<div className="fixed inset-0 z-50 bg-black/60 lg:hidden" onClick={()=>setMobileNav(false)}><aside className="h-full w-72 overflow-y-auto bg-[#111113]" onClick={e=>e.stopPropagation()}>{sidebar}</aside></div>}
   <main className="min-w-0 flex-1 space-y-5 p-3 sm:p-6">
    <div className="flex items-center justify-between gap-2 lg:hidden"><button className={buttonClass} onClick={()=>setMobileNav(true)}>☰ {label(section)}</button><button className={buttonClass} onClick={()=>setSection('messagerie')}>💬{unread>0&&<span className="rounded-full bg-rose-500 px-1.5 text-[11px]">{unread}</span>}</button></div>
