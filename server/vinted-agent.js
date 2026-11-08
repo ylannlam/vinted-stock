@@ -212,8 +212,19 @@ export async function agentPoll(db,key,body,now=Date.now()){
     const last={};for(const t of recent)last[t.kind]??=t.created_at
     const can=await learned(db),due=dueScans(settings,last,now).filter(kind=>ready(kind,can))
     if(due.length)await enqueue(db,due.map(kind=>({account_id:account.id,kind,priority:kind==='sync_inbox'?4:0,dedupe_key:`${kind}:${account.id}`})))
+    await dropStaleLikes(db,account.id,settings,now)
   }
   let claimed=check(await db.rpc('claim_vinted_agent_task',{p_account:account.id}))
+  // Message après like à écarter d'office (article vendu, like hors période) : réglé ici, sans passer par Vinted
+  // ni consommer l'écart entre deux envois, puis on prend la tâche suivante.
+  for(let i=0;i<10&&claimed?.state==='task'&&claimed.task.kind==='like_message';i++){
+    const payload=await (await import('./ylavint-flows.js')).likePayload(db,claimed.task,settings)
+    if(!payload.skip)break
+    const summary=await (await import('./ylavint-flows.js')).likeDone(db,claimed.task,{skipped:payload.skip},settings,{now})
+    await finish(db,claimed.task,'done',summary,null)
+    await db.from('vinted_agent_tasks').update({started_at:null}).eq('id',claimed.task.id).then(check)
+    claimed=check(await db.rpc('claim_vinted_agent_task',{p_account:account.id}))
+  }
   const extra=await (await import('./ylavint.js')).pollExtras(db,account,settings,{paused:row.paused,draft:claimed?.state!=='task'}).catch(e=>{console.error('ylavint_poll_extra_failed',{code:e.code||e.status||'unknown'});return {}})
   if(claimed?.state==='idle'&&extra.ai==='queued')claimed=check(await db.rpc('claim_vinted_agent_task',{p_account:account.id}))
   // Des messages attendent l'écart entre deux envois : on repasse vite pour tenir le délai réglé (30 à 45 s par défaut).
@@ -236,6 +247,17 @@ export async function agentPoll(db,key,body,now=Date.now()){
 }
 const finish=(db,task,state,result,error)=>db.rpc('finish_vinted_agent_task',{p_task:task.id,p_lease:task.lease,p_state:state,p_result:task.kind==='publish_item'?{...result,...(task.result?.progress?{progress:task.result.progress}:{})}:result,p_error:error}).then(check)
 
+// Likes planifiés avant un changement de période : retirés de la file pour que les likes récents partent tout de suite.
+async function dropStaleLikes(db,accountId,settings,now){
+  const since=settings.likes?.history_since;if(!since)return 0
+  const stale=check(await db.from('vinted_agent_tasks').select('id,payload').eq('account_id',accountId).eq('kind','like_message').eq('state','queued').limit(500))
+    .filter(t=>!t.payload?.followup&&!inHistory(t.payload?.liked_at,since)).slice(0,100)
+  if(!stale.length)return 0
+  check(await db.from('vinted_agent_tasks').update({state:'cancelled',error:'Like antérieur à la période choisie.',finished_at:new Date(now).toISOString()}).in('id',stale.map(t=>t.id)).eq('state','queued'))
+  for(const t of stale)check(await db.from('vinted_agent_contacts').update({state:'skipped'}).eq('account_id',accountId).eq('item_id',t.payload.item_id).eq('user_id',t.payload.user_id).eq('state','queued'))
+  await agentLog(db,{account_id:accountId,event:'likes_dropped',message:`${stale.length} like(s) antérieur(s) à la période choisie retiré(s) de la file.`})
+  return stale.length
+}
 const MESSAGE_KINDS=['reply_message','like_message','order_message','accept_offer']
 // Remise en file sans compter l'essai : ni Vinted ni l'onglet n'ont exécuté la tâche.
 const requeue=(db,task,now,seconds)=>db.from('vinted_agent_tasks').update({attempts:Math.max(0,(task.attempts||1)-1),not_before:new Date(now+seconds*1000).toISOString()}).eq('id',task.id).eq('state','queued').then(check)

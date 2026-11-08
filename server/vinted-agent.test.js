@@ -224,3 +224,19 @@ test('a Vinted tab without the extension loaded puts the task back without faili
   assert.equal(state.vinted_agent_tasks[0].state,'queued');assert.equal(state.vinted_agent_tasks[0].attempts,0)
   assert.equal(state.vinted_agent_contacts[0].state,'queued');assert.equal(state.vinted_agent_settings[0].paused,false)
 })
+test('likes older than the chosen period leave the queue at once, so recent likes are sent first',async()=>{
+  const state=base(),since=new Date(Date.now()-6*3600000).toISOString()
+  state.vinted_agent_settings.push({account_id:ACC,enabled:true,paused:false,features:{likes:true},limits:{from_hour:0,to_hour:0},unmask:{},pricing:{},likes:{history_hours:6,history_since:since}})
+  state.vinted_agent_recipes.push(...['likes_list','conversation_create','message_send'].map(k=>recipe(k)))
+  for(const [i,at] of [[1,Date.now()-10*3600000],[2,Date.now()-9*3600000],[3,Date.now()-8*60000]]){
+    state.vinted_agent_tasks.push({id:crypto.randomUUID(),account_id:ACC,kind:'like_message',writes:true,state:'queued',attempts:0,not_before:new Date(Date.now()-60000+i).toISOString(),payload:{item_id:String(i),user_id:'7',step:0,liked_at:new Date(at).toISOString()}})
+    state.vinted_agent_contacts.push({account_id:ACC,item_id:String(i),user_id:'7',state:'queued'})
+  }
+  for(const kind of ['scan_likes','scan_wardrobe'])state.vinted_agent_tasks.push({id:crypto.randomUUID(),account_id:ACC,kind,writes:false,state:'done',created_at:new Date().toISOString()})
+  const db=fakeDb(state)
+  const r=await agentPoll(db,{},{member_id:'3206068112'})
+  assert.equal(r.task?.kind,'like_message');assert.equal(r.task.payload.item_id,'3','the recent like goes first')
+  assert.deepEqual(state.vinted_agent_tasks.filter(t=>t.kind==='like_message').map(t=>t.state),['cancelled','cancelled','running'])
+  assert.ok(state.vinted_agent_recipes.length)
+  assert.deepEqual(state.vinted_agent_contacts.map(c=>c.state),['skipped','skipped','queued'])
+})
