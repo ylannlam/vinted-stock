@@ -23,3 +23,9 @@ test('offers queue once and stop at buyer limit including pending tasks',async()
  assert.equal(await planOffers(db,'account',[{...conv,offers:[{...offer,id:'31'}]}],config),0)
  assert.equal(rows.length,1)
 })
+
+test('offer history skips older or undated offers before accessing the task queue',async()=>{
+ const config=normalizeSettings({messaging:{offers:{enabled:true,history_since:'2026-11-08T00:00:00Z'}}})
+ const db={from(){throw new Error('Older offers must not be queued')}}
+ for(const created_at of [null,'2026-11-07T23:59:59Z'])assert.equal(await planOffers(db,'account',[{id:'10',other_id:'88',transaction_id:'20',allow_reply:true,offers:[{...offer,created_at}]}],config),0)
+})

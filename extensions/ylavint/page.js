@@ -182,29 +182,31 @@
   }
   async function scanInbox(task) {
     const p = task.payload || {}, known = p.known || {}, forced = new Set((p.conversation_ids || []).map(String)), me = task.member_id
-    const first = !Object.keys(known).length
+    const first = !Object.keys(known).length, historyPage=Number(p.history_page)||0
     const list = []
-    for (let page = 1; page <= (first && !forced.size ? 2 : 1); page++) {
+    for (let page = historyPage||1; page <= (historyPage||(first && !forced.size ? 2 : 1)); page++) {
       const data = await call(task.recipes.inbox_list, {query: {page, per_page: 20}})
       const rows = Array.isArray(data.conversations) ? data.conversations : firstArray(data)
       list.push(...rows)
       if (rows.length < 20) break
-      await pause(1500, 3500)
+      await pause(200, 400)
     }
-    const changed = list.filter(c => c && (forced.has(String(c.id)) || known[String(c.id)] !== String(c.updated_at ?? ''))).slice(0, first ? 15 : 10)
+    const changed = list.filter(c => c && (forced.has(String(c.id)) || known[String(c.id)] !== String(c.updated_at ?? ''))).slice(0, historyPage ? 20 : first ? 40 : 20)
     for (const id of forced) if (!list.some(c => String(c.id) === id)) changed.push({id})
     const out = new Map(list.filter(c => c?.id).map(c => [String(c.id), conversationRow(c, null, me)]))
     for (const c of changed) {
-      await pause(1500, 4000)
+      await pause(100, 200)
       try {
         const detail = await call(task.recipes.conversation_read, {ids: {id: c.id}})
         out.set(String(c.id), conversationRow(c, detail, me))
         progress()
       } catch (e) { if (!(e instanceof Stop) || !['vinted_error', 'failed'].includes(e.code)) throw e }
     }
-    return {conversations: [...out.values()]}
+    const moreHistory=!!historyPage&&list.length===20&&list.some(c=>{const v=c.updated_at,n=Number(v),t=Number.isFinite(n)?n*(n<1e12?1000:1):Date.parse(v);return !Number.isFinite(t)||t>=Date.parse(p.history_since)})
+    return {conversations: [...out.values()],more_history:moreHistory}
   }
   async function replyMessage(task) {
+    if(task.payload.skip)return {skipped:task.payload.skip}
     const {conversation_id, body} = task.payload, R = task.recipes
     if (!body) throw new Stop('failed', 'Message vide.')
     if (!R.message_send) throw new Stop('no_recipe', 'Envoi de message pas encore appris.')
@@ -219,10 +221,11 @@
       const e=m.entity||{}
       if(e.current!==true||Number(e.status)!==10||String(e.user_id)!==String(t.buyer_id)||String(e.transaction_id)!==String(t.id))return []
       return [{id:String(e.offer_request_id),transaction_id:String(t.id),buyer_id:String(t.buyer_id),price:amount(e.price),original_price:amount(e.original_price),
-        currency:e.price?.currency_code||e.currency,is_bundle:t.is_bundle}]
+        currency:e.price?.currency_code||e.currency,is_bundle:t.is_bundle,created_at:m.created_at_ts??m.created_at??e.created_at_ts??e.created_at??null}]
     })
   }
   function offerAllowed(o, cfg) {
+    if(cfg?.history_since){const v=o.created_at,n=Number(v),at=v==null?NaN:Number.isFinite(n)?n*(n<1e12?1000:1):Date.parse(v);if(!Number.isFinite(at)||at<Date.parse(cfg.history_since))return false}
     if(!cfg?.enabled||o.currency!=='EUR'||typeof o.is_bundle!=='boolean')return false
     const p=Number(o.price),base=Number(o.original_price),pct=o.is_bundle?cfg.bundle_discount:cfg.single_discount
     return Number.isFinite(p)&&Number.isFinite(base)&&Number.isFinite(pct)&&pct>=0&&pct<=80&&p>=1&&base>=p&&
@@ -269,18 +272,21 @@
     // Anciennes recettes enregistrées : l’ancienne route /api/v2/notifications renvoie désormais 404.
     const recipe = !task.recipes.likes_list || task.recipes.likes_list.path === '/api/v2/notifications'
       ? {method:'GET',origin:'https://api.vinted.fr',path:'/inbox-notifications/v1/notifications',headers:{platform:'web','x-next-app':'marketplace-web',locale:'fr-FR'}} : task.recipes.likes_list
-    const likes = [], seen = new Set()
-    for (let page = 1; page <= 5; page++) {
+    const likes = [], seen = new Set(), historyPage=Number(task.payload?.history_page)||0
+    let moreHistory=false
+    for (let page = historyPage||1; page <= (historyPage||5); page++) {
       const data = await call(recipe, {query:{page,per_page:50}}), rows = firstArray(data)
       for (const n of rows) {
         const row = notificationLike(n, task.member_id)
         if (!row || seen.has(`${row.item_id}:${row.user_id}`)) continue
         seen.add(`${row.item_id}:${row.user_id}`); likes.push(row)
       }
-      if (!rows.length || !data.pagination || page >= data.pagination.total_pages) break
+      const hasMore=rows.length>0&&(data.pagination?.total_pages? page<Number(data.pagination.total_pages):rows.length===50)
+      if(historyPage){moreHistory=hasMore&&rows.some(n=>{const v=n.created_at_ts??n.created_at??n.updated_at??n.timestamp,numeric=Number(v),at=v==null?NaN:Number.isFinite(numeric)?numeric*(numeric<1e12?1000:1):Date.parse(v);return !Number.isFinite(at)||at>=Date.parse(task.payload.history_since)});break}
+      if (!hasMore) break
       await pause(500, 1000)
     }
-    return {likes}
+    return {likes,more_history:moreHistory}
   }
   function notificationLike(n, me) {
     const link = new URL(String(n.link || n.url || n.path || ''), location.origin)
@@ -289,7 +295,7 @@
     // user_id est le destinataire de la notification, PAS le membre qui a liké.
     const user = link.searchParams.get('offering_id') || n.sender_id || n.sender?.id || n.user?.id
     const login = n.sender?.login || n.user?.login || String(n.body || '').match(/^([A-Za-z0-9._-]+) a marqué /)?.[1] || null
-    return item && user && String(user) !== String(me) ? {item_id:String(item),user_id:String(user),login} : null
+    return item && user && String(user) !== String(me) ? {item_id:String(item),user_id:String(user),login,liked_at:n.created_at_ts??n.created_at??n.updated_at??n.timestamp??null} : null
   }
 
   // Une photo envoyée comme le fait le formulaire Vinted (champs relevés à l'apprentissage).
@@ -412,7 +418,8 @@
       // Relance : seulement si le membre n'a pas répondu.
       const d = await call(R.conversation_read || {method: 'GET', path: '/api/v2/conversations/{id}'}, {ids: {id: p.conversation_id}})
       const c = d.conversation || d, me = task.member_id
-      if (firstArray(c.messages ? {messages: c.messages} : c).map(m => messageRow(m, me)).some(m => !m.from_me && m.kind === 'message')) return {skipped: 'le membre a déjà répondu'}
+      if(!Array.isArray(c.messages))throw new Stop('failed','Conversation illisible : relance non envoyée.')
+      if (buyerEngaged(c, me)) return {skipped:'le membre a déjà envoyé un message ou une offre',conversation_id:String(p.conversation_id),buyer_engaged:true}
       if (p.message) { await sendText(R, p.conversation_id, p.message); await pause(3000, 7000) }
       const offer = await sendOffer(R, p.conversation_id, c.transaction?.id, p.offer_price).catch(() => false)
       return {conversation_id: String(p.conversation_id), message: p.message || null, offer}
@@ -423,10 +430,18 @@
     const conversation = created.conversation?.id || created.id
     if (!conversation) throw new Stop('vinted_error', 'Conversation non ouverte.')
     await pause(4000, 9000)
+    // Relire juste avant l'envoi : une offre ou un message peut arriver pendant l'attente du like.
+    const detail=await call(R.conversation_read||{method:'GET',path:'/api/v2/conversations/{id}'},{ids:{id:conversation}})
+    const current=detail.conversation||detail
+    if(!Array.isArray(current.messages))throw new Stop('failed','Conversation illisible : message au like non envoyé.')
+    if(buyerEngaged(current,task.member_id))return {skipped:'le membre a déjà envoyé un message ou une offre',conversation_id:String(conversation),buyer_engaged:true,login:member.login}
     if (p.message) await sendText(R, conversation, p.message)
     let offer = false
     if (p.offer_price && R.offer_send) { await pause(3000, 7000); offer = await sendOffer(R, conversation, created.conversation?.transaction?.id, p.offer_price).catch(() => false) }
     return {conversation_id: String(conversation), message: p.message || null, offer, login: member.login}
+  }
+  function buyerEngaged(conversation,me){
+    return (conversation.messages||[]).map(m=>messageRow(m,me)).some(m=>!m.from_me&&['message','offer','photo'].includes(m.kind))
   }
 
   // ---------- Flux de commande ----------

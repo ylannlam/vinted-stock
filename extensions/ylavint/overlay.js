@@ -173,6 +173,7 @@
       ${d.mode === 'simple' ? `<div class="box"><b style="font-size:13px">Montant de la réduction</b><div class="inline" style="margin-top:6px">${dnum(base + '.amount', 'step="0.5" min="0.5"')}${dsel(base + '.unit', [['eur', '€'], ['pct', '%']])}${dsel(base + '.rounding', [['none', 'Pas d’arrondi'], ['half', 'Arrondi à 0,50 €'], ['euro', 'Arrondi à l’euro']])}</div>
       <p class="note">Offre calculée sur le prix du moment, jamais sous 1 €.</p></div>` : ''}`
   }
+  const historyField=(path,label)=>`<label class="f">${label} — historique à traiter (heures)</label><div class="inline">${dnum(path+'.history_hours','min="0" max="720"')} h</div><p class="note">0 = seulement les nouveaux. 12 = les 12 dernières heures, puis les nouveaux. Appliqué à l’activation ou au changement de cette durée ; aucune action déjà effectuée n’est rejouée.</p>`
   function draftForm(title, sub, body) {
     if (!S.data) return '<p class="note">Chargement…</p>'
     return `<h1>${esc(title)}</h1><p class="sub">${esc(sub)}</p><div class="form">${dsw('enabled', 'YlaVint actif sur ce compte', 'Sans cela, aucune automatisation ne tourne sur ce compte.')}${body}
@@ -183,7 +184,7 @@
     const L = draft().likes, steps = L.messages?.length ? L.messages : (L.messages = [newStep()])
     const delays = [[0, 'Aucun délai'], [5, '5 minutes'], [15, '15 minutes'], [30, '30 minutes'], [60, '1 heure'], [120, '2 heures'], [360, '6 heures'], [720, '12 heures'], [1440, '24 heures']]
     return draftForm('Automatisation des J’aime d’articles', 'Réponses automatiques quand des membres aiment tes articles.', `
-      ${dsw('features.likes', 'Messages aux likes', 'Envoyer un message aux membres qui likent un article')}
+      ${dsw('features.likes', 'Messages aux likes', 'Envoyer un message aux membres qui likent un article')}${historyField('likes','Likes')}
       <div class="info"><b>Comment ça marche ?</b><ul><li>Les messages sont envoyés dans l’ordre, à chaque like d’un même membre.</li><li>Bob aime l’article A → message 1. Bob aime l’article B → message 2.</li>
         <li>S’il n’y a que 2 messages, la rotation s’arrête au message 2.</li><li>Aucun message au même membre pendant les jours choisis plus bas.</li></ul></div>
       ${steps.map((st, i) => `<div class="box"><div class="inline"><h4 style="flex:1">Ce message / cette offre sera envoyé(e) au ${['premier', 'deuxième', 'troisième'][i]} article aimé</h4>${steps.length > 1 ? `<button class="ghost" data-delmsg="${i}">Supprimer</button>` : ''}</div>
@@ -210,16 +211,19 @@
     return draftForm('Smart Agent', 'Réponses aux messages et acceptation des offres pour ce compte.', `
       ${dsw('features.inbox', 'Messagerie centralisée', 'Les conversations de ce compte arrivent sur ton site et ton téléphone')}
       ${dsw('features.ai', 'Agent IA', `Agent ${S.data.ai?.enabled ? (S.data.ai.mode === 'auto' ? 'qui répond seul' : 'qui propose les réponses') : 'coupé sur le site'}`)}
-      <div class="grid2"><div><label class="f">Relire la messagerie toutes les (min)</label>${dnum('messaging.sync_minutes','min="1" max="120"')}</div><div><label class="f">Réponses par jour</label>${dnum('messaging.reply_per_day','min="0" max="300"')}</div></div>
+      <label class="f">Relire la messagerie toutes les (secondes)</label>${dnum('messaging.sync_seconds','min="20" max="7200"')}
+      ${dsw('messaging.reply_unlimited','Réponses par jour illimitées','L’intervalle entre les envois reste respecté.')}
+      ${!m.reply_unlimited?`<label class="f">Réponses par jour</label>${dnum('messaging.reply_per_day','min="0" max="300"')}`:''}
+      ${historyField('messaging','Messages')}
       <div class="box"><h4>Acceptation automatique des offres</h4>
-        ${dsw('messaging.offers.enabled', 'Accepter les offres qui me conviennent', 'Accepte les offres formelles sur Vinted selon tes seuils, sans envoyer de message.')}
+        ${dsw('messaging.offers.enabled', 'Accepter les offres qui me conviennent', 'Accepte les offres formelles sur Vinted selon tes seuils, sans envoyer de message.')}${historyField('messaging.offers','Offres')}
         <label class="f">Remise maximale — article seul</label><div class="inline">${dnum('messaging.offers.single_discount','min="0" max="80" step="0.5"')} %</div>
         <label class="f">Remise maximale — lot</label><div class="inline">${dnum('messaging.offers.bundle_discount','min="0" max="80" step="0.5"')} %</div>
         <p class="note">Exemple sur un article à 50 € : acceptation à partir de ${(Math.ceil(5000*(1-o.single_discount/100))/100).toFixed(2).replace('.',',')} €. Le seuil n’est jamais arrondi vers le bas.</p>
         <label class="f">Limite par acheteur</label><div class="inline">${dnum('messaging.offers.max_per_buyer','min="1" max="100"')} offres sur ${dnum('messaging.offers.period_days','min="1" max="30"')} jour(s)</div>
         <p class="note">Le prix et le statut sont revérifiés avant chaque acceptation. Les offres sous le seuil et les négociations écrites restent à traiter par toi.</p>
       </div>
-      <p class="note" style="margin-top:12px"><a href="${SITE_URL}/ylavint#agent" target="_blank" rel="noopener">Ouvrir les consignes du Smart Agent ↗</a></p>`)
+      <p class="note" style="margin-top:12px"><a href="${SITE_URL}/ylavint#agent" target="_blank" rel="noopener">Consignes et copie des réglages vers les autres comptes ↗</a></p>`)
   }
   function pageFlow() {
     if (!S.data) return '<p class="note">Chargement…</p>'
@@ -341,12 +345,14 @@
     if (d.delmsg) { draft().likes.messages.splice(Number(d.delmsg), 1); render(); return }
     if ('addcarrier' in d) { const v = box.querySelector('[data-carrier]')?.value.trim().toLowerCase(); const l = draft().order_flow.labels.ignore_carriers; if (v && !l.includes(v)) l.push(v); render(); return }
     if (d.delcarrier) { const l = draft().order_flow.labels; l.ignore_carriers = l.ignore_carriers.filter(c => c !== d.delcarrier); render(); return }
-    if ('savedraft' in d) { const s = draft()
+    if ('savedraft' in d) { if([...box.querySelectorAll('input[type="number"]')].some(el=>!el.reportValidity()))return; const s = draft()
       const r = await act('save_settings', {enabled: s.enabled, version: acc()?.settings?.version, settings: {features: s.features, limits: s.limits, unmask: s.unmask, pricing: s.pricing, likes: s.likes, messaging: s.messaging || S.data.defaults.messaging, order_flow: s.order_flow}}, 'Paramètres enregistrés.')
       if (r) { S.draft = null; render() } return }
     if (d.toggle) { const fs = d.toggle.split(','), running = (fs.some(on) || fs.includes('ai') && settings().enabled && settings().messaging?.offers?.enabled) && !acc()?.settings?.paused
       if (acc()?.settings?.paused && !running) return act('resume', {}, 'YlaVint relancé sur ce compte.')
-      return saveSettings(s => { if (!running) s.enabled = true; for (const f of fs) s.features[f] = !running; if (running && fs.includes('ai') && s.messaging?.offers) s.messaging.offers.enabled=false }, running ? 'Automatisation mise en pause.' : 'Automatisation activée.') }
+      let historyHours=null
+      if(!running&&(fs.includes('likes')||fs.includes('ai'))){const choice=prompt('Historique à traiter en heures (0 : uniquement les nouveaux ; 12 : les 12 dernières heures)', '0');if(choice===null)return;historyHours=Number(choice);if(!Number.isInteger(historyHours)||historyHours<0||historyHours>720){alert('Choisis un nombre d’heures entre 0 et 720.');return}}
+      return saveSettings(s => { if(historyHours!==null){if(fs.includes('likes'))s.likes.history_hours=historyHours;if(fs.includes('ai')){s.messaging.history_hours=historyHours;if(s.messaging.offers?.enabled)s.messaging.offers.history_hours=historyHours}} if (!running) s.enabled = true; for (const f of fs) s.features[f] = !running; if (running && fs.includes('ai') && s.messaging?.offers) s.messaging.offers.enabled=false }, running ? 'Automatisation mise en pause.' : 'Automatisation activée.') }
     if ('save' in d) { const s = collect(); return act('save_settings', {enabled: s.enabled, version: acc()?.settings?.version, settings: {features: s.features, limits: s.limits, unmask: s.unmask, pricing: s.pricing, likes: s.likes, messaging: s.messaging || S.data.defaults.messaging, order_flow: s.order_flow || S.data.defaults.order_flow}}, 'Paramètres enregistrés.') }
     if (d.reload) { await act('enqueue', {kind: d.reload}, 'Lecture demandée : elle arrive dans quelques minutes.'); return }
     if (d.unmask) { await act('item_unmask', {item_id: d.unmask}, r => r.message || 'Démasquage demandé.'); return openPage('dressing') }

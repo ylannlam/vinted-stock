@@ -96,7 +96,7 @@ test('extension results are revalidated',()=>{
   assert.throws(()=>parseWardrobe({}),/illisible/)
   const o=parseOrders({orders:[{transaction_id:'9876',status:'À expédier',price:{amount:'15.00'},item_ids:[1,'x'],label_ready:true,shipment_id:44}]})
   assert.deepEqual(o[0].item_ids,['1']);assert.equal(o[0].price,15);assert.equal(o[0].shipment_id,'44')
-  assert.deepEqual(parseLikes({likes:[{item_id:1,user_id:2},{item_id:1,user_id:2},{item_id:'z',user_id:3}]}),[{item_id:'1',user_id:'2',login:null}])
+  assert.deepEqual(parseLikes({likes:[{item_id:1,user_id:2},{item_id:1,user_id:2},{item_id:'z',user_id:3}]}),[{item_id:'1',user_id:'2',login:null,liked_at:null}])
   assert.throws(()=>parseLabel({pdf_base64:Buffer.from('<html>').toString('base64')}),/PDF/)
   assert.equal(parseLabel({pdf_base64:Buffer.from('%PDF-1.7'+'x'.repeat(200)).toString('base64')}).subarray(0,5).toString(),'%PDF-')
 })

@@ -68,23 +68,23 @@ export const DEFAULTS={
     order_message_per_day:30,order_extension_per_day:10,order_cancel_per_day:5,order_review_per_day:20,item_delete_per_day:10,min_gap_minutes:12,from_hour:9,to_hour:22},
   unmask:{price_drop:1,max_drop:2,floor:2,max_repairs:3,wait_hours:24},
   pricing:{after_days:7,step:1,every_days:4,max_drop:5,floor:3},
-  likes:{wait_minutes:30,messages:[likeStep('Bonjour ! Merci pour ton like. Si l’article t’intéresse, je peux te faire un petit prix.')],
+  likes:{history_hours:0,history_since:null,wait_minutes:30,messages:[likeStep('Bonjour ! Merci pour ton like. Si l’article t’intéresse, je peux te faire un petit prix.')],
     per_item:{enabled:false,max:10},cooldown_days:1,min_rating:{enabled:false,value:4},skip_unrated:false,ignored:[]},
   order_flow:{confirm:{enabled:false,message:'Merci pour ton achat @username ! Je prépare ton colis avec soin.'},labels:{ignore_carriers:[]},
     extension:{enabled:false,after_days:3,message:'Bonjour, je rencontre un petit souci pour l’envoi du colis. Peux-tu m’accorder un peu plus de temps ? Merci beaucoup :)',relance1:'',relance2:''},
     cancel:{enabled:false,minutes_before:30},
     pickup:{enabled:false,first_days:1,first:'Bonjour @username, ton colis est arrivé au point relais :)',second_days:3,second:''},
     review:{enabled:false,after_days:1,text:'Parfait, merci !',end_message:''},delete_sold:false},
-  messaging:{sync_minutes:1,reply_per_day:80,reply_gap_seconds:40,action_gap_min:30,action_gap_max:45,
-    offers:{enabled:false,single_discount:20,bundle_discount:20,max_per_buyer:5,period_days:1}},
+  messaging:{sync_seconds:20,sync_minutes:1,reply_unlimited:true,history_hours:0,history_since:null,reply_per_day:80,reply_gap_seconds:40,action_gap_min:30,action_gap_max:45,
+    offers:{enabled:false,history_hours:0,history_since:null,single_discount:20,bundle_discount:20,max_per_buyer:5,period_days:1}},
 }
 const BOUNDS={
   limits:{writes_per_day:[0,200],unmask_item_per_day:[0,100],reprice_item_per_day:[0,100],publish_item_per_day:[0,100],like_message_per_day:[0,1000000],
     order_message_per_day:[0,200],order_extension_per_day:[0,100],order_cancel_per_day:[0,50],order_review_per_day:[0,200],item_delete_per_day:[0,100],min_gap_minutes:[1,240],from_hour:[0,23],to_hour:[0,23]},
   unmask:{price_drop:[0,10],max_drop:[0,50],floor:[1,1000],max_repairs:[0,10],wait_hours:[1,168]},
   pricing:{after_days:[1,90],step:[0.5,20],every_days:[1,60],max_drop:[0,200],floor:[1,1000]},
-  likes:{wait_minutes:[0,1440],cooldown_days:[0,365]},
-  messaging:{sync_minutes:[1,120],reply_per_day:[0,300],reply_gap_seconds:[10,600],action_gap_min:[5,3600],action_gap_max:[5,3600]},
+  likes:{history_hours:[0,720],wait_minutes:[0,1440],cooldown_days:[0,365]},
+  messaging:{sync_seconds:[20,7200],history_hours:[0,720],sync_minutes:[1,120],reply_per_day:[0,300],reply_gap_seconds:[10,600],action_gap_min:[5,3600],action_gap_max:[5,3600]},
 }
 const LABELS={writes_per_day:'modifications par jour',min_gap_minutes:'écart entre deux modifications',from_hour:'heure de début',to_hour:'heure de fin',
   price_drop:'baisse par réparation',max_drop:'baisse maximale',floor:'prix plancher',max_repairs:'réparations maximales',wait_hours:'attente entre deux réparations',
@@ -101,6 +101,10 @@ export function normalizeSettings(input={}){
     if(!Number.isFinite(n)||n<min||n>max)throw new AppError(`Choisis ${LABELS[key]||key} entre ${min} et ${max}.`)
     out[group][key]=['price_drop','max_drop','floor','step'].includes(key)?Math.round(n*100)/100:Math.round(n)
   }
+  if(input.messaging?.sync_seconds===undefined&&input.messaging?.sync_minutes!==undefined)out.messaging.sync_seconds=out.messaging.sync_minutes*60
+  if(input.messaging?.reply_unlimited!==undefined&&typeof input.messaging.reply_unlimited!=='boolean')throw new AppError('Réponses illimitées : choix invalide.')
+  out.messaging.reply_unlimited=input.messaging?.reply_unlimited??(input.messaging?.reply_per_day===undefined)
+  for(const group of ['likes','messaging'])out[group].history_since=historyDate(input[group]?.history_since)
   normalizeLikes(input.likes||{},out.likes)
   out.messaging.offers=normalizeOffers(input.messaging?.offers)
   out.order_flow=normalizeFlow(input.order_flow||{})
@@ -125,11 +129,12 @@ const num=(v,min,max,label,fallback,{round=true}={})=>{
   return round?Math.round(n):Math.round(n*100)/100
 }
 const bool=(v,fallback)=>v===undefined?fallback:v===true
+const historyDate=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?new Date(v).toISOString():null
 export function normalizeOffers(input={}){
   const d=DEFAULTS.messaging.offers
   if(!input||typeof input!=='object'||Array.isArray(input))throw new AppError('Réglages des offres invalides.')
   if(input.enabled!==undefined&&typeof input.enabled!=='boolean')throw new AppError('Activation des offres invalide.')
-  return {enabled:input.enabled===true,
+  return {enabled:input.enabled===true,history_hours:num(input.history_hours,0,720,'l’historique (heures)',0),history_since:historyDate(input.history_since),
     single_discount:num(input.single_discount,0,80,'la remise article seul (%)',d.single_discount,{round:false}),
     bundle_discount:num(input.bundle_discount,0,80,'la remise lot (%)',d.bundle_discount,{round:false}),
     max_per_buyer:num(input.max_per_buyer,1,100,'les offres par acheteur',d.max_per_buyer),

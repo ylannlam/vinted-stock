@@ -1,6 +1,7 @@
 // YlaVint : likes façon Dotb (rotation de 3 messages, offre, relance, filtres) et flux de commande
 // (confirmation, demande de délai, annulation, retrait, évaluation, message de fin, suppression de l'article vendu).
 // Toutes les actions passent par la file de tâches : plafonds du compte, plage horaire et recettes apprises.
+import {inHistory} from './ylavint-history.js'
 import {check,vid,text,iso,jitter,enqueue,KINDS} from './vinted-agent.js'
 import {fillTemplate,offerPrice,OPTIONAL} from './vinted-agent-config.js'
 
@@ -14,7 +15,7 @@ export async function planLikes(db,task,likes,settings,{now=Date.now(),can}){
   if(!settings.features.likes||!likes.length||!KINDS.like_message.needs.every(k=>can.has(k)))return {likes:likes.length,queued:0,message:`${likes.length} like(s) lu(s).`}
   const account=task.account_id
   const known=new Set(check(await db.from('vinted_agent_contacts').select('item_id,user_id').eq('account_id',account).in('item_id',[...new Set(likes.map(l=>l.item_id))])).map(c=>`${c.item_id}:${c.user_id}`))
-  const fresh=likes.filter(l=>!known.has(`${l.item_id}:${l.user_id}`))
+  const fresh=likes.filter(l=>inHistory(l.liked_at,L.history_since)&&!known.has(`${l.item_id}:${l.user_id}`))
   if(!fresh.length)return {likes:likes.length,queued:0,message:`${likes.length} like(s) lu(s), aucun nouveau.`}
   const users=[...new Set(fresh.map(l=>l.user_id))],items=[...new Set(fresh.map(l=>l.item_id))]
   const history=check(await db.from('vinted_agent_contacts').select('item_id,user_id,state,created_at,sent_at').eq('account_id',account).in('user_id',users).in('state',['queued','sent']))
@@ -34,7 +35,7 @@ export async function planLikes(db,task,likes,settings,{now=Date.now(),can}){
     if(skip)continue
     byUser.set(l.user_id,{count:u.count+1,last:now});byItem.set(l.item_id,(byItem.get(l.item_id)||0)+1)
     tasks.push({account_id:account,kind:'like_message',dedupe_key:`like:${account}:${l.item_id}:${l.user_id}`,
-      not_before:nowIso(now+L.wait_minutes*60000),payload:{item_id:l.item_id,user_id:l.user_id,login:l.login||null,step}})
+      not_before:nowIso(now+L.wait_minutes*60000),payload:{item_id:l.item_id,user_id:l.user_id,login:l.login||null,step,liked_at:l.liked_at||null}})
   }
   if(rows.length)check(await db.from('vinted_agent_contacts').upsert(rows,{onConflict:'account_id,item_id,user_id',ignoreDuplicates:true}))
   const queued=await enqueue(db,tasks),skipped=rows.filter(r=>r.state==='skipped').length
@@ -48,7 +49,7 @@ export async function likePayload(db,task,settings){
   const part=p.followup?step.followup:step
   const vars={login:p.login,title:listing?.title,price:listing?.price}
   return {...p,message:fillTemplate(part.message,vars)||'',offer_price:offerPrice(listing?.price,part.discount),
-    skip:listing?.state==='sold'||listing?.state==='draft'?'L’article n’est plus en vente.':null,
+    skip:!inHistory(p.liked_at,L.history_since)?'Like antérieur à la période choisie.':listing?.state==='sold'||listing?.state==='draft'?'L’article n’est plus en vente.':null,
     filters:{min_rating:L.min_rating.enabled?L.min_rating.value:null,skip_unrated:L.skip_unrated,ignored:L.ignored}}
 }
 export const optionalRecipes=kind=>OPTIONAL[kind]||[]

@@ -8,6 +8,7 @@ import {listingAiToken} from './listing-studio-core.js'
 import {LISTING_AI_MODELS} from '../src/lib/listingSettings.js'
 import {sizeFromTitle} from '../src/lib/soldSize.js'
 import {parseOffers,planOffers} from './ylavint-offers.js'
+import {inHistory} from './ylavint-history.js'
 import {acceptableOffer} from './vinted-agent-config.js'
 
 const nowIso=(now=Date.now())=>new Date(now).toISOString()
@@ -102,7 +103,7 @@ export async function applyInbox(db,task,result,{settings,now=Date.now()}={}){
     }
     if(!last||last.from_me||last.kind!=='message'||!c.allow_reply)continue
     if(old?.ai_handled_message_id===last.id||old?.needs_human||['queued','drafting'].includes(old?.ai_state))continue
-    if(!last.sent_at||Date.parse(last.sent_at)<now-48*3600000)continue
+    if(!last.sent_at||!inHistory(last.sent_at,settings.messaging.history_since||nowIso(now-48*3600000)))continue
     check(await db.from('ylavint_conversations').update({ai_state:'pending',ai_reason:null}).eq('account_id',account).eq('conversation_id',c.id));pending++
   }
   return {conversations:convs.length,new_messages:added,ai_pending:pending,offers_queued:offersQueued,message:`${convs.length} conversation(s) lue(s), ${added} nouveau(x) message(s)${pending?`, ${pending} réponse(s) IA à préparer`:''}${offersQueued?`, ${offersQueued} offre(s) à accepter`:''}.`}
@@ -112,7 +113,7 @@ export async function applyInbox(db,task,result,{settings,now=Date.now()}={}){
 async function insertTask(db,row){
   return check(await db.from('vinted_agent_tasks').insert({...row,writes:KINDS[row.kind].writes}).select('id').single()).id
 }
-export async function queueReply(db,{account_id,conversation_id,body,source='site',user=null,manual=true,delayMs=0,now=Date.now()}){
+export async function queueReply(db,{account_id,conversation_id,body,source='site',source_message_at=null,user=null,manual=true,delayMs=0,now=Date.now()}){
   const message=clean(body,2000)
   if(message.length<1)throw new AppError('Écris un message.')
   if(/https?:\/\/|www\./i.test(message)&&source!=='site')throw new AppError('Réponse IA refusée : elle contient un lien.')
@@ -124,7 +125,7 @@ export async function queueReply(db,{account_id,conversation_id,body,source='sit
   const id=localId(),at=nowIso(now)
   check(await db.from('ylavint_messages').insert({account_id,conversation_id,message_id:id,from_me:true,body:message,state:'queued',source,created_by:user,sent_at:nowIso(now+delayMs)}))
   const taskId=await insertTask(db,{account_id,kind:'reply_message',priority:manual?10:5,dedupe_key:`reply:${id}`,not_before:nowIso(now+delayMs),
-    payload:{conversation_id,body:message,local_id:id,manual,source},created_by:user})
+    payload:{conversation_id,body:message,local_id:id,manual,source,source_message_at},created_by:user})
   check(await db.from('ylavint_messages').update({task_id:taskId}).eq('account_id',account_id).eq('conversation_id',conversation_id).eq('message_id',id))
   const patch={last_message:message,last_message_at:at,last_from_me:true,updated_at:at}
   if(source==='site')Object.assign(patch,{ai_state:'none',ai_draft:null,site_read_at:at,needs_human:false})
@@ -133,6 +134,11 @@ export async function queueReply(db,{account_id,conversation_id,body,source='sit
 }
 export async function applyReply(db,task,result,{now=Date.now()}={}){
   const p=task.payload||{},real=typeof result?.message_id==='string'||typeof result?.message_id==='number'?String(result.message_id).slice(0,80):null
+  if(result?.skipped){
+    check(await db.from('ylavint_messages').update({state:'cancelled',error:clean(result.skipped,300)}).eq('account_id',task.account_id).eq('conversation_id',p.conversation_id).eq('message_id',p.local_id))
+    if(p.source==='ai')check(await db.from('ylavint_conversations').update({ai_state:'skipped',ai_reason:clean(result.skipped,300)}).eq('account_id',task.account_id).eq('conversation_id',p.conversation_id))
+    return {conversation_id:p.conversation_id,message:`Réponse non envoyée : ${clean(result.skipped,150)}`}
+  }
   const patch={state:'sent',error:null,sent_at:nowIso(now)}
   let r=await db.from('ylavint_messages').update(real&&/^[A-Za-z0-9:_-]{1,80}$/.test(real)?{...patch,message_id:real}:patch).eq('account_id',task.account_id).eq('conversation_id',p.conversation_id).eq('message_id',p.local_id)
   if(r.error?.code==='23505'){ // la lecture suivante l'a déjà rangé : on garde la copie Vinted
@@ -231,7 +237,8 @@ export async function draftAi(db,conv,config,{generate=generateReply,now=Date.no
     check(await db.from('ylavint_conversations').update({ai_state:'skipped',ai_reason:'Dernier message envoyé par toi.'}).eq('account_id',conv.account_id).eq('conversation_id',conv.conversation_id))
     return {state:'skipped'}
   }
-  const lastId=check(await db.from('ylavint_messages').select('message_id').eq('account_id',conv.account_id).eq('conversation_id',conv.conversation_id).eq('from_me',false).order('sent_at',{ascending:false}).limit(1))[0]?.message_id||null
+  const lastMessage=check(await db.from('ylavint_messages').select('message_id,sent_at').eq('account_id',conv.account_id).eq('conversation_id',conv.conversation_id).eq('from_me',false).order('sent_at',{ascending:false}).limit(1))[0]
+  const lastId=lastMessage?.message_id||null
   const keyword=humanKeyword(config,last.texte)
   let result
   try{result=await generate(config,context)}
@@ -248,7 +255,7 @@ export async function draftAi(db,conv,config,{generate=generateReply,now=Date.no
   }
   if(!force&&config.mode==='auto'&&(conv.ai_replies||0)<config.max_auto_per_conversation){
     const delay=Math.round((config.delay_min_seconds+(config.delay_max_seconds-config.delay_min_seconds)*rand())*1000)
-    await queueReply(db,{account_id:conv.account_id,conversation_id:conv.conversation_id,body:result.reply,source:'ai',manual:false,delayMs:delay,now})
+    await queueReply(db,{account_id:conv.account_id,conversation_id:conv.conversation_id,body:result.reply,source:'ai',source_message_at:lastMessage?.sent_at||null,manual:false,delayMs:delay,now})
     check(await db.from('ylavint_conversations').update({...base,ai_state:'queued',ai_draft:null,ai_replies:(conv.ai_replies||0)+1}).eq('account_id',conv.account_id).eq('conversation_id',conv.conversation_id))
     return {state:'queued',reply:result.reply,delay_seconds:Math.round(delay/1000)}
   }
@@ -267,6 +274,7 @@ export async function pollExtras(db,account,settings,{paused=false,draft=true,no
     if(config.enabled){
       const stale=nowIso(now-120000)
       const conv=check(await db.from('ylavint_conversations').select('*').eq('account_id',account.id).or(`ai_state.eq.pending,and(ai_state.eq.drafting,updated_at.lt.${stale})`).order('last_message_at',{ascending:true}).limit(1))[0]
+      if(conv&&!inHistory(conv.last_message_at,settings.messaging.history_since)){check(await db.from('ylavint_conversations').update({ai_state:'skipped',ai_reason:'Message antérieur à la période choisie.'}).eq('account_id',account.id).eq('conversation_id',conv.conversation_id));return out}
       if(conv){
         const claimed=check(await db.from('ylavint_conversations').update({ai_state:'drafting',updated_at:nowIso(now)}).eq('account_id',conv.account_id).eq('conversation_id',conv.conversation_id).eq('ai_state',conv.ai_state).select('conversation_id'))
         if(claimed?.length)out.ai=await draftAi(db,conv,config,{generate,now}).then(r=>r.state).catch(()=>'error')

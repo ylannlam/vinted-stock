@@ -15,8 +15,9 @@ function Thread({request,conv,onBack,onChanged}){
  const [data,setData]=useState(null),[text,setText]=useState(''),[draft,setDraft]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('')
  const end=useRef(null),key=`${conv.account_id}:${conv.conversation_id}`
  const q=`&view=thread&account_id=${conv.account_id}&conversation_id=${conv.conversation_id}`
- const load=(read=true)=>request('GET',undefined,q+(read?'':'&read=0')).then(r=>{setData(r);setDraft(d=>d||r.conversation.ai_draft||'');setError('')}).catch(e=>setError(e.message))
- useEffect(()=>{setData(null);setText('');setDraft('');load().then(onChanged);const t=setInterval(()=>{if(document.visibilityState==='visible')load(false)},10000);return()=>clearInterval(t)},[key])
+ const active=useRef(key),loading=useRef(null);active.current=key
+ const load=async(read=true)=>{if(loading.current===key)return;loading.current=key;try{const r=await request('GET',undefined,q+(read?'':'&read=0'));if(active.current!==key)return;setData(r);setDraft(d=>d||r.conversation.ai_draft||'');setError('')}catch(e){if(active.current===key)setError(e.message)}finally{if(loading.current===key)loading.current=null}}
+ useEffect(()=>{active.current=key;setData(null);setText('');setDraft('');load().then(onChanged);const t=setInterval(()=>{if(document.visibilityState==='visible')load(false)},3000);return()=>{clearInterval(t);if(active.current===key)active.current=null}},[key])
  useEffect(()=>{end.current?.scrollIntoView({block:'end'})},[data?.messages?.length])
  async function act(body,after){
   setBusy(true);setError('');setNotice('')
@@ -68,8 +69,9 @@ function Thread({request,conv,onBack,onChanged}){
 export default function YlaVintInbox({request,accounts=[]}){
  const [rows,setRows]=useState(null),[filter,setFilter]=useState('all'),[account,setAccount]=useState(''),[search,setSearch]=useState(''),[current,setCurrent]=useState(null),[error,setError]=useState(''),[ai,setAi]=useState(null)
  const query=`&view=inbox&filter=${filter}${account?`&account_id=${account}`:''}${search.trim()?`&q=${encodeURIComponent(search.trim())}`:''}`
- const load=()=>request('GET',undefined,query).then(r=>{setRows(r.conversations);setAi(r.ai);setError('')}).catch(e=>setError(e.message))
- useEffect(()=>{load();const t=setInterval(()=>{if(document.visibilityState==='visible')load()},20000);return()=>clearInterval(t)},[query])
+ const active=useRef(query),loading=useRef(null);active.current=query
+ const load=async()=>{if(loading.current===query)return;loading.current=query;try{const r=await request('GET',undefined,query);if(active.current!==query)return;setRows(r.conversations);setAi(r.ai);setError('')}catch(e){if(active.current===query)setError(e.message)}finally{if(loading.current===query)loading.current=null}}
+ useEffect(()=>{active.current=query;load();const t=setInterval(()=>{if(document.visibilityState==='visible')load()},3000);return()=>{clearInterval(t);if(active.current===query)active.current=null}},[query])
  const enabled=accounts.filter(a=>a.settings?.enabled&&(a.settings.features.inbox||a.settings.features.ai))
  return <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
   <div className="grid lg:grid-cols-[minmax(300px,380px)_1fr]">

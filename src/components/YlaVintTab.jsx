@@ -52,15 +52,21 @@ function AccountSettings({account,defaults,onSave,busy,only}){
    {feats.some(([k])=>k==='sales')&&<p className="mt-2 text-xs text-zinc-500">« Ventes → onglet Ventes » remplace le webhook Dotb pour ce compte : coupe d’abord Dotb sur ce compte. Une vente déjà reçue de Dotb n’est jamais dupliquée.</p>}
   </fieldset>
   {show('messaging')&&<fieldset className="grid grid-cols-2 gap-3 sm:grid-cols-3"><Legend>Messagerie</Legend>
-   <Num label="Relire toutes les" value={form.messaging.sync_minutes} min={1} max={120} suffix="min" onChange={v=>set('messaging','sync_minutes',v)}/>
-   <Num label="Réponses / jour" value={form.messaging.reply_per_day} max={300} onChange={v=>set('messaging','reply_per_day',v)}/>
+   <Num label="Relire toutes les" value={form.messaging.sync_seconds} min={20} max={7200} suffix="s" onChange={v=>set('messaging','sync_seconds',v)}/>
+   <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!form.messaging.reply_unlimited} onChange={e=>set('messaging','reply_unlimited',e.target.checked)}/> Réponses par jour illimitées</label>
+   {!form.messaging.reply_unlimited&&<Num label="Réponses / jour" value={form.messaging.reply_per_day} max={300} onChange={v=>set('messaging','reply_per_day',v)}/>}
    <Num label="Délai entre deux envois : min" value={form.messaging.action_gap_min} min={5} max={3600} suffix="s" onChange={v=>set('messaging','action_gap_min',v)}/>
    <Num label="Délai entre deux envois : max" value={form.messaging.action_gap_max} min={5} max={3600} suffix="s" onChange={v=>set('messaging','action_gap_max',v)}/>
+  </fieldset>}
+  {(show('likes')||show('messaging'))&&<fieldset className="space-y-3"><Legend>Historique à traiter à l’activation</Legend>
+   <p className="text-xs text-zinc-400">0 = nouveaux uniquement. 12 = les 12 dernières heures, puis les nouveaux. Appliqué à l’activation ou au changement de la durée, sans refaire les actions déjà effectuées.</p>
+   {show('likes')&&<Num label="Likes" value={form.likes.history_hours??0} min={0} max={720} suffix="h" onChange={v=>set('likes','history_hours',v)}/>}
+   {show('messaging')&&<><Num label="Messages" value={form.messaging.history_hours??0} min={0} max={720} suffix="h" onChange={v=>set('messaging','history_hours',v)}/><Num label="Offres" value={form.messaging.offers?.history_hours??0} min={0} max={720} suffix="h" onChange={v=>set('messaging','offers',{...defaults.messaging.offers,...form.messaging.offers,history_hours:v})}/></>}
   </fieldset>}
   {show('messaging')&&<fieldset className="space-y-3"><Legend>Acceptation automatique des offres</Legend>
    <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!form.messaging.offers?.enabled} onChange={e=>set('messaging','offers',{...defaults.messaging.offers,...form.messaging.offers,enabled:e.target.checked})}/> Accepter les offres qui atteignent mes seuils</label>
    <div className="grid grid-cols-2 gap-3">{[['single_discount','Remise maximale — article seul',0,80,'%'],['bundle_discount','Remise maximale — lot',0,80,'%'],['max_per_buyer','Offres par acheteur',1,100,''],['period_days','Sur une période de',1,30,'jours']].map(([key,label,min,max,suffix])=><Num key={key} label={label} value={form.messaging.offers?.[key]??defaults.messaging.offers?.[key]} min={min} max={max} suffix={suffix} onChange={v=>set('messaging','offers',{...defaults.messaging.offers,...form.messaging.offers,[key]:v})}/>)}</div>
-   <p className="text-xs text-zinc-400">Acceptation réelle sur Vinted, sans message. Prix et statut revérifiés avant l’action. Les offres sous le seuil et les négociations écrites restent à traiter par toi. Nécessite YlaVint 3.5.0.</p>
+   <p className="text-xs text-zinc-400">Acceptation réelle sur Vinted, sans message. Prix et statut revérifiés avant l’action. Les offres sous le seuil et les négociations écrites restent à traiter par toi. Nécessite YlaVint 3.6.0 pour le choix de l’historique.</p>
   </fieldset>}
   {show('likes')&&<LikesSettings likes={form.likes} onChange={likes=>setForm(f=>({...f,likes}))} gap={form.messaging} onGap={(k,v)=>set('messaging',k,v)}/>}
   {show('order_flow')&&<FlowSettings flow={form.order_flow} onChange={order_flow=>setForm(f=>({...f,order_flow}))} features={form.features} onFeature={(k,v)=>set('features',k,v)}/>}
@@ -106,26 +112,19 @@ function Drawer({title,onClose,children}){
 function AutomationTable({kind,accounts,data,busy,act,chips,setConfigure}){
  const [q,setQ]=useState('')
  const rows=accounts.filter(a=>!q||a.login?.toLowerCase().includes(q.toLowerCase())).sort((a,b)=>Date.parse(b.settings?.updated_at||0)-Date.parse(a.settings?.updated_at||0))
- async function useAsSource(src){
+ async function useAsSource(src,section=kind){
   const others=accounts.filter(a=>a.id!==src.id)
-  if(!window.confirm(`Copier les réglages « ${kind} » de ${src.login} sur les ${others.length} autres comptes ? Leur état actif / coupé ne change pas.`))return
-  const groups=[...(GROUPS[kind]||[])]
-  for(const a of others){
-   const base=a.settings||{...structuredClone(data.defaults),enabled:false}
-   const settings={features:{...base.features},limits:base.limits,unmask:base.unmask,pricing:base.pricing,likes:base.likes,messaging:{...data.defaults.messaging,...(base.messaging||{})},order_flow:base.order_flow||data.defaults.order_flow}
-   if(kind==='flux')settings.features.labels=!!src.settings?.features?.labels
-   for(const f of FEATURE_SETS[kind]||[])settings.features[f]=!!src.settings?.features?.[f]
-   for(const g of groups)settings[g]=structuredClone(src.settings?.[g]||data.defaults[g])
-   const r=await act({action:'save_settings',account_id:a.id,enabled:!!a.settings?.enabled,version:a.settings?.version,settings},null,true)
-   if(!r)break
-  }
-  act(null,`Réglages de ${src.login} copiés sur ${others.length} compte(s).`)
+  const label={all:'Tous les paramètres',likes:'Likes',flux:'Flux de commande',agent:'Smart Agent',prix:'Démasquage et prix'}[section]
+  if(!window.confirm(`Copier les réglages « ${label} » de ${src.login} sur les ${others.length} autres comptes ? Leur état actif / coupé ne change pas.`))return
+  const result=await act({action:'copy_settings',account_id:src.id,section},null,true)
+  if(result)act(null,`${result.copied} compte(s) mis à jour.${result.errors?.length?' Échecs : '+result.errors.map(e=>e.login+': '+e.error).join(' ; '):''}`)
+
  }
  return <>
   <div className="flex justify-end"><input className={compactClass+' w-60'} placeholder="Rechercher des comptes…" value={q} onChange={e=>setQ(e.target.value)}/></div>
   <Table head={['','Compte','Réglages actuels','Dernière mise à jour','']} empty={!rows.length&&'Aucun compte.'}>
    {rows.map(a=><tr key={a.id} className="hover:bg-zinc-800/30">
-    <Td className="w-48"><button className={buttonClass+' py-1.5 text-xs'} disabled={busy||!a.settings} title={a.settings?'':'Configure d’abord ce compte'} onClick={()=>useAsSource(a)}>Utiliser comme source</button></Td>
+    <Td className="w-48"><button className={buttonClass+' py-1.5 text-xs'} disabled={busy||!a.settings} title={a.settings?'':'Configure d’abord ce compte'} onClick={()=>useAsSource(a)}>Copier ces réglages vers tous</button><button className={buttonClass+' mt-2 py-1.5 text-xs'} disabled={busy||!a.settings} onClick={()=>useAsSource(a,'all')}>Copier tous les paramètres</button></Td>
     <Td><p className="flex items-center gap-2 font-semibold text-white"><span className={`h-2 w-2 rounded-full ${bridgeOnline(a)?'bg-emerald-400':'bg-zinc-600'}`} title={bridgeOnline(a)?'Bridge connecté':'Bridge non connecté'}/>{a.login}<span className="rounded bg-zinc-800 px-1 text-[10px] text-zinc-400">FR</span></p>
      <p className="text-xs text-zinc-500">{!a.settings?.enabled?'YlaVint non activé':a.settings.paused?'En pause':'Actif'}</p></Td>
     <Td><div className="flex max-w-xl flex-wrap gap-1.5">{chips(a)}</div></Td>
@@ -267,7 +266,7 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
    {section==='agent'&&<><PageTitle title="Smart Agent" hint="L’agent IA répond aux acheteurs avec tes consignes. Règle-le une fois ci-dessous, puis active-le compte par compte."/>
     <YlaVintAi request={request} accounts={accounts} onAccounts={()=>{}}/>
     <AutomationTable kind="agent" accounts={accounts} data={data} busy={busy} act={act} setConfigure={setConfigure}
-     chips={a=><><Pill icon="✦">{data.ai?.mode==='auto'?'Répond seul':'Propose'}</Pill><Pill tone={on(a,'ai')&&data.ai?.enabled?'green':'zinc'} icon="●">Agent IA {on(a,'ai')&&data.ai?.enabled?'Activé':'Désactivé'}</Pill><Pill tone={on(a,'inbox')?'green':'zinc'} icon="💬">Messagerie {on(a,'inbox')?'Activée':'Désactivée'}</Pill><Pill icon="↻">Lecture {(a.settings?.messaging||data.defaults.messaging).sync_minutes} min</Pill></>}/></>}
+     chips={a=><><Pill icon="✦">{data.ai?.mode==='auto'?'Répond seul':'Propose'}</Pill><Pill tone={on(a,'ai')&&data.ai?.enabled?'green':'zinc'} icon="●">Agent IA {on(a,'ai')&&data.ai?.enabled?'Activé':'Désactivé'}</Pill><Pill tone={on(a,'inbox')?'green':'zinc'} icon="💬">Messagerie {on(a,'inbox')?'Activée':'Désactivée'}</Pill><Pill icon="↻">Lecture {(a.settings?.messaging||data.defaults.messaging).sync_seconds} s</Pill></>}/></>}
 
    {section==='prix'&&<><PageTitle title="Démasquage & prix" hint="Annonces « masquées du catalogue » réparées (mêmes photos, un point dans la description, −1 €), et baisses de prix programmées. Toujours dans les plafonds du compte."/>
     <AutomationTable kind="prix" accounts={accounts} data={data} busy={busy} act={act} setConfigure={setConfigure}

@@ -24,7 +24,8 @@ const T = globalThis.__svAgentTest
 
 test('notifications: offering_id is the liker; user_id is the seller', async()=>{
   const notification={entry_type:20,body:'alice a marqué ton article comme favori',user_id:7,subject_id:9,link:'/items/9/want_it/new?offering_id=88'}
-  assert.deepEqual(T.notificationLike(notification,'7'),{item_id:'9',user_id:'88',login:'alice'})
+  assert.deepEqual(T.notificationLike(notification,'7'),{item_id:'9',user_id:'88',login:'alice',liked_at:null})
+  assert.equal(T.notificationLike({...notification,updated_at:'2026-11-08T12:00:00Z'},'7').liked_at,'2026-11-08T12:00:00Z')
   assert.equal(T.notificationLike({...notification,link:'/items/9'},'7'),null)
   calls.length=0
   vinted=async()=>({status:200,body:{notifications:[notification],pagination:{total_pages:1}}})
@@ -56,6 +57,41 @@ async function run(task) {
   await handler({source: window, origin: location.origin, data: {source: 'sva-ext', type: 'run', id, task}})
   return posted.find(p => p.type === 'result' && p.id === id).payload
 }
+
+test('likes: fresh buyer message or offer cancels the initial message and follow-up',async t=>{
+ t.mock.method(globalThis,'setTimeout',fn=>{queueMicrotask(fn);return 0})
+ const recipes={conversation_create:{method:'POST',path:'/api/v2/conversations',template:{item_id:0,opposite_user_id:0}},conversation_read:{method:'GET',path:'/api/v2/conversations/{id}'},message_send:{method:'POST',path:'/api/v2/conversations/{id}/replies',template:{reply:{body:''}}}}
+ const task={kind:'like_message',member_id:'7',recipes,payload:{item_id:'9',user_id:'88',message:'Merci pour ton like !'}}
+ for(const incoming of [{entity_type:'message',entity:{user_id:88,body:'Bonjour, disponible ?'}},{entity_type:'offer_request_message',entity:{user_id:88,price:{amount:40}}},{entity_type:'message',entity:{user_id:88,photos:[{id:1}]}}]){
+   vinted=async url=>({status:200,body:url.endsWith('/api/v2/conversations')?{conversation:{id:10,messages:[]}}:{conversation:{id:10,messages:[incoming]}}})
+   for(const followup of [false,true]){
+     calls.length=0
+     const r=await run({...task,payload:{...task.payload,followup,conversation_id:'10'}})
+     assert.equal(r.result.buyer_engaged,true);assert.equal(r.result.conversation_id,'10')
+     assert.ok(r.result.skipped);assert.ok(calls.every(c=>!c.url.endsWith('/replies')),'no thanks message sent')
+   }
+ }
+ calls.length=0;vinted=async url=>({status:200,body:url.endsWith('/api/v2/conversations')?{conversation:{id:10}}:{conversation:{id:10,messages:[{entity:{user_id:7,body:'Ancien message vendeur'}}]}}})
+ assert.equal((await run(task)).result.message,'Merci pour ton like !')
+ assert.equal(calls.filter(c=>c.url.endsWith('/replies')).length,1,'seller messages alone do not suppress a like')
+ calls.length=0;vinted=async()=>({status:200,body:{conversation:{id:10}}})
+ assert.equal((await run(task)).ok,false,'unreadable conversation fails closed')
+ assert.ok(calls.every(c=>!c.url.endsWith('/replies')))
+ t.mock.restoreAll()
+})
+
+test('history reads paginate beyond the initial page and stop at the time boundary',async t=>{
+ t.mock.method(globalThis,'setTimeout',fn=>{queueMicrotask(fn);return 0})
+ const since='2026-11-08T00:00:00Z',notification={entry_type:20,user_id:7,link:'/items/9/want_it/new?offering_id=88',updated_at:'2026-11-08T06:00:00Z'}
+ let old=false
+ vinted=async()=>({status:200,body:{notifications:Array.from({length:50},()=>({...notification,updated_at:old?'2026-11-07T06:00:00Z':notification.updated_at})),pagination:{total_pages:10}}})
+ const task={kind:'scan_likes',member_id:'7',recipes:{},payload:{history_page:6,history_since:since}}
+ calls.length=0
+ assert.equal((await run(task)).result.more_history,true)
+ assert.equal(new URL(calls[0].url).searchParams.get('page'),'6')
+ old=true;assert.equal((await run(task)).result.more_history,false)
+ t.mock.restoreAll()
+})
 const R = {
   item_form: {method: 'GET', path: '/api/v2/item_upload/items/{id}', headers: {}},
   item_edit: {method: 'PUT', path: '/api/v2/item_upload/items/{id}', headers: {'x-money-object': 'true'}, body: 'json',

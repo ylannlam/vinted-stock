@@ -288,6 +288,39 @@ test('a disabled account still reports its Bridge presence every 10 minutes',asy
   assert.ok(db.state.vinted_agent_settings[0].last_seen_at);assert.equal(db.state.vinted_agent_settings[0].extension_version,'3.0.0');assert.equal(db.state.vinted_agent_settings[0].enabled,false)
 })
 
+test('like cancelled for an engaged buyer imports their conversation first without recording a sent message',async()=>{
+ const state=base(),db=fakeDb(state),id=crypto.randomUUID(),lease=crypto.randomUUID()
+ state.vinted_agent_tasks.push({id,lease,state:'running',account_id:ACC,kind:'like_message',payload:{item_id:'1',user_id:'77'}})
+ state.vinted_agent_contacts.push({account_id:ACC,item_id:'1',user_id:'77',state:'queued'})
+ await agentResult(db,'k',{task_id:id,lease,member_id:'3206068112',ok:true,result:{skipped:'le membre a déjà envoyé une offre',conversation_id:'9001',buyer_engaged:true}})
+ assert.equal(state.vinted_agent_contacts[0].state,'skipped')
+ assert.equal(state.ylavint_messages.length,0)
+ const read=state.vinted_agent_tasks.find(t=>t.kind==='sync_inbox')
+ assert.deepEqual(read.payload.conversation_ids,['9001']);assert.equal(read.priority,8)
+})
+
+test('history results schedule the next page for inbox and likes',async()=>{
+ for(const kind of ['sync_inbox','scan_likes']){
+   const state=base(),db=fakeDb(state),id=crypto.randomUUID(),lease=crypto.randomUUID(),since='2026-11-08T00:00:00Z'
+   state.vinted_agent_tasks.push({id,lease,state:'running',account_id:ACC,kind,payload:{history_page:6,history_since:since}})
+   await agentResult(db,'k',{task_id:id,lease,member_id:'3206068112',ok:true,result:{conversations:[],likes:[],more_history:true}})
+   const next=state.vinted_agent_tasks.find(t=>t.state==='queued')
+   assert.equal(next.kind,kind);assert.equal(next.payload.history_page,7);assert.equal(next.payload.history_since,since)
+ }
+})
+
+test('a queued AI reply outside a newly selected history window is cancelled, not sent',async()=>{
+ const state=base(),db=fakeDb(state),now=Date.now()
+ state.vinted_agent_settings[0].features={inbox:true}
+ state.vinted_agent_settings[0].messaging={history_since:new Date(now).toISOString()}
+ await applyInbox(db,{account_id:ACC},{conversations:[convo()]},{settings:settings(db),now})
+ await queueReply(db,{account_id:ACC,conversation_id:'9001',body:'Bonjour',source:'ai',manual:false,source_message_at:new Date(now-3600000).toISOString(),now})
+ const p=await agentPoll(db,'k',{member_id:'3206068112'})
+ assert.equal(p.task.kind,'reply_message');assert.match(p.task.payload.skip,/période/)
+ await agentResult(db,'k',{task_id:p.task.id,lease:p.task.lease,member_id:'3206068112',ok:true,result:{skipped:p.task.payload.skip}})
+ assert.equal(state.ylavint_messages.find(m=>m.source==='ai').state,'cancelled')
+})
+
 test('publishing from the listing studio goes through YlaVint only when the account is ready',async()=>{
   const db=fakeDb(base())
   const row={id:'33333333-3333-4333-8333-333333333333',version:1,state:'draft',fields:{account_id:ACC,title:'Robe',description:'Belle robe',price:'20',catalog_id:10},photos:[{path:'a.jpg'}]}
@@ -322,6 +355,44 @@ import {planLikes,likePayload,likeDone,orderStage,planFlow,flowDone} from './yla
 import {normalizeSettings,offerPrice,fillTemplate} from './vinted-agent-config.js'
 const ACF='11111111-1111-4111-8111-111111111111'
 const can=new Set(['conversation_create','message_send','shipping_extension','order_cancel','feedback_send','item_delete'])
+
+test('history: old and undated likes excluded, matching likes queued once and checked again before sending',async()=>{
+ const now=Date.parse('2026-11-08T12:00:00Z'),s=normalizeSettings({features:{likes:true},likes:{history_hours:12,history_since:'2026-11-08T00:00:00Z',wait_minutes:0}}),db=fakeDb({})
+ const likes=[{item_id:'1',user_id:'7',liked_at:'2026-11-07T23:59:59Z'},{item_id:'2',user_id:'8',liked_at:'2026-11-08T00:00:00Z'},{item_id:'3',user_id:'9',liked_at:null}]
+ assert.equal((await planLikes(db,{account_id:ACC},likes,s,{now,can})).queued,1)
+ assert.equal((await planLikes(db,{account_id:ACC},likes,s,{now,can})).queued,0)
+ assert.equal(db.state.vinted_agent_contacts.length,1)
+ const task=db.state.vinted_agent_tasks[0]
+ assert.equal((await likePayload(db,task,s)).skip,null)
+ s.likes.history_since='2026-11-08T01:00:00Z'
+ assert.match((await likePayload(db,task,s)).skip,/période/)
+})
+test('settings save schedules paginated history and bulk copy preserves activation',async()=>{
+ const {handleAgent}=await import('./vinted-agent.js'),state=base(),db=fakeDb(state),other='33333333-3333-4333-8333-333333333333'
+ state.vinted_agent_settings[0].enabled=false
+ const s=normalizeSettings({features:{ai:true,likes:true},likes:{history_hours:12},messaging:{history_hours:12,sync_seconds:20,reply_unlimited:true}})
+ await handleAgent({method:'POST',body:{action:'save_settings',account_id:ACC,enabled:true,version:1,settings:s}},{db,user:{id:USER}})
+ const history=state.vinted_agent_tasks.filter(t=>t.payload?.history_page===1)
+ assert.deepEqual(history.map(t=>t.kind).sort(),['scan_likes','sync_inbox'])
+ assert.ok(history.every(t=>t.payload.history_since))
+ state.publication_accounts.push({id:other,login:'autre'})
+ state.vinted_agent_settings.push({account_id:other,enabled:false,features:{ai:false,likes:false},messaging:{offers:{enabled:false}},version:1})
+ const result=await handleAgent({method:'POST',body:{action:'copy_settings',account_id:ACC,section:'all'}},{db,user:{id:USER}})
+ assert.equal(result.copied,1);assert.deepEqual(result.errors,[])
+ const target=state.vinted_agent_settings[1]
+ assert.equal(target.enabled,false);assert.equal(target.features.ai,false);assert.equal(target.messaging.offers.enabled,false)
+ assert.equal(target.likes.history_hours,12);assert.equal(target.messaging.sync_seconds,20);assert.equal(target.messaging.reply_unlimited,true)
+ assert.equal(state.vinted_agent_tasks.filter(t=>t.account_id===other).length,0)
+})
+test('history messages: only eligible incoming messages become pending, handled messages never replay',async()=>{
+ const state=base(),db=fakeDb(state),now=Date.now()
+ state.vinted_agent_settings[0].messaging={history_since:new Date(now-12*3600000).toISOString()}
+ state.ylavint_config=[{key:'ai',value:{enabled:true,mode:'auto'}}]
+ const messages=[convo({id:'901',messages:[{id:'a',from_me:false,body:'Bonjour',sent_at:new Date(now-13*3600000).toISOString()}]}),convo({id:'902',messages:[{id:'b',from_me:false,body:'Bonjour',sent_at:new Date(now-11*3600000).toISOString()}]})]
+ assert.equal((await applyInbox(db,{account_id:ACC},{conversations:messages},{member:'3206068112',settings:settings(db),now})).ai_pending,1)
+ const handled=state.ylavint_conversations.find(c=>c.conversation_id==='902');handled.ai_handled_message_id='b';handled.ai_state='sent'
+ assert.equal((await applyInbox(db,{account_id:ACC},{conversations:messages},{member:'3206068112',settings:settings(db),now})).ai_pending,0)
+})
 test('likes: rotation of up to 3 messages, cooldown, ignored members and per-item cap',async()=>{
   const settings=normalizeSettings({features:{likes:true},likes:{wait_minutes:0,cooldown_days:1,ignored:'@Spam_user',per_item:{enabled:true,max:2},
     messages:[{message:'Coucou @username'},{message:'Encore toi !',discount:{mode:'simple',amount:10,unit:'pct',rounding:'half'}}]}})
