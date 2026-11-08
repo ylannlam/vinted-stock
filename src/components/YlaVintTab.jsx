@@ -285,7 +285,7 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
      </tr>})}
     </Table>
     <p className="pt-2 text-sm font-semibold text-white">Actions connues ({data.recipes.filter(r=>r.learned_at||r.default).length}/{data.recipes.length})</p>
-    <p className="text-xs text-zinc-500">Les lectures marchent dès le départ. Les actions qui modifient Vinted ne partent qu’après avoir été faites une fois à la main avec le mode apprentissage du popup YlaVint (une fois pour tous les comptes).</p>
+    <p className="text-xs text-zinc-500">Rien à faire à la main : les lectures, les messages, l’ouverture de conversation, l’offre et la suppression d’annonce marchent dès le départ. Les autres actions s’apprennent toutes seules la première fois que tu les fais normalement sur Vinted, sur n’importe quel compte.</p>
     <Table head={['Action','État','Détail','']}>
      {data.recipes.map(r=><tr key={r.kind}><Td className="font-medium text-white">{r.label}</Td>
       <Td>{r.learned_at?<Pill tone="green">Apprise</Pill>:r.default?<Pill tone="blue">Lecture par défaut</Pill>:<Pill tone="amber">À apprendre</Pill>}</Td>

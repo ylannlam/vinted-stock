@@ -158,10 +158,14 @@ async function download(url) {
 
 // ---------- Apprentissage ----------
 async function remember(kind, recipe) {
+  if (!kind || !(await bridgeOn())) return
   const seen = (await get('seen')) || []
   const id = `${recipe.method} ${recipe.path}`
   await set({seen: [{id, kind, recipe, at: Date.now()}, ...seen.filter(s => s.id !== id)].slice(0, 25)})
-  if (kind) await learn(kind, recipe)
+  // Apprentissage automatique : une action déjà apprise n'est renvoyée au site qu'une fois par jour (pour suivre les changements de Vinted).
+  const known = ((await get('learned')) || {})[kind]
+  if (known && known.path === id && Date.now() - known.at < 864e5) return
+  await learn(kind, recipe)
 }
 async function learn(kind, recipe) {
   const who = await vintedTab().then(t => identity(t?.id)).catch(() => null)

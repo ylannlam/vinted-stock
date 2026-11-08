@@ -29,6 +29,12 @@ export const DEFAULT_RECIPES={
   inbox_list:{method:'GET',path:'/api/v2/inbox',query:{},headers:{},body:'none'},
   conversation_read:{method:'GET',path:'/api/v2/conversations/{id}',query:{},headers:{},body:'none'},
   user_read:{method:'GET',path:'/api/v2/users/{id}',query:{},headers:{},body:'none'},
+  // Actions prêtes à l'emploi : utilisées tant que l'extension n'a pas relevé la requête exacte de Vinted.
+  conversation_create:{method:'POST',path:'/api/v2/conversations',query:{},headers:{},body:'json',template:{initiator:'seller_enters_notification',item_id:0,opposite_user_id:0}},
+  message_send:{method:'POST',path:'/api/v2/conversations/{id}/replies',query:{},headers:{},body:'json',template:{reply:{body:'',photo_temp_uuids:null,is_personal_data_sharing_check_skipped:false}}},
+  offer_send:{method:'POST',path:'/api/v2/transactions/{id}/offers',query:{},headers:{},body:'json',template:{offer:{price:'',currency:'EUR'}},id_from:'transaction'},
+  item_delete:{method:'POST',path:'/api/v2/items/{id}/delete',query:{},headers:{},body:'none',id_from:'item'},
+  order_detail:{method:'GET',path:'/api/v2/transactions/{id}',query:{},headers:{},body:'none'},
 }
 // Recettes relevées en mode apprentissage, avec le geste à faire à la main une fois sur Vinted.
 export const RECIPES={

@@ -6,7 +6,8 @@
   if (globalThis.__svAgent) return
   const nativeFetch = window.fetch.bind(window)
   const memory = {csrf: null, anon: null, orders: new Map()}
-  let learning = false
+  // Apprentissage automatique : les requêtes que Vinted fait quand tu l'utilises normalement sont relevées (forme seulement, jamais de cookie ni de jeton).
+  let learning = true
   const post = msg => window.postMessage({source: 'sva-page', ...msg}, location.origin)
   const sleep = ms => new Promise(r => setTimeout(r, ms))
   const pause = (min, max) => sleep(Math.round(min + (max - min) * Math.random()))
@@ -506,7 +507,7 @@
     }
     try { const ct = response.headers.get('content-type') || ''; if (/json/.test(ct)) recipe.response = responseKeys(await response.clone().json()); else recipe.response = [ct.slice(0, 40)] } catch {}
     if (kind === 'orders_list') try { firstArray(await response.clone().json()).map(orderRow).forEach(o => memory.orders.set(String(o.transaction_id), o)) } catch {}
-    if (!response.ok) return
+    if (!response.ok || !kind) return
     post({type: 'seen', kind, recipe})
   }
   // Les enveloppes ne servent qu'à relever, et ne sont posées qu'une fois le mode apprentissage activé à la main.
@@ -524,6 +525,7 @@
     }
     return response
   }
+  if (typeof XMLHttpRequest === 'undefined') return
   const xhrOpen = XMLHttpRequest.prototype.open, xhrSend = XMLHttpRequest.prototype.send, xhrHeader = XMLHttpRequest.prototype.setRequestHeader
   XMLHttpRequest.prototype.open = function (method, url, ...rest) { this.__sva = {method, url, headers: {}}; return xhrOpen.call(this, method, url, ...rest) }
   XMLHttpRequest.prototype.setRequestHeader = function (k, v) { if (this.__sva) this.__sva.headers[k] = v; return xhrHeader.call(this, k, v) }
@@ -542,12 +544,13 @@
   window.addEventListener('message', async e => {
     if (e.source !== window || e.origin !== location.origin || e.data?.source !== 'sva-ext') return
     const d = e.data
-    if (d.type === 'learning') { learning = d.on === true; if (learning) installWrappers() }
+    if (d.type === 'learning') { learning = d.on !== false; if (learning) installWrappers() }
     if (d.type === 'bytes') { const w = bytesWaiters.get(d.id); if (w) { bytesWaiters.delete(d.id); w(d.payload) } }
     if (d.type === 'run' && d.task && !currentTask) post({type: 'result', id: d.id, payload: await run(d.task)})
     else if (d.type === 'run') post({type: 'result', id: d.id, payload: {ok: false, code: 'busy', error: 'Une tâche est déjà en cours dans cet onglet.'}})
   })
-  globalThis.__svAgent = {version: 3}
+  installWrappers()
+  globalThis.__svAgent = {version: 4}
   // Pour les tests : fonctions pures.
   globalThis.__svAgentTest = {fillItem, wardrobeItem, orderRow, shape, fillShape, hiddenFlag, messageRow, conversationRow}
 })()

@@ -144,7 +144,8 @@ export async function accountFor(db,body){
   const account=check(await db.from('publication_accounts').select('id,login,vinted_id').eq('vinted_id',member).maybeSingle())
   return {member,account}
 }
-export const learned=async db=>new Set(check(await db.from('vinted_agent_recipes').select('kind')).map(r=>r.kind))
+// Actions disponibles : relevées sur Vinted, ou prêtes à l'emploi.
+export const learned=async db=>new Set([...check(await db.from('vinted_agent_recipes').select('kind')).map(r=>r.kind),...Object.keys(DEFAULT_RECIPES)])
 const recipeRows=async(db,kinds)=>kinds.length?check(await db.from('vinted_agent_recipes').select('kind,recipe').in('kind',kinds)):[]
 // Une fonction est prête quand toutes ses recettes indispensables ont été relevées.
 export const ready=(kind,can)=>KINDS[kind].needs.every(k=>can.has(k))
@@ -153,7 +154,7 @@ export const ready=(kind,can)=>KINDS[kind].needs.every(k=>can.has(k))
 async function taskBundle(db,task,settings){
   const uses=KINDS[task.kind].uses||[]
   const recipes=Object.fromEntries((await recipeRows(db,[...KINDS[task.kind].needs,...uses,...(OPTIONAL[task.kind]||[])])).map(r=>[r.kind,r.recipe]))
-  for(const k of uses)if(!recipes[k]&&DEFAULT_RECIPES[k])recipes[k]=DEFAULT_RECIPES[k]
+  for(const k of [...KINDS[task.kind].needs,...uses,...(OPTIONAL[task.kind]||[])])if(!recipes[k]&&DEFAULT_RECIPES[k])recipes[k]=DEFAULT_RECIPES[k]
   const missing=KINDS[task.kind].needs.filter(k=>!recipes[k])
   const bundle={id:task.id,lease:task.lease,kind:task.kind,payload:task.payload,recipes,missing}
   if(task.kind==='publish_item'&&!missing.length){
@@ -202,8 +203,8 @@ export async function agentPoll(db,key,body,now=Date.now()){
   if(bundle.missing.length){
     // Sans recette relevée, rien n'est envoyé à Vinted : la tâche attend l'apprentissage.
     await finish(db,claimed.task,'failed',null,`Action pas encore apprise : ${bundle.missing.map(k=>RECIPES[k]?.label||k).join(', ')}.`)
-    await agentLog(db,{account_id:account.id,task_id:claimed.task.id,level:'warn',event:'no_recipe',message:`${KINDS[claimed.task.kind].label} : apprends d’abord ${bundle.missing.map(k=>RECIPES[k]?.label||k).join(', ')} (mode apprentissage).`})
-    if(claimed.task.kind==='reply_message')await (await import('./ylavint.js')).replyFailed(db,claimed.task,'Envoi de message pas encore appris : envoie un message à la main avec le mode apprentissage.')
+    await agentLog(db,{account_id:account.id,task_id:claimed.task.id,level:'warn',event:'no_recipe',message:`${KINDS[claimed.task.kind].label} : fais d’abord une fois à la main sur Vinted : ${bundle.missing.map(k=>RECIPES[k]?.label||k).join(', ')} (mode apprentissage).`})
+    if(claimed.task.kind==='reply_message')await (await import('./ylavint.js')).replyFailed(db,claimed.task,'Envoi de message pas encore appris : envoie un message à la main sur Vinted une fois.')
     return {state:'idle',account:account.login,...extra,wait_seconds:30}
   }
   return {state:'task',account:account.login,...extra,task:bundle}
@@ -435,7 +436,7 @@ export async function handleAgent(req,{db,user}){
   if(body.action==='forget_recipe'){
     if(!RECIPES[body.kind])throw new AppError('Recette inconnue.')
     check(await db.from('vinted_agent_recipes').delete().eq('kind',body.kind))
-    await agentLog(db,{event:'recipe_forgotten',message:`Recette oubliée : ${RECIPES[body.kind].label}. Refais le geste en mode apprentissage.`})
+    await agentLog(db,{event:'recipe_forgotten',message:`Recette oubliée : ${RECIPES[body.kind].label}. Elle sera relevée de nouveau la prochaine fois que tu feras le geste sur Vinted.`})
     return {saved:true}
   }
   throw new AppError('Action inconnue.')
@@ -446,7 +447,7 @@ async function publishDrafts(db,user,body,{now=Date.now(),rand=Math.random}={}){
   const ids=Array.isArray(body.ids)?body.ids.filter(isId).slice(0,25):[]
   if(!ids.length)throw new AppError('Choisis au moins une fiche.')
   const can=await learned(db),missing=KINDS.publish_item.needs.filter(k=>!can.has(k))
-  if(missing.length)throw new AppError(`Apprends d’abord ${missing.map(k=>RECIPES[k].label.toLowerCase()).join(' et ')} (mode apprentissage de l’extension).`,409)
+  if(missing.length)throw new AppError(`Apprends d’abord ${missing.map(k=>RECIPES[k].label.toLowerCase()).join(' et ')} (une fois à la main sur Vinted, YlaVint l’apprend tout seul).`,409)
   const drafts=check(await db.from('listing_drafts').select('id,version,state,fields,photos,planned_at,dotb_item_id').in('id',ids).eq('owner_id',user.id))
   const accounts=new Map(check(await db.from('vinted_agent_settings').select('*').in('account_id',[...new Set(drafts.map(d=>String(d.fields?.account_id||'').toLowerCase()).filter(isId))])).map(s=>[s.account_id,s]))
   const refused=[],tasks=[];let offset=0

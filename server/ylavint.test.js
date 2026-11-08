@@ -261,11 +261,11 @@ test('end to end: poll enqueues the inbox read, the extension result is stored, 
   assert.equal(p.task.kind,'reply_message');assert.equal(p.task.recipes.message_send.path,'/api/v2/conversations/{id}/replies')
   await agentResult(db,'k',{task_id:p.task.id,lease:p.task.lease,member_id:'3206068112',ok:true,result:{conversation_id:'9001',message_id:'m5'}})
   assert.equal(db.state.ylavint_messages.find(m=>m.body==='Bonjour, oui !').state,'sent')
-  // Sans recette d'envoi : le message passe en échec, rien n'est deviné.
+  // Sans recette relevée : l'envoi prêt à l'emploi est utilisé (plus de mode apprentissage à faire à la main).
   db.state.vinted_agent_recipes=db.state.vinted_agent_recipes.filter(r=>r.kind!=='message_send')
   await queueReply(db,{account_id:ACC,conversation_id:'9001',body:'Autre',user:USER})
-  p=await agentPoll(db,'k',{member_id:'3206068112',login:'compte_demo'})
-  assert.equal(db.state.ylavint_messages.find(m=>m.body==='Autre').state,'failed')
+  p=await agentPoll(db,'k',{member_id:'3206068112',login:'compte_demo'},Date.now()+3600000)
+  assert.equal(p.task.kind,'reply_message');assert.deepEqual(p.task.recipes.message_send.template,{reply:{body:'',photo_temp_uuids:null,is_personal_data_sharing_check_skipped:false}})
 })
 
 test('a disabled account still reports its Bridge presence every 10 minutes',async()=>{

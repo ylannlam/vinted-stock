@@ -171,7 +171,7 @@
     const d = getPath(draft(), base) || {}
     return `<div class="inline" style="margin-top:12px"><b style="font-size:13px">Options de réduction</b>${dsel(base + '.mode', [['none', 'Aucune réduction'], ['simple', 'Réduction simple']])}</div>
       ${d.mode === 'simple' ? `<div class="box"><b style="font-size:13px">Montant de la réduction</b><div class="inline" style="margin-top:6px">${dnum(base + '.amount', 'step="0.5" min="0.5"')}${dsel(base + '.unit', [['eur', '€'], ['pct', '%']])}${dsel(base + '.rounding', [['none', 'Pas d’arrondi'], ['half', 'Arrondi à 0,50 €'], ['euro', 'Arrondi à l’euro']])}</div>
-      <p class="note">Offre calculée sur le prix du moment, jamais sous 1 €. Il faut avoir appris « Envoi d’une offre ».</p></div>` : ''}`
+      <p class="note">Offre calculée sur le prix du moment, jamais sous 1 €.</p></div>` : ''}`
   }
   function draftForm(title, sub, body) {
     if (!S.data) return '<p class="note">Chargement…</p>'
@@ -228,7 +228,7 @@
         ${dtext('order_flow.extension.message', 'Message de demande', '', 200)}
         ${dtext('order_flow.extension.relance1', 'Relance à +1 jour — si le délai n’est pas encore accordé (optionnel)')}
         ${dtext('order_flow.extension.relance2', 'Relance à +2 jours — si le délai n’est pas encore accordé (optionnel)')}</div>` : ''}
-      ${dsw('order_flow.cancel.enabled', 'Annulation automatique', 'Annuler la vente juste avant la date limite d’envoi si elle n’est toujours pas expédiée. Motif : celui choisi en apprenant l’action (prends celui qui correspond à la réalité).')}
+      ${dsw('order_flow.cancel.enabled', 'Annulation automatique', 'Annuler la vente juste avant la date limite d’envoi si elle n’est toujours pas expédiée. Motif : celui de ta dernière annulation faite à la main sur Vinted (choisis un motif qui correspond à la réalité).')}
       ${F.cancel.enabled ? `<div class="ind">${dsel('order_flow.cancel.minutes_before', [[30, '30 minutes'], [60, '1 heure'], [120, '2 heures'], [360, '6 heures'], [720, '12 heures']], 'Combien de temps avant la date limite')}
         <p class="note">L’annulation ne part que pendant la plage horaire du compte.</p></div>` : ''}
       <p class="note" style="margin-top:14px">« J’ai expédié » n’est jamais cliqué automatiquement : YlaVint ne déclare pas un envoi qui n’a pas eu lieu.</p>`

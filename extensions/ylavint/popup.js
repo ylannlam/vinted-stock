@@ -33,10 +33,8 @@ async function render() {
   $('state').className = status === 'ok' ? 'ok' : status ? 'bad' : ''
   $('agent').textContent = `Agent : ${STATES[agent?.state] || '—'}${agent?.at ? ` · ${when(agent.at)}` : ''}`
   $('error').textContent = last?.error || ''
-  $('learn').textContent = `Mode apprentissage : ${learning ? 'activé' : 'coupé'}`
-  $('learn').className = learning ? 'small on' : 'small'
-  $('learning').hidden = !learning
-  if (learning) $('more').open = true
+  $('learn').textContent = 'Apprentissage automatique : actif'
+  $('learning').hidden = !seen.length
   const s = $('seen'); s.replaceChildren()
   if (!seen.length) s.append(li('Aucune requête vue. Fais le geste sur Vinted.', 'muted'))
   for (const item of seen) {
@@ -62,7 +60,7 @@ $('bridge').onclick = async () => {
   $('bridge').disabled = false; render()
 }
 for (const b of document.querySelectorAll('[data-open]')) b.onclick = () => chrome.tabs.create({url: `${SITE}/ylavint#${b.dataset.open}`})
-$('learn').onclick = async () => { const {learning} = await chrome.storage.local.get('learning'); await chrome.runtime.sendMessage({type: 'set_learning', on: !learning}); render() }
+
 $('now').onclick = async () => { $('now').disabled = true; await chrome.runtime.sendMessage({type: 'tick_now'}); $('now').disabled = false; render() }
 chrome.storage.onChanged.addListener(render)
 render()

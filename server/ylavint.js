@@ -528,7 +528,7 @@ export async function handleYlavint(req,{db,user},{generate=generateReply}={}){
       const row=check(await db.from('vinted_agent_listings').select('*').eq('account_id',account).eq('item_id',String(b.item_id)).maybeSingle())
       if(!row)throw new AppError('Annonce introuvable dans le dressing lu.',404)
       const kind=b.action==='item_unmask'?'unmask_item':'reprice_item',can=await learned(db)
-      if(!ready(kind,can))throw new AppError(`Apprends d’abord ${KINDS[kind].needs.filter(k=>!can.has(k)).map(k=>RECIPES[k].label.toLowerCase()).join(', ')} (mode apprentissage).`,409)
+      if(!ready(kind,can))throw new AppError(`Apprends d’abord ${KINDS[kind].needs.filter(k=>!can.has(k)).map(k=>RECIPES[k].label.toLowerCase()).join(', ')} (une fois à la main sur Vinted, YlaVint l’apprend tout seul).`,409)
       const price=money(row.price)
       let newPrice=b.action==='item_reprice'?money(b.new_price):price
       if(newPrice==null||price==null)throw new AppError('Prix invalide.')

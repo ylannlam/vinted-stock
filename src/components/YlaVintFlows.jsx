@@ -34,7 +34,7 @@ function Discount({value,onChange}){
     <Select value={d.unit} onChange={v=>set('unit',v)} options={[['eur','€'],['pct','%']]}/>
     <Select value={d.rounding} onChange={v=>set('rounding',v)} options={[['none','Pas d’arrondi'],['half','Arrondi à 0,50 €'],['euro','Arrondi à l’euro']]}/>
    </div>
-   <p className="mt-1 text-[11px] text-zinc-500">L’offre part dans la conversation, calculée sur le prix du moment (arrondie vers le bas, jamais sous 1 €). Il faut avoir appris « Envoi d’une offre ».</p></div>}
+   <p className="mt-1 text-[11px] text-zinc-500">L’offre part dans la conversation, calculée sur le prix du moment (arrondie vers le bas, jamais sous 1 €).</p></div>}
  </div>
 }
 
@@ -109,7 +109,7 @@ export function FlowSettings({flow,onChange,features,onFeature}){
      <Field label="Relance à +1 jour — envoyée si le délai n’a pas encore été accordé (optionnel)"><Area value={F.extension.relance1} onChange={v=>set('extension',{relance1:v})}/></Field>
      <Field label="Relance à +2 jours — envoyée si le délai n’a pas encore été accordé (optionnel)"><Area value={F.extension.relance2} onChange={v=>set('extension',{relance2:v})}/></Field>
     </div>}</div>
-   <div><Switch checked={F.cancel.enabled} onChange={v=>set('cancel',{enabled:v})} label="Annulation automatique" hint="Annuler la vente juste avant la date limite d’envoi si elle n’a toujours pas été expédiée. Le motif est celui que tu choisis en apprenant l’action : prends celui qui correspond à la réalité."/>
+   <div><Switch checked={F.cancel.enabled} onChange={v=>set('cancel',{enabled:v})} label="Annulation automatique" hint="Annuler la vente juste avant la date limite d’envoi si elle n’a toujours pas été expédiée. YlaVint reprend le motif de ta dernière annulation faite à la main sur Vinted : choisis-y un motif qui correspond à la réalité."/>
     {F.cancel.enabled&&<div className="pb-2 pl-3"><Field label="Combien de temps avant la date limite"><Select value={F.cancel.minutes_before} onChange={v=>set('cancel',{minutes_before:v})} options={[[30,'30 minutes'],[60,'1 heure'],[120,'2 heures'],[360,'6 heures'],[720,'12 heures']]}/></Field>
      <p className="text-[11px] text-amber-300/90">L’annulation ne part que pendant la plage horaire du compte : choisis un délai assez large pour qu’elle tombe dedans.</p></div>}</div>
    <p className="pt-3 text-xs text-zinc-500">« J’ai expédié » n’est jamais cliqué automatiquement : YlaVint ne déclare pas un envoi qui n’a pas eu lieu.</p>
