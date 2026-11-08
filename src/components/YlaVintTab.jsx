@@ -2,6 +2,7 @@ import {useEffect,useMemo,useState,lazy,Suspense} from 'react'
 import {buttonClass,primaryClass,fieldClass,compactClass,Pill,Card,PageTitle,StatCard,Table,Td} from './YlaVintUI'
 import VintedWatchPanel,{vintedWatchRequest} from './VintedWatchPanel'
 import {ORDER_LABELS} from '../lib/fulfillment'
+import {LikesSettings,FlowSettings} from './YlaVintFlows'
 
 const YlaVintInbox=lazy(()=>import('./YlaVintInbox'))
 const YlaVintAi=lazy(()=>import('./YlaVintAi'))
@@ -35,12 +36,12 @@ function readSection(){const parts=window.location.hash.slice(1).split('?')[0].s
 const Num=({label,value,onChange,step=1,min=0,max,suffix})=><label className="block text-xs text-zinc-400">{label}
  <span className="mt-1 flex items-center gap-1"><input type="number" className={fieldClass+' py-1.5'} value={value} step={step} min={min} max={max} onChange={e=>onChange(e.target.value===''?'':Number(e.target.value))}/>{suffix&&<span className="text-zinc-500">{suffix}</span>}</span></label>
 const Legend=({children})=><legend className="col-span-full text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{children}</legend>
-const GROUPS={all:['features','messaging','limits','unmask','pricing','likes'],likes:['likes'],flux:[],agent:['messaging'],prix:['unmask','pricing']}
-const FEATURE_SETS={likes:['likes'],flux:['orders','sales','labels'],agent:['inbox','ai'],prix:['dressing','unmask','pricing']}
+const GROUPS={all:['features','messaging','limits','unmask','pricing'],likes:['likes'],flux:['order_flow'],agent:['messaging'],prix:['unmask','pricing']}
+const FEATURE_SETS={likes:['likes'],flux:['orders','sales'],agent:['inbox','ai'],prix:['dressing','unmask','pricing']}
 
 function AccountSettings({account,defaults,onSave,busy,only}){
  const start=account.settings||{...structuredClone(defaults),enabled:false,version:0}
- const [form,setForm]=useState(()=>({...structuredClone(start),messaging:{...defaults.messaging,...(start.messaging||{})}}))
+ const [form,setForm]=useState(()=>({...structuredClone(start),messaging:{...defaults.messaging,...(start.messaging||{})},order_flow:structuredClone(start.order_flow||defaults.order_flow),likes:structuredClone(start.likes||defaults.likes)}))
  const set=(group,key,value)=>setForm(f=>({...f,[group]:{...f[group],[key]:value}}))
  const show=g=>!only||only==='all'||GROUPS[only]?.includes(g)
  const feats=only&&only!=='all'?FEATURES.filter(([k])=>FEATURE_SETS[only].includes(k)):FEATURES
@@ -55,10 +56,8 @@ function AccountSettings({account,defaults,onSave,busy,only}){
    <Num label="Réponses / jour" value={form.messaging.reply_per_day} max={300} onChange={v=>set('messaging','reply_per_day',v)}/>
    <Num label="Écart entre deux réponses" value={form.messaging.reply_gap_seconds} min={10} max={600} suffix="s" onChange={v=>set('messaging','reply_gap_seconds',v)}/>
   </fieldset>}
-  {show('likes')&&<fieldset className="grid gap-3 sm:grid-cols-[1fr_10rem]"><Legend>Message aux likes</Legend>
-   <label className="block text-xs text-zinc-400">Message <span className="text-zinc-500">({'{article}'} et {'{prix}'} sont remplacés)</span><textarea className={fieldClass+' mt-1'} rows={3} maxLength={500} value={form.likes.message} onChange={e=>set('likes','message',e.target.value)}/></label>
-   <Num label="Attente après le like" value={form.likes.wait_minutes} min={5} max={1440} suffix="min" onChange={v=>set('likes','wait_minutes',v)}/>
-  </fieldset>}
+  {show('likes')&&<LikesSettings likes={form.likes} onChange={likes=>setForm(f=>({...f,likes}))} perDay={form.limits.like_message_per_day} onPerDay={v=>set('limits','like_message_per_day',v)}/>}
+  {show('order_flow')&&<FlowSettings flow={form.order_flow} onChange={order_flow=>setForm(f=>({...f,order_flow}))} features={form.features} onFeature={(k,v)=>set('features',k,v)}/>}
   {show('limits')&&<fieldset className="grid grid-cols-2 gap-3 sm:grid-cols-4"><Legend>Plafonds des modifications (heure de Paris)</Legend>
    <Num label="De" value={form.limits.from_hour} max={23} suffix="h" onChange={v=>set('limits','from_hour',v)}/>
    <Num label="À" value={form.limits.to_hour} max={23} suffix="h" onChange={v=>set('limits','to_hour',v)}/>
@@ -108,7 +107,8 @@ function AutomationTable({kind,accounts,data,busy,act,chips,setConfigure}){
   const groups=[...(GROUPS[kind]||[])]
   for(const a of others){
    const base=a.settings||{...structuredClone(data.defaults),enabled:false}
-   const settings={features:{...base.features},limits:base.limits,unmask:base.unmask,pricing:base.pricing,likes:base.likes,messaging:{...data.defaults.messaging,...(base.messaging||{})}}
+   const settings={features:{...base.features},limits:base.limits,unmask:base.unmask,pricing:base.pricing,likes:base.likes,messaging:{...data.defaults.messaging,...(base.messaging||{})},order_flow:base.order_flow||data.defaults.order_flow}
+   if(kind==='flux')settings.features.labels=!!src.settings?.features?.labels
    for(const f of FEATURE_SETS[kind]||[])settings.features[f]=!!src.settings?.features?.[f]
    for(const g of groups)settings[g]=structuredClone(src.settings?.[g]||data.defaults[g])
    const r=await act({action:'save_settings',account_id:a.id,enabled:!!a.settings?.enabled,version:a.settings?.version,settings},null,true)
@@ -253,11 +253,11 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
 
    {section==='likes'&&<><PageTitle title="Likes d’articles" hint="Quand un membre like une annonce, YlaVint lui envoie ton message après le délai choisi. Choisis un compte dont tu veux répliquer les réglages sur les autres, ou configure-les un par un."/>
     <AutomationTable kind="likes" accounts={accounts} data={data} busy={busy} act={act} setConfigure={setConfigure}
-     chips={a=><><Pill tone={on(a,'likes')?'green':'zinc'} icon="●">Likes {on(a,'likes')?'Activé':'Désactivé'}</Pill><Pill icon="💬">1 message</Pill><Pill icon="⏱">Après {(a.settings||data.defaults).likes.wait_minutes} min</Pill><Pill icon="↗">{(a.settings||data.defaults).limits.like_message_per_day}/jour</Pill></>}/></>}
+     chips={a=><><Pill tone={on(a,'likes')?'green':'zinc'} icon="●">Likes {on(a,'likes')?'Activé':'Désactivé'}</Pill><Pill icon="💬">{((a.settings||data.defaults).likes.messages||[]).length||1} message(s)</Pill><Pill icon="⏱">{(a.settings||data.defaults).likes.wait_minutes?`Après ${(a.settings||data.defaults).likes.wait_minutes} min`:'Aucun délai'}</Pill><Pill icon="↗">{(a.settings||data.defaults).limits.like_message_per_day}/jour</Pill></>}/></>}
 
-   {section==='flux'&&<><PageTitle title="Flux de commande" hint="Lecture des ventes toutes les 30 min, envoi dans l’onglet Ventes (à la place de Dotb) et bordereau automatique. Le bordereau s’imprime depuis l’onglet Ventes (100 × 150)."/>
+   {section==='flux'&&<><PageTitle title="Flux de commande" hint="Expédition, délai, retrait et finalisation, comme dans Dotb. Les ventes sont relues toutes les 30 min ; chaque action part une seule fois par vente, dans les plafonds du compte."/>
     <AutomationTable kind="flux" accounts={accounts} data={data} busy={busy} act={act} setConfigure={setConfigure}
-     chips={a=><><Pill tone={on(a,'orders')?'green':'zinc'} icon="🛒">Lecture des ventes</Pill><Pill tone={on(a,'sales')?'green':'zinc'} icon="⇄">Ventes → onglet Ventes</Pill><Pill tone={on(a,'labels')?'green':'zinc'} icon="🖨">Bordereau automatique</Pill></>}/></>}
+     chips={a=><><Pill tone={on(a,'orders')?'green':'zinc'} icon="🛒">Lecture des ventes</Pill><Pill tone={on(a,'sales')?'green':'zinc'} icon="⇄">Ventes → onglet Ventes</Pill><Pill tone={on(a,'labels')?'green':'zinc'} icon="🖨">Bordereau automatique</Pill>{(()=>{const f=(a.settings||data.defaults).order_flow||{};return [['confirm','Confirmation'],['extension','Délai'],['cancel','Annulation'],['pickup','Retrait'],['review','Évaluation']].filter(([k])=>f[k]?.enabled).map(([k,l])=><Pill key={k} tone="green" icon="✓">{l}</Pill>)})()}</>}/></>}
 
    {section==='agent'&&<><PageTitle title="Smart Agent" hint="L’agent IA répond aux acheteurs avec tes consignes. Règle-le une fois ci-dessous, puis active-le compte par compte."/>
     <YlaVintAi request={request} accounts={accounts} onAccounts={()=>{}}/>
@@ -311,7 +311,7 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
   </main>
   {configure&&<Drawer title={`Configurer ${configure.account.login}`} onClose={()=>setConfigure(null)}>
    <AccountSettings account={configure.account} defaults={data.defaults} busy={busy} only={configure.only}
-    onSave={async form=>{const r=await act({action:'save_settings',account_id:configure.account.id,enabled:form.enabled,version:configure.account.settings?.version,settings:{features:form.features,limits:form.limits,unmask:form.unmask,pricing:form.pricing,likes:form.likes,messaging:form.messaging}},'Réglages enregistrés.');if(r)setConfigure(null)}}/>
+    onSave={async form=>{const r=await act({action:'save_settings',account_id:configure.account.id,enabled:form.enabled,version:configure.account.settings?.version,settings:{features:form.features,limits:form.limits,unmask:form.unmask,pricing:form.pricing,likes:form.likes,messaging:form.messaging,order_flow:form.order_flow}},'Réglages enregistrés.');if(r)setConfigure(null)}}/>
   </Drawer>}
  </div>
 }

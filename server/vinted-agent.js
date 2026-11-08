@@ -20,7 +20,7 @@ export function parisDayStart(now=Date.now()){
 }
 
 export {KINDS,DEFAULT_RECIPES,RECIPES,DEFAULTS,normalizeSettings,effectiveSettings} from './vinted-agent-config.js'
-import {KINDS,DEFAULT_RECIPES,RECIPES,DEFAULTS,normalizeSettings,effectiveSettings} from './vinted-agent-config.js'
+import {KINDS,DEFAULT_RECIPES,RECIPES,DEFAULTS,OPTIONAL,normalizeSettings,effectiveSettings} from './vinted-agent-config.js'
 
 // Écart aléatoire pour ne pas enchaîner les modifications à heure fixe.
 export const jitter=(min,max,rand=Math.random)=>Math.round(minutes(min+(max-min)*rand()))
@@ -29,7 +29,8 @@ export const jitter=(min,max,rand=Math.random)=>Math.round(minutes(min+(max-min)
 export function dueScans(settings,last={},now=Date.now()){
   const f=settings.features
   const every={scan_wardrobe:120,sync_orders:30,scan_likes:20,sync_inbox:settings.messaging?.sync_minutes||5}
-  const want={scan_wardrobe:f.unmask||f.pricing||f.dressing,sync_orders:f.orders||f.labels||f.sales,scan_likes:f.likes,sync_inbox:f.inbox||f.ai}
+  const o=settings.order_flow||{},flow=!!(o.confirm?.enabled||o.extension?.enabled||o.cancel?.enabled||o.pickup?.enabled||o.review?.enabled||o.delete_sold)
+  const want={scan_wardrobe:f.unmask||f.pricing||f.dressing,sync_orders:f.orders||f.labels||f.sales||flow,scan_likes:f.likes,sync_inbox:f.inbox||f.ai}
   return Object.entries(want).filter(([kind,on])=>on&&(!last[kind]||Date.parse(last[kind])<now-minutes(every[kind]))).map(([kind])=>kind)
 }
 export const SCANS=['scan_wardrobe','sync_orders','scan_likes','sync_inbox']
@@ -72,6 +73,7 @@ export function parseOrders(result){
     orders.push({transaction_id:id,status:text(raw.status,60)||null,title:text(raw.title,200)||null,price:money(raw.price),
       currency:/^[A-Z]{3}$/.test(raw.currency||'')?raw.currency:'EUR',item_ids:(Array.isArray(raw.item_ids)?raw.item_ids:[]).map(vid).filter(Boolean).slice(0,20),
       order_date:iso(raw.order_date),label_ready:raw.label_ready===true,shipment_id:vid(raw.shipment_id),conversation_id:vid(raw.conversation_id),
+      ship_deadline:iso(raw.ship_deadline),carrier:text(raw.carrier,40)||null,buyer_id:vid(raw.buyer_id),buyer_login:text(raw.buyer_login,40)||null,
       photo_url:typeof raw.photo_url==='string'&&/^https:\/\/[a-z0-9.-]+\.vinted\.net\//.test(raw.photo_url)?raw.photo_url.slice(0,500):null})
   }
   return orders
@@ -79,7 +81,9 @@ export function parseOrders(result){
 export function parseLikes(result){
   if(!result||!Array.isArray(result.likes)||result.likes.length>500)throw new AppError('Likes illisibles.')
   const out=[],seen=new Set()
-  for(const raw of result.likes){const item=vid(raw?.item_id),user=vid(raw?.user_id),key=`${item}:${user}`;if(item&&user&&!seen.has(key)){seen.add(key);out.push({item_id:item,user_id:user})}}
+  for(const raw of result.likes){const item=vid(raw?.item_id),user=vid(raw?.user_id),key=`${item}:${user}`
+    const login=typeof raw?.login==='string'&&/^[A-Za-z0-9._-]{2,40}$/.test(raw.login)?raw.login:null
+    if(item&&user&&!seen.has(key)){seen.add(key);out.push({item_id:item,user_id:user,login})}}
   return out
 }
 export function parseLabel(result){
@@ -94,7 +98,7 @@ export function sanitizeRecipe(kind,raw){
   if(!RECIPES[kind])throw new AppError('Recette inconnue.')
   if(!raw||typeof raw!=='object')throw new AppError('Recette invalide.')
   const method=String(raw.method||'').toUpperCase()
-  if(!['GET','POST','PUT','PATCH'].includes(method))throw new AppError('Méthode non prise en charge.')
+  if(!['GET','POST','PUT','PATCH'].includes(method)&&!(method==='DELETE'&&kind==='item_delete'))throw new AppError('Méthode non prise en charge.')
   const path=String(raw.path||'')
   if(!/^\/(api\/v2|web\/api)\/[A-Za-z0-9_\-/{}.]{1,200}$/.test(path)||path.includes('..'))throw new AppError('Chemin Vinted invalide.')
   const query=raw.query&&typeof raw.query==='object'?Object.fromEntries(Object.entries(raw.query).filter(([k,v])=>/^[a-z_\[\]0-9]{1,40}$/i.test(k)&&['string','number','boolean'].includes(typeof v)).slice(0,20).map(([k,v])=>[k,String(v).slice(0,100)])):{}
@@ -104,7 +108,8 @@ export function sanitizeRecipe(kind,raw){
   if(body==='json'&&(!template||typeof template!=='object'||JSON.stringify(template).length>30000))throw new AppError('Modèle de requête invalide.')
   if(body==='form'&&!fields.length)throw new AppError('Champs du formulaire absents.')
   const response=Array.isArray(raw.response)?raw.response.filter(k=>typeof k==='string'&&k.length<=60).slice(0,40):[]
-  return {method,path,query,headers,body,template,fields,response,status:Number.isSafeInteger(raw.status)?raw.status:null}
+  const id_from=['shipment','transaction','conversation','item','user'].includes(raw.id_from)?raw.id_from:null
+  return {method,path,query,headers,body,template,fields,response,status:Number.isSafeInteger(raw.status)?raw.status:null,...(id_from?{id_from}:{})}
 }
 
 // --- Base de données ---
@@ -147,7 +152,7 @@ export const ready=(kind,can)=>KINDS[kind].needs.every(k=>can.has(k))
 // Ce que l'extension reçoit avec sa tâche : les recettes utiles et les données nécessaires (photos signées pour 30 min).
 async function taskBundle(db,task,settings){
   const uses=KINDS[task.kind].uses||[]
-  const recipes=Object.fromEntries((await recipeRows(db,[...KINDS[task.kind].needs,...uses])).map(r=>[r.kind,r.recipe]))
+  const recipes=Object.fromEntries((await recipeRows(db,[...KINDS[task.kind].needs,...uses,...(OPTIONAL[task.kind]||[])])).map(r=>[r.kind,r.recipe]))
   for(const k of uses)if(!recipes[k]&&DEFAULT_RECIPES[k])recipes[k]=DEFAULT_RECIPES[k]
   const missing=KINDS[task.kind].needs.filter(k=>!recipes[k])
   const bundle={id:task.id,lease:task.lease,kind:task.kind,payload:task.payload,recipes,missing}
@@ -158,10 +163,7 @@ async function taskBundle(db,task,settings){
     const signed=paths.length?check(await db.storage.from(BUCKET).createSignedUrls(paths,1800)):[]
     bundle.listing={fields:draft.fields,live:task.payload.live!==false&&draft.dotb_publish!==false,photos:signed.map(s=>s.signedUrl).filter(Boolean)}
   }
-  if(task.kind==='like_message'){
-    const item=check(await db.from('vinted_agent_listings').select('title,price').eq('account_id',task.account_id).eq('item_id',task.payload.item_id).maybeSingle())
-    bundle.payload={...task.payload,message:(await import('./ylavint.js')).likeText(settings.likes.message,{title:item?.title,price:item?.price})}
-  }
+  if(task.kind==='like_message')bundle.payload=await (await import('./ylavint-flows.js')).likePayload(db,task,settings)
   if(task.kind==='sync_inbox')bundle.payload={...task.payload,known:await (await import('./ylavint.js')).knownConversations(db,task.account_id)}
   if(task.kind==='sync_orders'){
     const known=check(await db.from('vinted_agent_orders').select('transaction_id,item_ids').eq('account_id',task.account_id).order('first_seen_at',{ascending:false}).limit(60))
@@ -231,8 +233,10 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
     await finish(db,task,'failed',null,detail||`${label} : échec.`)
     await log('error','failed',`${label} : ${detail||'échec'}`,{code,status:Number.isSafeInteger(body.status)?body.status:null})
     if(task.kind==='publish_item')await markDraft(db,task.payload.draft_id,{state:'attention',message:`L’agent n’a pas pu publier : ${detail||'erreur Vinted'}. Vérifie le dressing avant de relancer.`})
-    if(task.kind==='like_message')await db.from('vinted_agent_contacts').update({state:'failed'}).eq('account_id',task.account_id).eq('item_id',task.payload.item_id).eq('user_id',task.payload.user_id)
+    if(task.kind==='like_message')await db.from('vinted_agent_contacts').update(task.payload.followup?{followup_state:'failed'}:{state:'failed'}).eq('account_id',task.account_id).eq('item_id',task.payload.item_id).eq('user_id',task.payload.user_id)
     if(task.kind==='reply_message')await (await import('./ylavint.js')).replyFailed(db,task,detail||'Vinted a refusé le message.')
+    const flows=await import('./ylavint-flows.js')
+    if(flows.isFlowTask(task.kind))await flows.flowDone(db,task,{ok:false,error:detail||'échec'}).catch(()=>null)
     return {saved:true}
   }
   const settings=effectiveSettings(check(await db.from('vinted_agent_settings').select('*').eq('account_id',task.account_id).maybeSingle()))
@@ -240,16 +244,16 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
   if(task.kind==='scan_wardrobe')summary=await applyWardrobe(db,task,parseWardrobe(body.result),settings,{now,rand})
   if(task.kind==='sync_orders')summary=await applyOrders(db,task,parseOrders(body.result),settings,{rand})
   if(task.kind==='fetch_label')summary=await applyLabel(db,task,parseLabel(body.result))
-  if(task.kind==='scan_likes')summary=await applyLikes(db,task,parseLikes(body.result),settings,{now,rand})
+  if(task.kind==='scan_likes')summary=await (await import('./ylavint-flows.js')).planLikes(db,task,parseLikes(body.result),settings,{now,rand,can:await learned(db)})
   if(task.kind==='unmask_item'||task.kind==='reprice_item')summary=await applyEdit(db,task,body.result,now)
   if(task.kind==='publish_item')summary=await applyPublish(db,task,body.result)
   if(task.kind==='sync_inbox')summary=await (await import('./ylavint.js')).applyInbox(db,task,body.result,{member,settings,now})
   if(task.kind==='reply_message')summary=await (await import('./ylavint.js')).applyReply(db,task,body.result,{now})
   if(task.kind==='like_message'){
-    check(await db.from('vinted_agent_contacts').update({state:'sent',sent_at:new Date(now).toISOString()}).eq('account_id',task.account_id).eq('item_id',task.payload.item_id).eq('user_id',task.payload.user_id))
-    summary={message:'Message envoyé après un like.'}
-    await (await import('./ylavint.js')).recordLikeMessage(db,task,body.result,{now}).catch(()=>null)
+    summary=await (await import('./ylavint-flows.js')).likeDone(db,task,body.result,settings,{now,rand})
+    if(!summary.skipped)await (await import('./ylavint.js')).recordLikeMessage(db,{...task,payload:{...task.payload,message:body.result?.message||null}},body.result,{now}).catch(()=>null)
   }
+  {const flows=await import('./ylavint-flows.js');if(flows.isFlowTask(task.kind))summary=await flows.flowDone(db,task,{ok:true,result:body.result},{now})}
   await finish(db,task,'done',summary,null)
   await log('info','done',`${label} · ${summary.message||'terminé'}`,{member_id:member})
   return {saved:true,...summary}
@@ -290,18 +294,20 @@ async function applyWardrobe(db,task,{items,complete},settings,{now,rand}){
 async function applyOrders(db,task,orders,settings,{rand}){
   const at=new Date().toISOString()
   // Une lecture de la liste ne connaît pas toujours les articles ni l'envoi : on garde ce qu'une lecture détaillée a déjà appris.
-  const before=orders.length?new Map(check(await db.from('vinted_agent_orders').select('transaction_id,account_id,item_ids,shipment_id,conversation_id').in('transaction_id',orders.map(o=>o.transaction_id))).map(o=>[o.transaction_id,o])):new Map()
+  const before=orders.length?new Map(check(await db.from('vinted_agent_orders').select('transaction_id,account_id,item_ids,shipment_id,conversation_id,ship_deadline,carrier,buyer_id').in('transaction_id',orders.map(o=>o.transaction_id))).map(o=>[o.transaction_id,o])):new Map()
   orders=orders.filter(o=>!before.has(o.transaction_id)||before.get(o.transaction_id).account_id===task.account_id).map(o=>{const old=before.get(o.transaction_id)
     return {...o,item_ids:o.item_ids.length?o.item_ids:old?.item_ids||[],shipment_id:o.shipment_id||old?.shipment_id||null,conversation_id:o.conversation_id||old?.conversation_id||null}})
-  if(orders.length)check(await db.from('vinted_agent_orders').upsert(orders.map(({label_ready,photo_url,...o})=>({...o,account_id:task.account_id,seen_at:at})),{onConflict:'transaction_id'}))
+  if(orders.length)check(await db.from('vinted_agent_orders').upsert(orders.map(({label_ready,photo_url,buyer_login,...o})=>({...o,ship_deadline:o.ship_deadline||before.get(o.transaction_id)?.ship_deadline||null,carrier:o.carrier||before.get(o.transaction_id)?.carrier||null,buyer_id:o.buyer_id||before.get(o.transaction_id)?.buyer_id||null,account_id:task.account_id,seen_at:at})),{onConflict:'transaction_id'}))
+  const flows=await import('./ylavint-flows.js'),can=await learned(db)
+  const flow=await flows.planFlow(db,task.account_id,orders,settings,{rand,can}).catch(e=>{console.error('ylavint_flow_failed',e?.message);return {queued:0}})
   let queued=0,pushed=0
   if(settings.features.sales&&orders.length)pushed=await (await import('./ylavint.js')).pushSales(db,task.account_id,orders)
-  if(settings.features.labels&&orders.length&&(await learned(db)).has('order_label')){
-    const ready=orders.filter(o=>o.label_ready&&!/annul|cancel|rembours|refund/i.test(o.status||'')),ids=ready.map(o=>o.transaction_id)
+  if(settings.features.labels&&orders.length&&can.has('order_label')){
+    const ready=orders.filter(o=>o.label_ready&&!/annul|cancel|rembours|refund/i.test(o.status||'')&&!flows.carrierIgnored(settings,o.carrier||before.get(o.transaction_id)?.carrier)),ids=ready.map(o=>o.transaction_id)
     const done=ids.length?new Set(check(await db.from('vinted_agent_orders').select('transaction_id,label_path').in('transaction_id',ids)).filter(o=>o.label_path).map(o=>o.transaction_id)):new Set()
     queued=await enqueue(db,ready.filter(o=>!done.has(o.transaction_id)).map(o=>({account_id:task.account_id,kind:'fetch_label',dedupe_key:`label:${o.transaction_id}`,not_before:new Date(Date.now()+jitter(1,10,rand)).toISOString(),payload:{transaction_id:o.transaction_id,shipment_id:o.shipment_id}})))
   }
-  return {orders:orders.length,queued,pushed,message:`${orders.length} vente(s) lue(s)${pushed?`, ${pushed} envoyée(s) dans l’onglet Ventes`:''}${queued?`, ${queued} bordereau(x) à récupérer`:''}.`}
+  return {orders:orders.length,queued,pushed,flow:flow.queued,message:`${orders.length} vente(s) lue(s)${pushed?`, ${pushed} envoyée(s) dans l’onglet Ventes`:''}${queued?`, ${queued} bordereau(x) à récupérer`:''}${flow.queued?`, ${flow.queued} action(s) du flux de commande prévue(s)`:''}.`}
 }
 
 async function applyLabel(db,task,bytes){
@@ -312,17 +318,6 @@ async function applyLabel(db,task,bytes){
   const sale=saved?.[0]?.sales_order_id
   if(sale)await db.from('sales_orders').update({label_url:`ylavint:${path}`}).eq('id',sale)
   return {path,message:sale?'Bordereau enregistré et ajouté à la vente.':'Bordereau enregistré.'}
-}
-
-async function applyLikes(db,task,likes,settings,{now,rand}){
-  const can=await learned(db)
-  if(!settings.features.likes||!likes.length||!KINDS.like_message.needs.every(k=>can.has(k)))return {likes:likes.length,queued:0,message:`${likes.length} like(s) lu(s).`}
-  const known=new Set(check(await db.from('vinted_agent_contacts').select('item_id,user_id').eq('account_id',task.account_id).in('item_id',[...new Set(likes.map(l=>l.item_id))])).map(c=>`${c.item_id}:${c.user_id}`))
-  const fresh=likes.filter(l=>!known.has(`${l.item_id}:${l.user_id}`)).slice(0,settings.limits.like_message_per_day)
-  if(fresh.length)check(await db.from('vinted_agent_contacts').insert(fresh.map(l=>({account_id:task.account_id,...l}))))
-  const queued=await enqueue(db,fresh.map(l=>({account_id:task.account_id,kind:'like_message',dedupe_key:`like:${task.account_id}:${l.item_id}:${l.user_id}`,
-    not_before:new Date(now+minutes(settings.likes.wait_minutes)+jitter(0,30,rand)).toISOString(),payload:l})))
-  return {likes:likes.length,queued,message:`${likes.length} like(s) lu(s), ${queued} message(s) prévu(s).`}
 }
 
 async function applyEdit(db,task,result,now){
@@ -365,7 +360,7 @@ export async function agentLearn(db,key,body){
 }
 
 // --- Onglet Agent (administrateur) ---
-const ACCOUNT_FIELDS='account_id,enabled,paused,pause_reason,paused_at,features,limits,unmask,pricing,likes,messaging,last_seen_at,extension_version,version,updated_at'
+const ACCOUNT_FIELDS='account_id,enabled,paused,pause_reason,paused_at,features,limits,unmask,pricing,likes,messaging,order_flow,last_seen_at,extension_version,version,updated_at'
 export async function agentOverview(db,user=null){
   const since=parisDayStart()
   const [accounts,settings,tasks,today,log,recipes,orders,listings,alerts,drafts]=await Promise.all([
@@ -375,7 +370,7 @@ export async function agentOverview(db,user=null){
     db.from('vinted_agent_tasks').select('account_id,kind,writes').gte('started_at',since),
     db.from('vinted_agent_log').select('id,account_id,task_id,level,event,message,created_at').order('created_at',{ascending:false}).limit(150),
     db.from('vinted_agent_recipes').select('kind,learned_at,learned_login,samples,recipe'),
-    db.from('vinted_agent_orders').select('transaction_id,account_id,status,title,price,currency,order_date,label_path,seen_at').order('order_date',{ascending:false,nullsFirst:false}).limit(40),
+    db.from('vinted_agent_orders').select('transaction_id,account_id,status,title,price,currency,order_date,label_path,seen_at,stage,flow,ship_deadline').order('order_date',{ascending:false,nullsFirst:false}).limit(40),
     db.from('vinted_agent_listings').select('account_id,item_id,title,price,photo_url,state,hidden_since,repairs,total_drop,last_repair_at').in('state',['hidden','repairing']).order('hidden_since',{ascending:true}).limit(100),
     db.from('account_health_alerts').select('account_id,status,title,until_date').eq('resolved',false),
     user?db.from('listing_drafts').select('id,state,fields,photos,planned_at,updated_at').eq('owner_id',user.id).in('state',['draft','attention']).is('dotb_item_id',null).order('updated_at',{ascending:false}).limit(60):Promise.resolve({data:[],error:null}),

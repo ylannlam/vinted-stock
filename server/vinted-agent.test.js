@@ -62,7 +62,7 @@ test('settings are bounded and keep careful defaults',()=>{
   assert.equal(s.features.unmask,true);assert.equal(s.features.likes,false);assert.equal(s.limits.writes_per_day,30);assert.equal(s.limits.min_gap_minutes,12);assert.equal(s.unmask.price_drop,1.23)
   assert.throws(()=>normalizeSettings({limits:{writes_per_day:900}}),/entre 0 et 200/)
   assert.throws(()=>normalizeSettings({features:{unmask:'oui'}}),/invalide/)
-  assert.throws(()=>normalizeSettings({likes:{message:'x'}}),/2 et 500/)
+  assert.throws(()=>normalizeSettings({likes:{message:'x'}}),/2 caractères minimum/)
   assert.deepEqual(effectiveSettings(null),normalizeSettings({}))
 })
 test('unmask: same price drop as Baz Hub (1 €, 2 € max, never under 2 €), spaced repairs',()=>{
@@ -96,7 +96,7 @@ test('extension results are revalidated',()=>{
   assert.throws(()=>parseWardrobe({}),/illisible/)
   const o=parseOrders({orders:[{transaction_id:'9876',status:'À expédier',price:{amount:'15.00'},item_ids:[1,'x'],label_ready:true,shipment_id:44}]})
   assert.deepEqual(o[0].item_ids,['1']);assert.equal(o[0].price,15);assert.equal(o[0].shipment_id,'44')
-  assert.deepEqual(parseLikes({likes:[{item_id:1,user_id:2},{item_id:1,user_id:2},{item_id:'z',user_id:3}]}),[{item_id:'1',user_id:'2'}])
+  assert.deepEqual(parseLikes({likes:[{item_id:1,user_id:2},{item_id:1,user_id:2},{item_id:'z',user_id:3}]}),[{item_id:'1',user_id:'2',login:null}])
   assert.throws(()=>parseLabel({pdf_base64:Buffer.from('<html>').toString('base64')}),/PDF/)
   assert.equal(parseLabel({pdf_base64:Buffer.from('%PDF-1.7'+'x'.repeat(200)).toString('base64')}).subarray(0,5).toString(),'%PDF-')
 })

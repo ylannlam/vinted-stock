@@ -84,6 +84,14 @@
       photo_url: i.photo?.url || i.photos?.[0]?.url || null, is_hidden: hiddenFlag(i), is_closed: !!i.is_closed, is_draft: !!i.is_draft,
       is_sold: !!(i.is_sold || i.item_closing_action === 'sold'), created_at: i.created_at_ts || i.created_at || i.photo?.high_resolution?.timestamp || i.photos?.[0]?.high_resolution?.timestamp || null}
   }
+  // Date limite d'envoi, transporteur et acheteur : noms de champs variables selon les écrans Vinted.
+  function orderExtras(o) {
+    const deadline = findDeep(o, (k, v) => (typeof v === 'string' || typeof v === 'number') && /(ship|shipping|send|dispatch)\w*_?(deadline|due|until|expires?|limit)|^deadline/i.test(k))
+    const carrier = findDeep(o, (k, v) => typeof v === 'string' && /^(carrier|carrier_name|transporter|shipping_carrier|delivery_service|courier)(_name|_title)?$/i.test(k))
+      || findDeep(o, (k, v) => v && typeof v === 'object' && /carrier|transporter/i.test(k) && typeof (v.name || v.title) === 'string')?.name || null
+    const buyer = o.buyer || o.user || o.opposite_user || o.transaction?.buyer || null
+    return {ship_deadline: deadline ?? null, carrier: typeof carrier === 'string' ? carrier : null, buyer_id: buyer?.id || o.buyer_id || o.transaction?.buyer_id || null, buyer_login: buyer?.login || null}
+  }
   function orderRow(o) {
     const t = o.transaction || o
     const status = [o.status, o.transaction_user_status, o.status_title, t.status].find(v => typeof v === 'string') || ''
@@ -92,7 +100,7 @@
       currency: (o.price || o.item?.price)?.currency_code || 'EUR', order_date: o.date || o.created_at || t.created_at || o.updated_at || null,
       item_ids: [o.item_id, o.item?.id, ...(o.item_ids || [])].filter(Boolean),
       shipment_id: o.shipment_id || o.shipment?.id || t.shipment_id || null, conversation_id: o.conversation_id || t.conversation_id || null,
-      photo_url: o.photo?.url || o.item?.photo?.url || o.photos?.[0]?.url || null}
+      photo_url: o.photo?.url || o.item?.photo?.url || o.photos?.[0]?.url || null, ...orderExtras(o)}
     row.label_ready = !!(row.shipment_id || /exp[ée]di|envoy|ship|label|bordereau/i.test(status)) && !/annul|cancel|rembours|refund|termin|complete|livr/i.test(status)
     return row
   }
@@ -126,6 +134,8 @@
         o.shipment_id = o.shipment_id || t.shipment?.id || t.shipment_id || null
         o.conversation_id = o.conversation_id || t.conversation_id || null
         if (!o.title) o.title = t.item_title || t.item?.title || ''
+        const x = orderExtras(t)
+        for (const k of Object.keys(x)) if (x[k] != null && o[k] == null) o[k] = x[k]
       } catch (e) { if (e instanceof Stop && e.code !== 'vinted_error') throw e }
     }
     for (const o of orders) memory.orders.set(String(o.transaction_id), o)
@@ -229,7 +239,8 @@
       const link = String(n.link || n.url || n.path || '')
       const item = n.subject_type === 'item' ? n.subject_id : n.item_id || link.match(/items\/(\d+)/)?.[1] || n.item?.id
       const user = n.user_id || n.user?.id || n.sender_id || link.match(/member\/(\d+)/)?.[1]
-      if (item && user) likes.push({item_id: item, user_id: user})
+      const login = n.user?.login || n.user_login || n.sender?.login || null
+      if (item && user) likes.push({item_id: item, user_id: user, login})
     }
     return {likes}
   }
@@ -324,14 +335,93 @@
     } }
     walk(body); return body
   }
+  const sendText = (R, conversation, body) => call(R.message_send, {ids: {id: conversation}, json: fillShape(R.message_send.template, [[/^(body|message|text|content)$/, body], [/photo/, []]])})
+  // Identifiant à mettre dans le chemin d'une recette : celui relevé à l'apprentissage (vente, conversation, article…).
+  const idFor = (recipe, p, fallback) => ({shipment: p.shipment_id, transaction: p.transaction_id, conversation: p.conversation_id, item: p.item_id, user: p.user_id})[recipe.id_from || fallback]
+  // Membre filtré (note, sans évaluation, ignoré) : lecture de son profil seulement si un filtre le demande.
+  async function memberCheck(task) {
+    const p = task.payload, f = p.filters || {}
+    if (f.min_rating == null && !f.skip_unrated && !(f.ignored || []).length) return {skip: null, login: p.login}
+    let user = null
+    try { const d = await call(task.recipes.user_read || {method: 'GET', path: '/api/v2/users/{id}'}, {ids: {id: p.user_id}}); user = d.user || d }
+    catch (e) { if (e instanceof Stop && !['vinted_error', 'failed'].includes(e.code)) throw e; return {skip: null, login: p.login} }
+    const login = user?.login || p.login
+    if (login && (f.ignored || []).includes(String(login).toLowerCase())) return {skip: 'membre ignoré', login}
+    const count = Number(user?.feedback_count ?? user?.positive_feedback_count ?? 0), rep = Number(user?.feedback_reputation)
+    if (f.skip_unrated && !count) return {skip: 'membre sans évaluation', login}
+    if (f.min_rating != null && count && Number.isFinite(rep) && rep * 5 < f.min_rating) return {skip: `note sous ${f.min_rating} étoiles`, login}
+    return {skip: null, login}
+  }
+  async function sendOffer(R, conversation, transaction, price) {
+    if (!R.offer_send || !price) return false
+    const body = fillShape(R.offer_send.template, [[/^(price|amount|offer_price|value)$/, price.toFixed(2)], [/currency/, 'EUR']])
+    await call(R.offer_send, {ids: {id: idFor(R.offer_send, {conversation_id: conversation, transaction_id: transaction}, 'transaction')}, json: body})
+    return true
+  }
   async function likeMessage(task) {
-    const {item_id, user_id, message} = task.payload, R = task.recipes
-    const created = await call(R.conversation_create, {json: fillShape(R.conversation_create.template, [[/item_id/, Number(item_id)], [/(opposite|receiver|recipient)_?user_id|^user_id$/, Number(user_id)]])})
+    const p = task.payload, R = task.recipes
+    if (p.skip) return {skipped: p.skip}
+    if (p.followup) {
+      // Relance : seulement si le membre n'a pas répondu.
+      const d = await call(R.conversation_read || {method: 'GET', path: '/api/v2/conversations/{id}'}, {ids: {id: p.conversation_id}})
+      const c = d.conversation || d, me = task.member_id
+      if (firstArray(c.messages ? {messages: c.messages} : c).map(m => messageRow(m, me)).some(m => !m.from_me && m.kind === 'message')) return {skipped: 'le membre a déjà répondu'}
+      if (p.message) { await sendText(R, p.conversation_id, p.message); await pause(3000, 7000) }
+      const offer = await sendOffer(R, p.conversation_id, c.transaction?.id, p.offer_price).catch(() => false)
+      return {conversation_id: String(p.conversation_id), message: p.message || null, offer}
+    }
+    const member = await memberCheck(task)
+    if (member.skip) return {skipped: member.skip, login: member.login}
+    const created = await call(R.conversation_create, {json: fillShape(R.conversation_create.template, [[/item_id/, Number(p.item_id)], [/(opposite|receiver|recipient)_?user_id|^user_id$/, Number(p.user_id)]])})
     const conversation = created.conversation?.id || created.id
     if (!conversation) throw new Stop('vinted_error', 'Conversation non ouverte.')
     await pause(4000, 9000)
-    await call(R.message_send, {ids: {id: conversation}, json: fillShape(R.message_send.template, [[/^(body|message|text|content)$/, message], [/photo/, []]])})
-    return {conversation_id: String(conversation)}
+    if (p.message) await sendText(R, conversation, p.message)
+    let offer = false
+    if (p.offer_price && R.offer_send) { await pause(3000, 7000); offer = await sendOffer(R, conversation, created.conversation?.transaction?.id, p.offer_price).catch(() => false) }
+    return {conversation_id: String(conversation), message: p.message || null, offer, login: member.login}
+  }
+
+  // ---------- Flux de commande ----------
+  const STILL_TO_SHIP = s => !/annul|cancel|rembours|refund|termin|complete|exp[ée]di[ée]|envoy[ée]|en route|transit|shipped|livr|deliver|point relais|disponible/i.test(s) || /(exp[ée]die|envoie) (le|ton|votre)|à expédier|to ship/i.test(s)
+  async function stillToShip(task) {
+    if (!task.recipes.order_detail) return true
+    try { const d = await call(task.recipes.order_detail, {ids: {id: task.payload.transaction_id}}), t = d.transaction || d; return STILL_TO_SHIP(String(t.status_title || t.status || t.transaction_user_status || '')) }
+    catch (e) { if (e instanceof Stop && !['vinted_error', 'failed'].includes(e.code)) throw e; return true }
+  }
+  async function orderMessage(task) {
+    const p = task.payload
+    if (!p.conversation_id) throw new Stop('failed', 'Conversation de la vente inconnue.')
+    if (!p.body) return {skipped: 'message vide'}
+    const r = await sendText(task.recipes, p.conversation_id, p.body)
+    const m = r.reply || r.message || r
+    return {conversation_id: String(p.conversation_id), message_id: m?.id != null ? String(m.id) : null}
+  }
+  async function orderExtension(task) {
+    const R = task.recipes.shipping_extension, p = task.payload
+    if (!(await stillToShip(task))) return {skipped: 'la vente n’est plus à expédier'}
+    await pause(2000, 5000)
+    await call(R, {ids: {id: idFor(R, p, 'transaction')}, json: R.body === 'json' ? fillShape(R.template, [[/^(message|body|text|comment|reason_text|note)$/, p.message || '']]) : null})
+    return {transaction_id: String(p.transaction_id)}
+  }
+  async function orderCancel(task) {
+    const R = task.recipes.order_cancel, p = task.payload
+    if (!(await stillToShip(task))) return {skipped: 'la vente n’est plus à expédier'}
+    await pause(2000, 5000)
+    // Le motif est celui choisi à la main pendant l'apprentissage.
+    await call(R, {ids: {id: idFor(R, p, 'transaction')}, json: R.body === 'json' ? structuredClone(R.template) : null})
+    return {transaction_id: String(p.transaction_id)}
+  }
+  async function orderReview(task) {
+    const R = task.recipes.feedback_send, p = task.payload
+    const body = R.body === 'json' ? fillShape(R.template, [[/^(rating|rate|stars|score)$/, 5], [/^(feedback|comment|body|text|message)$/, p.text || ''], [/transaction_id/, Number(p.transaction_id)]]) : null
+    await call(R, {ids: {id: idFor(R, p, 'transaction')}, json: body})
+    return {transaction_id: String(p.transaction_id)}
+  }
+  async function itemDelete(task) {
+    const R = task.recipes.item_delete, p = task.payload
+    await call(R, {ids: {id: idFor(R, p, 'item')}, json: R.body === 'json' ? fillShape(R.template, [[/item_id/, Number(p.item_id)]]) : null})
+    return {item_id: String(p.item_id)}
   }
 
   let currentTask = null
@@ -340,7 +430,8 @@
     currentTask = task
     const runners = {scan_wardrobe: scanWardrobe, sync_orders: syncOrders, fetch_label: fetchLabel, scan_likes: scanLikes,
       publish_item: publish, unmask_item: t => editItem(t, {unmask: true}), reprice_item: t => editItem(t, {unmask: false}), like_message: likeMessage,
-      sync_inbox: scanInbox, reply_message: replyMessage}
+      sync_inbox: scanInbox, reply_message: replyMessage, order_message: orderMessage, order_extension: orderExtension, order_cancel: orderCancel,
+      order_review: orderReview, item_delete: itemDelete}
     try {
       if (!runners[task.kind]) throw new Stop('failed', 'Tâche inconnue.')
       return {ok: true, result: await runners[task.kind](task)}
@@ -352,6 +443,12 @@
   // ---------- Apprentissage ----------
   const SECRET = /^(cookie|authorization|x-csrf-token|x-anon-id|x-v-udt|x-datadome.*|x-client-id)$/i
   const RULES = [
+    ['offer_send', /^(POST|PUT)$/, /offer/i],
+    ['shipping_extension', /^(POST|PUT|PATCH)$/, /extend|extension|deadline|postpone|prolong/i],
+    ['order_cancel', /^(POST|PUT|PATCH)$/, /cancel/i],
+    ['feedback_send', /^(POST|PUT)$/, /feedback/i],
+    ['item_delete', /^(POST|DELETE)$/, /^\/api\/v2\/items\/\{id\}(\/delete)?$/],
+    ['user_read', /^GET$/, /^\/api\/v2\/users\/\{id\}$/],
     ['wardrobe', /^GET$/, /^\/api\/v2\/wardrobe\/\{id\}\/items$/],
     ['item_form', /^GET$/, /^\/api\/v2\/item_upload\/items\/\{id\}$/],
     ['item_edit', /^(PUT|POST|PATCH)$/, /^\/api\/v2\/item_upload\/items\/\{id\}$/],
@@ -399,6 +496,13 @@
     if (kind === 'order_label') {
       const id = url.pathname.match(/\/(\d+)(?=\/|$)/)?.[1]
       recipe.id_from = [...memory.orders.values()].some(o => String(o.shipment_id) === id) ? 'shipment' : 'transaction'
+    }
+    if (['offer_send', 'shipping_extension', 'order_cancel', 'feedback_send', 'item_delete'].includes(kind)) {
+      // Quel identifiant le chemin utilise : la conversation ouverte, une vente connue ou l'article.
+      const id = url.pathname.match(/\/(\d+)(?=\/|$)/)?.[1]
+      const page = location.pathname.match(/\/(\d{3,})/)?.[1]
+      recipe.id_from = !id ? null : kind === 'item_delete' ? 'item' : /\/conversations\//.test(url.pathname) || (page === id && /inbox/.test(location.pathname)) ? 'conversation'
+        : /\/items\//.test(url.pathname) ? 'item' : 'transaction'
     }
     try { const ct = response.headers.get('content-type') || ''; if (/json/.test(ct)) recipe.response = responseKeys(await response.clone().json()); else recipe.response = [ct.slice(0, 40)] } catch {}
     if (kind === 'orders_list') try { firstArray(await response.clone().json()).map(orderRow).forEach(o => memory.orders.set(String(o.transaction_id), o)) } catch {}

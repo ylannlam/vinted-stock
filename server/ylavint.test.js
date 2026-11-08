@@ -303,3 +303,73 @@ test('the in-page panel only reads and changes the account logged in that profil
   await assert.rejects(agentSelf(db,'k',{op:'overview',member_id:'1'}),/pas encore connu/)
   await assert.rejects(agentSelf(db,'k',{op:'enqueue',member_id:'3206068112',payload:{kind:'publish_item'}}),/inconnue/)
 })
+
+// ---------- Likes et flux de commande façon Dotb ----------
+import {planLikes,likePayload,likeDone,orderStage,planFlow,flowDone} from './ylavint-flows.js'
+import {normalizeSettings,offerPrice,fillTemplate} from './vinted-agent-config.js'
+const ACF='11111111-1111-4111-8111-111111111111'
+const can=new Set(['conversation_create','message_send','shipping_extension','order_cancel','feedback_send','item_delete'])
+test('likes: rotation of up to 3 messages, cooldown, ignored members and per-item cap',async()=>{
+  const settings=normalizeSettings({features:{likes:true},likes:{wait_minutes:0,cooldown_days:1,ignored:'@Spam_user',per_item:{enabled:true,max:2},
+    messages:[{message:'Coucou @username'},{message:'Encore toi !',discount:{mode:'simple',amount:10,unit:'pct',rounding:'half'}}]}})
+  const db=fakeDb({vinted_agent_contacts:[{account_id:ACF,item_id:'9',user_id:'7',state:'sent',sent_at:new Date(Date.now()-3*86400000).toISOString()}]})
+  const r=await planLikes(db,{account_id:ACF},[{item_id:'1',user_id:'7',login:'bob'},{item_id:'2',user_id:'7',login:'bob'},{item_id:'1',user_id:'8',login:'spam_user'},{item_id:'1',user_id:'5',login:'ann'},{item_id:'1',user_id:'6',login:'cid'}],settings,{rand:()=>0,can})
+  const tasks=db.state.vinted_agent_tasks
+  assert.equal(r.queued,2) // bob (message 2), ann ; bob une 2e fois = délai, spam = ignoré, cid = limite par article (2)
+  assert.deepEqual(tasks.map(t=>[t.payload.user_id,t.payload.step]),[['7',1],['5',0]])
+  assert.equal(db.state.vinted_agent_contacts.filter(c=>c.state==='skipped').length,3)
+  db.state.vinted_agent_listings=[{account_id:ACF,item_id:'1',title:'Robe',price:20,state:'visible'}]
+  const p=await likePayload(db,{account_id:ACF,payload:tasks[0].payload},settings)
+  assert.equal(p.message,'Encore toi !');assert.equal(p.offer_price,18);assert.equal(p.skip,null)
+})
+test('likes: follow-up is planned after the first message, and skipped once the buyer answered',async()=>{
+  const settings=normalizeSettings({features:{likes:true},likes:{messages:[{message:'Salut',followup:{enabled:true,delay_hours:24,message:'Toujours intéressé(e) ?'}}]}})
+  const db=fakeDb({vinted_agent_contacts:[{account_id:ACF,item_id:'1',user_id:'5',state:'queued',step:0}]})
+  const task={id:'t',account_id:ACF,payload:{item_id:'1',user_id:'5',step:0}}
+  await likeDone(db,task,{conversation_id:'444'},settings,{rand:()=>0})
+  const fu=db.state.vinted_agent_tasks[0];assert.equal(fu.payload.followup,true);assert.equal(fu.payload.conversation_id,'444')
+  assert.equal(db.state.vinted_agent_contacts[0].followup_state,'queued');assert.equal(db.state.vinted_agent_contacts[0].state,'sent')
+  const r=await likeDone(db,{...task,payload:fu.payload},{skipped:'Le membre a répondu.'},settings)
+  assert.match(r.message,/non envoyée/);assert.equal(db.state.vinted_agent_contacts[0].followup_state,'skipped')
+})
+test('offer price and templates',()=>{
+  assert.equal(offerPrice(34.9,{mode:'simple',amount:3,unit:'eur',rounding:'none'}),31.9)
+  assert.equal(offerPrice(34.9,{mode:'simple',amount:3,unit:'eur',rounding:'euro'}),31)
+  assert.equal(offerPrice(3,{mode:'simple',amount:5,unit:'eur',rounding:'none'}),null)
+  assert.equal(offerPrice(20,{mode:'none'}),null)
+  assert.equal(fillTemplate('Merci @username !',{login:'léa'}),'Merci @léa !')
+})
+test('order stage from Vinted status',()=>{
+  assert.equal(orderStage('Le paiement a été validé'),'paid');assert.equal(orderStage('Expédie le colis avant le 12/11'),'paid')
+  assert.equal(orderStage('Colis expédié'),'shipped');assert.equal(orderStage('Le colis est disponible au point relais'),'pickup')
+  assert.equal(orderStage('Commande terminée'),'completed');assert.equal(orderStage('Vente annulée'),'cancelled')
+})
+test('order flow: confirmation, extension then cancel on a live sale; pickup, review, end message and delete on transitions',async()=>{
+  const now=Date.parse('2026-11-08T12:00:00Z'),day=86400000
+  const settings=normalizeSettings({order_flow:{confirm:{enabled:true,message:'Merci @username'},extension:{enabled:true,after_days:3,relance1:'Relance'},cancel:{enabled:true,minutes_before:30},
+    pickup:{enabled:true,first_days:1,first:'Arrivé !',second_days:3,second:'Toujours dispo'},review:{enabled:true,after_days:1,text:'Parfait',end_message:'Merci à toi'},delete_sold:true}})
+  const order={transaction_id:'100',account_id:ACF,stage:null,order_date:new Date(now-3600000).toISOString(),ship_deadline:new Date(now+5*day).toISOString(),conversation_id:'555',item_ids:['77'],flow:{}}
+  const db=fakeDb({vinted_agent_orders:[order]})
+  await planFlow(db,ACF,[{transaction_id:'100',status:'Le paiement a été validé',buyer_login:'lea',title:'Robe'}],settings,{now,rand:()=>0,can})
+  const keys=()=>db.state.vinted_agent_tasks.filter(t=>t.state==='queued').map(t=>t.dedupe_key).sort()
+  assert.deepEqual(keys(),['flow:cancel:100','flow:confirm:100','flow:ext:100'])
+  assert.equal(db.state.vinted_agent_tasks.find(t=>t.dedupe_key==='flow:confirm:100').payload.body,'Merci @lea')
+  assert.equal(order.stage,'paid')
+  // Expédiée : demande de délai et annulation retirées.
+  await planFlow(db,ACF,[{transaction_id:'100',status:'Colis expédié'}],settings,{now:now+day,rand:()=>0,can})
+  assert.deepEqual(keys(),['flow:confirm:100'])
+  await planFlow(db,ACF,[{transaction_id:'100',status:'Le colis est disponible au point relais'}],settings,{now:now+2*day,rand:()=>0,can})
+  assert.ok(keys().includes('flow:pickup1:100')&&keys().includes('flow:pickup2:100'))
+  await planFlow(db,ACF,[{transaction_id:'100',status:'Commande terminée'}],settings,{now:now+3*day,rand:()=>0,can})
+  assert.deepEqual(keys(),['flow:confirm:100','flow:del_77:100','flow:end:100','flow:review:100'])
+  const review=db.state.vinted_agent_tasks.find(t=>t.dedupe_key==='flow:review:100')
+  await flowDone(db,review,{ok:true,result:{}},{now:now+4*day})
+  assert.equal(order.flow.review.state,'done')
+})
+test('order flow: an old sale seen for the first time triggers nothing',async()=>{
+  const now=Date.parse('2026-11-08T12:00:00Z')
+  const settings=normalizeSettings({order_flow:{confirm:{enabled:true},review:{enabled:true},delete_sold:true}})
+  const db=fakeDb({vinted_agent_orders:[{transaction_id:'200',account_id:ACF,stage:null,order_date:'2026-09-01T10:00:00Z',conversation_id:'1',item_ids:['3'],flow:{}}]})
+  await planFlow(db,ACF,[{transaction_id:'200',status:'Commande terminée'}],settings,{now,rand:()=>0,can})
+  assert.equal((db.state.vinted_agent_tasks||[]).length,0);assert.equal(db.state.vinted_agent_orders[0].stage,'completed')
+})

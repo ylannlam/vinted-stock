@@ -78,6 +78,12 @@
   textarea.in{min-height:76px;resize:vertical}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   .actions{display:flex;justify-content:flex-end;margin-top:18px}.actions .btn{width:auto;padding:10px 18px}
   .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}.bar .sp{flex:1}
+  .box{border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:14px 0;background:var(--card)}.box h4{margin:0 0 6px;font-size:14px}
+  .info{border:1px solid #bfdbfe;background:#eff6ff;color:#1e3a8a;border-radius:10px;padding:10px 14px;font-size:12.5px;margin:14px 0}.dark .info{background:#172554;border-color:#1e3a8a;color:#dbeafe}
+  .info ul{margin:4px 0 0;padding-left:18px}.ind{border-left:2px solid var(--line);padding-left:14px;margin-left:2px}
+  .inline{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.inline .in{width:auto}.count{display:block;text-align:right;font-size:11px;color:var(--muted)}
+  .tabs.full{display:grid;grid-template-columns:repeat(4,1fr);width:100%;margin:0 0 12px}.chipx{display:inline-flex;gap:4px;align-items:center;background:var(--soft);border-radius:6px;padding:2px 8px;font-size:12px;margin:6px 4px 0 0}
+  .chipx button{border:0;background:none;color:var(--muted);cursor:pointer;font-size:14px}.center{display:flex;justify-content:center}
   .note{color:var(--muted);font-size:12px}.err{color:#dc2626;font-size:13px;margin:8px 0}.ok{color:#16a34a;font-size:13px;margin:8px 0}
   img.th{width:36px;height:46px;object-fit:cover;border-radius:4px;background:var(--soft)}
   @media(max-width:800px){aside{display:none}.body{padding:14px}}
@@ -100,7 +106,7 @@
   const settings = () => acc()?.settings || (S.data?.defaults ? {...structuredClone(S.data.defaults), enabled: false, version: undefined} : null)
   function saveSettings(mut, msg = 'Paramètres enregistrés.') {
     const s = structuredClone(settings()); mut(s)
-    return act('save_settings', {enabled: s.enabled, version: acc()?.settings?.version, settings: {features: s.features, limits: s.limits, unmask: s.unmask, pricing: s.pricing, likes: s.likes, messaging: s.messaging || S.data.defaults.messaging}}, msg)
+    return act('save_settings', {enabled: s.enabled, version: acc()?.settings?.version, settings: {features: s.features, limits: s.limits, unmask: s.unmask, pricing: s.pricing, likes: s.likes, messaging: s.messaging || S.data.defaults.messaging, order_flow: s.order_flow || S.data.defaults.order_flow}}, msg)
   }
   const on = f => !!acc()?.settings?.enabled && !!acc()?.settings?.features?.[f]
   const today = kind => (S.data?.tasks || []).filter(t => t.kind === kind && t.state === 'done' && Date.now() - Date.parse(t.finished_at || 0) < 864e5).length
@@ -150,12 +156,51 @@
       ${sw('enabled', settings().enabled, 'YlaVint actif sur ce compte', 'Sans cela, aucune automatisation ne tourne sur ce compte.')}${body}
       <div class="actions"><button class="btn" data-save ${S.busy ? 'disabled' : ''}>Enregistrer les paramètres</button></div></div>`
   }
+  // ---------- Réglages façon Dotb (likes, flux de commande) : brouillon modifié sur place, enregistré d'un coup ----------
+  const getPath = (o, path) => path.split('.').reduce((v, k) => v?.[k], o)
+  const setPath = (o, path, value) => { const keys = path.split('.'), last = keys.pop(); let t = o; for (const k of keys) t = t[k] ??= {}; t[last] = value }
+  const draft = () => S.draft || (S.draft = structuredClone(settings()))
+  const dsw = (path, title, text = '') => `<div class="row"><div><b>${esc(title)}</b>${text ? `<span>${esc(text)}</span>` : ''}</div><label class="sw"><input type="checkbox" data-pb="${path}" ${getPath(draft(), path) ? 'checked' : ''}><i></i></label></div>`
+  const dtext = (path, label, hint = '', max = 500) => { const v = getPath(draft(), path) || ''
+    return `<label class="f">${esc(label)}</label><textarea class="in" data-p="${path}" maxlength="${max}">${esc(v)}</textarea><span class="count">${hint ? esc(hint) + ' · ' : ''}${v.length}/${max}</span>` }
+  const dsel = (path, options, label = '') => `${label ? `<label class="f">${esc(label)}</label>` : ''}<select class="in" data-ps="${path}" style="width:auto;min-width:150px">${options.map(([v, l]) => `<option value="${esc(v)}" ${String(getPath(draft(), path)) === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`
+  const dnum = (path, attrs = '') => `<input class="in" type="number" data-pn="${path}" value="${esc(getPath(draft(), path) ?? '')}" style="width:90px" ${attrs}>`
+  const dayOpts = (a, b) => Array.from({length: b - a + 1}, (_, i) => [a + i, a + i === 0 ? 'Le jour même' : a + i === 1 ? '1 jour' : `${a + i} jours`])
+  const newStep = () => ({message: '', discount: {mode: 'none', amount: 3, unit: 'eur', rounding: 'none'}, followup: {enabled: false, delay_hours: 24, message: '', discount: {mode: 'none', amount: 3, unit: 'eur', rounding: 'none'}}})
+  function discountBlock(base) {
+    const d = getPath(draft(), base) || {}
+    return `<div class="inline" style="margin-top:12px"><b style="font-size:13px">Options de réduction</b>${dsel(base + '.mode', [['none', 'Aucune réduction'], ['simple', 'Réduction simple']])}</div>
+      ${d.mode === 'simple' ? `<div class="box"><b style="font-size:13px">Montant de la réduction</b><div class="inline" style="margin-top:6px">${dnum(base + '.amount', 'step="0.5" min="0.5"')}${dsel(base + '.unit', [['eur', '€'], ['pct', '%']])}${dsel(base + '.rounding', [['none', 'Pas d’arrondi'], ['half', 'Arrondi à 0,50 €'], ['euro', 'Arrondi à l’euro']])}</div>
+      <p class="note">Offre calculée sur le prix du moment, jamais sous 1 €. Il faut avoir appris « Envoi d’une offre ».</p></div>` : ''}`
+  }
+  function draftForm(title, sub, body) {
+    if (!S.data) return '<p class="note">Chargement…</p>'
+    return `<h1>${esc(title)}</h1><p class="sub">${esc(sub)}</p><div class="form">${dsw('enabled', 'YlaVint actif sur ce compte', 'Sans cela, aucune automatisation ne tourne sur ce compte.')}${body}
+      <div class="actions"><button class="btn" data-savedraft ${S.busy ? 'disabled' : ''}>Enregistrer les paramètres</button></div></div>`
+  }
   function pageLikes() {
-    const s = settings()
-    return settingsForm('Messages aux likes', 'Message envoyé après un like sur une de tes annonces.', `
-      ${sw('features.likes', s.features.likes, 'Messages aux likes', 'Envoyer un message aux membres qui likent un article')}
-      <label class="f">Message ({article} et {prix} sont remplacés)</label><textarea class="in" data-t="likes.message" maxlength="500">${esc(s.likes.message)}</textarea>
-      <div class="grid2">${num('likes', 'wait_minutes', 'Attente après le like (min)', s.likes.wait_minutes)}${num('limits', 'like_message_per_day', 'Messages par jour', s.limits.like_message_per_day)}</div>`)
+    if (!S.data) return '<p class="note">Chargement…</p>'
+    const L = draft().likes, steps = L.messages?.length ? L.messages : (L.messages = [newStep()])
+    const delays = [[0, 'Aucun délai'], [5, '5 minutes'], [15, '15 minutes'], [30, '30 minutes'], [60, '1 heure'], [120, '2 heures'], [360, '6 heures'], [720, '12 heures'], [1440, '24 heures']]
+    return draftForm('Automatisation des J’aime d’articles', 'Réponses automatiques quand des membres aiment tes articles.', `
+      ${dsw('features.likes', 'Messages aux likes', 'Envoyer un message aux membres qui likent un article')}
+      <div class="info"><b>Comment ça marche ?</b><ul><li>Les messages sont envoyés dans l’ordre, à chaque like d’un même membre.</li><li>Bob aime l’article A → message 1. Bob aime l’article B → message 2.</li>
+        <li>S’il n’y a que 2 messages, la rotation s’arrête au message 2.</li><li>Aucun message au même membre pendant les jours choisis plus bas.</li></ul></div>
+      ${steps.map((st, i) => `<div class="box"><div class="inline"><h4 style="flex:1">Ce message / cette offre sera envoyé(e) au ${['premier', 'deuxième', 'troisième'][i]} article aimé</h4>${steps.length > 1 ? `<button class="ghost" data-delmsg="${i}">Supprimer</button>` : ''}</div>
+        ${dtext(`likes.messages.${i}.message`, 'Message (optionnel)', 'vide = offre seule · @username, {article}, {prix}')}
+        ${discountBlock(`likes.messages.${i}.discount`)}
+        ${dsw(`likes.messages.${i}.followup.enabled`, '↩ Envoyer un message de relance si le membre n’a pas répondu', 'Un seul rappel, si le membre n’a pas répondu et que l’article est toujours en vente.')}
+        ${st.followup?.enabled ? `<div class="ind">${dsel(`likes.messages.${i}.followup.delay_hours`, [[6, '6 heures'], [12, '12 heures'], [24, '1 jour'], [48, '2 jours'], [72, '3 jours'], [120, '5 jours'], [168, '7 jours']], 'Délai avant la relance')}
+          ${dtext(`likes.messages.${i}.followup.message`, 'Message de relance', '@username')}${discountBlock(`likes.messages.${i}.followup.discount`)}</div>` : ''}</div>`).join('')}
+      ${steps.length < 3 ? `<div class="center"><button class="ghost" data-addmsg>＋ Ajouter un message (${steps.length}/3)</button></div>` : ''}
+      <div class="box"><h4>👥 Paramètres membres</h4>
+        <div class="row"><div class="inline"><b>Limiter les messages par article à</b>${dnum('likes.per_item.max', 'min="1"')}<span class="note">messages</span></div><label class="sw"><input type="checkbox" data-pb="likes.per_item.enabled" ${L.per_item?.enabled ? 'checked' : ''}><i></i></label></div>
+        <label class="f">Jours avant d’envoyer à nouveau des messages automatiques au même membre</label>${dnum('likes.cooldown_days', 'min="0" max="365"')}
+        <div class="row"><div class="inline"><b>Ignorer les membres avec une évaluation inférieure à</b>${dsel('likes.min_rating.value', [[1, '1 ★'], [2, '2 ★'], [3, '3 ★'], [4, '4 ★'], [5, '5 ★']])}</div><label class="sw"><input type="checkbox" data-pb="likes.min_rating.enabled" ${L.min_rating?.enabled ? 'checked' : ''}><i></i></label></div>
+        ${dsw('likes.skip_unrated', 'Ignorer les membres sans évaluation')}
+        <label class="f">Membres ignorés</label><textarea class="in" data-plist="likes.ignored" placeholder="pseudo1, pseudo2">${esc((L.ignored || []).join(', '))}</textarea><span class="count">Pseudos Vinted séparés par des virgules.</span></div>
+      <div class="box"><h4>⏱ Paramètres de délai</h4>${dsel('likes.wait_minutes', delays.some(([v]) => v === L.wait_minutes) ? delays : [...delays, [L.wait_minutes, `${L.wait_minutes} minutes`]], 'Délai avant d’envoyer un message après un J’aime')}
+        <label class="f">Messages aux likes par jour</label>${dnum('limits.like_message_per_day', 'min="0" max="100"')}</div>`)
   }
   function pageAgent() {
     const s = settings(), m = s.messaging || S.data.defaults.messaging
@@ -166,11 +211,35 @@
       <p class="note" style="margin-top:12px"><a href="${SITE_URL}/ylavint#agent" target="_blank" rel="noopener">Ouvrir les consignes du Smart Agent ↗</a></p>`)
   }
   function pageFlow() {
-    const s = settings()
-    return settingsForm('Flux de commandes', 'Ventes et bordereaux de ce compte.', `
-      ${sw('features.orders', s.features.orders, 'Lecture des ventes', 'Lire les nouvelles commandes toutes les 30 minutes')}
-      ${sw('features.sales', s.features.sales, 'Ventes → onglet Ventes', 'Envoyer les commandes dans l’onglet Ventes de ton site (à la place de Dotb)')}
-      ${sw('features.labels', s.features.labels, 'Bordereau automatique', 'Récupérer le bordereau dès qu’il est disponible, pour l’imprimer depuis le site')}`)
+    if (!S.data) return '<p class="note">Chargement…</p>'
+    const F = draft().order_flow, t = S.flowTab
+    const tabs = `<div class="tabs full">${[['shipping', 'Expédition'], ['delay', 'Délai'], ['pickup', 'Retrait'], ['final', 'Finalisation']].map(([k, l]) => `<button data-ftab="${k}" class="${t === k ? 'on' : ''}">${l}</button>`).join('')}</div>`
+    let body = ''
+    if (t === 'shipping') body = `${dsw('order_flow.confirm.enabled', 'Confirmation de commande', 'Message envoyé à l’acheteur dès que la vente est payée.')}
+      ${F.confirm.enabled ? `<div class="ind">${dtext('order_flow.confirm.message', 'Message', '@username, {article}', 1000)}</div>` : ''}
+      ${dsw('features.labels', 'Récupérer automatiquement les bordereaux', 'Le bordereau créé par Vinted est enregistré et ajouté à la vente (onglet Ventes).')}
+      ${draft().features.labels ? `<div class="ind"><label class="f">Transporteurs à ignorer</label><div class="inline"><input class="in" data-carrier placeholder="Entre le nom du transporteur…" style="width:240px"><button class="ghost" data-addcarrier>＋</button></div>
+        <div>${F.labels.ignore_carriers.map(c => `<span class="chipx">${esc(c)}<button data-delcarrier="${esc(c)}" aria-label="Retirer">×</button></span>`).join('')}</div>
+        <p class="note">Nom tel qu’il apparaît sur la vente. Ces ventes sont ignorées pour les bordereaux.</p></div>` : ''}
+      ${dsw('features.orders', 'Lecture des ventes', 'Lire les nouvelles commandes toutes les 30 minutes')}
+      ${dsw('features.sales', 'Ventes → onglet Ventes', 'Envoyer les commandes dans l’onglet Ventes de ton site (à la place de Dotb)')}`
+    if (t === 'delay') body = `${dsw('order_flow.extension.enabled', 'Extension de délai', 'Demander automatiquement à l’acheteur un délai supplémentaire pour l’envoi.')}
+      ${F.extension.enabled ? `<div class="ind">${dsel('order_flow.extension.after_days', dayOpts(1, 5), 'Délai de demande')}<p class="note">Jours après la vente avant d’envoyer la demande.</p>
+        ${dtext('order_flow.extension.message', 'Message de demande', '', 200)}
+        ${dtext('order_flow.extension.relance1', 'Relance à +1 jour — si le délai n’est pas encore accordé (optionnel)')}
+        ${dtext('order_flow.extension.relance2', 'Relance à +2 jours — si le délai n’est pas encore accordé (optionnel)')}</div>` : ''}
+      ${dsw('order_flow.cancel.enabled', 'Annulation automatique', 'Annuler la vente juste avant la date limite d’envoi si elle n’est toujours pas expédiée. Motif : celui choisi en apprenant l’action (prends celui qui correspond à la réalité).')}
+      ${F.cancel.enabled ? `<div class="ind">${dsel('order_flow.cancel.minutes_before', [[30, '30 minutes'], [60, '1 heure'], [120, '2 heures'], [360, '6 heures'], [720, '12 heures']], 'Combien de temps avant la date limite')}
+        <p class="note">L’annulation ne part que pendant la plage horaire du compte.</p></div>` : ''}
+      <p class="note" style="margin-top:14px">« J’ai expédié » n’est jamais cliqué automatiquement : YlaVint ne déclare pas un envoi qui n’a pas eu lieu.</p>`
+    if (t === 'pickup') body = `${dsw('order_flow.pickup.enabled', 'Prêt à retirer', 'Jusqu’à deux messages une fois le colis disponible au point de retrait.')}
+      ${F.pickup.enabled ? `<div class="ind">${dsel('order_flow.pickup.first_days', dayOpts(0, 7), 'Message 1 — envoyer après')}${dtext('order_flow.pickup.first', 'Message 1', '@username', 1000)}
+        ${dsel('order_flow.pickup.second_days', dayOpts(1, 14), 'Message 2 — envoyer après')}${dtext('order_flow.pickup.second', 'Message 2 (optionnel)', '', 1000)}</div>` : ''}`
+    if (t === 'final') body = `${dsw('order_flow.review.enabled', 'Évaluation automatique', 'Laisser une évaluation 5 étoiles à l’acheteur quand la commande est terminée.')}
+      ${F.review.enabled ? `<div class="ind">${dsel('order_flow.review.after_days', dayOpts(0, 14), 'Envoyer l’avis après')}${dtext('order_flow.review.text', 'Texte de l’évaluation')}
+        ${dtext('order_flow.review.end_message', 'Message de fin (optionnel) — envoyé dans le chat de la commande', '', 1000)}</div>` : ''}
+      ${dsw('order_flow.delete_sold', 'Supprimer l’article vendu', 'Supprimer l’article de ton dressing une fois la commande terminée.')}`
+    return draftForm('Flux de commande', 'Expédition, délai, retrait et finalisation de ce compte.', tabs + body)
   }
   function pageUnmask() {
     const s = settings()
@@ -231,7 +300,7 @@
   }
 
   async function openPage(page) {
-    S.open = true; S.menu = false; S.page = page; S.notice = ''; render()
+    S.open = true; S.menu = false; S.page = page; S.notice = ''; S.draft = null; render()
     if (!S.data) await refresh()
     if (page === 'dressing') { S.wardrobe = null; render(); try { S.wardrobe = await ask('wardrobe') } catch (e) { S.error = e.message } render() }
     if (page === 'orders') { S.sales = null; render(); try { S.sales = await ask('sales') } catch (e) { S.error = e.message } render() }
@@ -253,19 +322,36 @@
     if ('theme' in d) { S.theme = S.theme === 'dark' ? 'light' : 'dark'; store.set({ylv_theme: S.theme}); render(); return }
     if ('bridge' in d) { if (S.bridge && !confirm('Couper YlaVint dans ce profil ? Plus aucune automatisation ne tournera ici.')) return; chrome.runtime.sendMessage({type: 'ylv_bridge', on: !S.bridge}); return }
     if (d.tab) { S.tab = d.tab; render(); return }
+    if (d.ftab) { S.flowTab = d.ftab; render(); return }
+    if ('addmsg' in d) { draft().likes.messages.push(newStep()); render(); return }
+    if (d.delmsg) { draft().likes.messages.splice(Number(d.delmsg), 1); render(); return }
+    if ('addcarrier' in d) { const v = box.querySelector('[data-carrier]')?.value.trim().toLowerCase(); const l = draft().order_flow.labels.ignore_carriers; if (v && !l.includes(v)) l.push(v); render(); return }
+    if (d.delcarrier) { const l = draft().order_flow.labels; l.ignore_carriers = l.ignore_carriers.filter(c => c !== d.delcarrier); render(); return }
+    if ('savedraft' in d) { const s = draft()
+      const r = await act('save_settings', {enabled: s.enabled, version: acc()?.settings?.version, settings: {features: s.features, limits: s.limits, unmask: s.unmask, pricing: s.pricing, likes: s.likes, messaging: s.messaging || S.data.defaults.messaging, order_flow: s.order_flow}}, 'Paramètres enregistrés.')
+      if (r) { S.draft = null; render() } return }
     if (d.toggle) { const fs = d.toggle.split(','), running = fs.some(on) && !acc()?.settings?.paused
       if (acc()?.settings?.paused && !running) return act('resume', {}, 'YlaVint relancé sur ce compte.')
       return saveSettings(s => { if (!running) s.enabled = true; for (const f of fs) s.features[f] = !running }, running ? 'Automatisation mise en pause.' : 'Automatisation activée.') }
-    if ('save' in d) { const s = collect(); return act('save_settings', {enabled: s.enabled, version: acc()?.settings?.version, settings: {features: s.features, limits: s.limits, unmask: s.unmask, pricing: s.pricing, likes: s.likes, messaging: s.messaging || S.data.defaults.messaging}}, 'Paramètres enregistrés.') }
+    if ('save' in d) { const s = collect(); return act('save_settings', {enabled: s.enabled, version: acc()?.settings?.version, settings: {features: s.features, limits: s.limits, unmask: s.unmask, pricing: s.pricing, likes: s.likes, messaging: s.messaging || S.data.defaults.messaging, order_flow: s.order_flow || S.data.defaults.order_flow}}, 'Paramètres enregistrés.') }
     if (d.reload) { await act('enqueue', {kind: d.reload}, 'Lecture demandée : elle arrive dans quelques minutes.'); return }
     if (d.unmask) { await act('item_unmask', {item_id: d.unmask}, r => r.message || 'Démasquage demandé.'); return openPage('dressing') }
     if (d.price) { const v = prompt(`Nouveau prix (actuel ${euro(d.cur)}) :`, String(Math.max(1, Number(d.cur) - 1))); if (!v) return
       await act('item_reprice', {item_id: d.price, new_price: Number(v.replace(',', '.'))}, r => r.message || 'Changement de prix demandé.'); return openPage('dressing') }
   })
   box.addEventListener('input', e => {
+    const el = e.target
+    if (el.dataset.p) { setPath(draft(), el.dataset.p, el.value); const c = el.nextElementSibling; if (c?.classList.contains('count')) c.textContent = c.textContent.replace(/\d+\/(\d+)$/, `${el.value.length}/$1`) }
+    if (el.dataset.pn) setPath(draft(), el.dataset.pn, el.value === '' ? '' : Number(el.value))
+    if (el.dataset.plist) setPath(draft(), el.dataset.plist, el.value.split(',').map(x => x.trim()).filter(Boolean))
     if (e.target.matches('[data-q]')) { S.q = e.target.value; const pos = e.target.selectionStart; render(); const el = box.querySelector('[data-q]'); el.focus(); el.setSelectionRange(pos, pos) }
   })
-  box.addEventListener('change', e => { if (e.target.matches('[data-status]')) { S.status = e.target.value; render() } })
+  box.addEventListener('change', e => {
+    const el = e.target
+    if (el.matches('[data-status]')) { S.status = el.value; render() }
+    if (el.dataset.pb) { setPath(draft(), el.dataset.pb, el.checked); render() }
+    if (el.dataset.ps) { setPath(draft(), el.dataset.ps, /^-?\d+(\.\d+)?$/.test(el.value) ? Number(el.value) : el.value); render() }
+  })
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && (S.open || S.menu)) { S.open = false; S.menu = false; render() } })
   // Clic hors du menu : fermeture.
   document.addEventListener('click', e => { if (S.menu && !e.composedPath().includes(host)) { S.menu = false; render() } })

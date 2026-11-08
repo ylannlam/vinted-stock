@@ -2,7 +2,8 @@ import {SITE} from './config.js'
 
 const KINDS = {wardrobe: 'Dressing', orders_list: 'Liste des ventes', order_detail: 'Détail d’une vente', order_label: 'Bordereau', likes_list: 'Likes',
   inbox_list: 'Messagerie', conversation_read: 'Lecture d’une conversation', item_form: 'Ouverture d’une annonce', item_edit: 'Enregistrement d’une annonce',
-  photo_upload: 'Envoi d’une photo', item_create: 'Création d’une annonce', conversation_create: 'Ouverture d’une conversation', message_send: 'Envoi d’un message'}
+  photo_upload: 'Envoi d’une photo', item_create: 'Création d’une annonce', conversation_create: 'Ouverture d’une conversation', message_send: 'Envoi d’un message',
+  user_read: 'Profil d’un membre', offer_send: 'Envoi d’une offre', shipping_extension: 'Demande de délai', order_cancel: 'Annulation d’une vente', feedback_send: 'Évaluation', item_delete: 'Suppression d’annonce'}
 const STATES = {task: 'au travail', idle: 'en attente', busy: 'occupé', paused: 'en pause', disabled: 'non activé sur le site', unknown: 'compte inconnu du site',
   no_tab: 'ouvre un onglet Vinted', logged_out: 'compte déconnecté', error: 'site injoignable', off: 'Bridge coupé'}
 const FEATURES = {inbox: 'Messagerie', ai: 'Agent IA', orders: 'Ventes', sales: 'Onglet Ventes', labels: 'Bordereaux', dressing: 'Dressing', unmask: 'Démasquage', pricing: 'Prix', publish: 'Publication', likes: 'Likes'}
