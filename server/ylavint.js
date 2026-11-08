@@ -392,32 +392,8 @@ export async function syncPublicationItems(db,accountId,rows,{now=Date.now()}={}
 }
 
 // ---------- Publication depuis l'atelier d'annonces ----------
-export async function ylavintPublishReady(db,accountId){
-  if(!isId(accountId))return false
-  const s=check(await db.from('vinted_agent_settings').select('*').eq('account_id',accountId).maybeSingle())
-  return !!s?.enabled&&effectiveSettings(s).features.publish&&ready('publish_item',await learned(db))
-}
-export async function queueStudioPublish(db,user,row,{mode='live',now=Date.now(),rand=Math.random}={}){
-  const f=row.fields||{}
-  if(!await ylavintPublishReady(db,f.account_id))throw new AppError('La publication par YlaVint n’est pas prête pour ce compte (Réglages YlaVint : publication activée, et « Envoi d’une photo » + « Création d’une annonce » appris).',409)
-  if(!f.title||!f.description||!money(f.price)||!f.catalog_id||!(row.photos||[]).length)throw new AppError('La fiche est incomplète : titre, description, prix, catégorie et photos.')
-  const planned=row.planned_at&&Date.parse(row.planned_at)>now?Date.parse(row.planned_at):now+jitter(1,4,rand)
-  const added=await enqueue(db,[{account_id:f.account_id,kind:'publish_item',dedupe_key:`publish:${row.id}`,not_before:nowIso(planned),priority:2,payload:{draft_id:row.id,live:mode!=='draft'},created_by:user.id}])
-  if(!added)throw new AppError('Cette fiche est déjà dans la file de YlaVint.',409)
-  const hour=new Date(planned).toLocaleTimeString('fr-FR',{timeZone:'Europe/Paris',hour:'2-digit',minute:'2-digit'})
-  await markDraft(db,row.id,{state:'scheduled',scheduled_at:nowIso(planned),message:`Confiée à YlaVint : ${mode==='draft'?'brouillon Vinted':'mise en ligne'} vers ${hour}, dans les plafonds du compte. Garde le profil AdsPower ouvert.`})
-  return check(await db.from('listing_drafts').select('*').eq('id',row.id).single())
-}
-
-export async function cancelStudioPublish(db,row){
-  const r=check(await db.from('vinted_agent_tasks').update({state:'cancelled',finished_at:nowIso()}).eq('dedupe_key',`publish:${row.id}`).eq('state','queued').select('id'))
-  if(!r.length){
-    const running=check(await db.from('vinted_agent_tasks').select('id').eq('dedupe_key',`publish:${row.id}`).eq('state','running').limit(1))
-    if(running.length)throw new AppError('YlaVint est en train de publier cette annonce : impossible d’annuler maintenant.',409)
-  }
-  await markDraft(db,row.id,{state:'draft',scheduled_at:null,planned_at:null,message:'Publication par YlaVint annulée. La fiche reste prête.'})
-  return check(await db.from('listing_drafts').select('*').eq('id',row.id).single())
-}
+export {queueYlavintListing as queueStudioPublish,cancelYlavintListing as cancelStudioPublish} from './listing-ylavint.js'
+export async function ylavintPublishReady(db,accountId){return (await import('./listing-ylavint.js').then(m=>m.publicationStatus(db,accountId))).ready}
 
 // ---------- Site : vues et actions ----------
 export const YLAVINT_ACTIONS=new Set(['reply','mark_read','ai_suggest','ai_discard','ai_send','cancel_message','refresh_conversation','refresh_inbox','human_done','save_ai','test_ai','item_unmask','item_reprice','label_link','retry_message'])

@@ -171,25 +171,16 @@ test('a result for another account or an expired task is refused',async()=>{
   await agentResult(db,{},{task_id:r.task.id,lease:r.task.lease,member_id:'3206068112',ok:true,result:{orders:[{transaction_id:'777',status:'Payée',title:'Robe',price:'12.00'}]}})
   assert.equal(state.vinted_agent_orders[0].transaction_id,'777');assert.equal(state.vinted_agent_orders[0].account_id,ACC)
 })
-test('learning stores a cleaned recipe; publishing waits for the learned creation',async()=>{
-  const state=base(),db=fakeDb(state),user={id:'u1'}
-  await agentLearn(db,{},{kind:'photo_upload',member_id:'3206068112',login:'compte_demo',recipe:{method:'POST',path:'/api/v2/photos',body:'form',fields:['photo[file]','photo[type]'],headers:{'x-csrf-token':'s'}}})
-  assert.equal(state.vinted_agent_recipes[0].recipe.path,'/api/v2/photos');assert.deepEqual(state.vinted_agent_recipes[0].recipe.headers,{})
-  const draft={id:'33333333-3333-4333-8333-333333333333',owner_id:'u1',version:1,state:'draft',photos:[{path:'a.jpg'}],fields:{account_id:ACC,title:'Robe',description:'Belle robe',price:'12',catalog_id:10}}
-  state.listing_drafts.push(draft)
-  await assert.rejects(handleAgent({method:'POST',body:{action:'publish_drafts',ids:[draft.id]}},{db,user}),/création d’une annonce/)
-  state.vinted_agent_recipes.push(recipe('item_create'))
-  let out=await handleAgent({method:'POST',body:{action:'publish_drafts',ids:[draft.id]}},{db,user})
-  assert.equal(out.queued,0);assert.match(out.refused[0].reason,/non activée/)
-  state.vinted_agent_settings.push({account_id:ACC,enabled:true,paused:false,features:{publish:true},limits:{},unmask:{},pricing:{},likes:{}})
-  out=await handleAgent({method:'POST',body:{action:'publish_drafts',ids:[draft.id]}},{db,user})
-  assert.equal(out.queued,1);assert.equal(draft.state,'scheduled');assert.match(draft.message,/agent/)
-  const task=state.vinted_agent_tasks.find(t=>t.kind==='publish_item');task.not_before=new Date(Date.now()-1000).toISOString()
-  const r=await agentPoll(db,{},{member_id:'3206068112'})
-  assert.equal(r.task.kind,'publish_item');assert.deepEqual(r.task.listing.photos,['https://x.supabase.co/sign/a.jpg'])
-  await agentResult(db,{},{task_id:r.task.id,lease:r.task.lease,member_id:'3206068112',ok:true,result:{vinted_id:'555'}})
-  assert.equal(draft.state,'published');assert.equal(draft.vinted_id,'555');assert.equal(draft.version,3)
+test('learning removes secrets and accepts photo field objects; publication does not bypass account settings',async()=>{
+ const state=base(),db=fakeDb(state),user={id:'u1'}
+ await agentLearn(db,{},{kind:'photo_upload',member_id:'3206068112',recipe:{method:'POST',path:'/api/v2/photos',body:'form',fields:[{name:'photo[file]',value:null},{name:'photo[type]',value:'item'}],headers:{'x-csrf-token':'secret'}}})
+ assert.deepEqual(state.vinted_agent_recipes[0].recipe.headers,{})
+ assert.deepEqual(state.vinted_agent_recipes[0].recipe.fields,['photo[file]','photo[type]'])
+ const draft={id:'33333333-3333-4333-8333-333333333333',owner_id:'u1',version:1,state:'draft',fields:{account_id:ACC},photos:[]};state.listing_drafts.push(draft)
+ const out=await handleAgent({method:'POST',body:{action:'publish_drafts',ids:[draft.id]}},{db,user})
+ assert.equal(out.queued,0);assert.match(out.refused[0].reason,/Active YlaVint/);assert.equal(draft.state,'draft')
 })
+
 test('settings are saved with a version check, and pause / resume are journaled',async()=>{
   const state=base(),db=fakeDb(state),user={id:'u1'}
   const saved=await handleAgent({method:'POST',body:{action:'save_settings',account_id:ACC,enabled:true,settings:{features:{orders:true}}}},{db,user})

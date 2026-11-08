@@ -1,3 +1,4 @@
+import {publicationStatus,publicationStatuses,queueYlavintListing} from './listing-ylavint.js'
 import {selectedListingAccounts,requireSelectedAccount} from './adspower-selection.js'
 import {randomUUID} from 'node:crypto'
 import {AppError,isId} from './dotb.js'
@@ -28,7 +29,7 @@ export async function updateListing(db,row,patch){
 async function expose(db,row){
  const paths=row.photos.map(p=>p.path),signed=paths.length?check(await db.storage.from(ASSET_BUCKET).createSignedUrls(paths,3600)):[]
  const urls=new Map(signed.map(x=>[x.path,x.signedUrl]))
- return {id:row.id,version:row.version,state:row.state,fields:row.fields,photos:row.photos.map(p=>({...p,url:urls.get(p.path)||null})),uploaded:row.uploaded,dotb_item_id:row.dotb_item_id,dotb_publish:row.dotb_publish!==false,message:row.message,last_error:row.last_error,created_at:row.created_at,updated_at:row.updated_at,ai_updated_at:row.ai_updated_at,published_at:row.published_at,checked_at:row.checked_at,planned_at:row.planned_at||null,scheduled_at:row.scheduled_at||null,busy:!!pending(row),manual_recoverable:row.state==='preparing'&&!row.dotb_item_id&&!row.inflight,url:row.state==='published'&&/^\d{1,18}$/.test(row.vinted_id||'')?`https://www.vinted.fr/items/${row.vinted_id}`:null}
+ return {id:row.id,version:row.version,state:row.state,fields:row.fields,photos:row.photos.map(p=>({...p,url:urls.get(p.path)||null})),uploaded:row.uploaded,publish_provider:row.publish_provider|| (row.dotb_item_id?'dotb':null),publication_task_id:row.publication_task_id||null,can_cancel:row.publish_provider==='ylavint'&&row.state==='scheduled',dotb_item_id:row.dotb_item_id,dotb_publish:row.dotb_publish!==false,message:row.message,last_error:row.last_error,created_at:row.created_at,updated_at:row.updated_at,ai_updated_at:row.ai_updated_at,published_at:row.published_at,checked_at:row.checked_at,planned_at:row.planned_at||null,scheduled_at:row.scheduled_at||null,busy:!!pending(row),manual_recoverable:row.state==='preparing'&&!row.dotb_item_id&&!row.inflight,url:row.state==='published'&&/^\d{1,18}$/.test(row.vinted_id||'')?`https://www.vinted.fr/items/${row.vinted_id}`:null}
 }
 async function findSchedule(read,row){
  let cursor=''
@@ -48,7 +49,7 @@ async function inspectPublish(db,row,read){
  return updateListing(db,row,{...(patch||{...(row.state==='preparing'?{state:'attention'}:{}),message:'La publication n’est pas encore confirmée. Vérifie le suivi Dotb ; aucun nouvel envoi n’a été créé.'}),checked_at:now(),lease:null,lease_until:null,inflight:null,last_error:null})
 }
 export async function listingStep(db,row,{read=dotbListingRequest,allowDotb=dotbPublishingEnabled()}={}){
- if(row.state!=='preparing'||pending(row))return row
+ if(row.publish_provider==='ylavint'||row.state!=='preparing'||pending(row))return row
  if(!allowDotb){
   // Nothing was ever sent: no Dotb item and no request whose outcome is unknown.
   // Such a listing safely returns to an editable draft, ready for the manual export.
@@ -131,6 +132,7 @@ export async function recordAiUsage(db,usage,{listing=null,account=null,user=nul
 // Validation complète puis réservation du créneau : envoi immédiat (Annonces) ou heure choisie (Publication).
 async function queueListing(db,user,row,{mode,notBefore=null,read,settings,accounts=null,requireBridge=false}){
  if(!['live','draft',undefined].includes(mode))throw new AppError('Choisis « en ligne » ou « brouillon Vinted ».')
+ if(row.publication_task_id||row.publish_provider==='ylavint')throw new AppError('Cette fiche est déjà confiée à YlaVint. Consulte son suivi.',409)
  const list=accounts||listingAccounts(await read('accounts')),account=await requireSelectedAccount(db,user.id,row.fields.account_id,list)
  if(requireBridge&&!account?.connected)throw new AppError('Ouvre ce compte dans AdsPower et active son Bridge Dotb avant de publier.',409)
  const [options,colors,photos]=await Promise.all([listingMetadata(`catalogs/${row.fields.catalog_id}/options?country=FR&locale=fr`,read),listingMetadata('colors?country=FR',read),verifiedPhotos(db,user.id,row.photos)])
@@ -139,6 +141,7 @@ async function queueListing(db,user,row,{mode,notBefore=null,read,settings,accou
  if(row.dotb_item_id){const item=validateRemoteItem(await read(`items/${row.dotb_item_id}`),row);if(item.status!=='pending'||item.vinted_id||item.scheduled_publish_at)throw new AppError('Cette annonce est déjà en cours de publication. Consulte Dotb.',409)}
  // Choix fait au moment de l'envoi : en ligne directement (par défaut) ou brouillon Vinted.
  if((mode!=='draft')!==(row.dotb_publish!==false))row=await updateListing(db,row,{dotb_publish:mode!=='draft'})
+ row=await updateListing(db,row,{publish_provider:'dotb'})
  return reserveListingSlot(db,row,payload,(await settings(db,row.fields.account_id)).effective.spacing_minutes,notBefore)
 }
 
@@ -158,13 +161,15 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
  if(req.method==='GET'){
   if(action==='accounts'){
    const selected=await selectedListingAccounts(db,user.id,listingAccounts(await read('accounts')))
-   return {accounts:selected.accounts,selected_profiles:selected.selection?.profiles||[],selection_configured:!!selected.selection}
+   const publishers=await publicationStatuses(db,selected.accounts.map(a=>a.id))
+   return {accounts:selected.accounts.map(a=>({...a,ylavint:publishers.get(a.id)})),selected_profiles:selected.selection?.profiles||[],selection_configured:!!selected.selection}
   }
   if(action==='metadata'){
    const [accounts,catalogs,colors]=await Promise.all([read('accounts'),listingMetadata('catalogs?country=FR&depth=6',read),listingMetadata('colors?country=FR',read)])
    if(!Array.isArray(catalogs.data)||!Array.isArray(colors.data))throw new AppError('Les catégories Vinted sont indisponibles.',502)
    const [selected,dotb]=await Promise.all([selectedListingAccounts(db,user.id,listingAccounts(accounts)),allowDotb?dotbAccounts(db):new Set()])
-   return {accounts:selected.accounts.map(a=>({...a,dotb:dotb.has(a.id)})),selected_profiles:selected.selection?.profiles||[],selection_configured:!!selected.selection,catalogs:catalogs.data,colors:colors.data,ai_ready:!!listingAiToken(req),ai_models:LISTING_AI_MODELS,dotb_publish_enabled:allowDotb}
+   const publishers=await publicationStatuses(db,selected.accounts.map(a=>a.id))
+   return {accounts:selected.accounts.map(a=>({...a,dotb:dotb.has(a.id),ylavint:publishers.get(a.id)})),selected_profiles:selected.selection?.profiles||[],selection_configured:!!selected.selection,catalogs:catalogs.data,colors:colors.data,ai_ready:!!listingAiToken(req),ai_models:LISTING_AI_MODELS,dotb_publish_enabled:allowDotb}
   }
   if(action==='options'){
    const id=Number(req.query.catalog_id);if(!Number.isSafeInteger(id)||id<1)throw new AppError('Catégorie invalide.')
@@ -184,8 +189,8 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
    const accountId=req.query.account_id.toLowerCase(),since=Date.now()-86400000
    const cutoff=new Date(since).toISOString()
    const [presets,rows]=await Promise.all([settings(db,accountId),readBoardRows(()=>db.from(TABLE).select('*',{count:'exact'}).eq('owner_id',user.id).eq('fields->>account_id',accountId).or(`state.neq.published,published_at.gt.${cutoff},and(published_at.is.null,updated_at.gt.${cutoff})`).order('created_at',{ascending:false}).order('id'))])
-   const ylavint=await import('./ylavint.js').then(m=>m.ylavintPublishReady(db,accountId)).catch(()=>false)
-   return {account_id:accountId,settings:presets,dotb_publish_enabled:allowDotb,dotb:allowDotb&&presets.effective.dotb===true,ylavint,drafts:await Promise.all(rows.map(r=>expose(db,r)))}
+   const publisher=await publicationStatus(db,accountId),ylavint=publisher.ready
+   return {account_id:accountId,settings:presets,dotb_publish_enabled:allowDotb,dotb:allowDotb&&presets.effective.dotb===true,ylavint,publisher,drafts:await Promise.all(rows.map(r=>expose(db,r)))}
   }
   if(action==='settings')return settings(db,req.query.account_id)
   // Onglet Publication : fiches prêtes, comptes, annonces déjà prévues.
@@ -216,8 +221,10 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
  if(action==='shein')return lookupListingSku(db,user,{sku:body.sku,size:body.size,queue:body.queue===true?true:body.queue==='auto'?'auto':false})
  if(action==='ai_price')return {price:await saveAiPrice(db,body)}
  if(action==='plan'){
-  if(!allowDotb)throw new AppError(manualPublishingMessage,409)
+  if(!['dotb','ylavint',undefined].includes(body.provider))throw new AppError('Choisis Dotb ou YlaVint.')
+  if(body.provider!=='ylavint'&&!allowDotb)throw new AppError(manualPublishingMessage,409)
   return planListings(db,user,body,{read,queue:async(row,options)=>{
+   if(body.provider==='ylavint')return queueYlavintListing(db,user,row,{...options,read,settings})
    if(!await dotbFor(row.fields.account_id))throw new AppError('La publication via Dotb est coupée pour ce compte (réglages des annonces).',409)
    return queueListing(db,user,row,{...options,read,settings})
   }})
@@ -232,7 +239,7 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
  }
  if(!row)throw new AppError('Brouillon introuvable.',404)
  // Publication confiée à YlaVint (pas de fiche chez Dotb) : la tâche est retirée de la file tant qu'elle n'a pas commencé.
- if((action==='unschedule'&&row.state==='scheduled'&&!row.dotb_item_id)||action==='ylavint_cancel'){
+ if((action==='unschedule'&&row.publish_provider==='ylavint')||action==='ylavint_cancel'){
   if(body.version!==row.version||pending(row))throw new AppError('Cette annonce a changé. Actualise la liste.',409)
   const {cancelStudioPublish}=await import('./ylavint.js')
   return {draft:await expose(db,await cancelStudioPublish(db,row))}
@@ -242,7 +249,7 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
   if(row.state!=='draft')throw new AppError('Cette annonce a déjà été transmise. Consulte son suivi.',409)
   if(body.confirmation_account_id!==row.fields.account_id)throw new AppError('Vérifie le compte ciblé avant de publier.')
   const {queueStudioPublish}=await import('./ylavint.js')
-  return {draft:await expose(db,await queueStudioPublish(db,user,row,{mode:body.mode}))}
+  return {draft:await expose(db,await queueStudioPublish(db,user,row,{mode:body.mode,read,settings}))}
  }
  if(action==='unschedule'){
   if(body.version!==row.version||pending(row))throw new AppError('Cette annonce a changé. Actualise la liste.',409)
@@ -254,6 +261,7 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
   if(['scheduled','attention'].includes(row.state))row=await inspectPublish(db,row,read)
   return {draft:await expose(db,row)}
  }
+ if(row.publication_task_id&&['save','discard','publish','mark_published'].includes(action)&&!(action==='mark_published'&&['vinted_draft','published'].includes(row.state)))throw new AppError('Cette fiche a déjà été confiée à YlaVint. Consulte le dressing et les brouillons Vinted avant toute autre publication.',409)
  // A retry after a lost reply returns the same recorded publication, without a second write.
  if(action==='mark_published'&&row.state==='published'&&(!row.dotb_item_id||row.dotb_publish===false)&&vintedItemId(body.url)===row.vinted_id)return {draft:await expose(db,row)}
  // Brouillon Vinted créé par Dotb puis publié à la main : on note le lien de l'annonce en ligne.

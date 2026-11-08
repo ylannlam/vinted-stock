@@ -38,7 +38,7 @@
     await sleep(4000); memory.csrf = null
     return callOnce(recipe, {...opts, retried: true})
   }
-  async function callOnce(recipe, {ids = {}, query = {}, json = null, form = null, raw = false} = {}) {
+  async function callOnce(recipe, {ids = {}, query = {}, json = null, form = null, raw = false, timeout = null} = {}) {
     if (!recipe) throw new Stop('no_recipe', 'Action pas encore apprise.')
     const path = recipe.path.replace(/\{(id|offer_id)\}/g, (_, key) => { const v = ids[key]; if (!/^\d{1,18}$/.test(String(v))) throw new Stop('failed', 'Identifiant manquant.'); return v })
     const externalLikes = recipe.origin === 'https://api.vinted.fr' && path === '/inbox-notifications/v1/notifications' && recipe.method === 'GET'
@@ -53,7 +53,7 @@
     if (anon && !externalLikes) headers['x-anon-id'] = anon
     if (json) headers['content-type'] = 'application/json'
     let response
-    try { response = await nativeFetch(url.href, {method: recipe.method, headers, body: json ? JSON.stringify(json) : form || undefined, credentials: 'include'}) }
+    try { response = await nativeFetch(url.href, {method: recipe.method, headers, body: json ? JSON.stringify(json) : form || undefined, credentials: 'include',...(timeout?{signal:AbortSignal.timeout(timeout)}:{})}) }
     catch { throw new Stop('network', 'Vinted ne répond pas.') }
     const type = response.headers.get('content-type') || ''
     if (raw && response.ok && /pdf/.test(type)) return {pdf: await response.arrayBuffer()}
@@ -242,11 +242,11 @@
   async function fetchBytes(url) {
     const u = new URL(url, location.origin)
     if (u.origin === location.origin) {
-      const r = await nativeFetch(u.href, {credentials: 'include'})
+      const r = await nativeFetch(u.href, {credentials: 'include',signal:AbortSignal.timeout(30000)})
       if (!r.ok) throw new Stop('failed', `Téléchargement refusé (${r.status}).`)
       return r.arrayBuffer()
     }
-    try { const r = await nativeFetch(u.href, {credentials: 'omit'}); if (r.ok) return r.arrayBuffer() } catch {}
+    try { const r = await nativeFetch(u.href, {credentials: 'omit',signal:AbortSignal.timeout(30000)}); if (r.ok) return r.arrayBuffer() } catch {}
     // Hors de Vinted et sans autorisation d'accès croisé : l'extension télécharge à la place de la page.
     const id = uuid()
     post({type: 'need_bytes', id, url: u.href})
@@ -299,16 +299,16 @@
   }
 
   // Une photo envoyée comme le fait le formulaire Vinted (champs relevés à l'apprentissage).
-  async function uploadPhoto(recipe, bytes, tempUuid) {
-    const form = new FormData(), blob = new Blob([bytes], {type: 'image/jpeg'})
+  async function uploadPhoto(recipe, bytes, tempUuid, type='image/jpeg') {
+    const form = new FormData(), blob = new Blob([bytes], {type})
     for (const f of recipe.fields) {
       const name = typeof f === 'string' ? f : f.name, value = typeof f === 'string' ? null : f.value
-      if (/file/i.test(name)) form.append(name, blob, 'photo.jpg')
+      if (/file/i.test(name)) form.append(name, blob, 'photo.'+({ 'image/png':'png','image/webp':'webp'}[type]||'jpg'))
       else if (/uuid/i.test(name)) form.append(name, tempUuid)
       else if (/type/i.test(name)) form.append(name, value || 'item')
       else if (value != null) form.append(name, value)
     }
-    const r = await call(recipe, {form})
+    const r = await call(recipe, {form,timeout:45000,retried:true})
     const id = r.id || r.photo?.id
     if (!id) throw new Stop('vinted_error', 'Vinted n’a pas accepté la photo.')
     return {id, orientation: 0}
@@ -340,18 +340,46 @@
     if (item.price && typeof item.price === 'object') item.price = {...item.price, amount: price.toFixed(2), currency_code: item.price.currency_code || 'EUR'}
     else item.price = typeof item.price === 'string' ? price.toFixed(2) : price
   }
+  // Données strictement issues de la fiche ; aucun titre, photo ou option d'une annonce apprise n'est réutilisé.
+  function publicationBody(fields,assigned,tempUuid,live){
+    const attrs=(fields.item_attributes||[]).filter(a=>!['size','condition'].includes(a.code)).map(a=>({code:a.code,ids:a.ids.map(Number)}))
+    if(fields.size_id)attrs.push({code:'size',ids:[Number(fields.size_id)]})
+    if(fields.status_id)attrs.push({code:'condition',ids:[Number(fields.status_id)]})
+    const item={id:null,currency:'EUR',temp_uuid:tempUuid,title:fields.title,description:fields.description,brand_id:fields.brand_id,brand:fields.brand_title,
+      catalog_id:fields.catalog_id,isbn:null,price:Number(fields.price).toFixed(2),package_size_id:fields.package_size_id,shipment_prices:{domestic:null},color_ids:fields.color_ids||[],
+      assigned_photos:assigned,item_attributes:attrs,measurement_length:null,measurement_width:null,manufacturer:null,manufacturer_labelling:null}
+    return {[live?'item':'draft']:item,...(live?{push_up:false}:{}),parcel:null,upload_session_id:uuid()}
+  }
+  async function publicationIdentity(member){
+    // Relit la session réelle avant chaque création ; une identité ancienne en cache ne peut pas choisir le vendeur.
+    const data=await call({method:'GET',path:'/api/v2/users/current'},{timeout:20000,retried:true})
+    const u=data.user
+    if(!u||String(u.id)!==String(member))throw new Stop('failed','Le compte Vinted connecté ne correspond pas au compte choisi. Aucun envoi.')
+    if(u.is_account_banned||u.action_restriction)throw new Stop('restricted','Vinted signale une restriction : publication arrêtée.')
+  }
   async function publish(task) {
-    const {fields, photos, live} = task.listing, tempUuid = uuid(), assigned = []
-    if (!photos?.length) throw new Stop('failed', 'Aucune photo à envoyer.')
-    for (const url of photos) {
-      assigned.push(await uploadPhoto(task.recipes.photo_upload, await fetchBytes(url), tempUuid))
-      progress(); await pause(1200, 3500)
+    const {fields,photos,live,deadline}=task.listing||{},tempUuid=uuid(),assigned=[]
+    if(typeof live!=='boolean'||!fields?.title||!Array.isArray(photos)||!photos.length||photos.length>20)throw new Stop('failed','Fiche ou photos incomplètes.')
+    const expires=Date.parse(deadline)
+    const checkTime=()=>{if(!Number.isFinite(expires)||Date.now()>expires-60000)throw new Stop('timeout','Délai dépassé avant la création : aucun nouvel envoi automatique.')}
+    checkTime();await publicationIdentity(task.member_id)
+    for(const photo of photos){
+      checkTime()
+      if(!['image/jpeg','image/png','image/webp'].includes(photo.type))throw new Stop('failed','Format de photo non pris en charge.')
+      const bytes=await fetchBytes(photo.url)
+      if(!bytes.byteLength||bytes.byteLength>8000000)throw new Stop('failed','Photo vide ou trop volumineuse.')
+      assigned.push(await uploadPhoto(task.recipes.photo_upload,bytes,tempUuid,photo.type))
+      progress();await pause(500,1000)
     }
-    const body = fillItem(task.recipes.item_create.template, fields, assigned, {tempUuid, live})
-    const r = await call(task.recipes.item_create, {json: body})
-    const id = r.item?.id || r.id
-    if (!id) throw new Stop('vinted_error', 'Vinted n’a pas confirmé la création.')
-    return {vinted_id: String(id), draft: live === false}
+    checkTime();await publicationIdentity(task.member_id);checkTime()
+    const recipe=live?task.recipes.item_create:task.recipes.draft_create
+    if(recipe?.method!=='POST'||recipe.path!==(live?'/api/v2/item_upload/items':'/api/v2/item_upload/drafts'))throw new Stop('failed','Route de publication incompatible. Mets YlaVint à jour.')
+    // Un seul POST de création. Une réponse perdue ne déclenche jamais un deuxième POST.
+    const r=await call(recipe,{json:publicationBody(fields,assigned,tempUuid,live),timeout:45000,retried:true})
+    const item=live?r.item:(r.draft||r.item),id=item?.id
+    if(!/^[1-9]\d{0,17}$/.test(String(id||''))||r.errors?.length||r.code&&r.code!==0)throw new Stop('vinted_error','Vinted n’a pas confirmé la création. Vérifie les annonces et les brouillons.')
+    if(item.user_id&&String(item.user_id)!==String(task.member_id)||typeof item.is_draft==='boolean'&&item.is_draft===live)throw new Stop('failed','Résultat Vinted différent de la demande. Vérifie le compte avant de continuer.')
+    return {vinted_id:String(id),draft:!live,confirmed:true}
   }
   async function editItem(task, {unmask}) {
     const id = String(task.payload.item_id), R = task.recipes
@@ -515,6 +543,7 @@
     ['wardrobe', /^GET$/, /^\/api\/v2\/wardrobe\/\{id\}\/items$/],
     ['item_form', /^GET$/, /^\/api\/v2\/item_upload\/items\/\{id\}$/],
     ['item_edit', /^(PUT|POST|PATCH)$/, /^\/api\/v2\/item_upload\/items\/\{id\}$/],
+    ['draft_create', /^POST$/, /^\/api\/v2\/item_upload\/drafts$/],
     ['item_create', /^POST$/, /^\/api\/v2\/(item_upload\/items|items)$/],
     ['photo_upload', /^POST$/, /^\/api\/v2\/photos$/],
     ['conversation_create', /^POST$/, /^\/api\/v2\/conversations$/],
@@ -614,5 +643,5 @@
   installWrappers()
   globalThis.__svAgent = {version: 4}
   // Pour les tests : fonctions pures.
-  globalThis.__svAgentTest = {fillItem, wardrobeItem, orderRow, shape, fillShape, hiddenFlag, messageRow, conversationRow, notificationLike, pendingOffers, offerAllowed}
+  globalThis.__svAgentTest = {publicationBody,fillItem, wardrobeItem, orderRow, shape, fillShape, hiddenFlag, messageRow, conversationRow, notificationLike, pendingOffers, offerAllowed}
 })()

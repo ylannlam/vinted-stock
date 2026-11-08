@@ -39,7 +39,7 @@
       const id = crypto.randomUUID()
       pending.set(id, reply)
       toPage({type: 'run', id, task: msg.task})
-      setTimeout(() => { if (pending.has(id)) { pending.delete(id); reply({ok: false, code: 'timeout', error: 'La tâche a dépassé 3 minutes.'}) } }, 180000)
+      setTimeout(() => { if (pending.has(id)) { pending.delete(id); reply({ok: false, code: 'timeout', error: 'Le délai de la tâche est dépassé. Consulte le suivi.'}) } }, msg.task.kind==='publish_item'?590000:180000)
       return true
     }
   })

@@ -321,18 +321,13 @@ test('a queued AI reply outside a newly selected history window is cancelled, no
  assert.equal(state.ylavint_messages.find(m=>m.source==='ai').state,'cancelled')
 })
 
-test('publishing from the listing studio goes through YlaVint only when the account is ready',async()=>{
-  const db=fakeDb(base())
-  const row={id:'33333333-3333-4333-8333-333333333333',version:1,state:'draft',fields:{account_id:ACC,title:'Robe',description:'Belle robe',price:'20',catalog_id:10},photos:[{path:'a.jpg'}]}
-  db.state.listing_drafts.push({...row})
-  await assert.rejects(queueStudioPublish(db,{id:USER},row),/pas prête/)
-  db.state.vinted_agent_settings[0].features.publish=true
-  db.state.vinted_agent_recipes.push({kind:'photo_upload',recipe:{}},{kind:'item_create',recipe:{}})
-  const out=await queueStudioPublish(db,{id:USER},row,{mode:'draft'})
-  assert.equal(out.state,'scheduled');assert.match(out.message,/YlaVint/)
-  const t=db.state.vinted_agent_tasks[0];assert.equal(t.kind,'publish_item');assert.equal(t.payload.live,false)
-  await assert.rejects(queueStudioPublish(db,{id:USER},row),/déjà/)
-  assert.equal(DEFAULTS.features.inbox,false,'everything stays off until switched on')
+test('YlaVint publication requires an owned draft, activation and a compatible extension',async()=>{
+ const db=fakeDb(base()),row={id:crypto.randomUUID(),owner_id:USER,state:'draft',fields:{account_id:ACC},photos:[]}
+ await assert.rejects(queueStudioPublish(db,{id:USER},row),/Active « Publication »/)
+ db.state.vinted_agent_settings[0].features.publish=true
+ await assert.rejects(queueStudioPublish(db,{id:USER},row),/3.7.0/)
+ for(const patch of [{state:'attention'},{owner_id:ACC},{dotb_item_id:crypto.randomUUID()},{publication_task_id:crypto.randomUUID()}])await assert.rejects(queueStudioPublish(db,{id:USER},{...row,...patch}),/déjà transmise/)
+ assert.equal(db.state.vinted_agent_tasks.length,0)
 })
 
 test('the in-page panel only reads and changes the account logged in that profile',async()=>{

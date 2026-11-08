@@ -1,4 +1,4 @@
-// Envoi des annonces vers Dotb (réservation des créneaux, création, photos, programmation).
+// Réservation des annonces pour YlaVint, ou envoi par étapes vers Dotb.
 // Il est piloté depuis le navigateur mais ne dépend d'aucun écran : changer d'onglet du site, ou d'onglet du
 // navigateur, ne l'interrompt pas. Seule la fermeture de la page l'arrête ; ce qui est déjà réservé reste dans
 // « En cours d'envoi » et se reprend d'un clic.
@@ -68,6 +68,7 @@ async function drive(request, rows, step) {
   const done = []
   let scheduled = 0
   for (let i = 0; i < rows.length && !stopRequested; i++) {
+    if(rows[i].publish_provider==='ylavint')continue
     let row = rows[i], waits = 0
     for (let guard = 0; guard < 30 && !stopRequested; guard++) {
       set({progress: {phase: 'dotb', index: i + 1, total: rows.length, title: row.title || 'Annonce', message: row.message}})
@@ -92,7 +93,7 @@ async function drive(request, rows, step) {
 }
 
 // Réserve les créneaux du planning (par lots), puis envoie chaque fiche à Dotb.
-export async function startPlanSend({request, items, mode, step = 1800}) {
+export async function startPlanSend({request, items, mode, provider = 'dotb', step = 1800}) {
   if (state.running || !items?.length) return false
   begin()
   const reserved = [], refused = []
@@ -100,20 +101,20 @@ export async function startPlanSend({request, items, mode, step = 1800}) {
     for (let i = 0; i < items.length && !stopRequested; i += BATCH) {
       const batch = items.slice(i, i + BATCH)
       set({progress: {phase: 'reserve', index: Math.min(i + BATCH, items.length), total: items.length}})
-      const {results} = await request('POST', {action: 'plan', mode, items: batch.map(x => ({id: x.id, version: x.version, at: new Date(x.at).toISOString()}))})
+      const {results} = await request('POST', {action: 'plan', mode, provider, items: batch.map(x => ({id: x.id, version: x.version, at: new Date(x.at).toISOString()}))})
       for (const r of results) {
         const item = batch.find(x => x.id === r.id)
         if (r.ok) reserved.push({...item, state: r.state, message: r.message, version: r.version})
         else refused.push({...item, error: r.error})
       }
     }
-    const {stuck, scheduled: ok} = await drive(request, reserved, step)
+    const {stuck, scheduled: ok} = provider==='ylavint'?{stuck:[],scheduled:reserved.length}:await drive(request, reserved, step)
     const all = [...refused, ...stuck]
     set({
       failures: all,
       notice: stopRequested
         ? `Envoi arrêté. ${ok} annonce${plural(ok, '', 's')} programmée${plural(ok, '', 's')} ; les autres attendent dans « En cours d’envoi ».`
-        : `${ok} annonce${plural(ok, '', 's')} programmée${plural(ok, '', 's')} chez Dotb.${all.length ? ` ${all.length} à revoir ci-dessous.` : ''}`
+        : `${ok} annonce${plural(ok, '', 's')} programmée${plural(ok, '', 's')} ${provider==='ylavint'?'avec YlaVint':'chez Dotb'}.${all.length ? ` ${all.length} à revoir ci-dessous.` : ''}`
     })
   } catch (e) {
     set({error: e.message || 'L’envoi a été interrompu. Ce qui est déjà réservé reste dans « En cours d’envoi ».'})

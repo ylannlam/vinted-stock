@@ -1,3 +1,4 @@
+import {publicationBundle,publicationResult,cancelYlavintListing,queueYlavintListing} from './listing-ylavint.js'
 import {activationSettings,eventTime,inHistory} from './ylavint-history.js'
 import {copiedSettings,COPY_GROUPS} from './ylavint-settings-copy.js'
 // Agent Vinted maison : remplace Dotb fonction par fonction.
@@ -106,7 +107,7 @@ export function sanitizeRecipe(kind,raw){
   const query=raw.query&&typeof raw.query==='object'?Object.fromEntries(Object.entries(raw.query).filter(([k,v])=>/^[a-z_\[\]0-9]{1,40}$/i.test(k)&&['string','number','boolean'].includes(typeof v)).slice(0,20).map(([k,v])=>[k,String(v).slice(0,100)])):{}
   const headers=raw.headers&&typeof raw.headers==='object'?Object.fromEntries(Object.entries(raw.headers).filter(([k,v])=>/^[a-z0-9-]{1,40}$/i.test(k)&&!SECRET_HEADER.test(k)&&typeof v==='string').slice(0,15).map(([k,v])=>[k.toLowerCase(),v.slice(0,200)])):{}
   const body=['json','form','none'].includes(raw.body)?raw.body:'none'
-  const template=body==='json'?raw.template:null,fields=body==='form'&&Array.isArray(raw.fields)?raw.fields.filter(f=>typeof f==='string'&&/^[a-z_\[\]0-9]{1,60}$/i.test(f)).slice(0,30):[]
+  const template=body==='json'?raw.template:null,fields=body==='form'&&Array.isArray(raw.fields)?raw.fields.map(f=>typeof f==='string'?f:f?.name).filter(f=>typeof f==='string'&&/^[a-z_\[\]0-9]{1,60}$/i.test(f)).slice(0,30):[]
   if(body==='json'&&(!template||typeof template!=='object'||JSON.stringify(template).length>30000))throw new AppError('Modèle de requête invalide.')
   if(body==='form'&&!fields.length)throw new AppError('Champs du formulaire absents.')
   const response=Array.isArray(raw.response)?raw.response.filter(k=>typeof k==='string'&&k.length<=60).slice(0,40):[]
@@ -157,14 +158,12 @@ async function taskBundle(db,task,settings){
   const uses=KINDS[task.kind].uses||[]
   const recipes=Object.fromEntries((await recipeRows(db,[...KINDS[task.kind].needs,...uses,...(OPTIONAL[task.kind]||[])])).map(r=>[r.kind,r.recipe]))
   for(const k of [...KINDS[task.kind].needs,...uses,...(OPTIONAL[task.kind]||[])])if(!recipes[k]&&DEFAULT_RECIPES[k])recipes[k]=DEFAULT_RECIPES[k]
+  // La publication 3.7 utilise le formulaire actuel, jamais un ancien corps appris sur une autre annonce.
+  if(task.kind==='publish_item')for(const k of KINDS.publish_item.needs)recipes[k]=DEFAULT_RECIPES[k]
   const missing=KINDS[task.kind].needs.filter(k=>!recipes[k])
-  const bundle={id:task.id,lease:task.lease,kind:task.kind,payload:task.payload,recipes,missing}
+  const bundle={id:task.id,lease:task.lease,kind:task.kind,payload:task.kind==='publish_item'?{draft_id:task.payload.draft_id,live:task.payload.live}:task.payload,recipes,missing}
   if(task.kind==='publish_item'&&!missing.length){
-    const draft=check(await db.from('listing_drafts').select('id,fields,photos,state,dotb_publish').eq('id',task.payload.draft_id).maybeSingle())
-    if(!draft)return {...bundle,missing:['draft']}
-    const paths=(draft.photos||[]).map(p=>p.path).filter(Boolean).slice(0,20)
-    const signed=paths.length?check(await db.storage.from(BUCKET).createSignedUrls(paths,1800)):[]
-    bundle.listing={fields:draft.fields,live:task.payload.live!==false&&draft.dotb_publish!==false,photos:signed.map(s=>s.signedUrl).filter(Boolean)}
+    try{bundle.listing=await publicationBundle(db,task)}catch(e){bundle.missing=['fiche invalide : '+e.message]}
   }
   if(task.kind==='like_message')bundle.payload=await (await import('./ylavint-flows.js')).likePayload(db,task,settings)
   if(task.kind==='reply_message'&&task.payload?.source==='ai'&&!inHistory(task.payload.source_message_at,settings.messaging.history_since))bundle.payload={...task.payload,skip:'Message antérieur à la période choisie.'}
@@ -232,7 +231,12 @@ const STOP={captcha:'vérification Vinted (captcha) à faire à la main dans ce 
 export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}={}){
   if(!isId(body?.task_id)||!isId(body?.lease))throw new AppError('Tâche invalide.')
   const task=check(await db.from('vinted_agent_tasks').select('*').eq('id',body.task_id).eq('lease',body.lease).eq('state','running').maybeSingle())
-  if(!task)throw new AppError('Cette tâche a expiré.',409)
+  if(!task){
+    const previous=check(await db.from('vinted_agent_tasks').select('*').eq('id',body.task_id).eq('kind','publish_item').maybeSingle())
+    const who=previous?await accountFor(db,body):null
+    if(previous&&who?.account?.id===previous.account_id&&['done','failed','cancelled'].includes(previous.state))return {saved:true,message:previous.result?.message||previous.error||'Envoi terminé : consulte le suivi.'}
+    throw new AppError('Cette tâche a expiré.',409)
+  }
   const {member,account}=await accountFor(db,body)
   if(!account||account.id!==task.account_id)throw new AppError('Cette tâche appartient à un autre compte.',409)
   const log=(level,event,message,details)=>agentLog(db,{account_id:task.account_id,task_id:task.id,level,event,message,details})
@@ -252,7 +256,7 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
     }
     await finish(db,task,'failed',null,detail||`${label} : échec.`)
     await log('error','failed',`${label} : ${detail||'échec'}`,{code,status:Number.isSafeInteger(body.status)?body.status:null})
-    if(task.kind==='publish_item')await markDraft(db,task.payload.draft_id,{state:'attention',message:`L’agent n’a pas pu publier : ${detail||'erreur Vinted'}. Vérifie le dressing avant de relancer.`})
+
     if(task.kind==='like_message')await db.from('vinted_agent_contacts').update(task.payload.followup?{followup_state:'failed'}:{state:'failed'}).eq('account_id',task.account_id).eq('item_id',task.payload.item_id).eq('user_id',task.payload.user_id)
     if(task.kind==='reply_message')await (await import('./ylavint.js')).replyFailed(db,task,detail||'Vinted a refusé le message.')
     const flows=await import('./ylavint-flows.js')
@@ -266,7 +270,9 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
   if(task.kind==='fetch_label')summary=await applyLabel(db,task,parseLabel(body.result))
   if(task.kind==='scan_likes')summary=await (await import('./ylavint-flows.js')).planLikes(db,task,parseLikes(body.result),settings,{now,rand,can:await learned(db)})
   if(task.kind==='unmask_item'||task.kind==='reprice_item')summary=await applyEdit(db,task,body.result,now)
-  if(task.kind==='publish_item')summary=await applyPublish(db,task,body.result)
+  if(task.kind==='publish_item'){
+    try{summary=publicationResult(task,body.result)}catch(e){await finish(db,task,'failed',null,e.message);await log('error','publication_unconfirmed',e.message);return {saved:true,message:e.message}}
+  }
   if(task.kind==='sync_inbox')summary=await (await import('./ylavint.js')).applyInbox(db,task,body.result,{member,settings,now})
   if(task.kind==='reply_message')summary=await (await import('./ylavint.js')).applyReply(db,task,body.result,{now})
   if(task.kind==='accept_offer'){
@@ -280,6 +286,7 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
   }
   {const flows=await import('./ylavint-flows.js');if(flows.isFlowTask(task.kind))summary=await flows.flowDone(db,task,{ok:true,result:body.result},{now})}
   await finish(db,task,'done',summary,null)
+  if(task.kind==='publish_item'&&!summary.draft)await enqueue(db,[{account_id:task.account_id,kind:'scan_wardrobe',priority:3,dedupe_key:`scan_wardrobe:${task.account_id}`}]).catch(()=>{})
   if(['sync_inbox','scan_likes'].includes(task.kind)&&task.payload?.history_since&&body.result?.more_history===true){
     const page=Number(task.payload.history_page)
     if(Number.isInteger(page)&&page>=1&&page<1000)await enqueue(db,[{account_id:task.account_id,kind:task.kind,priority:3,dedupe_key:`history:${task.kind}:${task.account_id}:${task.payload.history_since}:${page+1}`,payload:{force_details:true,history_since:task.payload.history_since,history_page:page+1}}])
@@ -367,16 +374,6 @@ export async function markDraft(db,id,patch){
   const row=check(await db.from('listing_drafts').select('id,version').eq('id',id).maybeSingle())
   if(row)check(await db.from('listing_drafts').update({...patch,version:row.version+1,updated_at:new Date().toISOString()}).eq('id',id).eq('version',row.version))
 }
-async function applyPublish(db,task,result){
-  const item=vid(result?.vinted_id)
-  if(!item)throw new AppError('Vinted n’a pas confirmé la création de l’annonce.')
-  const live=result.draft!==true
-  await markDraft(db,task.payload.draft_id,live
-    ?{state:'published',vinted_id:item,published_at:new Date().toISOString(),message:'Annonce publiée sur Vinted par l’agent.'}
-    :{state:'vinted_draft',vinted_id:item,message:'Brouillon créé sur Vinted par l’agent. Vérifie-le puis publie-le.'})
-  return {vinted_id:item,message:live?`Annonce ${item} publiée.`:`Brouillon ${item} créé.`}
-}
-
 // Mode apprentissage : l'extension a vu le site Vinted faire cette requête.
 export async function agentLearn(db,key,body){
   const kind=typeof body?.kind==='string'?body.kind:''
@@ -481,6 +478,8 @@ export async function handleAgent(req,{db,user}){
   }
   if(body.action==='cancel'){
     if(!isId(body.task_id))throw new AppError('Tâche invalide.')
+    const publication=check(await db.from('vinted_agent_tasks').select('id,kind,payload,created_by').eq('id',body.task_id).maybeSingle())
+    if(publication?.kind==='publish_item'){const row=check(await db.from('listing_drafts').select('*').eq('publication_task_id',publication.id).eq('owner_id',user.id).maybeSingle());if(!row)throw new AppError('Fiche introuvable.',404);await cancelYlavintListing(db,row);return {cancelled:1}}
     const r=check(await db.from('vinted_agent_tasks').update({state:'cancelled',finished_at:new Date().toISOString()}).eq('id',body.task_id).eq('state','queued').select('id,kind,payload'))
     if(r?.[0]?.kind==='publish_item')await markDraft(db,r[0].payload.draft_id,{state:'draft',scheduled_at:null,message:'Publication par l’agent annulée.'})
     return {cancelled:r?.length||0}
@@ -496,27 +495,10 @@ export async function handleAgent(req,{db,user}){
 }
 
 // Publication par l'agent : les fiches prêtes passent dans la file, au créneau prévu (ou réparties si aucun créneau).
-async function publishDrafts(db,user,body,{now=Date.now(),rand=Math.random}={}){
-  const ids=Array.isArray(body.ids)?body.ids.filter(isId).slice(0,25):[]
-  if(!ids.length)throw new AppError('Choisis au moins une fiche.')
-  const can=await learned(db),missing=KINDS.publish_item.needs.filter(k=>!can.has(k))
-  if(missing.length)throw new AppError(`Apprends d’abord ${missing.map(k=>RECIPES[k].label.toLowerCase()).join(' et ')} (une fois à la main sur Vinted, YlaVint l’apprend tout seul).`,409)
-  const drafts=check(await db.from('listing_drafts').select('id,version,state,fields,photos,planned_at,dotb_item_id').in('id',ids).eq('owner_id',user.id))
-  const accounts=new Map(check(await db.from('vinted_agent_settings').select('*').in('account_id',[...new Set(drafts.map(d=>String(d.fields?.account_id||'').toLowerCase()).filter(isId))])).map(s=>[s.account_id,s]))
-  const refused=[],tasks=[];let offset=0
-  for(const d of drafts){
-    const acc=String(d.fields?.account_id||'').toLowerCase(),s=accounts.get(acc)
-    if(!['draft','attention'].includes(d.state)||d.dotb_item_id){refused.push({id:d.id,reason:'déjà envoyée ou en cours'});continue}
-    if(!s?.enabled||!effectiveSettings(s).features.publish){refused.push({id:d.id,reason:'publication par l’agent non activée pour ce compte'});continue}
-    if(!d.fields?.title||!d.fields?.description||!money(d.fields?.price)||!d.fields?.catalog_id||!(d.photos||[]).length){refused.push({id:d.id,reason:'fiche incomplète'});continue}
-    const planned=d.planned_at&&Date.parse(d.planned_at)>now?Date.parse(d.planned_at):now+(offset+=jitter(15,45,rand))
-    tasks.push({draft:d,row:{account_id:acc,kind:'publish_item',dedupe_key:`publish:${d.id}`,not_before:new Date(planned).toISOString(),payload:{draft_id:d.id},created_by:user.id}})
-  }
-  let queued=0
-  for(const t of tasks){
-    if(!await enqueue(db,[t.row]))continue
-    queued++
-    await markDraft(db,t.draft.id,{state:'scheduled',scheduled_at:t.row.not_before,message:`Programmée par l’agent vers ${new Date(t.row.not_before).toLocaleTimeString('fr-FR',{timeZone:'Europe/Paris',hour:'2-digit',minute:'2-digit'})}. Garde le profil AdsPower ouvert.`})
-  }
+async function publishDrafts(db,user,body){
+  const ids=Array.isArray(body.ids)?body.ids.filter(isId):[]
+  if(!ids.length||ids.length>25||new Set(ids).size!==ids.length)throw new AppError('Choisis de 1 à 25 fiches différentes.')
+  const drafts=check(await db.from('listing_drafts').select('*').in('id',ids).eq('owner_id',user.id)),refused=[];let queued=0
+  for(const id of ids){try{const d=drafts.find(d=>d.id===id);if(!d)throw new AppError('Fiche introuvable.');await queueYlavintListing(db,user,d,{mode:body.mode});queued++}catch(e){if(!(e instanceof AppError))throw e;refused.push({id,reason:e.message})}}
   return {queued,refused}
 }

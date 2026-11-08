@@ -10,7 +10,7 @@ export const KINDS={
   sync_inbox:{writes:false,label:'Lecture de la messagerie',needs:[],uses:['inbox_list','conversation_read']},
   unmask_item:{writes:true,label:'Démasquage',needs:['item_form','item_edit','photo_upload']},
   reprice_item:{writes:true,label:'Baisse de prix',needs:['item_form','item_edit']},
-  publish_item:{writes:true,label:'Publication',needs:['photo_upload','item_create']},
+  publish_item:{writes:true,label:'Publication',needs:['photo_upload','item_create','draft_create']},
   like_message:{writes:true,label:'Message après un like',needs:['conversation_create','message_send'],uses:['user_read','conversation_read']},
   reply_message:{writes:true,label:'Réponse à un acheteur',needs:['message_send']},
   accept_offer:{writes:true,label:'Acceptation d’une offre',needs:['offer_accept','conversation_read']},
@@ -24,6 +24,10 @@ export const KINDS={
 export const OPTIONAL={like_message:['offer_send']}
 // Lectures que le site Vinted fait lui-même à chaque visite : utilisées tant qu'aucune recette n'a été relevée.
 export const DEFAULT_RECIPES={
+  // Formulaire officiel Vinted vérifié le 08/11/2026 : les brouillons ont leur propre route.
+  photo_upload:{method:'POST',path:'/api/v2/photos',body:'form',fields:['photo[type]','photo[file]','photo[temp_uuid]']},
+  item_create:{method:'POST',path:'/api/v2/item_upload/items',headers:{'x-upload-form':'true'},body:'json'},
+  draft_create:{method:'POST',path:'/api/v2/item_upload/drafts',body:'json'},
   wardrobe:{method:'GET',path:'/api/v2/wardrobe/{id}/items',query:{order:'relevance'},headers:{},body:'none'},
   orders_list:{method:'GET',path:'/api/v2/my_orders',query:{type:'sold',status:'all'},headers:{},body:'none'},
   likes_list:{method:'GET',path:'/inbox-notifications/v1/notifications',origin:'https://api.vinted.fr',query:{},headers:{platform:'web','x-next-app':'marketplace-web',locale:'fr-FR'},body:'none'},
@@ -40,6 +44,7 @@ export const DEFAULT_RECIPES={
 }
 // Recettes relevées en mode apprentissage, avec le geste à faire à la main une fois sur Vinted.
 export const RECIPES={
+  draft_create:{label:'Création d’un brouillon Vinted',how:'Enregistre une annonce dans tes brouillons Vinted.'},
   wardrobe:{label:'Dressing',how:'Ouvre ton profil Vinted (ton dressing).'},
   orders_list:{label:'Liste des ventes',how:'Ouvre Mes commandes, onglet Ventes.'},
   order_detail:{label:'Détail d’une vente',how:'Ouvre une vente depuis Mes commandes.'},

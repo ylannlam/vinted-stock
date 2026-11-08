@@ -81,15 +81,16 @@ test('listing editor guides missing fields, confirms saves, refreshes offline ac
   failSave=true
   await edit('#listing-title input','Titre après une coupure réseau')
   await click('3. Publication')
-  await click('Publier sur compte-test')
+  await act(async()=>props(document.querySelector('input[value="dotb"]')).onChange())
+  await click('Publier avec Dotb sur compte-test')
   assert.ok(document.body.textContent.includes('Connexion interrompue pendant la sauvegarde'))
   assert.equal(calls.some(c=>c.action==='publish'),false)
   failSave=false
-  await click('Publier sur compte-test')
+  await click('Publier avec Dotb sur compte-test')
   assert.ok(document.body.textContent.includes('Le Bridge est déconnecté'))
   assert.equal(calls.some(c=>c.action==='publish'),false)
   connected=true
-  await click('Publier sur compte-test')
+  await click('Publier avec Dotb sur compte-test')
   assert.equal(calls.filter(c=>c.action==='publish').length,1)
   assert.equal(calls.find(c=>c.action==='publish').body.confirmation_account_id,account.id)
   assert.ok(document.body.textContent.includes('Fiche créée dans Dotb'))
@@ -128,6 +129,7 @@ test('with Dotb off, the last step downloads the listing folder and never asks D
   await act(async()=>root.render(React.createElement(ListingStudio,{request})))
   await act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Combinaison noire M')).click())
   await act(async()=>button('3. Publication').click())
+  await act(async()=>{const node=document.querySelector('input[value="dotb"]');node[Object.keys(node).find(k=>k.startsWith('__reactProps$'))].onChange()})
   assert.ok(document.body.textContent.includes('L’envoi automatique par Dotb est coupé'))
   assert.equal([...document.querySelectorAll('button')].some(b=>b.textContent.startsWith('Publier sur')),false)
   assert.equal(document.body.textContent.includes('Bridge Dotb'),false)

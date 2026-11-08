@@ -1,3 +1,4 @@
+import ListingPublisher from './ListingPublisher'
 import {syncListingStatuses} from '../lib/listingStatusSync'
 import {useEffect,useMemo,useRef,useState,useSyncExternalStore} from 'react'
 import {PLAN_DEFAULTS,planPublications,parisDate,dayLabel,timeLabel,SKU_GAP_MINUTES} from '../lib/publicationPlan'
@@ -28,14 +29,16 @@ export default function PublicationTab({request=defaultRequest,onOpenListings,st
  const saved=useMemo(stored,[])
  const [settings,setSettings]=useState({...PLAN_DEFAULTS,...(saved.settings||{})})
  const [excluded,setExcluded]=useState(()=>new Set(saved.excluded||[])),[onlyConnected,setOnlyConnected]=useState(!!saved.onlyConnected)
+ const [provider,setProvider]=useState(saved.provider==='dotb'?'dotb':'ylavint')
+ const connected=a=>provider==='ylavint'?a?.ylavint?.online:a?.connected
  const [plan,setPlan]=useState(null),[planError,setPlanError]=useState('')
  const [picked,setPicked]=useState(()=>new Set())
  const alive=useRef(true),seenRuns=useRef(run.finished),loadingRef=useRef(false),pollLatest=useRef(null)
  useEffect(()=>{alive.current=true;load();return()=>{alive.current=false}},[])
  // L'envoi vit hors de cet écran : quand il se termine, on relit les fiches.
  useEffect(()=>{if(run.finished!==seenRuns.current){seenRuns.current=run.finished;setPlan(null);setPicked(new Set());load()}},[run.finished])
- useEffect(()=>{keep({settings,excluded:[...excluded],onlyConnected})},[settings,excluded,onlyConnected])
- useEffect(()=>setPlan(null),[settings,excluded,onlyConnected,data])
+ useEffect(()=>{keep({settings,excluded:[...excluded],onlyConnected,provider})},[settings,excluded,onlyConnected,provider])
+ useEffect(()=>setPlan(null),[settings,excluded,onlyConnected,data,provider])
 
  pollLatest.current=()=>{if(!plan&&!run.running)load(true)}
  useEffect(()=>{
@@ -67,13 +70,14 @@ export default function PublicationTab({request=defaultRequest,onOpenListings,st
  function blocker(id){
   const a=accounts.get(id)
   if(!a)return 'Absent de ta sélection AdsPower'
-  if(!a.dotb)return 'Publication Dotb coupée pour ce compte'
+  if(provider==='ylavint'&&!a.ylavint?.ready)return a.ylavint?.reason||'Publication YlaVint non activée'
+  if(provider==='dotb'&&!a.dotb)return 'Publication Dotb coupée pour ce compte'
   if(unusable(a))return healthLabels[a.health.status]
-  if(onlyConnected&&!a.connected)return 'Bridge fermé'
+  if(onlyConnected&&!connected(a))return 'Bridge fermé'
   return null
  }
  const eligible=ready.filter(d=>!blocker(d.account_id)&&!excluded.has(d.account_id))
- const closedBridges=readyAccounts.filter(id=>accounts.get(id)&&!accounts.get(id).connected).length
+ const closedBridges=readyAccounts.filter(id=>accounts.get(id)&&!connected(accounts.get(id))).length
  const spacingByAccount=Object.fromEntries((data?.accounts||[]).map(a=>[a.id,a.spacing]))
  const occupied=(data?.occupied||[]).map(o=>({...o,at:Number(o.at)}))
 
@@ -88,9 +92,9 @@ export default function PublicationTab({request=defaultRequest,onOpenListings,st
   if(!plan?.items.length)return
   const label=settings.mode==='draft'?'brouillons Vinted':'annonces'
   if(!window.confirm(`Programmer ${plan.items.length} ${label} du ${dayLabel(plan.items[0].date)} au ${dayLabel(plan.items.at(-1).date)} ?\n\nL’envoi continue même si tu changes d’onglet. Garde simplement le site ouvert jusqu’à la fin.`))return
-  setLoadError('');startPlanSend({request,items:plan.items,mode:settings.mode,step})
+  setLoadError('');startPlanSend({request,items:plan.items,mode:settings.mode,provider,step})
  }
- function resume(){setLoadError('');resumeSend({request,rows:(data?.queue||[]).filter(r=>r.state==='preparing'),step})}
+ function resume(){setLoadError('');resumeSend({request,rows:(data?.queue||[]).filter(r=>r.state==='preparing'&&r.publish_provider!=='ylavint'),step})}
  function cancelPicked(){
   const rows=(data?.scheduled||[]).filter(r=>picked.has(r.id))
   if(!rows.length||!window.confirm(`Annuler ${rows.length} programmation${rows.length>1?'s':''} ? Les fiches redeviennent prêtes à planifier.`))return
@@ -100,17 +104,18 @@ export default function PublicationTab({request=defaultRequest,onOpenListings,st
  const busy=run.running
  const scheduled=data?.scheduled||[]
  const scheduledDays=[...new Set(scheduled.map(r=>parisDate(Date.parse(r.scheduled_at||r.planned_at))))]
- const preparing=(data?.queue||[]).filter(r=>r.state==='preparing')
+ const preparing=(data?.queue||[]).filter(r=>r.state==='preparing'&&r.publish_provider!=='ylavint')
 
  return <main className="workspace-page max-w-5xl mx-auto p-4 sm:p-6 space-y-5 text-slate-800">
   <header className="flex flex-wrap items-end justify-between gap-3">
    <div><p className="text-xs font-semibold tracking-widest text-teal-700 uppercase mb-1">Planification</p><h1 className="text-2xl font-bold">Publication</h1>
-    <p className="text-sm text-slate-500 mt-1 max-w-2xl">Répartis tes fiches prêtes sur plusieurs jours : Dotb les publie à l’heure prévue. Toujours actif : jamais le même SKU à moins de {SKU_GAP_MINUTES} minutes, tous comptes confondus, et l’écart de chaque compte est respecté.</p></div>
+    <p className="text-sm text-slate-500 mt-1 max-w-2xl">Répartis tes fiches prêtes sur plusieurs jours : le service choisi les traite à partir de l’heure prévue. Toujours actif : jamais le même SKU à moins de {SKU_GAP_MINUTES} minutes, tous comptes confondus, et l’écart de chaque compte est respecté.</p></div>
    <button className={buttonClass} disabled={loading||busy} onClick={load}>{loading?'Chargement…':'Actualiser'}</button>
   </header>
   {error&&<p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
   {notice&&<p role="status" className="flex items-start justify-between gap-3 rounded-xl border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900"><span>{notice}</span><button type="button" className="shrink-0 text-xs underline" onClick={dismissRunnerMessages}>Fermer</button></p>}
-  {data&&!data.dotb_publish_enabled&&<p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">L’envoi par Dotb est coupé sur le serveur : tu peux préparer le planning, mais pas l’envoyer.</p>}
+  <ListingPublisher value={provider} onChange={setProvider} disabled={busy} dotb={data?.dotb_publish_enabled}/>
+  {provider==='dotb'&&data&&!data.dotb_publish_enabled&&<p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">L’envoi par Dotb est coupé sur le serveur : tu peux préparer le planning, mais pas l’envoyer.</p>}
   {loading&&!data?<p role="status" className="py-16 text-center text-slate-500">Lecture de tes fiches et de tes comptes…</p>:data&&<>
    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
     <Stat tone="teal" value={ready.length} label={`fiche${ready.length>1?'s':''} prête${ready.length>1?'s':''} sur ${readyAccounts.length} compte${readyAccounts.length>1?'s':''}`}/>
@@ -132,12 +137,12 @@ export default function PublicationTab({request=defaultRequest,onOpenListings,st
       <span className="font-medium text-sm min-w-32">{login(id)}</span>
       <span className="text-xs text-slate-500">{count} prête{count>1?'s':''}{a?` · écart ${a.spacing} min`:''}</span>
       <span className="ml-auto flex flex-wrap gap-1.5 text-[11px]">
-       {a&&<span className={`rounded-full px-2 py-0.5 ${a.connected?'bg-teal-50 text-teal-800':'bg-amber-50 text-amber-800'}`}>{a.connected?'Bridge ouvert':'Bridge fermé'}</span>}
+       {a&&<span className={`rounded-full px-2 py-0.5 ${connected(a)?'bg-teal-50 text-teal-800':'bg-amber-50 text-amber-800'}`}>{connected(a)?'Bridge ouvert':'Bridge fermé'}</span>}
        {a?.health&&a.health.status!=='ok'&&<span className="rounded-full bg-rose-50 px-2 py-0.5 text-rose-800">{healthLabels[a.health.status]||a.health.status}{a.health.until?` jusqu’au ${new Date(a.health.until).toLocaleDateString('fr-FR')}`:''}</span>}
        {why&&why!=='Bridge fermé'&&!a?.health?.status?.match(/permanent|blocked/)&&<span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">{why}</span>}
       </span>
      </li>})}</ul>:<p className="text-sm text-slate-500">Aucune fiche prête. Prépare tes annonces dans l’onglet Annonces : elles apparaîtront ici.</p>}
-    <p className="text-xs text-slate-500">Le Bridge Dotb du compte doit être ouvert au moment de l’envoi (juste après « Programmer ») et à l’heure de publication. Sinon la fiche attend dans « En cours d’envoi » et tu pourras reprendre.</p>
+    <p className="text-xs text-slate-500">{provider==='ylavint'?'Le profil AdsPower et son Bridge YlaVint doivent être ouverts. Si le profil est fermé, l’annonce attend sa réouverture. Les horaires, plafonds et écarts YlaVint du compte peuvent décaler la publication.':'Le Bridge Dotb du compte doit être ouvert pendant l’envoi et à l’heure de publication.'}</p>
    </Section>
 
    <Section title="Ta logique de publication">
@@ -168,7 +173,7 @@ export default function PublicationTab({request=defaultRequest,onOpenListings,st
      <button className={buttonClass} onClick={stopRunner}>Arrêter après l’étape en cours</button></div>}
     <div className="flex flex-wrap gap-2">
      <button className={primaryClass} disabled={busy||!eligible.length} onClick={calculate}>Calculer le planning</button>
-     <button className={buttonClass} disabled={busy||!plan?.items.length||!!plan?.conflicts.length||!data.dotb_publish_enabled} onClick={send}>Programmer {plan?.items.length||''} annonce{plan?.items.length>1?'s':''} chez Dotb</button>
+     <button className={buttonClass} disabled={busy||!plan?.items.length||!!plan?.conflicts.length||(provider==='dotb'&&!data.dotb_publish_enabled)} onClick={send}>Programmer {plan?.items.length||''} annonce{plan?.items.length>1?'s':''} avec {provider==='ylavint'?'YlaVint':'Dotb'}</button>
     </div>
     {!eligible.length&&ready.length>0&&<p className="text-xs text-slate-500">Aucun compte coché ne peut être planifié pour l’instant.</p>}
     {failures.length>0&&<div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm"><p className="font-medium text-amber-900 mb-2">{failures.length} annonce{failures.length>1?'s':''} à revoir</p>
@@ -184,7 +189,7 @@ export default function PublicationTab({request=defaultRequest,onOpenListings,st
      <input type="checkbox" aria-label={`Sélectionner ${r.title}`} className="accent-teal-700" disabled={busy} checked={picked.has(r.id)} onChange={e=>setPicked(s=>{const n=new Set(s);e.target.checked?n.add(r.id):n.delete(r.id);return n})}/>
      <span className="w-12 shrink-0 text-xs text-slate-500">{timeLabel(Date.parse(r.scheduled_at||r.planned_at))}</span><Thumb row={r}/>
      <div className="min-w-0 flex-1"><p className="truncate">{r.title||'Annonce'}</p><p className="text-xs text-slate-500">{login(r.account_id)}{r.sku?` · ${r.sku}`:''}</p></div>
-     <span className={`rounded-full px-2 py-0.5 text-[11px] ${r.live?'bg-teal-50 text-teal-800':'bg-slate-100 text-slate-600'}`}>{r.live?'en ligne':'brouillon'}</span></li>)}</ul></div>)
+     <span className={`rounded-full px-2 py-0.5 text-[11px] ${r.live?'bg-teal-50 text-teal-800':'bg-slate-100 text-slate-600'}`}>{r.publish_provider==='ylavint'?'YlaVint':'Dotb'} · {r.live?'en ligne':'brouillon'}</span></li>)}</ul></div>)
     :<p className="text-sm text-slate-500">Aucune annonce programmée pour l’instant.</p>}
    </Section>
   </>}

@@ -8,6 +8,7 @@ const accounts=[
  {id:'a1000000-0000-4000-8000-000000000003',login:'nina.closet',country:'FR',connected:true,dotb:true,spacing:35,health:{status:'restricted',until:new Date(Date.now()+2*86400000).toISOString()}},
  {id:'a1000000-0000-4000-8000-000000000004',login:'sofia.dress',country:'FR',connected:true,dotb:false,spacing:30,health:null},
 ]
+for(const a of accounts)a.ylavint={ready:true,online:a.connected,limit:5,from_hour:9,to_hour:22}
 const titles=['Robe longue satin bustier','Body noir effet cuir','Jupe longue plissée','Top dentelle col carré','Combinaison patchwork','Robe tulle princesse']
 const skus=['sz2603311904','sz2602271748','sz2509019538','sz2603311904','sz2511089597','sz2505153203']
 let drafts=[],scheduled=[],queue=[]
@@ -29,6 +30,7 @@ export async function plannerPreview(method='GET',body,query=''){
   if(!d)return {id:item.id,ok:false,error:'Fiche introuvable.'}
   drafts=drafts.filter(x=>x!==d)
   const row={...d,state:'preparing',version:d.version+1,planned_at:item.at,message:'Programmée (démo). Envoi à Dotb…',step:0}
+  if(body.provider==='ylavint'){Object.assign(row,{state:'scheduled',publish_provider:'ylavint',scheduled_at:item.at,message:'Confiée à YlaVint (démo).'});scheduled.push(row);return {id:item.id,ok:true,state:row.state,version:row.version,planned_at:item.at,message:row.message}}
   queue.push(row);reserved.set(row.id,row)
   return {id:item.id,ok:true,state:'preparing',version:row.version,planned_at:item.at,message:row.message}
  })}

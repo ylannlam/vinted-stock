@@ -1,3 +1,4 @@
+import ListingPublisher,{YlavintTransfer} from './ListingPublisher'
 import {syncListingStatuses} from '../lib/listingStatusSync'
 import ListingSheinHint from './ListingSheinHint'
 import {useEffect,useMemo,useRef,useState} from 'react'
@@ -33,7 +34,7 @@ export const STEPS=[
  {key:'prepare',label:'À rédiger',hint:'Titre et description par l’IA',dot:'bg-sky-500'},
  {key:'review',label:'À vérifier',hint:'Un choix manque',dot:'bg-amber-500'},
  {key:'ready',label:'Prêtes',hint:'À mettre en ligne',dot:'bg-[#087f5b]'},
- {key:'dotb',label:'Chez Dotb',hint:'Envoi ou brouillon',dot:'bg-blue-500'},
+ {key:'dotb',label:'Suivi d’envoi',hint:'Envoi ou brouillon',dot:'bg-blue-500'},
  {key:'published',label:'En ligne',hint:'Depuis hier',dot:'bg-[#c83469]'}
 ]
 const stepOf=stage=>stage==='loading'?'review':stage
@@ -49,6 +50,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
  const skuToUse=useRef(initialSku),statusSync=useRef(false),syncLatest=useRef(null)
  const cards=useRef(new Map()),optionCache=useRef(new Map()),alive=useRef(true),settingsRef=useRef(null),dragDepth=useRef(0)
  const [order,setOrder]=useState([]),[,setTick]=useState(0)
+ const [provider,setProvider]=useState('ylavint'),[publisher,setPublisher]=useState(null)
  const [ylavint,setYlavint]=useState(false),[settings,setSettings]=useState(null),[dotb,setDotb]=useState(false),[serverDotb,setServerDotb]=useState(!!meta.dotb_publish_enabled)
  const [loading,setLoading]=useState(true),[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(initialSku?`SKU ${initialSku} prêt : ajoute les photos de l’article, il sera repris sur la fiche avec ses mesures Shein.`:'')
  const [dropped,setDropped]=useState(null),[showSettings,setShowSettings]=useState(false),[copied,setCopied]=useState('')
@@ -115,7 +117,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
   for(const [id,value] of optionCache.current)if(value instanceof Error)optionCache.current.delete(id)
   const result=await request('GET',undefined,`action=session&account_id=${account.id}`)
   if(!alive.current)return
-  settingsRef.current=result.settings;setSettings(result.settings);setDotb(!!result.dotb);setYlavint(!!result.ylavint);setServerDotb(!!result.dotb_publish_enabled)
+  settingsRef.current=result.settings;setSettings(result.settings);setDotb(!!result.dotb);setYlavint(!!result.ylavint);setPublisher(result.publisher||{ready:!!result.ylavint});setServerDotb(!!result.dotb_publish_enabled)
   setOrder(result.drafts.map(row=>remember(row).id))
   await syncStatuses(result.drafts.map(row=>cards.current.get(row.id)))
  }
@@ -134,7 +136,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
  syncLatest.current=()=>syncStatuses()
  useEffect(()=>{
   const check=()=>{if(document.visibilityState!=='hidden')syncLatest.current?.()}
-  const timer=setInterval(check,30000)
+  const timer=setInterval(check,5000)
   window.addEventListener('focus',check);document.addEventListener('visibilitychange',check)
   return()=>{clearInterval(timer);window.removeEventListener('focus',check);document.removeEventListener('visibilitychange',check)}
  },[])
@@ -260,16 +262,21 @@ export default function ListingSession({request,upload,account,meta,initialSku='
   if(!target.connected)throw Error('Ouvre ce compte dans AdsPower et active son Bridge Dotb, puis réessaie.')
  }
  // YlaVint : la fiche part dans la file du Bridge YlaVint du compte (plafonds et plage horaire du compte).
- const sendYlavint=(card,mode='live')=>act(card,'Envoi à YlaVint…',async()=>{
+ async function sendYlavintCard(card,mode='live'){
   const issues=listingIssues(card.fields,card.photos,optionsFor(card.fields.catalog_id))
   if(issues.length)throw Error(`Complète ${issues.map(i=>i.label).join(', ')}.`)
   const {draft}=await request('POST',{action:'ylavint_publish',id:card.id,version:card.row.version,confirmation_account_id:account.id,mode});accept(card,draft)
- }).catch(()=>{})
+ }
+ const sendYlavint=(card,mode)=>act(card,'Envoi à YlaVint…',()=>sendYlavintCard(card,mode)).catch(()=>{})
  const cancelYlavint=card=>act(card,'Annulation…',async()=>{const {draft}=await request('POST',{action:'ylavint_cancel',id:card.id,version:card.row.version});accept(card,draft)}).catch(()=>{})
  const sendOne=(card,mode)=>withBusy('Vérification du Bridge…',async()=>{await bridgeReady();await act(card,'Envoi à Dotb…',()=>sendDotb(card,mode))})
  async function sendAll(mode){
   const ready=list().filter(c=>cardStage(c,optionsFor(c.fields.catalog_id))==='ready')
   if(!ready.length)throw Error('Aucun article prêt à publier.')
+  if(provider==='ylavint'){
+   let done=0;for(const card of ready){try{await act(card,'Envoi à YlaVint…',()=>sendYlavintCard(card,mode));done++}catch{}}
+   setNotice(`${done} fiche(s) confiée(s) à YlaVint sur ${ready.length}. Garde le profil AdsPower et son Bridge YlaVint ouverts.`);return
+  }
   setBusy('Vérification du Bridge…');await bridgeReady()
   let done=0
   for(let i=0;i<ready.length;i++){setBusy(`Envoi à Dotb ${i+1} sur ${ready.length}…`);try{await act(ready[i],'Envoi à Dotb…',()=>sendDotb(ready[i],mode));done++}catch{}}
@@ -446,11 +453,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
  // Suivi Dotb : création, photos, puis mise en ligne ou brouillon à l'heure prévue.
  function dotbStatus(card){
   const r=card.row,draftMode=r.dotb_publish===false,locked=!!card.busy
-  if(!r.dotb_item_id&&['scheduled','attention'].includes(r.state))return <section aria-label="Suivi YlaVint" className="space-y-3 rounded-2xl border border-[#cfe6da] bg-white p-4 sm:p-5">
-   <p className="flex items-center gap-2 text-sm font-semibold text-[#08664c]"><span className="grid h-6 w-6 place-items-center rounded-lg bg-[#08664c] text-xs font-black text-white">Y</span>Publication par YlaVint</p>
-   <p className={`rounded-xl px-4 py-3 text-sm ${r.state==='attention'?'bg-amber-50 text-amber-950':'bg-[#f1f8f4] text-[#08664c]'}`}>{r.last_error||r.message}</p>
-   <div className="flex flex-wrap gap-2">{r.state==='scheduled'&&<button className={ghost} disabled={locked} onClick={()=>refresh(card)}>Actualiser</button>}<button className={ghost} disabled={locked} onClick={()=>cancelYlavint(card)}>{r.state==='attention'?'Remettre en brouillon':'Annuler la publication'}</button></div>
-  </section>
+  if(r.publish_provider==='ylavint')return <YlavintTransfer draft={r} busy={locked} onRefresh={()=>refresh(card)} onCancel={()=>cancelYlavint(card)}/>
   const stepsDone=[['Fiche créée chez Dotb',!!r.dotb_item_id],['Photos envoyées',!!r.dotb_item_id&&r.uploaded>=card.photos.length],[draftMode?`Brouillon prévu${r.scheduled_at?` ${hour(r.scheduled_at)}`:''}`:`Mise en ligne prévue${r.scheduled_at?` ${hour(r.scheduled_at)}`:''}`,['scheduled','published','vinted_draft'].includes(r.state)],[draftMode?'Brouillon sur Vinted':'En ligne sur Vinted',['published','vinted_draft'].includes(r.state)]]
   return <section aria-label="Suivi de l’envoi Dotb" className="space-y-4 rounded-2xl border border-[#e8e4dd] bg-white p-4 sm:p-5">
    <p className={`rounded-xl px-4 py-3 text-sm ${r.state==='attention'||r.last_error?'bg-amber-50 text-amber-950':'bg-[#f1f6fb] text-[#1d3b5c]'}`}>{r.last_error||r.message}</p>
@@ -470,7 +473,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
     {stage==='prepare'&&<button className={solid} disabled={locked||!!busy} onClick={()=>prepareOne(card)}>{card.busy||'Rédiger avec l’IA'}</button>}
     {stage==='loading'&&<span className="text-xs text-[#79756f]">Chargement des options…</span>}
     {stage==='review'&&<><span className="text-xs text-amber-900">{issues.length} choix à faire : {issues.map(i=>i.label).join(', ')}</span><button className={solid} disabled>Publier</button></>}
-    {stage==='ready'&&<>{ylavint&&<button className={solid} disabled={locked||!!busy} onClick={()=>sendYlavint(card,'live')}>Publier avec YlaVint</button>}{dotb&&<><button className={ghost} disabled={locked||!!busy} onClick={()=>sendOne(card,'draft')}>Brouillon Vinted via Dotb</button><button className={ghost} disabled={locked||!!busy} onClick={()=>sendOne(card,'live')}>En ligne via Dotb</button></>}{!card.publishing&&<button className={ylavint?ghost:solid} disabled={locked} onClick={()=>{card.publishing=true;render()}}>{ylavint?'Publier à la main':'Publier sur Vinted'}</button>}</>}
+    {stage==='ready'&&<><button className={solid} disabled={locked||!!busy||!(provider==='ylavint'?ylavint:dotb)} onClick={()=>provider==='ylavint'?sendYlavint(card,'live'):sendOne(card,'live')}>Publier avec {provider==='ylavint'?'YlaVint':'Dotb'}</button><button className={ghost} disabled={locked||!!busy||!(provider==='ylavint'?ylavint:dotb)} onClick={()=>provider==='ylavint'?sendYlavint(card,'draft'):sendOne(card,'draft')}>Créer un brouillon Vinted</button>{!card.publishing&&<button className={ghost} disabled={locked} onClick={()=>{card.publishing=true;render()}}>Publier à la main</button>}</>}
     {(stage==='dotb'||stage==='published')&&next&&<button className={ghost} onClick={()=>select(next)}>Article suivant</button>}
    </div>
   </div>
@@ -512,7 +515,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
   <header className="flex flex-wrap items-end justify-between gap-4">
    <div className="min-w-0"><button className={quiet} disabled={working} onClick={()=>withBusy('Enregistrement…',async()=>{await saveAll();onBack()})}>← Changer de compte</button>
     <h1 className="mt-2 flex flex-wrap items-baseline gap-x-3 text-[28px] font-semibold leading-tight tracking-[-0.02em] text-[#323630]"><span className="tabular-nums text-[#087f5b]">#{account.profile_number||'—'}</span><span className="break-all">{account.login}</span></h1>
-    <p className="mt-1.5 text-sm text-[#79756f]">{dotb?`Publication à la main ou via Dotb${presets?.spacing_minutes?`, une annonce toutes les ${presets.spacing_minutes} min`:''}.`:'Publication à la main sur Vinted, guidée ligne par ligne.'}{presets&&<> Réglages {presets.custom?'propres à ce compte':'communs'} : {[presets.no_brand&&'sans marque',presets.condition.toLocaleLowerCase('fr'),`colis ${presets.package.toLocaleLowerCase('fr')}`].filter(Boolean).join(', ')}.</>}</p></div>
+    <p className="mt-1.5 text-sm text-[#79756f]">{`Choisis YlaVint ou Dotb pour envoyer tes annonces${presets?.spacing_minutes?`, avec un écart de ${presets.spacing_minutes} min`:''}.`}{presets&&<> Réglages {presets.custom?'propres à ce compte':'communs'} : {[presets.no_brand&&'sans marque',presets.condition.toLocaleLowerCase('fr'),`colis ${presets.package.toLocaleLowerCase('fr')}`].filter(Boolean).join(', ')}.</>}</p></div>
    <div className="flex flex-wrap items-center gap-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#e3ded6] bg-white px-3 py-2 text-sm" title="L’IA écrit chaque article dès qu’il a ses photos et sa taille"><input type="checkbox" checked={autoWrite} onChange={e=>{setAutoWrite(e.target.checked);try{localStorage.setItem('listing-auto-write',e.target.checked?'on':'off')}catch{}}}/>Rédaction automatique</label><button className={ghost} aria-expanded={showSettings} disabled={!settings} onClick={()=>setShowSettings(true)}>Réglages</button><button className={ghost} disabled={working||loading} onClick={()=>withBusy('Actualisation…',load)}>Actualiser</button></div>
   </header>
 
@@ -537,9 +540,10 @@ export default function ListingSession({request,upload,account,meta,initialSku='
       {sizes.map(n=><button key={n} className={ghost} onClick={()=>withBusy('Ajout des articles…',()=>addArticles(groupFiles(dropped,n)))}>{dropped.length/n} articles de {n} photos</button>)}
       <button className={ghost} onClick={()=>withBusy('Ajout des articles…',()=>addArticles(groupFiles(dropped,1)))}>{dropped.length} articles (1 photo chacun)</button></div>
      <div className="flex items-center justify-between"><p className="text-xs text-[#79756f]">Regroupées dans l’ordre des noms de fichiers.</p><button className={quiet+' !text-xs'} onClick={()=>setDropped(null)}>Annuler</button></div></div>}
-    {(toPrepare>0||(dotb&&counts.ready>0))&&<div className="grid gap-1.5">
+    <ListingPublisher compact value={provider} onChange={setProvider} disabled={!!busy} ylavint={publisher} dotb={dotb}/>
+    {(toPrepare>0||((provider==='ylavint'?ylavint:dotb)&&counts.ready>0))&&<div className="grid gap-1.5">
      {toPrepare>0&&<button className={solid} disabled={!!busy} onClick={()=>withBusy('Rédaction…',prepareAll)}>Rédiger les {toPrepare} article{toPrepare>1?'s':''} avec l’IA</button>}
-     {dotb&&counts.ready>0&&<><button className={ghost} disabled={!!busy} onClick={()=>withBusy('Envoi à Dotb…',()=>sendAll('draft'))}>Tout en brouillon Vinted ({counts.ready})</button><button className={ghost} disabled={!!busy} onClick={()=>withBusy('Envoi à Dotb…',()=>sendAll('live'))}>Tout publier en ligne via Dotb ({counts.ready})</button></>}
+     {(provider==='ylavint'?ylavint:dotb)&&counts.ready>0&&<><button className={ghost} disabled={!!busy} onClick={()=>withBusy('Envoi des annonces…',()=>sendAll('draft'))}>Tout en brouillon Vinted ({counts.ready})</button><button className={ghost} disabled={!!busy} onClick={()=>withBusy('Envoi des annonces…',()=>sendAll('live'))}>Tout publier avec {provider==='ylavint'?'YlaVint':'Dotb'} ({counts.ready})</button></>}
     </div>}
     {loading?<p role="status" className="px-2 py-6 text-sm text-[#79756f]">Chargement de la session…</p>:<ul className="max-h-[22rem] space-y-1 overflow-y-auto pr-1 lg:max-h-[calc(100vh-22rem)]">{visible.map(([c,s])=>queueItem(c,s))}{!visible.length&&<li className="px-2 py-6 text-sm text-[#79756f]">{filter==='all'?'Aucune annonce à traiter.':rows.length?'Aucun article à cette étape.':'Aucun article pour l’instant.'}</li>}</ul>}
    </aside>

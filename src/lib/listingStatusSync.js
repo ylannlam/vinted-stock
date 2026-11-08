@@ -1,5 +1,5 @@
 // Vérification uniquement : ne crée, ne reprend et ne republie aucune annonce.
-export const needsPublicationCheck=row=>['scheduled','attention'].includes(row.state)&&!!row.dotb_item_id
+export const needsPublicationCheck=row=>row.publish_provider==='ylavint'?['scheduled','preparing','attention'].includes(row.state):['scheduled','attention'].includes(row.state)&&!!row.dotb_item_id
 export async function syncListingStatuses(rows,request,{onDraft=()=>{},onError=()=>{},active=()=>true}={}){
  let changed=false
  const seen=new Set()

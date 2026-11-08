@@ -1,3 +1,4 @@
+import {publicationStatuses} from './listing-ylavint.js'
 // Onglet Publication : les fiches prêtes, les comptes, les annonces déjà prévues, et la programmation par lots.
 import {AppError,isId} from './dotb.js'
 import {ASSET_BUCKET} from './resources.js'
@@ -23,7 +24,7 @@ export async function readPlanner(db,user,{read,allowDotb}){
  const since=new Date(Date.now()-2*86400000).toISOString()
  const [accountsBody,rows,busy,health,presets,dotb]=await Promise.all([
   read('accounts'),
-  readBoardRows(()=>db.from(TABLE).select('id,version,state,fields,photos,dotb_item_id,planned_at,scheduled_at,published_at,message,last_error,inflight,lease_until,dotb_publish,created_at,updated_at',{count:'exact'}).eq('owner_id',user.id).in('state',['draft','preparing','scheduled','attention']).order('created_at').order('id')),
+  readBoardRows(()=>db.from(TABLE).select('id,version,state,fields,photos,dotb_item_id,publish_provider,publication_task_id,planned_at,scheduled_at,published_at,message,last_error,inflight,lease_until,dotb_publish,created_at,updated_at',{count:'exact'}).eq('owner_id',user.id).in('state',['draft','preparing','scheduled','attention']).order('created_at').order('id')),
   // Toutes les annonces prévues ou publiées récemment (tous utilisateurs) : écart du compte et règle du SKU.
   readBoardRows(()=>db.from(TABLE).select('id,fields,planned_at,scheduled_at,published_at',{count:'exact'}).in('state',BUSY).not('planned_at','is',null).or(`planned_at.gt.${since},scheduled_at.gt.${since},published_at.gt.${since}`).order('id')),
   db.from('account_health_reports').select('account_id,status,until_at,until_date'),
@@ -36,11 +37,12 @@ export async function readPlanner(db,user,{read,allowDotb}){
  const signed=photoPaths.length?check(await db.storage.from(ASSET_BUCKET).createSignedUrls(photoPaths,3600)):[]
  const thumbs=new Map(signed.map(x=>[x.path,x.signedUrl]))
  const view=r=>({id:r.id,version:r.version,state:r.state,account_id:r.fields?.account_id||null,title:r.fields?.title||'',sku:r.fields?.sku||null,size:r.fields?.size_text||'',price:r.fields?.price||null,
-  photo:thumbs.get(r.photos?.[0]?.path)||null,photos:r.photos?.length||0,dotb_item_id:r.dotb_item_id,planned_at:r.planned_at,scheduled_at:r.scheduled_at,message:r.message,last_error:r.last_error,
+  photo:thumbs.get(r.photos?.[0]?.path)||null,photos:r.photos?.length||0,publish_provider:r.publish_provider|| (r.dotb_item_id?'dotb':null),publication_task_id:r.publication_task_id,dotb_item_id:r.dotb_item_id,planned_at:r.planned_at,scheduled_at:r.scheduled_at,message:r.message,last_error:r.last_error,
   busy:!!(r.lease_until&&Date.parse(r.lease_until)>Date.now()),live:r.dotb_publish!==false,created_at:r.created_at,issues:r.state==='draft'?draftIssues(r):[]})
+ const publishers=await publicationStatuses(db,selected.accounts.map(a=>a.id))
  const accounts=selected.accounts.map(a=>{
   const h=healthBy.get(a.id),settings=presets.effective(a.id)
-  return {id:a.id,login:a.login,country:a.country,connected:a.connected,dotb:allowDotb&&dotb.has(a.id),spacing:settings.spacing_minutes,health:h?{status:h.status,until:h.until_at||h.until_date||null}:null}
+  return {ylavint:publishers.get(a.id),id:a.id,login:a.login,country:a.country,connected:a.connected,dotb:allowDotb&&dotb.has(a.id),spacing:settings.spacing_minutes,health:h?{status:h.status,until:h.until_at||h.until_date||null}:null}
  })
  return {
   accounts,dotb_publish_enabled:allowDotb,selection_configured:!!selected.selection,

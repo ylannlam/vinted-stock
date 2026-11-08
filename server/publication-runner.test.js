@@ -49,6 +49,15 @@ test('stopping lets the current step finish and keeps the rest in the queue',asy
   assert.match(getRunnerState().notice,/Envoi arrêté\. 1 annonce programmée ;/)
 })
 
+test('YlaVint reserves the selected mode and never starts the Dotb creation steps',async()=>{
+  resetRunner();steps.length=0
+  const request=api({plan:body=>{assert.equal(body.provider,'ylavint');assert.equal(body.mode,'draft');return {results:body.items.map(i=>({id:i.id,ok:true,state:'scheduled',version:2}))}}})
+  await startPlanSend({request,items:[item(1),item(2)],mode:'draft',provider:'ylavint',step:0})
+  assert.deepEqual(steps,['plan'])
+  assert.match(getRunnerState().notice,/2 annonces programmées avec YlaVint/)
+  assert.equal(getRunnerState().running,false)
+})
+
 test('a failing reservation call ends with a clear error and the runner is free again',async()=>{
   resetRunner()
   await startPlanSend({request:async()=>{throw new Error('Réseau coupé')},items:[item(1)],mode:'live',step:0})

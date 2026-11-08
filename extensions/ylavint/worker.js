@@ -97,6 +97,11 @@ async function vintedTab() {
 async function tickWork() {
   if (!(await bridgeOn())) { agentState = {state: 'off', message: 'Bridge coupé dans ce profil.', at: Date.now()}; return set({agent: agentState}) }
   if (Date.now() < busyUntil) return
+  const pendingPublication=await get('publication_result')
+  if(pendingPublication){
+    try{await site('agent_result',pendingPublication);await set({publication_result:null})}
+    catch(e){await journal({level:'warn',text:'Résultat de publication conservé : '+e.message});return set({agent_next:Date.now()+30000})}
+  }
   const next = (await get('agent_next')) || 0
   if (Date.now() < next) return
   const tab = await vintedTab()
@@ -114,7 +119,10 @@ async function tickWork() {
     const task = {...r.task, member_id: who.member_id}
     await set({agent: {...agentState, task: task.kind}})
     const outcome = await chrome.tabs.sendMessage(tab.id, {type: 'run', task}).catch(e => ({ok: false, code: 'failed', error: e.message || 'Onglet Vinted fermé.'}))
-    const saved = await site('agent_result', {task_id: task.id, lease: task.lease, member_id: who.member_id, ...outcome})
+    const report={task_id:task.id,lease:task.lease,member_id:who.member_id,...outcome}
+    if(task.kind==='publish_item')await set({publication_result:report})
+    const saved = await site('agent_result',report)
+    if(task.kind==='publish_item')await set({publication_result:null})
     await journal({level: outcome.ok ? 'info' : 'warn', text: outcome.ok ? (saved.message || `${task.kind} : terminé`) : `${task.kind} : ${outcome.error || outcome.code}`})
     await set({agent: {...agentState, task: null, at: Date.now()}, agent_next: Date.now() + 1000})
   } finally { busyUntil = 0 }

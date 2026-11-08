@@ -124,7 +124,8 @@ test('read status links to an AdsPower profile by exact login and keeps the nati
   assert.equal(publicationAccount({id:'profile',name:'Wrong'},result.accounts),null)
 })
 
-test('health uses the same explicit profile links and owner priority as Alicia when a pseudo changes',async()=>{
+test('health uses the same explicit profile links and owner priority as Alicia when a pseudo changes',async t=>{
+  t.mock.timers.enable({apis:['Date'],now})
   const other='cccccccc-cccc-4ccc-8ccc-cccccccccccc'
   const tables={
     publication_accounts:[{id:account,login:'nouveau.pseudo',source_present:true}],
