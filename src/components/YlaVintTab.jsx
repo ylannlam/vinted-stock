@@ -77,9 +77,7 @@ function AccountSettings({account,defaults,onSave,busy,only}){
   </fieldset>}
   {show('likes')&&<LikesSettings likes={form.likes} onChange={likes=>setForm(f=>({...f,likes}))} gap={form.messaging} onGap={(k,v)=>set('messaging',k,v)}/>}
   {show('order_flow')&&<FlowSettings flow={form.order_flow} onChange={order_flow=>setForm(f=>({...f,order_flow}))} features={form.features} onFeature={(k,v)=>set('features',k,v)}/>}
-  {show('limits')&&<fieldset className="grid grid-cols-2 gap-3 sm:grid-cols-4"><Legend>Plafonds des modifications (heure de Paris)</Legend>
-   <Num label="De" value={form.limits.from_hour} max={23} suffix="h" onChange={v=>set('limits','from_hour',v)}/>
-   <Num label="À" value={form.limits.to_hour} max={23} suffix="h" onChange={v=>set('limits','to_hour',v)}/>
+  {show('limits')&&<fieldset className="grid grid-cols-2 gap-3 sm:grid-cols-4"><Legend>Plafonds des modifications</Legend>
    <Num label="Modifications / jour" value={form.limits.writes_per_day} max={200} onChange={v=>set('limits','writes_per_day',v)}/>
    <Num label="Écart minimal" value={form.limits.min_gap_minutes} min={1} max={240} suffix="min" onChange={v=>set('limits','min_gap_minutes',v)}/>
    <Num label="Démasquages / jour" value={form.limits.unmask_item_per_day} max={100} onChange={v=>set('limits','unmask_item_per_day',v)}/>

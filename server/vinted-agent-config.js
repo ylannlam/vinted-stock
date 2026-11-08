@@ -70,7 +70,7 @@ export const RECIPES={
 export const DEFAULTS={
   features:{inbox:false,ai:false,orders:false,sales:false,labels:false,dressing:false,unmask:false,pricing:false,publish:false,likes:false},
   limits:{writes_per_day:15,unmask_item_per_day:5,reprice_item_per_day:5,publish_item_per_day:5,like_message_per_day:10,
-    order_message_per_day:30,order_extension_per_day:10,order_cancel_per_day:5,order_review_per_day:20,item_delete_per_day:10,min_gap_minutes:12,from_hour:9,to_hour:22},
+    order_message_per_day:30,order_extension_per_day:10,order_cancel_per_day:5,order_review_per_day:20,item_delete_per_day:10,min_gap_minutes:12,from_hour:0,to_hour:0},
   unmask:{price_drop:1,max_drop:2,floor:2,max_repairs:3,wait_hours:24},
   pricing:{after_days:7,step:1,every_days:4,max_drop:5,floor:3},
   likes:{history_hours:0,history_since:null,wait_minutes:30,messages:[likeStep('Bonjour ! Merci pour ton like. Si l’article t’intéresse, je peux te faire un petit prix.')],
