@@ -90,6 +90,7 @@ async function identity(tabId) {
   const status = String(last.key || 'ok|').split('|')[0] || 'ok'
   return {member_id: last.member_id, login: last.login, status, source: 'last'}
 }
+const reachable = tabId => chrome.tabs.sendMessage(tabId, {type: 'identity'}).then(() => true, () => false)
 async function vintedTab() {
   const tabs = await chrome.tabs.query({url: 'https://www.vinted.fr/*'})
   const checkTab = await get('check_tab')
@@ -107,6 +108,14 @@ async function tickWork() {
   if (Date.now() < next) return
   const tab = await vintedTab()
   if (!tab) { agentState = {state: 'no_tab', message: 'Ouvre un onglet Vinted dans ce profil.', at: Date.now()}; return set({agent: agentState,agent_next:Date.now()+30000}) }
+  // Onglet ouvert avant l'installation ou la mise à jour de l'extension : la page n'a pas YlaVint.
+  // On le recharge (au plus une fois toutes les 2 min) au lieu de faire échouer les tâches.
+  if (!(await reachable(tab.id))) {
+    const last = (await get('tab_reload')) || 0
+    if (Date.now() - last > 120000) { await set({tab_reload: Date.now()}); chrome.tabs.reload(tab.id).catch(() => {}); await journal({level: 'warn', text: 'Onglet Vinted rechargé : la page n’avait pas encore YlaVint.'}) }
+    agentState = {state: 'no_tab', message: 'Onglet Vinted en cours de rechargement.', at: Date.now()}
+    return set({agent: agentState, agent_next: Date.now() + 15000})
+  }
   const who = await identity(tab.id)
   if (!who?.member_id) { agentState = {state: 'logged_out', message: 'Compte Vinted non connecté dans ce profil.', at: Date.now()}; return set({agent: agentState,agent_next:Date.now()+30000}) }
   if (who.status !== 'ok') { agentState = {state: 'paused', message: 'Alerte Vinted sur le compte : agent arrêté.', login: who.login, at: Date.now()}; return set({agent: agentState,agent_next:Date.now()+60000}) }
@@ -119,7 +128,8 @@ async function tickWork() {
     if (r.state !== 'task' || !r.task) return
     const task = {...r.task, member_id: who.member_id}
     await set({agent: {...agentState, task: task.kind}})
-    const outcome = await (task.kind==='publish_item' ? openListingForm(task,chrome) : chrome.tabs.sendMessage(tab.id, {type: 'run', task})).catch(e => ({ok: false, code: 'failed', error: e.message || 'Onglet Vinted fermé.'}))
+    // Page Vinted fermée ou rechargée pendant l'envoi de la tâche : rien n'a été fait sur Vinted, la tâche est remise en file.
+    const outcome = await (task.kind==='publish_item' ? openListingForm(task,chrome) : chrome.tabs.sendMessage(tab.id, {type: 'run', task})).catch(e => ({ok: false, code: /Receiving end does not exist|Could not establish connection/i.test(e.message || '') ? 'no_tab' : 'failed', error: e.message || 'Onglet Vinted fermé.'}))
     const report={task_id:task.id,lease:task.lease,member_id:who.member_id,...outcome}
     if(task.kind==='publish_item')await set({publication_result:report})
     const saved = await site('agent_result',report)

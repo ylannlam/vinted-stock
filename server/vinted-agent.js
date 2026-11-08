@@ -33,7 +33,7 @@ export function dueScans(settings,last={},now=Date.now()){
   const f=settings.features
   const every={scan_wardrobe:120,sync_orders:30,scan_likes:2,sync_inbox:(settings.messaging?.sync_seconds||20)/60}
   const o=settings.order_flow||{},flow=!!(o.confirm?.enabled||o.extension?.enabled||o.cancel?.enabled||o.pickup?.enabled||o.review?.enabled||o.delete_sold)
-  const want={scan_wardrobe:f.unmask||f.pricing||f.dressing,sync_orders:f.orders||f.labels||f.sales||flow,scan_likes:f.likes,sync_inbox:f.inbox||f.ai||settings.messaging?.offers?.enabled}
+  const want={scan_wardrobe:f.unmask||f.pricing||f.dressing||f.likes,sync_orders:f.orders||f.labels||f.sales||flow,scan_likes:f.likes,sync_inbox:f.inbox||f.ai||settings.messaging?.offers?.enabled}
   return Object.entries(want).filter(([kind,on])=>on&&(!last[kind]||Date.parse(last[kind])<now-minutes(every[kind]))).map(([kind])=>kind)
 }
 export const SCANS=['scan_wardrobe','sync_orders','scan_likes','sync_inbox']
@@ -196,6 +196,16 @@ export async function agentPoll(db,key,body,now=Date.now()){
     await agentLog(db,{account_id:account.id,event:'resumed',message:'Session Vinted retrouvée : YlaVint reprend tout seul.'})
     row.paused=false
   }
+  let pauseNote=null
+  if(row.paused&&row.pause_reason===STOP.rate_limited&&row.paused_at){
+    const events=check(await db.from('vinted_agent_log').select('id').eq('account_id',account.id).eq('event','rate_limited').gte('created_at',new Date(now-86400000).toISOString())).length
+    const wait=rateLimitWait(events)
+    if(Date.parse(row.paused_at)<now-wait*60000){
+      check(await db.from('vinted_agent_settings').update({paused:false,pause_reason:null,paused_at:null}).eq('account_id',account.id).eq('paused',true))
+      await agentLog(db,{account_id:account.id,event:'resumed',message:`Reprise automatique après ${wait} min de pause (limite Vinted).`})
+      row.paused=false
+    }else pauseNote=`${STOP.rate_limited} : reprise automatique vers ${new Date(Date.parse(row.paused_at)+wait*60000).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Paris'})}`
+  }
   const settings=effectiveSettings(row)
   if(!row.paused){
     const recent=check(await db.from('vinted_agent_tasks').select('kind,created_at').eq('account_id',account.id).in('kind',SCANS).neq('state','cancelled').order('created_at',{ascending:false}).limit(40))
@@ -208,9 +218,12 @@ export async function agentPoll(db,key,body,now=Date.now()){
   if(claimed?.state==='idle'&&extra.ai==='queued')claimed=check(await db.rpc('claim_vinted_agent_task',{p_account:account.id}))
   // Des messages attendent l'écart entre deux envois : on repasse vite pour tenir le délai réglé (30 à 45 s par défaut).
   const nextMessage=claimed?.state==='idle'?check(await db.from('vinted_agent_tasks').select('not_before').eq('account_id',account.id).eq('state','queued').in('kind',['reply_message','like_message','order_message','accept_offer']).order('not_before',{ascending:true}).limit(1))[0]:null
+  const from=settings.limits.from_hour,to=settings.limits.to_hour,hour=Number(new Date(now).toLocaleString('fr-FR',{hour:'2-digit',hourCycle:'h23',timeZone:'Europe/Paris'}))
+  const inWindow=from===to||(from<to?hour>=from&&hour<to:hour>=from||hour<to)
+  const waitingNote=nextMessage&&!inWindow?`Messages en attente : envoi entre ${from} h et ${to} h (réglage Créneau).`:null
   const dueIn=nextMessage?Math.ceil((Date.parse(nextMessage.not_before)-Date.now())/1000):null
   const idleWait=nextMessage?(dueIn>0?Math.max(1,Math.min(20,dueIn)):Math.max(5,Math.min(15,Math.round((settings.messaging.action_gap_min||30)/3)))):settings.features.inbox||settings.features.ai||settings.messaging.offers.enabled?Math.min(20,settings.messaging.sync_seconds):120
-  if(claimed?.state!=='task')return {state:claimed?.state||'idle',reason:claimed?.reason||null,account:account.login,...extra,wait_seconds:{paused:600,disabled:1800,busy:45}[claimed?.state]||idleWait}
+  if(claimed?.state!=='task')return {state:claimed?.state||'idle',reason:(claimed?.state==='paused'&&pauseNote)||claimed?.reason||waitingNote||null,account:account.login,...extra,wait_seconds:{paused:600,disabled:1800,busy:45}[claimed?.state]||idleWait}
   const bundle=await taskBundle(db,claimed.task,settings)
   if(bundle.missing.length){
     // Sans recette relevée, rien n'est envoyé à Vinted : la tâche attend l'apprentissage.
@@ -223,6 +236,11 @@ export async function agentPoll(db,key,body,now=Date.now()){
 }
 const finish=(db,task,state,result,error)=>db.rpc('finish_vinted_agent_task',{p_task:task.id,p_lease:task.lease,p_state:state,p_result:task.kind==='publish_item'?{...result,...(task.result?.progress?{progress:task.result.progress}:{})}:result,p_error:error}).then(check)
 
+const MESSAGE_KINDS=['reply_message','like_message','order_message','accept_offer']
+// Remise en file sans compter l'essai : ni Vinted ni l'onglet n'ont exécuté la tâche.
+const requeue=(db,task,now,seconds)=>db.from('vinted_agent_tasks').update({attempts:Math.max(0,(task.attempts||1)-1),not_before:new Date(now+seconds*1000).toISOString()}).eq('id',task.id).eq('state','queued').then(check)
+// Pause « Vinted limite les requêtes » : reprise automatique après 30 min, puis 1 h, 2 h… (6 h au plus) si elle se répète dans la journée.
+export function rateLimitWait(events){return Math.min(360,30*2**Math.max(0,events-1))}
 const STOP={captcha:'vérification Vinted (captcha) à faire à la main dans ce profil',restricted:'Vinted signale une restriction sur le compte',
   logged_out:'le compte Vinted est déconnecté dans ce profil',rate_limited:'Vinted limite les requêtes de ce compte',forbidden:'Vinted a refusé l’action'}
 
@@ -259,10 +277,24 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
   const label=KINDS[task.kind].label
   if(body.ok!==true){
     const code=typeof body.code==='string'?body.code:'failed',detail=text(body.error,300)
+    // Page Vinted sans YlaVint (onglet ouvert avant la mise à jour) : la tâche n'a jamais atteint Vinted.
+    if(code==='no_tab'){
+      await finish(db,task,'queued',null,'Onglet Vinted rechargé : nouvel essai.')
+      await requeue(db,task,now,20)
+      return {saved:true}
+    }
     if(code==='logged_out'&&!task.writes){
       await finish(db,task,'queued',null,'Session Vinted expirée : nouvel essai plus tard.')
       await log('warn','logged_out','Session Vinted expirée pendant une lecture : nouvel essai au prochain passage.',{kind:task.kind})
       return {saved:true}
+    }
+    // Limite de Vinted (429) : la requête a été refusée, rien n'est parti. Les messages sont gardés et repartiront
+    // après la pause (reprise automatique, voir agentPoll) au lieu d'être perdus.
+    if(code==='rate_limited'&&(!task.writes||MESSAGE_KINDS.includes(task.kind))){
+      await finish(db,task,'queued',null,STOP[code])
+      await requeue(db,task,now,60)
+      await pauseAccount(db,task.account_id,STOP[code],{event:code,details:{kind:task.kind,detail}})
+      return {saved:true,paused:true}
     }
     if(STOP[code]){
       await finish(db,task,task.writes?'failed':'queued',null,STOP[code])
@@ -285,6 +317,10 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
   if(task.kind==='sync_orders')summary=await applyOrders(db,task,parseOrders(body.result),settings,{rand})
   if(task.kind==='fetch_label')summary=await applyLabel(db,task,parseLabel(body.result))
   if(task.kind==='scan_likes')summary=await (await import('./ylavint-flows.js')).planLikes(db,task,parseLikes(body.result),settings,{now,rand,can:await learned(db)})
+  if(task.kind==='scan_likes'&&!summary.likes&&Number.isSafeInteger(body.result?.notifications)){
+    const n=body.result.notifications
+    summary={...summary,notifications:n,message:n?`${n} notification(s) lue(s), aucun like dedans.`:'Vinted n’a renvoyé aucune notification.'}
+  }
   if(task.kind==='unmask_item'||task.kind==='reprice_item')summary=await applyEdit(db,task,body.result,now)
   if(task.kind==='publish_item'){
     try{summary=publicationResult(task,body.result)}catch(e){await finish(db,task,'failed',null,e.message);await log('error','publication_unconfirmed',e.message);return {saved:true,message:e.message}}

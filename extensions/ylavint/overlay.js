@@ -139,7 +139,9 @@
     const tasks = (d.tasks || []).filter(t => S.tab === 'likes' ? ['scan_likes', 'like_message'].includes(t.kind) : S.tab === 'agent' ? ['sync_inbox', 'reply_message','accept_offer'].includes(t.kind) : ['sync_orders', 'fetch_label'].includes(t.kind))
     const rows = [...tasks.map(t => ({at: t.finished_at || t.started_at || t.not_before, type: d.kinds?.[t.kind]?.label || t.kind, tone: t.state === 'done' ? 'p-green' : t.state === 'failed' ? 'p-red' : 'p-amber', detail: t.error || ({queued: 'en attente', running: 'en cours', done: 'terminée', failed: 'échec', cancelled: 'annulée'})[t.state]})),
       ...log.map(l => ({at: l.created_at, type: l.event, tone: l.level === 'warn' ? 'p-amber' : l.level === 'error' ? 'p-red' : 'p-blue', detail: l.message}))].sort((a, b) => Date.parse(b.at || 0) - Date.parse(a.at || 0)).slice(0, 60)
-    return `<div class="info">ⓘ Les automatisations tournent depuis ce profil AdsPower, dans les plafonds du compte. Si le profil est fermé, elles attendent sa réouverture.</div>
+    // État réel de l'agent (pause, limite Vinted, créneau horaire, onglet à recharger) : visible sans ouvrir le popup.
+    const status = S.agent?.message && ['paused', 'idle', 'no_tab', 'error', 'busy'].includes(S.agent.state) ? `<div class="info" style="border-color:#f59e0b;background:#fffbeb;color:#92400e">⚠ ${esc(S.agent.message)}</div>` : ''
+    return status + `<div class="info">ⓘ Les automatisations tournent depuis ce profil AdsPower, dans les plafonds du compte. Si le profil est fermé, elles attendent sa réouverture.</div>
      ${!acc() ? `<div class="err">Ce compte Vinted n’est pas encore connu du site : synchronise la liste des comptes sur ton site.</div>` : ''}
      <div class="cards">
       ${card('Automatisation des messages aux likes', 'Répondre automatiquement aux membres qui likent tes articles', ['likes'], [`✉ ${today('like_message')} message(s) aujourd’hui`, `⏱ après ${s.likes.wait_minutes} min`])}

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {normalizeSettings,effectiveSettings,unmaskPlan,repricePlan,dueScans,parseWardrobe,parseOrders,parseLikes,parseLabel,sanitizeRecipe,parisDayStart,
-  agentPoll,agentResult,agentLearn,pauseOnAlert,handleAgent,KINDS,DEFAULTS} from './vinted-agent.js'
+  agentPoll,agentResult,agentLearn,pauseOnAlert,handleAgent,KINDS,DEFAULTS,rateLimitWait} from './vinted-agent.js'
 
 // --- Base en mémoire, juste assez proche de supabase-js pour ces parcours ---
 function fakeDb(state={}){
@@ -88,6 +88,7 @@ test('periodic reads follow the enabled features',()=>{
   assert.deepEqual(dueScans(s,{},now),['scan_wardrobe','sync_orders'])
   assert.deepEqual(dueScans(s,{scan_wardrobe:'2026-11-07T11:00:00Z',sync_orders:'2026-11-07T11:00:00Z'},now),['sync_orders'])
   assert.deepEqual(dueScans(normalizeSettings({}),{},now),[])
+  assert.ok(dueScans(normalizeSettings({features:{likes:true}}),{},now).includes('scan_wardrobe'),'likes need item prices and titles')
 })
 test('extension results are revalidated',()=>{
   const w=parseWardrobe({complete:true,items:[{id:5,title:' Robe  noire ',price:'12.5',is_hidden:true,photo_url:'https://images1.vinted.net/a.jpg'},{id:5},{id:'abc'},{id:6,is_closed:true,photo_url:'https://evil.example/a.jpg'}]})
@@ -190,4 +191,36 @@ test('settings are saved with a version check, and pause / resume are journaled'
   await handleAgent({method:'POST',body:{action:'resume',account_id:ACC}},{db,user})
   assert.equal(state.vinted_agent_settings[0].paused,false)
   assert.deepEqual(state.vinted_agent_log.map(l=>l.event),['settings','manual_pause','resumed'])
+})
+
+test('a Vinted rate limit keeps the like message, pauses, then resumes on its own with a growing wait',async()=>{
+  const state=base();state.vinted_agent_settings.push({account_id:ACC,enabled:true,paused:false,features:{},limits:{from_hour:0,to_hour:0},unmask:{},pricing:{},likes:{}})
+  const id=crypto.randomUUID()
+  state.vinted_agent_tasks.push({id,account_id:ACC,kind:'like_message',writes:true,state:'queued',attempts:0,payload:{item_id:'5',user_id:'7',step:0}})
+  state.vinted_agent_contacts.push({account_id:ACC,item_id:'5',user_id:'7',state:'queued'})
+  const db=fakeDb(state)
+  const r=await agentPoll(db,{},{member_id:'3206068112'})
+  assert.equal(r.task.kind,'like_message')
+  assert.deepEqual(await agentResult(db,{},{task_id:r.task.id,lease:r.task.lease,member_id:'3206068112',ok:false,code:'rate_limited'}),{saved:true,paused:true})
+  const t=state.vinted_agent_tasks.find(x=>x.id===id)
+  assert.equal(t.state,'queued','nothing was sent: the message waits instead of being lost')
+  assert.equal(state.vinted_agent_contacts[0].state,'queued')
+  assert.equal(state.vinted_agent_settings[0].paused,true)
+  const paused=await agentPoll(db,{},{member_id:'3206068112'})
+  assert.equal(paused.state,'paused');assert.match(paused.reason,/reprise automatique vers/)
+  state.vinted_agent_settings[0].paused_at=new Date(Date.now()-31*60000).toISOString()
+  t.not_before=new Date(Date.now()-1000).toISOString()
+  const again=await agentPoll(db,{},{member_id:'3206068112'})
+  assert.equal(state.vinted_agent_settings[0].paused,false);assert.equal(again.task?.kind,'like_message')
+  assert.deepEqual([1,2,3,4,10].map(rateLimitWait),[30,60,120,240,360])
+})
+test('a Vinted tab without the extension loaded puts the task back without failing it',async()=>{
+  const state=base();state.vinted_agent_settings.push({account_id:ACC,enabled:true,paused:false,features:{},limits:{from_hour:0,to_hour:0},unmask:{},pricing:{},likes:{}})
+  state.vinted_agent_tasks.push({id:crypto.randomUUID(),account_id:ACC,kind:'like_message',writes:true,state:'queued',attempts:0,payload:{item_id:'5',user_id:'7',step:0}})
+  state.vinted_agent_contacts.push({account_id:ACC,item_id:'5',user_id:'7',state:'queued'})
+  const db=fakeDb(state)
+  const r=await agentPoll(db,{},{member_id:'3206068112'})
+  await agentResult(db,{},{task_id:r.task.id,lease:r.task.lease,member_id:'3206068112',ok:false,code:'no_tab',error:'Could not establish connection. Receiving end does not exist.'})
+  assert.equal(state.vinted_agent_tasks[0].state,'queued');assert.equal(state.vinted_agent_tasks[0].attempts,0)
+  assert.equal(state.vinted_agent_contacts[0].state,'queued');assert.equal(state.vinted_agent_settings[0].paused,false)
 })

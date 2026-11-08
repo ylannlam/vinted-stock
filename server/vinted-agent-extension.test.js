@@ -30,7 +30,10 @@ test('notifications: offering_id is the liker; user_id is the seller', async()=>
   calls.length=0
   vinted=async()=>({status:200,body:{notifications:[notification],pagination:{total_pages:1}}})
   const r=await run({kind:'scan_likes',member_id:'7',recipes:{likes_list:{method:'GET',path:'/api/v2/notifications'}}})
-  assert.equal(r.result.likes.length,1)
+  assert.equal(r.result.likes.length,1);assert.equal(r.result.notifications,1)
+  // Lien absolu ou adresse d'application : les identifiants sont quand même lus.
+  assert.deepEqual(T.notificationLike({...notification,link:'https://www.vinted.fr/items/9/want_it/new?offering_id=88'},'7')?.user_id,'88')
+  assert.deepEqual(T.notificationLike({...notification,link:'vintedfr://items/9/want_it/new?offering_id=88'},'7')?.item_id,'9')
   assert.match(calls[0].url,/^https:\/\/api.vinted.fr\/inbox-notifications\/v1\/notifications/)
   assert.equal(calls[0].headers['x-csrf-token'],undefined)
   assert.equal(calls[0].headers['x-anon-id'],undefined)

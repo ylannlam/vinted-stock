@@ -273,9 +273,11 @@
     const recipe = !task.recipes.likes_list || task.recipes.likes_list.path === '/api/v2/notifications'
       ? {method:'GET',origin:'https://api.vinted.fr',path:'/inbox-notifications/v1/notifications',headers:{platform:'web','x-next-app':'marketplace-web',locale:'fr-FR'}} : task.recipes.likes_list
     const likes = [], seen = new Set(), historyPage=Number(task.payload?.history_page)||0
-    let moreHistory=false
+    let moreHistory=false, notifications=0
     for (let page = historyPage||1; page <= (historyPage||5); page++) {
-      const data = await call(recipe, {query:{page,per_page:50}}), rows = firstArray(data)
+      const data = await call(recipe, {query:{page,per_page:50}})
+      const rows = Array.isArray(data?.notifications) ? data.notifications : firstArray(data)
+      notifications += rows.length
       for (const n of rows) {
         const row = notificationLike(n, task.member_id)
         if (!row || seen.has(`${row.item_id}:${row.user_id}`)) continue
@@ -286,14 +288,17 @@
       if (!hasMore) break
       await pause(500, 1000)
     }
-    return {likes,more_history:moreHistory}
+    return {likes,more_history:moreHistory,notifications}
   }
   function notificationLike(n, me) {
-    const link = new URL(String(n.link || n.url || n.path || ''), location.origin)
-    if (link.origin !== location.origin || !(Number(n.entry_type) === 20 || /favou?ri|aim[ée]|like/i.test(String(n.body || '')))) return null
-    const item = n.item_id || link.pathname.match(/items\/(\d+)/)?.[1] || n.item?.id
+    // Le lien sert seulement à lire des identifiants : il peut être relatif, absolu ou une adresse d'application.
+    const raw = String(n.link || n.url || n.path || '')
+    let link
+    try { link = new URL(raw, location.origin) } catch { link = new URL(location.origin) }
+    if (!(Number(n.entry_type) === 20 || /favou?ri|aim[ée]|like/i.test(String(n.body || n.title || '')))) return null
+    const item = n.item_id || n.subject_id && Number(n.entry_type) === 20 && n.subject_id || raw.match(/items\/(\d+)/)?.[1] || n.item?.id
     // user_id est le destinataire de la notification, PAS le membre qui a liké.
-    const user = link.searchParams.get('offering_id') || n.sender_id || n.sender?.id || n.user?.id
+    const user = link.searchParams.get('offering_id') || raw.match(/offering_id=(\d+)/)?.[1] || n.sender_id || n.sender?.id || n.user?.id
     const login = n.sender?.login || n.user?.login || String(n.body || '').match(/^([A-Za-z0-9._-]+) a marqué /)?.[1] || null
     return item && user && String(user) !== String(me) ? {item_id:String(item),user_id:String(user),login,liked_at:n.created_at_ts??n.created_at??n.updated_at??n.timestamp??null} : null
   }
