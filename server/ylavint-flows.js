@@ -9,7 +9,7 @@ const nowIso=t=>new Date(t).toISOString()
 
 // ---------- Likes ----------
 // Nouveaux likes → contacts. Écartés : membres ignorés, déjà contactés pendant la période choisie, limite par article.
-export async function planLikes(db,task,likes,settings,{now=Date.now(),rand=Math.random,can}){
+export async function planLikes(db,task,likes,settings,{now=Date.now(),can}){
   const L=settings.likes
   if(!settings.features.likes||!likes.length||!KINDS.like_message.needs.every(k=>can.has(k)))return {likes:likes.length,queued:0,message:`${likes.length} like(s) lu(s).`}
   const account=task.account_id
@@ -34,7 +34,7 @@ export async function planLikes(db,task,likes,settings,{now=Date.now(),rand=Math
     if(skip)continue
     byUser.set(l.user_id,{count:u.count+1,last:now});byItem.set(l.item_id,(byItem.get(l.item_id)||0)+1)
     tasks.push({account_id:account,kind:'like_message',dedupe_key:`like:${account}:${l.item_id}:${l.user_id}`,
-      not_before:nowIso(now+L.wait_minutes*60000+jitter(0,L.wait_minutes?20:3,rand)),payload:{item_id:l.item_id,user_id:l.user_id,login:l.login||null,step}})
+      not_before:nowIso(now+L.wait_minutes*60000),payload:{item_id:l.item_id,user_id:l.user_id,login:l.login||null,step}})
   }
   if(rows.length)check(await db.from('vinted_agent_contacts').upsert(rows,{onConflict:'account_id,item_id,user_id',ignoreDuplicates:true}))
   const queued=await enqueue(db,tasks),skipped=rows.filter(r=>r.state==='skipped').length

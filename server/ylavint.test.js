@@ -335,6 +335,16 @@ test('likes: rotation of up to 3 messages, cooldown, ignored members and per-ite
   const p=await likePayload(db,{account_id:ACF,payload:tasks[0].payload},settings)
   assert.equal(p.message,'Encore toi !');assert.equal(p.offer_price,18);assert.equal(p.skip,null)
 })
+test('likes honor the configured wait without adding hidden minutes',async()=>{
+  const now=Date.parse('2026-11-08T12:00:00Z')
+  for(const wait_minutes of [0,5]){
+    const db=fakeDb({vinted_agent_contacts:[]})
+    const settings=normalizeSettings({features:{likes:true},likes:{wait_minutes,messages:[{message:'Bonjour'}]}})
+    await planLikes(db,{account_id:ACF},[{item_id:'1',user_id:'7',login:'bob'}],settings,{now,rand:()=>0.99,can})
+    assert.equal(db.state.vinted_agent_tasks[0].not_before,new Date(now+wait_minutes*60000).toISOString())
+  }
+})
+
 test('likes: follow-up is planned after the first message, and skipped once the buyer answered',async()=>{
   const settings=normalizeSettings({features:{likes:true},likes:{messages:[{message:'Salut',followup:{enabled:true,delay_hours:24,message:'Toujours intéressé(e) ?'}}]}})
   const db=fakeDb({vinted_agent_contacts:[{account_id:ACF,item_id:'1',user_id:'5',state:'queued',step:0}]})
