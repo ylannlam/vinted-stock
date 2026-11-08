@@ -39,8 +39,12 @@ export function matchSelectedAccounts(profiles,accounts,links){
  return matched
 }
 export async function selectedListingAccounts(db,owner,accounts){
- const [selection,links]=await Promise.all([getProfileSelection(db,owner),db.from('publication_profile_links').select('profile_id,account_id').eq('owner_id',owner)])
- return {selection,accounts:matchSelectedAccounts(selection?.profiles||[],accounts,checked(links))}
+ const [selection,links,saved,directory]=await Promise.all([getProfileSelection(db,owner),db.from('publication_profile_links').select('profile_id,account_id').eq('owner_id',owner),db.from('creative_accounts').select('id,login,country'),db.from('publication_accounts').select('id,login')])
+ // L'absence de la liste Dotb ne supprime pas un ancien compte du parcours YlaVint.
+ // Seuls des identifiants déjà enregistrés sont repris, jamais un nom approximatif.
+ const known=new Set((checked(directory)||[]).map(a=>a.id)),live=new Set(accounts.map(a=>a.id))
+ const historical=(checked(saved)||[]).filter(a=>known.has(a.id)&&!live.has(a.id)).map(a=>({...a,country:a.country?.toUpperCase()||null,connected:false,dotb_available:false}))
+ return {selection,accounts:matchSelectedAccounts(selection?.profiles||[],[...accounts,...historical],checked(links))}
 }
 export async function requireSelectedAccount(db,owner,id,accounts){
  const selected=await selectedListingAccounts(db,owner,accounts)

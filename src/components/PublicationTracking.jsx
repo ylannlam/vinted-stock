@@ -42,7 +42,7 @@ export function PublicationOfflineList({tracking,onOpen,profiles=[]}){
 export function PublicationDetails({profile,tracking,onClose}){
   const account=profile.accountId?tracking.accounts.find(a=>a.id===profile.accountId):tracking.account(profile)
   const [filter,setFilter]=useState(tracking.day),[offset,setOffset]=useState(0),[result,setResult]=useState(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[choice,setChoice]=useState(account?.id||''),[saving,setSaving]=useState(false)
-  const dialog=useRef(null),id=account?.id,availableAccounts=tracking.accounts.filter(a=>a.source_present)
+  const dialog=useRef(null),id=account?.id,availableAccounts=tracking.accounts
   useEffect(()=>{const element=dialog.current;element.showModal();return()=>element.close()},[])
   useEffect(()=>{setOffset(0)},[filter,id])
   useEffect(()=>{setChoice(id||'')},[id])

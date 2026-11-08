@@ -72,8 +72,8 @@ export async function handlePublications(req,auth,{read=readPublicationSource}={
   if(action==='publication-link'){
     const {profile_id,account_id}=req.body
     if(typeof profile_id!=='string'||!profile_id||profile_id.length>100||!isId(account_id))throw new AppError('Choisis le compte Vinted correspondant à ce profil.')
-    const account=check(await db.from('publication_accounts').select('id').eq('id',account_id).eq('source_present',true).maybeSingle())
-    if(!account)throw new AppError('Ce compte n’est pas disponible dans ta connexion Dotb.')
+    const account=check(await db.from('publication_accounts').select('id').eq('id',account_id).maybeSingle())
+    if(!account)throw new AppError('Ce compte Vinted n’est pas enregistré sur le site.')
     check(await db.from('publication_profile_links').upsert({owner_id:user.id,profile_id,account_id},{onConflict:'owner_id,profile_id'}))
     return {saved:true}
   }

@@ -1,7 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {selectionProfiles,matchSelectedAccounts,handleProfileSelection} from './adspower-selection.js'
+import {selectionProfiles,matchSelectedAccounts,handleProfileSelection,selectedListingAccounts} from './adspower-selection.js'
 const profile={id:'profile-77',number:'77',name:'Camille',group:'Vinted'}
+test('a selected historical account remains available for YlaVint when Dotb no longer returns it',async()=>{
+ const tables={adspower_preferences:[{owner_id:'owner',profiles:[profile]}],publication_profile_links:[{owner_id:'owner',profile_id:profile.id,account_id:'old'}],creative_accounts:[{id:'old',login:'ancien',country:'fr'},{id:'unknown',login:'autre',country:'FR'}],publication_accounts:[{id:'old',login:'ancien'}]}
+ const db={from(table){let rows=tables[table];const q={select(){return q},eq(k,v){rows=rows.filter(r=>r[k]===v);return q},maybeSingle:async()=>({data:rows[0]||null}),then(ok,no){return Promise.resolve({data:rows}).then(ok,no)}};return q}}
+ const result=await selectedListingAccounts(db,'owner',[])
+ assert.equal(result.accounts.length,1);assert.equal(result.accounts[0].id,'old');assert.equal(result.accounts[0].country,'FR');assert.equal(result.accounts[0].connected,false);assert.equal(result.accounts[0].dotb_available,false)
+ assert.deepEqual((await selectedListingAccounts(db,'other',[])).accounts,[])
+ const live=await selectedListingAccounts(db,'owner',[{id:'old',login:'ancien-renommé',country:'BE',connected:true}])
+ assert.equal(live.accounts[0].country,'BE');assert.equal(live.accounts[0].connected,true)
+})
 test('listing accounts use only selected profiles, explicit links or one exact login',()=>{
  const accounts=[{id:'a',login:'camille'},{id:'b',login:'autre'}]
  assert.deepEqual(matchSelectedAccounts([],accounts,[]),[])

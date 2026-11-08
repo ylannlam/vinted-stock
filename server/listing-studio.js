@@ -134,6 +134,7 @@ async function queueListing(db,user,row,{mode,notBefore=null,read,settings,accou
  if(!['live','draft',undefined].includes(mode))throw new AppError('Choisis « en ligne » ou « brouillon Vinted ».')
  if(row.publication_task_id||row.publish_provider==='ylavint')throw new AppError('Cette fiche est déjà confiée à YlaVint. Consulte son suivi.',409)
  const list=accounts||listingAccounts(await read('accounts')),account=await requireSelectedAccount(db,user.id,row.fields.account_id,list)
+ if(account.dotb_available===false)throw new AppError('Ce compte n’est plus disponible dans Dotb. Choisis YlaVint pour préparer son formulaire.',409)
  if(requireBridge&&!account?.connected)throw new AppError('Ouvre ce compte dans AdsPower et active son Bridge Dotb avant de publier.',409)
  const [options,colors,photos]=await Promise.all([listingMetadata(`catalogs/${row.fields.catalog_id}/options?country=FR&locale=fr`,read),listingMetadata('colors?country=FR',read),verifiedPhotos(db,user.id,row.photos)])
  const payload=listingPayload(row.fields,photos,options,colors.data,account)
