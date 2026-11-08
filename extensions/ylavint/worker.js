@@ -62,6 +62,16 @@ async function report(o) {
 
 // ---------- Agent ----------
 let agentState = null, busyUntil = 0
+// Compte connecté : lu dans la page ; sur les pages qui n'en portent pas les données (messagerie, commandes…),
+// on reprend le dernier compte lu dans ce profil (un profil AdsPower = un compte Vinted).
+async function identity(tabId) {
+  const who = tabId ? await chrome.tabs.sendMessage(tabId, {type: 'identity'}).catch(() => null) : null
+  if (who?.member_id) return who
+  const last = await get('last')
+  if (!last?.member_id) return who
+  const status = String(last.key || 'ok|').split('|')[0] || 'ok'
+  return {member_id: last.member_id, login: last.login, status, source: 'last'}
+}
 async function vintedTab() {
   const tabs = await chrome.tabs.query({url: 'https://www.vinted.fr/*'})
   const checkTab = await get('check_tab')
@@ -74,7 +84,7 @@ async function tick() {
   if (Date.now() < next) return
   const tab = await vintedTab()
   if (!tab) { agentState = {state: 'no_tab', message: 'Ouvre un onglet Vinted dans ce profil.', at: Date.now()}; return set({agent: agentState}) }
-  const who = await chrome.tabs.sendMessage(tab.id, {type: 'identity'}).catch(() => null)
+  const who = await identity(tab.id)
   if (!who?.member_id) { agentState = {state: 'logged_out', message: 'Compte Vinted non connecté dans ce profil.', at: Date.now()}; return set({agent: agentState}) }
   if (who.status !== 'ok') { agentState = {state: 'paused', message: 'Alerte Vinted sur le compte : agent arrêté.', login: who.login, at: Date.now()}; return set({agent: agentState}) }
   busyUntil = Date.now() + 200000
@@ -120,8 +130,12 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (message?.type === 'seen') { remember(message.kind, message.recipe); return }
   if (message?.type === 'fetch_bytes') { download(message.url).then(reply, e => reply({error: e.message})); return true }
   if (message?.type === 'ylv_site') {
-    if (!PANEL_OPS.has(message.op) || !message.member_id) { reply({error: message.member_id ? 'Action refusée.' : 'Connecte-toi à Vinted dans ce profil.'}); return }
-    site('agent_self', {op: message.op, payload: message.payload || {}, member_id: message.member_id, login: message.login}).then(reply, e => reply({error: e.message || 'Site injoignable.'}))
+    if (!PANEL_OPS.has(message.op)) { reply({error: 'Action refusée.'}); return }
+    ;(async () => {
+      const who = message.member_id ? {member_id: message.member_id, login: message.login} : await identity(null)
+      if (!who?.member_id) return reply({error: 'Compte Vinted pas encore reconnu : ouvre ton profil Vinted une fois dans ce profil AdsPower.'})
+      return site('agent_self', {op: message.op, payload: message.payload || {}, member_id: who.member_id, login: who.login}).then(reply, e => reply({error: e.message || 'Site injoignable.'}))
+    })()
     return true
   }
   if (message?.type === 'ylv_bridge') { setBridge(message.on === true); return }
@@ -150,7 +164,7 @@ async function remember(kind, recipe) {
   if (kind) await learn(kind, recipe)
 }
 async function learn(kind, recipe) {
-  const who = await vintedTab().then(t => t && chrome.tabs.sendMessage(t.id, {type: 'identity'})).catch(() => null)
+  const who = await vintedTab().then(t => identity(t?.id)).catch(() => null)
   try {
     await site('agent_learn', {kind, recipe, member_id: who?.member_id, login: who?.login})
     const learned = (await get('learned')) || {}
