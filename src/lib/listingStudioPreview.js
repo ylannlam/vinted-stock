@@ -41,10 +41,10 @@ export async function listingStudioPreview(method='GET',body,query=''){
  }
  if(action==='mark_published'){const id=String(body.url||'').match(/(?:items\/|^)(\d+)/)?.[1];if(!id)throw Error('Colle le lien Vinted de l’annonce.');row.state='published';row.vinted_id=id;row.url=`https://www.vinted.fr/items/${id}`;row.message='Publiée à la main (simulation).';row.published_at=now();row.version++}
  if(action==='publish'){row.state='preparing';row.message='Préparation de l’envoi (simulation)…';row.version++}
- if(action==='ylavint_publish'){row.state='scheduled';row.publish_provider='ylavint';row.publication_task_id='demo-task';row.can_cancel=true;row.dotb_publish=body.mode!=='draft';row.message='En attente du profil AdsPower (simulation).';row.version++}
+ if(action==='ylavint_publish'){row.state='scheduled';row.publish_provider='ylavint';row.publication_task_id='demo-task';row.assisted=true;row.form_ready=false;row.can_cancel=true;row.dotb_publish=false;row.message='En attente de l’ouverture du formulaire (simulation).';row.version++}
  if(action==='ylavint_cancel'||action==='unschedule'){row.state='draft';row.publish_provider=null;row.publication_task_id=null;row.can_cancel=false;row.message='Envoi annulé (simulation).';row.version++}
  if(action==='step'){row.uploaded++;row.dotb_item_id='demo';if(row.uploaded>=row.photos.length){row.state='scheduled';row.message='Annonce transmise (simulation).'}row.version++}
- if(action==='refresh'&&row.state==='scheduled'){row.state=row.dotb_publish===false?'vinted_draft':'published';row.can_cancel=false;row.message='Création confirmée (simulation uniquement).';row.published_at=now();row.version++}
+ if(action==='refresh'&&row.state==='scheduled'){row.can_cancel=false;if(row.assisted){row.state='attention';row.form_ready=true;row.message='Formulaire préparé : validation à faire sur Vinted (simulation).'}else{row.state=row.dotb_publish===false?'vinted_draft':'published';row.message='Création confirmée (simulation uniquement).';row.published_at=now()}row.version++}
  row.updated_at=now();return {draft:structuredClone(row)}
 }
 export async function listingStudioPreviewUpload(file){const path=`demo/${crypto.randomUUID()}`;images.set(path,URL.createObjectURL(file));return {path}}

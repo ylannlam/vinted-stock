@@ -1,4 +1,4 @@
-import {publicationBundle,publicationResult,cancelYlavintListing,queueYlavintListing} from './listing-ylavint.js'
+import {publicationBundle,publicationResult,cancelYlavintListing} from './listing-ylavint.js'
 import {activationSettings,eventTime,inHistory} from './ylavint-history.js'
 import {copiedSettings,COPY_GROUPS} from './ylavint-settings-copy.js'
 // Agent Vinted maison : remplace Dotb fonction par fonction.
@@ -155,16 +155,15 @@ export const ready=(kind,can)=>KINDS[kind].needs.every(k=>can.has(k))
 
 // Ce que l'extension reçoit avec sa tâche : les recettes utiles et les données nécessaires (photos signées pour 30 min).
 async function taskBundle(db,task,settings){
+  if(task.kind==='publish_item'){
+    try{return {id:task.id,lease:task.lease,kind:task.kind,payload:{draft_id:task.payload.draft_id},recipes:{},missing:[],listing:await publicationBundle(db,task)}}
+    catch(e){return {id:task.id,lease:task.lease,kind:task.kind,recipes:{},missing:['formulaire : '+e.message]}}
+  }
   const uses=KINDS[task.kind].uses||[]
   const recipes=Object.fromEntries((await recipeRows(db,[...KINDS[task.kind].needs,...uses,...(OPTIONAL[task.kind]||[])])).map(r=>[r.kind,r.recipe]))
   for(const k of [...KINDS[task.kind].needs,...uses,...(OPTIONAL[task.kind]||[])])if(!recipes[k]&&DEFAULT_RECIPES[k])recipes[k]=DEFAULT_RECIPES[k]
-  // La publication 3.7 utilise le formulaire actuel, jamais un ancien corps appris sur une autre annonce.
-  if(task.kind==='publish_item')for(const k of KINDS.publish_item.needs)recipes[k]=DEFAULT_RECIPES[k]
   const missing=KINDS[task.kind].needs.filter(k=>!recipes[k])
-  const bundle={id:task.id,lease:task.lease,kind:task.kind,payload:task.kind==='publish_item'?{draft_id:task.payload.draft_id,live:task.payload.live}:task.payload,recipes,missing}
-  if(task.kind==='publish_item'&&!missing.length){
-    try{bundle.listing=await publicationBundle(db,task)}catch(e){bundle.missing=['fiche invalide : '+e.message]}
-  }
+  const bundle={id:task.id,lease:task.lease,kind:task.kind,payload:task.payload,recipes,missing}
   if(task.kind==='like_message')bundle.payload=await (await import('./ylavint-flows.js')).likePayload(db,task,settings)
   if(task.kind==='reply_message'&&task.payload?.source==='ai'&&!inHistory(task.payload.source_message_at,settings.messaging.history_since))bundle.payload={...task.payload,skip:'Message antérieur à la période choisie.'}
   if(task.kind==='sync_inbox')bundle.payload={...task.payload,known:task.payload?.force_details?{}:await (await import('./ylavint.js')).knownConversations(db,task.account_id)}
@@ -286,7 +285,7 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
   }
   {const flows=await import('./ylavint-flows.js');if(flows.isFlowTask(task.kind))summary=await flows.flowDone(db,task,{ok:true,result:body.result},{now})}
   await finish(db,task,'done',summary,null)
-  if(task.kind==='publish_item'&&!summary.draft)await enqueue(db,[{account_id:task.account_id,kind:'scan_wardrobe',priority:3,dedupe_key:`scan_wardrobe:${task.account_id}`}]).catch(()=>{})
+   // Un formulaire rempli n'est pas une annonce publiée : aucune confirmation de vente n'est déduite.
   if(['sync_inbox','scan_likes'].includes(task.kind)&&task.payload?.history_since&&body.result?.more_history===true){
     const page=Number(task.payload.history_page)
     if(Number.isInteger(page)&&page>=1&&page<1000)await enqueue(db,[{account_id:task.account_id,kind:task.kind,priority:3,dedupe_key:`history:${task.kind}:${task.account_id}:${task.payload.history_since}:${page+1}`,payload:{force_details:true,history_since:task.payload.history_since,history_page:page+1}}])
@@ -497,7 +496,7 @@ export async function handleAgent(req,{db,user}){
     if(r?.[0]?.kind==='publish_item')await markDraft(db,r[0].payload.draft_id,{state:'draft',scheduled_at:null,message:'Publication par l’agent annulée.'})
     return {cancelled:r?.length||0}
   }
-  if(body.action==='publish_drafts')return publishDrafts(db,user,body)
+    if(body.action==='publish_drafts')throw new AppError('Prépare chaque formulaire depuis l’atelier Annonces et valide-le toi-même sur Vinted.',409)
   if(body.action==='forget_recipe'){
     if(!RECIPES[body.kind])throw new AppError('Recette inconnue.')
     check(await db.from('vinted_agent_recipes').delete().eq('kind',body.kind))
@@ -505,13 +504,4 @@ export async function handleAgent(req,{db,user}){
     return {saved:true}
   }
   throw new AppError('Action inconnue.')
-}
-
-// Publication par l'agent : les fiches prêtes passent dans la file, au créneau prévu (ou réparties si aucun créneau).
-async function publishDrafts(db,user,body){
-  const ids=Array.isArray(body.ids)?body.ids.filter(isId):[]
-  if(!ids.length||ids.length>25||new Set(ids).size!==ids.length)throw new AppError('Choisis de 1 à 25 fiches différentes.')
-  const drafts=check(await db.from('listing_drafts').select('*').in('id',ids).eq('owner_id',user.id)),refused=[];let queued=0
-  for(const id of ids){try{const d=drafts.find(d=>d.id===id);if(!d)throw new AppError('Fiche introuvable.');await queueYlavintListing(db,user,d,{mode:body.mode});queued++}catch(e){if(!(e instanceof AppError))throw e;refused.push({id,reason:e.message})}}
-  return {queued,refused}
 }

@@ -29,7 +29,7 @@ export async function updateListing(db,row,patch){
 async function expose(db,row){
  const paths=row.photos.map(p=>p.path),signed=paths.length?check(await db.storage.from(ASSET_BUCKET).createSignedUrls(paths,3600)):[]
  const urls=new Map(signed.map(x=>[x.path,x.signedUrl]))
- return {id:row.id,version:row.version,state:row.state,fields:row.fields,photos:row.photos.map(p=>({...p,url:urls.get(p.path)||null})),uploaded:row.uploaded,publish_provider:row.publish_provider|| (row.dotb_item_id?'dotb':null),publication_task_id:row.publication_task_id||null,can_cancel:row.publish_provider==='ylavint'&&row.state==='scheduled',dotb_item_id:row.dotb_item_id,dotb_publish:row.dotb_publish!==false,message:row.message,last_error:row.last_error,created_at:row.created_at,updated_at:row.updated_at,ai_updated_at:row.ai_updated_at,published_at:row.published_at,checked_at:row.checked_at,planned_at:row.planned_at||null,scheduled_at:row.scheduled_at||null,busy:!!pending(row),manual_recoverable:row.state==='preparing'&&!row.dotb_item_id&&!row.inflight,url:row.state==='published'&&/^\d{1,18}$/.test(row.vinted_id||'')?`https://www.vinted.fr/items/${row.vinted_id}`:null}
+ return {id:row.id,version:row.version,state:row.state,fields:row.fields,photos:row.photos.map(p=>({...p,url:urls.get(p.path)||null})),uploaded:row.uploaded,publish_provider:row.publish_provider|| (row.dotb_item_id?'dotb':null),publication_task_id:row.publication_task_id||null,assisted:row.payload?.assisted===true,form_ready:row.payload?.form_ready===true,can_cancel:row.publish_provider==='ylavint'&&row.state==='scheduled',dotb_item_id:row.dotb_item_id,dotb_publish:row.dotb_publish!==false,message:row.message,last_error:row.last_error,created_at:row.created_at,updated_at:row.updated_at,ai_updated_at:row.ai_updated_at,published_at:row.published_at,checked_at:row.checked_at,planned_at:row.planned_at||null,scheduled_at:row.scheduled_at||null,busy:!!pending(row),manual_recoverable:row.state==='preparing'&&!row.dotb_item_id&&!row.inflight,url:row.state==='published'&&/^\d{1,18}$/.test(row.vinted_id||'')?`https://www.vinted.fr/items/${row.vinted_id}`:null}
 }
 async function findSchedule(read,row){
  let cursor=''
@@ -260,6 +260,11 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
   if(!row.dotb_item_id||pending(row)||row.checked_at&&Date.parse(row.checked_at)>Date.now()-10000)return {draft:await expose(db,row)}
   if(['scheduled','attention'].includes(row.state))row=await inspectPublish(db,row,read)
   return {draft:await expose(db,row)}
+ }
+ if(action==='mark_published'&&row.payload?.assisted===true&&row.payload?.form_ready===true&&row.state==='attention'){
+  if(body.version!==row.version||pending(row))throw new AppError('La fiche a changé. Actualise le suivi.',409)
+  const saved=await markPublished(db,{...row,state:'draft'},body.url,updateListing)
+  return {draft:await expose(db,saved)}
  }
  if(row.publication_task_id&&['save','discard','publish','mark_published'].includes(action)&&!(action==='mark_published'&&['vinted_draft','published'].includes(row.state)))throw new AppError('Cette fiche a déjà été confiée à YlaVint. Consulte le dressing et les brouillons Vinted avant toute autre publication.',409)
  // A retry after a lost reply returns the same recorded publication, without a second write.

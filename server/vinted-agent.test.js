@@ -177,8 +177,7 @@ test('learning removes secrets and accepts photo field objects; publication does
  assert.deepEqual(state.vinted_agent_recipes[0].recipe.headers,{})
  assert.deepEqual(state.vinted_agent_recipes[0].recipe.fields,['photo[file]','photo[type]'])
  const draft={id:'33333333-3333-4333-8333-333333333333',owner_id:'u1',version:1,state:'draft',fields:{account_id:ACC},photos:[]};state.listing_drafts.push(draft)
- const out=await handleAgent({method:'POST',body:{action:'publish_drafts',ids:[draft.id]}},{db,user})
- assert.equal(out.queued,0);assert.match(out.refused[0].reason,/Active YlaVint/);assert.equal(draft.state,'draft')
+ await assert.rejects(handleAgent({method:'POST',body:{action:'publish_drafts',ids:[draft.id]}},{db,user}),/Prépare chaque formulaire/);assert.equal(draft.state,'draft')
 })
 
 test('settings are saved with a version check, and pause / resume are journaled',async()=>{

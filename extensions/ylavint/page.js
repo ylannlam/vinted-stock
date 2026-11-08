@@ -357,30 +357,7 @@
     if(!u||String(u.id)!==String(member))throw new Stop('failed','Le compte Vinted connecté ne correspond pas au compte choisi. Aucun envoi.')
     if(u.is_account_banned||u.action_restriction)throw new Stop('restricted','Vinted signale une restriction : publication arrêtée.')
   }
-  async function publish(task) {
-    const {fields,photos,live,deadline}=task.listing||{},tempUuid=uuid(),assigned=[]
-    if(typeof live!=='boolean'||!fields?.title||!Array.isArray(photos)||!photos.length||photos.length>20)throw new Stop('failed','Fiche ou photos incomplètes.')
-    const expires=Date.parse(deadline)
-    const checkTime=()=>{if(!Number.isFinite(expires)||Date.now()>expires-60000)throw new Stop('timeout','Délai dépassé avant la création : aucun nouvel envoi automatique.')}
-    checkTime();await publicationIdentity(task.member_id)
-    for(const photo of photos){
-      checkTime()
-      if(!['image/jpeg','image/png','image/webp'].includes(photo.type))throw new Stop('failed','Format de photo non pris en charge.')
-      const bytes=await fetchBytes(photo.url)
-      if(!bytes.byteLength||bytes.byteLength>8000000)throw new Stop('failed','Photo vide ou trop volumineuse.')
-      assigned.push(await uploadPhoto(task.recipes.photo_upload,bytes,tempUuid,photo.type))
-      progress();await pause(500,1000)
-    }
-    checkTime();await publicationIdentity(task.member_id);checkTime()
-    const recipe=live?task.recipes.item_create:task.recipes.draft_create
-    if(recipe?.method!=='POST'||recipe.path!==(live?'/api/v2/item_upload/items':'/api/v2/item_upload/drafts'))throw new Stop('failed','Route de publication incompatible. Mets YlaVint à jour.')
-    // Un seul POST de création. Une réponse perdue ne déclenche jamais un deuxième POST.
-    const r=await call(recipe,{json:publicationBody(fields,assigned,tempUuid,live),timeout:45000,retried:true})
-    const item=live?r.item:(r.draft||r.item),id=item?.id
-    if(!/^[1-9]\d{0,17}$/.test(String(id||''))||r.errors?.length||r.code&&r.code!==0)throw new Stop('vinted_error','Vinted n’a pas confirmé la création. Vérifie les annonces et les brouillons.')
-    if(item.user_id&&String(item.user_id)!==String(task.member_id)||typeof item.is_draft==='boolean'&&item.is_draft===live)throw new Stop('failed','Résultat Vinted différent de la demande. Vérifie le compte avant de continuer.')
-    return {vinted_id:String(id),draft:!live,confirmed:true}
-  }
+  async function publish() { throw new Stop('failed','L’envoi direct est désactivé. Ouvre le formulaire avec YlaVint 3.8 puis valide toi-même.') }
   async function editItem(task, {unmask}) {
     const id = String(task.payload.item_id), R = task.recipes
     const form = await call(R.item_form, {ids: {id}})

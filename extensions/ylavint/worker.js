@@ -1,4 +1,5 @@
 import {SITE, TOKEN} from './config.js'
+import {openListingForm} from './form-worker.js'
 
 // YlaVint : le Bridge du profil. Veille du compte (bandeau Vinted) + exécution des tâches du site, une à la fois.
 // Le gros bouton du popup allume ou coupe le Bridge de ce profil.
@@ -118,7 +119,7 @@ async function tickWork() {
     if (r.state !== 'task' || !r.task) return
     const task = {...r.task, member_id: who.member_id}
     await set({agent: {...agentState, task: task.kind}})
-    const outcome = await chrome.tabs.sendMessage(tab.id, {type: 'run', task}).catch(e => ({ok: false, code: 'failed', error: e.message || 'Onglet Vinted fermé.'}))
+    const outcome = await (task.kind==='publish_item' ? openListingForm(task,chrome) : chrome.tabs.sendMessage(tab.id, {type: 'run', task})).catch(e => ({ok: false, code: 'failed', error: e.message || 'Onglet Vinted fermé.'}))
     const report={task_id:task.id,lease:task.lease,member_id:who.member_id,...outcome}
     if(task.kind==='publish_item')await set({publication_result:report})
     const saved = await site('agent_result',report)

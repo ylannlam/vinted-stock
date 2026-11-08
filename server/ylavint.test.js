@@ -325,7 +325,7 @@ test('YlaVint publication requires an owned draft, activation and a compatible e
  const db=fakeDb(base()),row={id:crypto.randomUUID(),owner_id:USER,state:'draft',fields:{account_id:ACC},photos:[]}
  await assert.rejects(queueStudioPublish(db,{id:USER},row),/Active « Publication »/)
  db.state.vinted_agent_settings[0].features.publish=true
- await assert.rejects(queueStudioPublish(db,{id:USER},row),/3.7.0/)
+ await assert.rejects(queueStudioPublish(db,{id:USER},row),/3.8.0/)
  for(const patch of [{state:'attention'},{owner_id:ACC},{dotb_item_id:crypto.randomUUID()},{publication_task_id:crypto.randomUUID()}])await assert.rejects(queueStudioPublish(db,{id:USER},{...row,...patch}),/déjà transmise/)
  assert.equal(db.state.vinted_agent_tasks.length,0)
 })

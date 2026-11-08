@@ -9,7 +9,7 @@ function worker(response){
   alarms:{create:(...args)=>alarms.push(args),onAlarm:event('alarm')},storage:{onChanged:event('storage'),local:{get:async keys=>typeof keys==='string'?{[keys]:data[keys]}:data,set:async p=>Object.assign(data,p)}},
   action:{setBadgeText:async()=>{},setBadgeBackgroundColor:async()=>{}},tabs:{query:async()=>[{id:1,status:'complete'}],sendMessage:async(_,m)=>m.type==='identity'?{member_id:'7',status:'ok'}:{ok:true,result:{}}}}
  const ctx=vm.createContext({chrome,Date,console,URL,setTimeout:(fn,ms)=>{timers.push(ms);return timers.length},clearTimeout:()=>{},fetch:async(_,opts)=>{const a=JSON.parse(opts.body).action;if(a==='agent_poll')polls++;return {ok:true,json:async()=>a==='agent_poll'?response:{}}}})
- vm.runInContext(readFileSync(new URL('../extensions/ylavint/worker.js',import.meta.url),'utf8').replace("import {SITE, TOKEN} from './config.js'","const SITE='https://example.test',TOKEN='test'")+ '\nglobalThis.testTick=tick;',ctx)
+ vm.runInContext(readFileSync(new URL('../extensions/ylavint/worker.js',import.meta.url),'utf8').replace("import {SITE, TOKEN} from './config.js'","const SITE='https://example.test',TOKEN='test'").replace(/import \{openListingForm\} from '\.\/form-worker.js'/,"const openListingForm=()=>{throw Error('Unexpected form task in polling test')}")+ '\nglobalThis.testTick=tick;',ctx)
  return {data,timers,alarms,listeners,tick:()=>ctx.testTick(),polls:()=>polls}
 }
 test('worker follows a ten-second server delay, with a thirty-second wake-up backup',async()=>{

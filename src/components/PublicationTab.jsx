@@ -70,7 +70,7 @@ export default function PublicationTab({request=defaultRequest,onOpenListings,st
  function blocker(id){
   const a=accounts.get(id)
   if(!a)return 'Absent de ta sélection AdsPower'
-  if(provider==='ylavint'&&!a.ylavint?.ready)return a.ylavint?.reason||'Publication YlaVint non activée'
+  if(provider==='ylavint')return 'Prépare chaque formulaire depuis l’atelier Annonces ; validation finale sur Vinted'
   if(provider==='dotb'&&!a.dotb)return 'Publication Dotb coupée pour ce compte'
   if(unusable(a))return healthLabels[a.health.status]
   if(onlyConnected&&!connected(a))return 'Bridge fermé'
@@ -142,7 +142,7 @@ export default function PublicationTab({request=defaultRequest,onOpenListings,st
        {why&&why!=='Bridge fermé'&&!a?.health?.status?.match(/permanent|blocked/)&&<span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">{why}</span>}
       </span>
      </li>})}</ul>:<p className="text-sm text-slate-500">Aucune fiche prête. Prépare tes annonces dans l’onglet Annonces : elles apparaîtront ici.</p>}
-    <p className="text-xs text-slate-500">{provider==='ylavint'?'Le profil AdsPower et son Bridge YlaVint doivent être ouverts. Si le profil est fermé, l’annonce attend sa réouverture. Les horaires, plafonds et écarts YlaVint du compte peuvent décaler la publication.':'Le Bridge Dotb du compte doit être ouvert pendant l’envoi et à l’heure de publication.'}</p>
+    <p className="text-xs text-slate-500">{provider==='ylavint'?'Prépare chaque formulaire depuis l’atelier Annonces. YlaVint remplit les champs ; tu termines toi-même la publication. La programmation reste disponible avec Dotb.':'Le Bridge Dotb du compte doit être ouvert pendant l’envoi et à l’heure de publication.'}</p>
    </Section>
 
    <Section title="Ta logique de publication">

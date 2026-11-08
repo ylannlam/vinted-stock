@@ -158,7 +158,7 @@ function SalesChart({orders,range}){
 export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWatchRequest,standalone=false,onLogout}){
  const [section,setSectionState]=useState(readSection)
  const [data,setData]=useState(null),[sales,setSales]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[notice,setNotice]=useState('')
- const [configure,setConfigure]=useState(null),[picked,setPicked]=useState(()=>new Set()),[range,setRange]=useState('7d'),[accountFilter,setAccountFilter]=useState(''),[mobileNav,setMobileNav]=useState(false)
+ const [configure,setConfigure]=useState(null),[range,setRange]=useState('7d'),[accountFilter,setAccountFilter]=useState(''),[mobileNav,setMobileNav]=useState(false)
  const setSection=s=>{setSectionState(s);setMobileNav(false);const hash=standalone?`#${s}`:`#ylavint/${s}`;if(window.location.hash!==hash)history.replaceState(null,'',hash)}
  useEffect(()=>{const f=()=>setSectionState(readSection());window.addEventListener('hashchange',f);return()=>window.removeEventListener('hashchange',f)},[])
  const load=()=>request('GET').then(r=>{setData(r);setError('')}).catch(e=>setError(e.message))
@@ -247,17 +247,15 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
    {section==='dressing'&&<YlaVintWardrobe request={request} accounts={accounts}/>}
 
    {section==='publication'&&<>
-    <PageTitle title="Publications planifiées" hint="Fiches prêtes de l’onglet Annonces, publiées par YlaVint au créneau prévu (ou espacées de 15 à 45 min), dans les plafonds du compte. Tu peux aussi publier depuis l’atelier avec « Publier avec YlaVint »."
-     aside={<button className={primaryClass} disabled={busy||!picked.size} onClick={()=>act({action:'publish_drafts',ids:[...picked]},r=>`${r.queued} fiche(s) confiée(s) à YlaVint.${r.refused?.length?` ${r.refused.length} refusée(s) : ${[...new Set(r.refused.map(x=>x.reason))].join(' ; ')}.`:''}`).then(()=>setPicked(new Set()))}>Planifier ({picked.size})</button>}/>
-    <Table head={['','Titre','Prix','Photos','Compte','État']} empty={!data.drafts.length&&'Aucune fiche prête.'}>
-     {data.drafts.map(d=><tr key={d.id}><Td className="w-10"><input type="checkbox" className="accent-blue-500" aria-label={`Choisir ${d.title}`} checked={picked.has(d.id)} disabled={!publishable.has(d.account_id)} onChange={e=>setPicked(p=>{const n=new Set(p);e.target.checked?n.add(d.id):n.delete(d.id);return n})}/></Td>
-      <Td className="max-w-md truncate font-medium text-white">{d.title}</Td><Td>{d.price?euro(d.price):'—'}</Td><Td>{d.photos}</Td><Td className="text-blue-400">{logins.get(d.account_id)||'—'}</Td>
+    <PageTitle title="Formulaires Vinted" hint="Dans l’atelier Annonces, utilise « Préparer sur Vinted » pour chaque fiche. YlaVint ouvre le formulaire ; tu vérifies les photos et termines toi-même la publication."/>
+    <Table head={['Titre','Prix','Photos','Compte','État']} empty={!data.drafts.length&&'Aucune fiche prête.'}>
+     {data.drafts.map(d=><tr key={d.id}><Td className="max-w-md truncate font-medium text-white">{d.title}</Td><Td>{d.price?euro(d.price):'—'}</Td><Td>{d.photos}</Td><Td className="text-blue-400">{logins.get(d.account_id)||'—'}</Td>
       <Td>{publishable.has(d.account_id)?<Pill tone="blue">Prête</Pill>:<Pill>Publication non activée</Pill>}</Td></tr>)}
     </Table>
     <p className="pt-2 text-sm font-semibold text-white">File de publication</p>
     <Table head={['Compte','Statut','Planifié pour','Terminé','Raison']} empty={!data.tasks.some(t=>t.kind==='publish_item')&&'Aucune publication en file.'}>
      {data.tasks.filter(t=>t.kind==='publish_item').map(t=><tr key={t.id}><Td className="text-blue-400">{logins.get(t.account_id)}</Td>
-      <Td><Pill tone={t.state==='done'?'blue':t.state==='failed'?'red':t.state==='cancelled'?'zinc':'amber'}>{t.state==='done'?(t.payload?.live===false?'Brouillon créé':'Publié'):t.state==='failed'?'Échec':STATES[t.state]}</Pill></Td>
+      <Td><Pill tone={t.state==='done'?'blue':t.state==='failed'?'red':t.state==='cancelled'?'zinc':'amber'}>{t.state==='done'?(t.payload?.listing?.assisted?'Formulaire préparé':t.payload?.live===false?'Brouillon créé':'Publié'):t.state==='failed'?'Échec':STATES[t.state]}</Pill></Td>
       <Td>{when(t.not_before)}</Td><Td>{when(t.finished_at)}</Td><Td className="text-xs text-zinc-400">{t.error||'—'}</Td></tr>)}
     </Table>
    </>}

@@ -254,16 +254,13 @@ export default function ListingSession({request,upload,account,meta,initialSku='
   if(issues.length)throw Error(`Complète ${issues.map(i=>i.label).join(', ')}.`)
   const {draft}=await request('POST',{action:'ylavint_publish',id:card.id,version:card.row.version,confirmation_account_id:account.id,mode});accept(card,draft)
  }
- const sendYlavint=(card,mode)=>act(card,'Envoi à YlaVint…',()=>sendYlavintCard(card,mode)).catch(()=>{})
+ const sendYlavint=(card,mode)=>act(card,'Ouverture du formulaire…',()=>sendYlavintCard(card,mode)).catch(()=>{})
  const cancelYlavint=card=>act(card,'Annulation…',async()=>{const {draft}=await request('POST',{action:'ylavint_cancel',id:card.id,version:card.row.version});accept(card,draft)}).catch(()=>{})
  const sendOne=(card,mode)=>withBusy('Vérification du Bridge…',async()=>{await bridgeReady();await act(card,'Envoi à Dotb…',()=>sendDotb(card,mode))})
  async function sendAll(mode){
   const ready=list().filter(c=>cardStage(c,optionsFor(c.fields.catalog_id))==='ready')
   if(!ready.length)throw Error('Aucun article prêt à publier.')
-  if(provider==='ylavint'){
-   let done=0;for(const card of ready){try{await act(card,'Envoi à YlaVint…',()=>sendYlavintCard(card,mode));done++}catch{}}
-   setNotice(`${done} fiche(s) confiée(s) à YlaVint sur ${ready.length}. Garde le profil AdsPower et son Bridge YlaVint ouverts.`);return
-  }
+  if(provider==='ylavint')throw Error('Prépare chaque formulaire séparément, puis termine la publication sur Vinted.')
   setBusy('Vérification du Bridge…');await bridgeReady()
   let done=0
   for(let i=0;i<ready.length;i++){setBusy(`Envoi à Dotb ${i+1} sur ${ready.length}…`);try{await act(ready[i],'Envoi à Dotb…',()=>sendDotb(ready[i],mode));done++}catch{}}
@@ -404,7 +401,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
  // Suivi Dotb : création, photos, puis mise en ligne ou brouillon à l'heure prévue.
  function dotbStatus(card){
   const r=card.row,draftMode=r.dotb_publish===false,locked=!!card.busy
-  if(r.publish_provider==='ylavint')return <YlavintTransfer draft={r} busy={locked} onRefresh={()=>refresh(card)} onCancel={()=>cancelYlavint(card)}/>
+  if(r.publish_provider==='ylavint')return <YlavintTransfer draft={r} busy={locked} onRefresh={()=>refresh(card)} onCancel={()=>cancelYlavint(card)} onMarkPublished={url=>act(card,'Mise à jour du suivi…',async()=>{const {draft}=await request('POST',{action:'mark_published',id:card.id,version:card.row.version,url});accept(card,draft)})}/>
   const stepsDone=[['Fiche créée chez Dotb',!!r.dotb_item_id],['Photos envoyées',!!r.dotb_item_id&&r.uploaded>=card.photos.length],[draftMode?`Brouillon prévu${r.scheduled_at?` ${hour(r.scheduled_at)}`:''}`:`Mise en ligne prévue${r.scheduled_at?` ${hour(r.scheduled_at)}`:''}`,['scheduled','published','vinted_draft'].includes(r.state)],[draftMode?'Brouillon sur Vinted':'En ligne sur Vinted',['published','vinted_draft'].includes(r.state)]]
   return <section aria-label="Suivi de l’envoi Dotb" className="space-y-4 rounded-2xl border border-[#e8e4dd] bg-white p-4 sm:p-5">
    <p className={`rounded-xl px-4 py-3 text-sm ${r.state==='attention'||r.last_error?'bg-amber-50 text-amber-950':'bg-[#f1f6fb] text-[#1d3b5c]'}`}>{r.last_error||r.message}</p>
@@ -424,7 +421,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
     {stage==='prepare'&&<button className={solid} disabled={locked||!!busy} onClick={()=>prepareOne(card)}>{card.busy||'Rédiger avec l’IA'}</button>}
     {stage==='loading'&&<span className="text-xs text-[#79756f]">Chargement des options…</span>}
     {stage==='review'&&<><span className="text-xs text-amber-900">{issues.length} choix à faire : {issues.map(i=>i.label).join(', ')}</span><button className={solid} disabled>Publier</button></>}
-    {stage==='ready'&&<button className={solid} disabled={locked||!!busy||!(provider==='ylavint'?ylavint:dotb)} onClick={()=>provider==='ylavint'?sendYlavint(card,mode):sendOne(card,mode)}>{mode==='draft'?'Brouillon':'Publier'} avec {provider==='ylavint'?'YlaVint':'Dotb'}</button>}
+    {stage==='ready'&&<button className={solid} disabled={locked||!!busy||!(provider==='ylavint'?ylavint:dotb)} onClick={()=>provider==='ylavint'?sendYlavint(card,mode):sendOne(card,mode)}>{provider==='ylavint'?'Préparer sur Vinted':`${mode==='draft'?'Brouillon':'Publier'} avec Dotb`}</button>}
     {(stage==='dotb'||stage==='published')&&next&&<button className={ghost} onClick={()=>select(next)}>Article suivant</button>}
    </div>
   </div>
@@ -465,7 +462,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
   <header className="flex flex-wrap items-end justify-between gap-4">
    <div className="min-w-0"><button className={quiet} disabled={working} onClick={()=>withBusy('Enregistrement…',async()=>{await saveAll();onBack()})}>← Changer de compte</button>
     <h1 className="mt-2 flex flex-wrap items-baseline gap-x-3 text-[28px] font-semibold leading-tight tracking-[-0.02em] text-[#323630]"><span className="tabular-nums text-[#087f5b]">#{account.profile_number||'—'}</span><span className="break-all">{account.login}</span></h1>
-    <p className="mt-1.5 text-sm text-[#79756f]">{`Envoi avec ${provider==='ylavint'?'YlaVint':'Dotb'}, ${mode==='draft'?'en brouillon Vinted':'en ligne'}${presets?.spacing_minutes?`, avec un écart de ${presets.spacing_minutes} min`:''}.`}{presets&&<> Réglages {presets.custom?'propres à ce compte':'communs'} : {[presets.no_brand&&'sans marque',presets.condition.toLocaleLowerCase('fr'),`colis ${presets.package.toLocaleLowerCase('fr')}`].filter(Boolean).join(', ')}.</>}</p></div>
+    <p className="mt-1.5 text-sm text-[#79756f]">{provider==='ylavint'?'Préparation du formulaire dans le profil choisi, puis validation par toi sur Vinted.':`Envoi avec Dotb, ${mode==='draft'?'en brouillon Vinted':'en ligne'}${presets?.spacing_minutes?`, avec un écart de ${presets.spacing_minutes} min`:''}.`}{presets&&<> Réglages {presets.custom?'propres à ce compte':'communs'} : {[presets.no_brand&&'sans marque',presets.condition.toLocaleLowerCase('fr'),`colis ${presets.package.toLocaleLowerCase('fr')}`].filter(Boolean).join(', ')}.</>}</p></div>
    <div className="flex flex-wrap items-center gap-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#e3ded6] bg-white px-3 py-2 text-sm" title="L’IA écrit chaque article dès qu’il a ses photos et sa taille"><input type="checkbox" checked={autoWrite} onChange={e=>{setAutoWrite(e.target.checked);try{localStorage.setItem('listing-auto-write',e.target.checked?'on':'off')}catch{}}}/>Rédaction automatique</label><button className={ghost} aria-expanded={showSettings} disabled={!settings} onClick={()=>setShowSettings(true)}>Réglages</button><button className={ghost} disabled={working||loading} onClick={()=>withBusy('Actualisation…',load)}>Actualiser</button></div>
   </header>
 
@@ -493,7 +490,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
     <ListingPublisher compact value={provider} mode={mode} onEdit={settings?()=>setShowSettings(true):undefined} disabled={!!busy} ylavint={publisher} dotb={dotb} accountId={account.id} onEnabled={()=>load().catch(e=>setError(e.message))}/>
     {(toPrepare>0||((provider==='ylavint'?ylavint:dotb)&&counts.ready>0))&&<div className="grid gap-1.5">
      {toPrepare>0&&<button className={solid} disabled={!!busy} onClick={()=>withBusy('Rédaction…',prepareAll)}>Rédiger les {toPrepare} article{toPrepare>1?'s':''} avec l’IA</button>}
-     {(provider==='ylavint'?ylavint:dotb)&&counts.ready>0&&<button className={ghost} disabled={!!busy} onClick={()=>withBusy('Envoi des annonces…',()=>sendAll(mode))}>{mode==='draft'?'Tout en brouillon':'Tout publier'} avec {provider==='ylavint'?'YlaVint':'Dotb'} ({counts.ready})</button>}
+     {provider==='dotb'&&dotb&&counts.ready>0&&<button className={ghost} disabled={!!busy} onClick={()=>withBusy('Envoi des annonces…',()=>sendAll(mode))}>{mode==='draft'?'Tout en brouillon':'Tout publier'} avec {provider==='ylavint'?'YlaVint':'Dotb'} ({counts.ready})</button>}
     </div>}
     {loading?<p role="status" className="px-2 py-6 text-sm text-[#79756f]">Chargement de la session…</p>:<ul className="max-h-[22rem] space-y-1 overflow-y-auto pr-1 lg:max-h-[calc(100vh-22rem)]">{visible.map(([c,s])=>queueItem(c,s))}{!visible.length&&<li className="px-2 py-6 text-sm text-[#79756f]">{filter==='all'?'Aucune annonce à traiter.':rows.length?'Aucun article à cette étape.':'Aucun article pour l’instant.'}</li>}</ul>}
    </aside>

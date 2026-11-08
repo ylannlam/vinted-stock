@@ -104,7 +104,7 @@ test('several articles are written at the same time, then published by hand line
   assert.match(rail('Prêtes'),/3$/)
   assert.match(article().querySelector('textarea.font-semibold').value,/taille M$/)
   assert.equal(ui.button('Publier à la main'),undefined,'no manual publishing any more')
-  assert.ok(ui.button('Publier avec YlaVint'),'one send button, with the shared publisher')
+  assert.ok(ui.button('Préparer sur Vinted'),'one send button, with the shared publisher')
   assert.equal(ui.button('Créer un brouillon Vinted'),undefined)
  }finally{await ui.unmount()}
 })
@@ -212,9 +212,9 @@ test('refresh retries category options and changed sizes match again',async()=>{
  try{
   await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request,upload:s.upload,account,meta,onBack(){},onOpenDraft(){}})))
   optionsFail=false;await ui.click('Actualiser')
-  assert.ok(ui.button('Publier avec YlaVint'))
+  assert.ok(ui.button('Préparer sur Vinted'))
   await ui.type(field('M'),'L')
-  assert.ok(ui.button('Publier avec YlaVint'),'changing the size keeps an available Vinted size')
+  assert.ok(ui.button('Préparer sur Vinted'),'changing the size keeps an available Vinted size')
   await ui.click('← Changer de compte')
   assert.equal(s.rows.get(id).fields.size_id,5)
  }finally{await ui.unmount()}
@@ -306,19 +306,19 @@ test('opening and refreshing the session reconciles scheduled listings immediate
  }finally{await ui.unmount()}
 })
 
-for(const mode of ['live','draft'])test(`YlaVint ${mode}: the shared choice sends the batch only to YlaVint in the chosen mode`,async()=>{
+for(const mode of ['live','draft'])test(`YlaVint ${mode}: the shared choice prepares one form and never offers automatic batch publishing`,async()=>{
  const ui=await mount(),s=server({ylavint:true,dotb:true,mode})
  const ready={...emptyListing(),account_id:account.id,sku:'test',size_text:'M',price:'19.90',title:'Robe noire courte taille M',description:'Robe noire.',catalog_id:10,brand_id:1,brand_title:'Sans marque',size_id:4,status_id:2,package_size_id:1,color_ids:[1]}
  for(let i=0;i<2;i++){const id=crypto.randomUUID();s.rows.set(id,{id,version:1,state:'draft',fields:ready,photos:[{path:'owner/'+id+'.png'}]})}
  try{
   await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request:s.request,upload:s.upload,account,meta:{...meta,dotb_publish_enabled:true},onBack(){},onOpenDraft(){}})))
   await ui.act(()=>wait(20))
-  assert.equal(document.querySelector('input[value="dotb"]'),null);assert.match(document.body.textContent,mode==='draft'?/YlaVint · brouillon Vinted/:/YlaVint · en ligne/)
-  await ui.click(mode==='draft'?'Tout en brouillon avec YlaVint (2)':'Tout publier avec YlaVint (2)')
-  assert.equal(s.calls.filter(c=>c.action==='ylavint_publish').length,2)
+  assert.equal(document.querySelector('input[value="dotb"]'),null);assert.match(document.body.textContent,/YlaVint · formulaire à valider/)
+  assert.ok(!ui.buttons().some(b=>/Tout .*YlaVint/.test(b.textContent)));await ui.click('Préparer sur Vinted')
+  assert.equal(s.calls.filter(c=>c.action==='ylavint_publish').length,1)
   assert.ok(s.calls.filter(c=>c.action==='ylavint_publish').every(c=>c.body.mode===mode&&c.body.confirmation_account_id===account.id))
   assert.equal(s.calls.filter(c=>['publish','step'].includes(c.action)).length,0,'no Dotb writes or steps')
   assert.match(document.body.textContent,/YlaVint · En attente de publication/)
-  await ui.click('Annuler avant l’envoi');assert.equal([...s.rows.values()].filter(r=>r.state==='draft').length,1)
+  await ui.click('Annuler avant l’envoi');assert.equal([...s.rows.values()].filter(r=>r.state==='draft').length,2)
  }finally{await ui.unmount()}
 })

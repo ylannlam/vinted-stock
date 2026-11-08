@@ -201,32 +201,8 @@ test('the extension ships its icons and the YlaVint name', () => {
   for (const p of Object.values(m.icons)) assert.ok(readFileSync(new URL(`../extensions/ylavint/${p}`, import.meta.url)).subarray(1, 4).toString() === 'PNG')
 })
 
-test('publication: exact target, ordered photo types, modern attributes and separate draft/live routes',async t=>{
- t.mock.method(globalThis,'setTimeout',fn=>{queueMicrotask(fn);return 0})
- const {DEFAULT_RECIPES}=await import('./vinted-agent-config.js')
- const task={kind:'publish_item',member_id:'7',recipes:DEFAULT_RECIPES,listing:{fields:{title:'Robe noire',description:'Robe en bon état',price:'12.5',catalog_id:10,brand_id:1,brand_title:'Sans marque',size_id:4,status_id:2,package_size_id:1,color_ids:[1],item_attributes:[{code:'material',ids:[8]}]},photos:[{url:'https://www.vinted.fr/photo/one',type:'image/png'},{url:'https://www.vinted.fr/photo/two',type:'image/webp'}],deadline:new Date(Date.now()+600000).toISOString()}}
- for(const live of [false,true]){
-  calls.length=0;let photo=100
-  vinted=async(url,init)=>url.endsWith('/users/current')?{status:200,body:{user:{id:7}}}:url.includes('/photo/')?{status:200,body:'image'}:url.endsWith('/photos')?{status:200,body:{id:++photo}}:{status:200,body:{[live?'item':'draft']:{id:555,is_draft:!live,user_id:7},code:0}}
-  const result=await run({...task,listing:{...task.listing,live}})
-  assert.deepEqual(result,{ok:true,result:{vinted_id:'555',draft:!live,confirmed:true}})
-  const uploads=calls.filter(c=>c.url.endsWith('/photos'));assert.equal(uploads.length,2);assert.equal(uploads[0].body.get('photo[file]').type,'image/png');assert.equal(uploads[1].body.get('photo[file]').type,'image/webp')
-  const creates=calls.filter(c=>c.url.includes('/item_upload/'));assert.equal(creates.length,1);assert.ok(creates[0].url.endsWith(live?'/items':'/drafts'))
-  const body=JSON.parse(creates[0].body),item=body[live?'item':'draft'];assert.deepEqual(item.assigned_photos,[{id:101,orientation:0},{id:102,orientation:0}]);assert.equal(item.price,'12.50');assert.equal(item.temp_uuid,uploads[0].body.get('photo[temp_uuid]'))
-  assert.deepEqual(item.item_attributes,[{code:'material',ids:[8]},{code:'size',ids:[4]},{code:'condition',ids:[2]}]);assert.equal(body.push_up,live?false:undefined)
- }
- for(const scenario of ['wrong-account','switch-account','restriction','failed-photo','lost-create','expired','wrong-mode']){
-  calls.length=0;let identities=0
-  vinted=async(url,init)=>{
-   if(url.endsWith('/users/current'))return {status:200,body:{user:{id:scenario==='wrong-account'||scenario==='switch-account'&&identities++>0?8:7,action_restriction:scenario==='restriction'?{}:null}}}
-   if(url.includes('/photo/'))return {status:200,body:'image'}
-   if(url.endsWith('/photos'))return scenario==='failed-photo'?{status:422,body:{message:'photo refusée'}}:{status:200,body:{id:100}}
-   if(scenario==='lost-create')throw Error('Connexion perdue après réception')
-   return {status:200,body:{item:{id:555,is_draft:true}}}
-  }
-  const outcome=await run({...task,listing:{...task.listing,live:true,...(scenario==='expired'?{deadline:new Date(Date.now()-1).toISOString()}:{})}})
-  assert.equal(outcome.ok,false,scenario)
-  assert.equal(calls.filter(c=>c.url.includes('/item_upload/')).length,['lost-create','wrong-mode'].includes(scenario)?1:0,scenario+' never creates twice')
- }
- t.mock.restoreAll()
+test('old direct publication is disabled and makes no Vinted request',async()=>{
+ calls.length=0
+ const result=await run({kind:'publish_item',member_id:'7',recipes:{},listing:{fields:{title:'Test'},photos:[],live:true}})
+ assert.equal(result.ok,false);assert.match(result.error,/direct est désactivé/);assert.equal(calls.length,0)
 })

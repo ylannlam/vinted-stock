@@ -20,21 +20,21 @@ export default function ListingPublishPanel({account,issues,busy,dirty,error,not
   <ListingPublisher value={provider} mode={mode} disabled={!!busy} ylavint={account?.ylavint} dotb={dotb} accountId={account?.id} onEnabled={onConnection}/>
   {!!issues.length&&<ListingChecklist issues={issues} onFix={onFix} busy={!!busy}/>}
   {!issues.length&&<p className="rounded-xl bg-teal-50 p-4 font-medium text-teal-900">✓ Les informations obligatoires sont complètes.</p>}
-  {ylavint?<p className="text-sm text-slate-600">Les photos et la fiche seront envoyées par le profil AdsPower ciblé. Le suivi restera accessible ici. <button type="button" className="underline" disabled={!!busy} onClick={onConnection}>Vérifier la connexion</button></p>:<div className="rounded-xl border p-4 space-y-3">
+  {ylavint?<p className="text-sm text-slate-600">Un onglet Vinted sera ouvert dans le profil ciblé. Les photos et champs seront préparés ; tu vérifieras puis valideras toi-même. <button type="button" className="underline" disabled={!!busy} onClick={onConnection}>Vérifier la connexion</button></p>:<div className="rounded-xl border p-4 space-y-3">
    <p className="text-sm font-semibold">{account?.connected?'✓ Bridge Dotb connecté':'Connexion du compte à vérifier'}</p>
    {!account?.connected&&<p className="text-sm text-slate-600">Ouvre ce profil dans AdsPower et active son Bridge Dotb. Reviens ensuite vérifier la connexion.</p>}
    <div className="flex flex-wrap gap-3"><button type="button" className="text-sm font-semibold text-teal-800 underline" disabled={!!busy} onClick={onConnection}>Vérifier la connexion</button>{onAccounts&&<button type="button" className="text-sm text-teal-800 underline" disabled={!!busy} onClick={onAccounts}>Ouvrir AdsPower</button>}</div>
   </div>}
   {error&&<p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{error}</p>}
   {notice&&<p role="status" className="rounded-xl bg-teal-50 p-3 text-sm text-teal-900">{notice}</p>}
-  <button type="button" className={`${primary} w-full`} disabled={!!busy||(!available&&!issues.length)} onClick={issues.length?()=>onFix(issues[0]):()=>onPublish(mode)}>{busy||(issues.length?'Compléter la fiche →':`${mode==='draft'?'Brouillon':'Publier'} avec ${ylavint?'YlaVint':'Dotb'} sur ${account?.login||'le compte choisi'}`)}</button>
+  <button type="button" className={`${primary} w-full`} disabled={!!busy||(!available&&!issues.length)} onClick={issues.length?()=>onFix(issues[0]):()=>onPublish(mode)}>{busy||(issues.length?'Compléter la fiche →':`${ylavint?'Préparer le formulaire':mode==='draft'?'Brouillon avec Dotb':'Publier avec Dotb'} sur ${account?.login||'le compte choisi'}`)}</button>
   <button type="button" className={`${button} w-full`} disabled={!!busy} onClick={onSave}>Enregistrer le brouillon</button>
   <p className="text-xs leading-relaxed text-slate-500">{dirty?'Modifications à enregistrer.':'Brouillon enregistré sur Stock Vinted.'} L’enregistrement ne publie rien sur Vinted.</p>
  </section>
 }
 
-export function ListingTransfer({draft,photos,busy,onResume,onRefresh,onCancel,manual=false}){
- if(draft.publish_provider==='ylavint')return <YlavintTransfer draft={draft} busy={busy} onRefresh={onRefresh} onCancel={onCancel}/>
+export function ListingTransfer({draft,photos,busy,onResume,onRefresh,onCancel,onMarkPublished,manual=false}){
+ if(draft.publish_provider==='ylavint')return <YlavintTransfer draft={draft} busy={busy} onRefresh={onRefresh} onCancel={onCancel} onMarkPublished={onMarkPublished}/>
  // Publiée à la main (sans Dotb) : pas d'étapes Dotb à afficher.
  if(draft.state==='published'&&!draft.dotb_item_id)return <section id="listing-progress" aria-label="Suivi de la publication" className="scroll-mt-40 rounded-2xl border border-teal-200 bg-white p-5 sm:p-6 space-y-4"><h2 className="text-xl font-bold">Publiée à la main</h2><p role="status" className="rounded-xl bg-teal-50 p-4 text-sm text-teal-950">{draft.message||'Annonce publiée sur Vinted.'}</p>{draft.url&&<a className={`${primary} inline-block`} href={draft.url} target="_blank" rel="noreferrer">Voir l’annonce sur Vinted ↗</a>}</section>
  const interrupted=draft.state==='preparing'&&draft.last_error
