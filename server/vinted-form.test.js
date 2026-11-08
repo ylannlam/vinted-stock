@@ -92,6 +92,7 @@ test('the actual DOM adapter fills a local form and leaves both final buttons un
  class Transfer{constructor(){this.files=[];this.items={add:f=>this.files.push(f)}}}
  const scope={__YLAVINT_FORM_TEST__:true,window,document,Date,Set,Error,Array,String,Number,File,DataTransfer:Transfer,Event:window.Event,HTMLInputElement:window.HTMLInputElement,HTMLSelectElement:window.HTMLSelectElement,HTMLTextAreaElement:window.HTMLTextAreaElement,MutationObserver:window.MutationObserver,CSS:{escape:s=>s},setTimeout,clearTimeout,atob,location:{origin:'https://www.vinted.fr',pathname:'/items/new'},readVintedAccount:()=>({member_id:'7',status:'ok'}),chrome:{runtime:{onMessage:{addListener(){}},sendMessage:async()=>({base64:Buffer.from('local simulation').toString('base64')})}}}
  vm.runInNewContext(source,scope)
+ scope.ylvFormTest.ui.wait=async ms=>assert.equal(ms,10000)
  const r=await scope.ylvPrepareForm(makeTask(),scope.ylvFormTest.ui)
  assert.equal(submits,0);assert.equal(changes,1)
  assert.equal(document.querySelector('[name=title]').value,'Robe test');assert.equal(document.querySelector('[name=price]').value,'12.50')
@@ -116,6 +117,10 @@ test('custom category and brand controls use exact labelled options and leave fi
  assert.equal(await scope.ylvFormTest.choice('category',10,[{id:1,title:'Femmes'},{id:10,title:'Robes'}]),true)
  assert.equal(await scope.ylvFormTest.choice('brand',99,'Shein'),true)
  assert.equal(category.textContent,'Robes');assert.equal(brand.value,'Shein');assert.equal(finalClicks,0)
+ const color=document.createElement('input');color.name='color';document.body.append(color)
+ color.addEventListener('click',()=>{root.innerHTML='<div role="checkbox" aria-label="Noir" aria-checked="false"><input type="checkbox" aria-hidden="true"></div>';root.firstChild.addEventListener('click',()=>{const replacement=document.createElement('input');replacement.name='color';replacement.value='Noir';color.replaceWith(replacement);root.innerHTML=''})})
+ assert.equal(await scope.ylvFormTest.choice('color',[1],['Noir']),true,'custom choices must read the replacement field after React renders')
+ assert.equal(finalClicks,0)
  // Même une fausse option portant le bon texte ne peut soumettre le formulaire.
  const size=document.createElement('input');size.name='size';document.body.append(size)
  size.addEventListener('click',()=>{root.innerHTML='<button role="option" type="submit" value="4">M</button>';root.firstChild.addEventListener('click',()=>finalClicks++)})

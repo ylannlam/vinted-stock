@@ -31,7 +31,7 @@
     await guard()
     await ui.photos(files) // Le formulaire Vinted gère son propre téléversement.
     const text = [['title', fields.title, 'Titre'], ['description', fields.description, 'Description'], ['price', fields.price, 'Prix']]
-    for (const [name, value, label] of text) { await guard(); if (!await ui.text(name, String(value ?? ''))) missing.push(label) }
+    for (const [name, value, label] of text) { await ui.wait?.(10000); await guard(); if (!await ui.text(name, String(value ?? ''))) missing.push(label) }
     const choices = [
       ['category', fields.catalog_id, labels.category_path, 'Catégorie'],
       ['brand', fields.brand_id, fields.brand_title, 'Marque'],
@@ -43,6 +43,7 @@
     ]
     for (const [index, [name, id, label, title]] of choices.entries()) {
       if (id == null || Array.isArray(id) && !id.length) continue
+      await ui.wait?.(10000)
       await guard()
       if (!await ui.choice(name, id, label)) {
         // Une catégorie ou une liste non résolue peut masquer/changer les champs suivants.
@@ -70,7 +71,7 @@
     Object.getOwnPropertyDescriptor(proto, 'value').set.call(e, value)
     e.dispatchEvent(new Event('input', {bubbles:true})); e.dispatchEvent(new Event('change', {bubbles:true}))
   }
-  function waitFor(read, timeout = 4000) {
+  function waitFor(read, timeout = 8000) {
     return new Promise((resolve,reject) => {
       let observer, timer
       const check = () => { try { const value = read(); if (value) { observer?.disconnect(); clearTimeout(timer); resolve(value); return true } return false } catch(e) { observer?.disconnect(); clearTimeout(timer); reject(e); return true } }
@@ -85,7 +86,7 @@
     box.textContent='YlaVint — '+message
   }
   function exactOption(id, label) {
-    const candidates=[...document.querySelectorAll('[role="option"],input[type="radio"],input[type="checkbox"]')].filter(e=>visible(e)||e.labels?.length&&[...e.labels].some(visible))
+    const candidates=[...document.querySelectorAll('[role="radio"],[role="checkbox"],[role="option"],input[type="radio"],input[type="checkbox"]')].filter(e=>e.getAttribute('aria-hidden')!=='true'&&e.getAttribute('aria-disabled')!=='true'&&(visible(e)||e.labels?.length&&[...e.labels].some(visible)))
     return candidates.find(e => {
       const labelled=(e.getAttribute('aria-labelledby')||'').split(/\s+/).filter(Boolean).map(id=>document.getElementById(id)?.textContent||'').join(' ').trim()
       const text=labelled || e.getAttribute('aria-label') || [...(e.labels||[])].map(l=>l.textContent).join(' ') || e.textContent
@@ -96,11 +97,14 @@
     if(element.disabled || element.closest('a[href],[data-testid="upload-form-save-button"],[data-testid="upload-form-save-draft-button"]'))return false
     if(element.tagName==='BUTTON'&&element.getAttribute('type')!=='button')return false
     if(element.tagName==='INPUT'&&['submit','image','button','reset'].includes(element.type))return false
+    element.scrollIntoView?.({block:'nearest',behavior:'instant'})
     element.click();return true
   }
   async function choice(name, id, label) {
     if (!label || Array.isArray(label)&&!label.length) return false
     const field=await waitFor(()=>control(name)), values=Array.isArray(id)?id:[id], labels=Array.isArray(label)?label:[label]
+    const displayed=()=>{const current=control(name);return norm(current?.value||current?.textContent)}
+    if(name==='category'&&displayed()===norm(labels.at(-1)?.title))return true
     if (field?.tagName==='SELECT') {
       if (values.length>1&&!field.multiple) return false
       const options=values.map((value,i)=>[...field.options].find(o=>o.value===String(value)&&norm(o.textContent)===norm(name==='category'?labels.at(-1)?.title:labels[i])))
@@ -117,7 +121,7 @@
     if (!field || !visible(field)) return false
     if(!selectClick(field))return false
     if(name==='brand') {
-      const search=document.querySelector('input[name="brand-search-input"]')
+      const search=await waitFor(()=>document.querySelector('input[name="brand-search-input"]'))
       if(search&&visible(search)&&!search.disabled&&!search.readOnly)setValue(search,String(label))
     }
     if(name==='category') {
@@ -127,17 +131,18 @@
         if(!option)return false
         if(!option.checked&&option.getAttribute('aria-selected')!=='true'&&!selectClick(option))return false
       }
-      return !!await waitFor(()=>norm(field.value||field.textContent)===norm(labels.at(-1)?.title))
+      return !!await waitFor(()=>displayed()===norm(labels.at(-1)?.title))
     }
     for(let i=0;i<values.length;i++) {
       const option=await waitFor(()=>exactOption(values[i],labels[i]))
       if(!option)return false
-      if(option.getAttribute('aria-selected')!=='true'&&!option.checked&&!selectClick(option))return false
+      if(option.getAttribute('aria-selected')!=='true'&&option.getAttribute('aria-checked')!=='true'&&!option.checked&&!selectClick(option))return false
     }
     // Aucune fermeture / validation devinée : la sélection doit se refléter dans le champ.
-    return !!await waitFor(()=>labels.every(l=>norm(field.value||field.textContent).includes(norm(l))))
+    return !!await waitFor(()=>labels.every(l=>displayed().includes(norm(l))))
   }
   const ui = {
+    wait:ms=>new Promise(resolve=>setTimeout(resolve,ms)),
     identity:()=>globalThis.readVintedAccount?.(),
     blocked:()=> location.pathname!=='/items/new' || !!document.querySelector('iframe[src*="captcha"],iframe[src*="challenge"],form[action*="challenge"],[data-testid="item-upload-critical-error-dialog"]'),
     empty:()=> !control('title')?.value && !control('description')?.value && !document.querySelector('[data-testid="media-upload-grid"] img'),
