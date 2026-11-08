@@ -8,6 +8,7 @@ import {listingAiToken} from './listing-studio-core.js'
 import {LISTING_AI_MODELS} from '../src/lib/listingSettings.js'
 import {sizeFromTitle} from '../src/lib/soldSize.js'
 import {parseOffers,planOffers} from './ylavint-offers.js'
+import {acceptableOffer} from './vinted-agent-config.js'
 
 const nowIso=(now=Date.now())=>new Date(now).toISOString()
 const MESSAGE_KINDS=new Set(['message','offer','action','status','photo'])
@@ -93,7 +94,12 @@ export async function applyInbox(db,task,result,{settings,now=Date.now()}={}){
   const ai=settings?.features?.ai?await readAi(db):null
   if(ai?.enabled)for(const c of detailed){
     const old=before.get(c.id),last=c.messages[c.messages.length-1]
-    if(c.offers?.length)continue // L’acceptation est une action distincte, pas une réponse inventée par l’IA.
+    if(c.offers?.length){
+      // Pas de fausse promesse d’acceptation : les offres hors automatisation sont signalées au vendeur.
+      if(!settings.messaging.offers.enabled||!c.offers.some(o=>acceptableOffer(o,settings.messaging.offers)))
+        check(await db.from('ylavint_conversations').update({ai_state:'human',needs_human:true,ai_reason:'Offre en attente : à accepter ou négocier sur Vinted.'}).eq('account_id',account).eq('conversation_id',c.id))
+      continue
+    }
     if(!last||last.from_me||last.kind!=='message'||!c.allow_reply)continue
     if(old?.ai_handled_message_id===last.id||old?.needs_human||['queued','drafting'].includes(old?.ai_state))continue
     if(!last.sent_at||Date.parse(last.sent_at)<now-48*3600000)continue
