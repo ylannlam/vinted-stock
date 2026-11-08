@@ -109,7 +109,8 @@
     return act('save_settings', {enabled: s.enabled, version: acc()?.settings?.version, settings: {features: s.features, limits: s.limits, unmask: s.unmask, pricing: s.pricing, likes: s.likes, messaging: s.messaging || S.data.defaults.messaging, order_flow: s.order_flow || S.data.defaults.order_flow}}, msg)
   }
   const on = f => !!acc()?.settings?.enabled && !!acc()?.settings?.features?.[f]
-  const today = kind => (S.data?.tasks || []).filter(t => t.kind === kind && t.state === 'done' && Date.now() - Date.parse(t.finished_at || 0) < 864e5).length
+  // Compteurs du jour calculés par le serveur (les 80 dernières tâches ne suffisent pas : les lectures les remplissent).
+  const today = kind => acc()?.today?.[kind] ?? (S.data?.tasks || []).filter(t => t.kind === kind && t.state === 'done' && Date.now() - Date.parse(t.finished_at || 0) < 864e5).length
 
   function stateOf(features) {
     const s = acc()?.settings
@@ -144,7 +145,7 @@
     return status + `<div class="info">ⓘ Les automatisations tournent depuis ce profil AdsPower, dans les plafonds du compte. Si le profil est fermé, elles attendent sa réouverture.</div>
      ${!acc() ? `<div class="err">Ce compte Vinted n’est pas encore connu du site : synchronise la liste des comptes sur ton site.</div>` : ''}
      <div class="cards">
-      ${card('Automatisation des messages aux likes', 'Répondre automatiquement aux membres qui likent tes articles', ['likes'], [`✉ ${today('like_message')} message(s) aujourd’hui`, `⏱ après ${s.likes.wait_minutes} min`])}
+      ${card('Automatisation des messages aux likes', 'Répondre automatiquement aux membres qui likent tes articles', ['likes'], [`✉ ${today('like_sent')} message(s) aujourd’hui`, `⏱ après ${s.likes.wait_minutes} min`])}
       ${card('Smart Agent', 'Agent IA qui prépare ou envoie les réponses aux acheteurs', ['ai', 'inbox'], [`✉ ${today('reply_message')} réponse(s) aujourd’hui`, `${d.ai?.enabled ? (d.ai.mode === 'auto' ? 'Répond seul' : 'Propose') : 'Agent IA coupé sur le site'}`, `${d.unread || 0} non lu(s)`])}
       ${card('Flux de commandes', 'Lit tes ventes toutes les 30 min, les envoie dans l’onglet Ventes et récupère les bordereaux', ['orders', 'sales', 'labels'], [`✓ ${today('sync_orders')} lecture(s)`, `🖨 ${today('fetch_label')} bordereau(x)`], 'En direct')}
       ${card('Démasquage & prix', 'Répare les annonces masquées du catalogue et baisse les prix au fil du temps', ['unmask', 'pricing'], [`◉ ${today('unmask_item')} démasquage(s)`, `€ ${today('reprice_item')} baisse(s)`])}

@@ -139,7 +139,12 @@ export async function pauseOnAlert(db,report){
   if(report.status==='ok')return false
   const account=check(await db.from('publication_accounts').select('id').eq('vinted_id',report.member_id).maybeSingle())
   if(!account)return false
-  return pauseAccount(db,account.id,report.message||'alerte Vinted sur le compte',{event:'alert',details:{status:report.status,until:report.until_date}})
+  // Choix de Ylann : une alerte Vinted (compte restreint, bloqué) n'arrête plus les automatisations. Seul lui les coupe.
+  // On note l'alerte une fois par jour dans le journal.
+  const since=new Date(Date.now()-86400000).toISOString()
+  if(check(await db.from('vinted_agent_log').select('id').eq('account_id',account.id).eq('event','alert').gte('created_at',since).limit(1)).length)return false
+  await agentLog(db,{account_id:account.id,level:'warn',event:'alert',message:`Alerte Vinted : ${report.message||report.status}. Les automatisations continuent.`.slice(0,500),details:{status:report.status,until:report.until_date}})
+  return false
 }
 export async function accountFor(db,body){
   const member=vid(body?.member_id)
@@ -194,6 +199,12 @@ export async function agentPoll(db,key,body,now=Date.now()){
   if(row.paused&&row.pause_reason===STOP.logged_out&&member){
     check(await db.from('vinted_agent_settings').update({paused:false,pause_reason:null,paused_at:null}).eq('account_id',account.id).eq('paused',true))
     await agentLog(db,{account_id:account.id,event:'resumed',message:'Session Vinted retrouvée : YlaVint reprend tout seul.'})
+    row.paused=false
+  }
+  // Anciennes pauses « compte restreint / alerte Vinted » : levées, seul Ylann arrête les automatisations.
+  if(row.paused&&row.pause_reason&&!MANUAL_PAUSES.includes(row.pause_reason)&&![STOP.captcha,STOP.logged_out,STOP.rate_limited].includes(row.pause_reason)){
+    check(await db.from('vinted_agent_settings').update({paused:false,pause_reason:null,paused_at:null}).eq('account_id',account.id).eq('paused',true))
+    await agentLog(db,{account_id:account.id,event:'resumed',message:'Alerte Vinted : les automatisations continuent (seul l’arrêt manuel les coupe).'})
     row.paused=false
   }
   let pauseNote=null
@@ -258,6 +269,7 @@ async function dropStaleLikes(db,accountId,settings,now){
   await agentLog(db,{account_id:accountId,event:'likes_dropped',message:`${stale.length} like(s) antérieur(s) à la période choisie retiré(s) de la file.`})
   return stale.length
 }
+const MANUAL_PAUSES=['mise en pause depuis le site','arrêt général depuis le site']
 const MESSAGE_KINDS=['reply_message','like_message','order_message','accept_offer']
 // Remise en file sans compter l'essai : ni Vinted ni l'onglet n'ont exécuté la tâche.
 const requeue=(db,task,now,seconds)=>db.from('vinted_agent_tasks').update({attempts:Math.max(0,(task.attempts||1)-1),not_before:new Date(now+seconds*1000).toISOString()}).eq('id',task.id).eq('state','queued').then(check)
@@ -317,6 +329,14 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
       await requeue(db,task,now,60)
       await pauseAccount(db,task.account_id,STOP[code],{event:code,details:{kind:task.kind,detail}})
       return {saved:true,paused:true}
+    }
+    // Restriction ou refus Vinted : la tâche échoue, le compte continue (choix de Ylann).
+    if(code==='restricted'||code==='forbidden'){
+      await finish(db,task,'failed',null,detail||STOP[code])
+      await log('warn',code,`${label} : ${STOP[code]}${detail?` (${detail})`:''}. Les automatisations continuent.`,{kind:task.kind})
+      if(task.kind==='like_message')await db.from('vinted_agent_contacts').update(task.payload.followup?{followup_state:'failed'}:{state:'failed'}).eq('account_id',task.account_id).eq('item_id',task.payload.item_id).eq('user_id',task.payload.user_id)
+      if(task.kind==='reply_message')await (await import('./ylavint.js')).replyFailed(db,task,`Non envoyé : ${STOP[code]}.`)
+      return {saved:true}
     }
     if(STOP[code]){
       await finish(db,task,task.writes?'failed':'queued',null,STOP[code])
@@ -463,22 +483,26 @@ export async function agentLearn(db,key,body){
 const ACCOUNT_FIELDS='account_id,enabled,paused,pause_reason,paused_at,features,limits,unmask,pricing,likes,messaging,order_flow,last_seen_at,extension_version,version,updated_at'
 export async function agentOverview(db,user=null){
   const since=parisDayStart()
-  const [accounts,settings,tasks,today,log,recipes,orders,listings,alerts,drafts]=await Promise.all([
+  const [accounts,settings,tasks,today,log,recipes,orders,listings,alerts,drafts,sent]=await Promise.all([
     db.from('publication_accounts').select('id,login,vinted_id').order('login'),
     db.from('vinted_agent_settings').select(ACCOUNT_FIELDS),
     db.from('vinted_agent_tasks').select('id,account_id,kind,state,not_before,created_at,started_at,finished_at,error,result,payload').order('created_at',{ascending:false}).limit(80),
-    db.from('vinted_agent_tasks').select('account_id,kind,writes').gte('started_at',since),
+    db.from('vinted_agent_tasks').select('account_id,kind,writes,state').gte('started_at',since),
     db.from('vinted_agent_log').select('id,account_id,task_id,level,event,message,created_at').order('created_at',{ascending:false}).limit(150),
     db.from('vinted_agent_recipes').select('kind,learned_at,learned_login,samples,recipe'),
     db.from('vinted_agent_orders').select('transaction_id,account_id,status,title,price,currency,order_date,label_path,seen_at,stage,flow,ship_deadline').order('order_date',{ascending:false,nullsFirst:false}).limit(40),
     db.from('vinted_agent_listings').select('account_id,item_id,title,price,photo_url,state,hidden_since,repairs,total_drop,last_repair_at').in('state',['hidden','repairing']).order('hidden_since',{ascending:true}).limit(100),
     db.from('account_health_alerts').select('account_id,status,title,until_date').eq('resolved',false),
     user?db.from('listing_drafts').select('id,state,fields,photos,planned_at,updated_at').eq('owner_id',user.id).in('state',['draft','attention']).is('dotb_item_id',null).order('updated_at',{ascending:false}).limit(60):Promise.resolve({data:[],error:null}),
-  ]);[accounts,settings,tasks,today,log,recipes,orders,listings,alerts,drafts].forEach(check)
-  const counts={};for(const t of today.data){const c=counts[t.account_id]||(counts[t.account_id]={writes:0});c[t.kind]=(c[t.kind]||0)+1;if(t.writes)c.writes++}
+    // Messages aux likes réellement envoyés aujourd'hui (les likes écartés ne comptent pas).
+    db.from('vinted_agent_contacts').select('account_id').gte('sent_at',since),
+  ]);[accounts,settings,tasks,today,log,recipes,orders,listings,alerts,drafts,sent].forEach(check)
+  const counts={},of=id=>counts[id]||(counts[id]={writes:0,like_sent:0})
+  for(const t of today.data){const c=of(t.account_id);if(t.state==='done')c[t.kind]=(c[t.kind]||0)+1;if(t.writes)c.writes++}
+  for(const r of sent.data)of(r.account_id).like_sent++
   const byAccount=new Map(settings.data.map(s=>[s.account_id,s])),alert=new Map(alerts.data.map(a=>[a.account_id,a]))
   return {
-    accounts:accounts.data.map(a=>{const s=byAccount.get(a.id);return {...a,last_seen_at:s?.last_seen_at||null,extension_version:s?.extension_version||null,settings:s?{...effectiveSettings(s),enabled:s.enabled,paused:s.paused,pause_reason:s.pause_reason,paused_at:s.paused_at,last_seen_at:s.last_seen_at,extension_version:s.extension_version,version:s.version,updated_at:s.updated_at}:null,today:counts[a.id]||{writes:0},alert:alert.get(a.id)||null}}),
+    accounts:accounts.data.map(a=>{const s=byAccount.get(a.id);return {...a,last_seen_at:s?.last_seen_at||null,extension_version:s?.extension_version||null,settings:s?{...effectiveSettings(s),enabled:s.enabled,paused:s.paused,pause_reason:s.pause_reason,paused_at:s.paused_at,last_seen_at:s.last_seen_at,extension_version:s.extension_version,version:s.version,updated_at:s.updated_at}:null,today:counts[a.id]||{writes:0,like_sent:0},alert:alert.get(a.id)||null}}),
     tasks:tasks.data,log:log.data,orders:orders.data,hidden:listings.data,
     drafts:drafts.data.map(d=>({id:d.id,state:d.state,title:d.fields?.title||'Sans titre',account_id:String(d.fields?.account_id||'').toLowerCase()||null,price:d.fields?.price||null,photos:(d.photos||[]).length,planned_at:d.planned_at})),
     recipes:Object.entries(RECIPES).map(([kind,info])=>{const r=recipes.data.find(x=>x.kind===kind);return {kind,...info,default:!!DEFAULT_RECIPES[kind],learned_at:r?.learned_at||null,learned_login:r?.learned_login||null,samples:r?.samples||0,method:r?.recipe?.method||null,path:r?.recipe?.path||null}}),

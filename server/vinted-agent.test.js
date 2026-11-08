@@ -141,7 +141,7 @@ test('wardrobe scan → hidden listings get a repair task; nothing is sent to Vi
   const row=state.vinted_agent_listings.find(l=>l.item_id==='11')
   assert.deepEqual([row.state,row.repairs,row.price,row.total_drop],['repairing',1,9,1])
 })
-test('a captcha or a Vinted alert pauses the account; the interrupted write is not replayed',async()=>{
+test('a captcha pauses the account, a Vinted alert does not; the interrupted write is not replayed',async()=>{
   const state=base();state.vinted_agent_settings.push({account_id:ACC,enabled:true,paused:false,features:{},limits:{},unmask:{},pricing:{},likes:{}})
   state.vinted_agent_recipes.push(...KINDS.reprice_item.needs.map(k=>recipe(k)))
   state.vinted_agent_tasks.push({id:crypto.randomUUID(),account_id:ACC,kind:'reprice_item',writes:true,state:'queued',payload:{item_id:'5',price:10,new_price:9}})
@@ -152,13 +152,21 @@ test('a captcha or a Vinted alert pauses the account; the interrupted write is n
   assert.equal(state.vinted_agent_tasks[0].state,'failed')
   assert.equal(state.vinted_agent_settings[0].paused,true);assert.match(state.vinted_agent_settings[0].pause_reason,/captcha/)
   assert.equal((await agentPoll(db,{},{member_id:'3206068112'})).state,'paused')
-  // Bandeau Vinted relevé par la veille → pause aussi (déjà en pause : pas de doublon au journal).
+  // Bandeau Vinted relevé par la veille : noté au journal une fois par jour, sans arrêter les automatisations.
+  state.vinted_agent_settings[0].paused=false
   const logs=state.vinted_agent_log.length
   assert.equal(await pauseOnAlert(db,{status:'restricted',member_id:'3206068112',message:'Compte restreint'}),false)
-  assert.equal(state.vinted_agent_log.length,logs)
-  state.vinted_agent_settings[0].paused=false
-  assert.equal(await pauseOnAlert(db,{status:'restricted',member_id:'3206068112',message:'Compte restreint'}),true)
+  assert.equal(state.vinted_agent_settings[0].paused,false)
+  assert.equal(state.vinted_agent_log.length,logs+1)
+  state.vinted_agent_log.at(-1).created_at=new Date().toISOString()
+  await pauseOnAlert(db,{status:'restricted',member_id:'3206068112',message:'Compte restreint'})
+  assert.equal(state.vinted_agent_log.length,logs+1,'one note per day')
   assert.equal(await pauseOnAlert(db,{status:'ok',member_id:'3206068112'}),false)
+  // Ancienne pause « compte restreint » : levée au prochain passage ; un arrêt manuel, lui, reste.
+  Object.assign(state.vinted_agent_settings[0],{paused:true,pause_reason:'Compte restreint jusqu’au 09/11/2026'})
+  await agentPoll(db,{},{member_id:'3206068112'});assert.equal(state.vinted_agent_settings[0].paused,false)
+  Object.assign(state.vinted_agent_settings[0],{paused:true,pause_reason:'mise en pause depuis le site'})
+  assert.equal((await agentPoll(db,{},{member_id:'3206068112'})).state,'paused')
 })
 test('a result for another account or an expired task is refused',async()=>{
   const state=base();state.publication_accounts.push({id:'22222222-2222-4222-8222-222222222222',login:'b',vinted_id:'42'})

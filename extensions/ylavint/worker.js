@@ -118,7 +118,7 @@ async function tickWork() {
   }
   const who = await identity(tab.id)
   if (!who?.member_id) { agentState = {state: 'logged_out', message: 'Compte Vinted non connecté dans ce profil.', at: Date.now()}; return set({agent: agentState,agent_next:Date.now()+30000}) }
-  if (who.status !== 'ok') { agentState = {state: 'paused', message: 'Alerte Vinted sur le compte : agent arrêté.', login: who.login, at: Date.now()}; return set({agent: agentState,agent_next:Date.now()+60000}) }
+  // Alerte Vinted (restriction…) : les automatisations continuent, seul l'arrêt manuel les coupe.
   busyUntil = Date.now() + 200000
   try {
     const r = await site('agent_poll', {member_id: who.member_id, login: who.login})
