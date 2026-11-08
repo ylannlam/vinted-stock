@@ -152,6 +152,15 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       if (sender.tab.id === (await get('check_tab'))) chrome.tabs.remove(sender.tab.id).catch(() => {})
     })()
   }
+  if (message?.type === 'listing_progress') {
+    ;(async()=>{
+      const marker=await get('form:'+message.task_id)
+      if(marker?.tab_id!==sender.tab.id)return reply({error:'Onglet non associé.'})
+      busyUntil=Math.max(busyUntil,Date.now()+60000)
+      await site('agent_progress',{task_id:message.task_id,lease:message.lease,member_id:message.member_id,progress:message.progress}).then(reply,e=>reply({error:e.message}))
+    })()
+    return true
+  }
   if (message?.type === 'progress') { busyUntil = Math.max(busyUntil, Date.now() + 60000); return }
   if (message?.type === 'seen') { remember(message.kind, message.recipe); return }
   if (message?.type === 'fetch_bytes') { download(message.url).then(reply, e => reply({error: e.message})); return true }

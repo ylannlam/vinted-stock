@@ -126,3 +126,45 @@ test('custom category and brand controls use exact labelled options and leave fi
  size.addEventListener('click',()=>{root.innerHTML='<button role="option" type="submit" value="4">M</button>';root.firstChild.addEventListener('click',()=>finalClicks++)})
  assert.equal(await scope.ylvFormTest.choice('size',4,'M'),false);assert.equal(finalClicks,0)
 })
+
+test('screenshot controls: condition with description, color grid committed on close, package cell and React replacement',async()=>{
+ const {window,document}=parseHTML(`<html><body><input name="condition" readonly><input name="color" readonly><div id="options"></div>
+ <div data-testid="1-package-size--cell"><span id="package-size-1">Petit</span><p>Convient pour un article qui tient dans une grande enveloppe.</p><input type="radio" data-testid="package_type_selector_1" aria-labelledby="package-size-1"></div>
+ <div data-testid="2-package-size--cell"><span>Moyen</span><input type="radio" data-testid="package_type_selector_2" checked></div>
+ <button type="submit" data-testid="upload-form-save-button">Ajouter</button><button type="button" data-testid="upload-form-save-draft-button">Sauvegarder le brouillon</button></body></html>`)
+ window.HTMLElement.prototype.getClientRects=()=>[{}]
+ let finalClicks=0;for(const b of document.querySelectorAll('button'))b.addEventListener('click',()=>finalClicks++)
+ const root=document.getElementById('options'),condition=document.querySelector('[name=condition]'),color=document.querySelector('[name=color]')
+ condition.addEventListener('click',()=>{
+  root.innerHTML='<div role="radio" id="condition-2" aria-checked="false"><div><span>Très bon état</span><p>Article très peu porté/utilisé qui peut présenter de légères imperfections, mais qui reste en très bon état.</p></div><input type="radio" aria-hidden="true"></div><div role="radio"><span>Bon état</span><p>Article porté/utilisé quelques fois.</p></div>'
+  root.firstChild.addEventListener('click',()=>{const replacement=document.createElement('input');replacement.name='condition';replacement.value='Très bon état';condition.replaceWith(replacement);root.innerHTML=''})
+ })
+ let open=false;const selected=new Set()
+ color.addEventListener('click',()=>{
+  if(open){open=false;color.value=[...selected].join(', ');root.innerHTML='';return}
+  open=true;root.innerHTML='<div role="checkbox" aria-label="Kaki" aria-checked="false" data-testid="color-grid-option-16"><span>Kaki</span></div><div role="checkbox" aria-label="Noir" aria-checked="false" data-testid="color-grid-option-1"><span>Noir</span></div>'
+  for(const o of root.children)o.addEventListener('click',()=>{selected.add(o.getAttribute('aria-label'));o.setAttribute('aria-checked','true')})
+ })
+ document.querySelector('[data-testid="1-package-size--cell"]').addEventListener('click',()=>{
+  const radio=document.querySelector('[data-testid="package_type_selector_1"]'),replacement=document.createElement('input');replacement.type='radio';replacement.setAttribute('data-testid','package_type_selector_1');replacement.checked=true;radio.replaceWith(replacement)
+  document.querySelector('[data-testid="package_type_selector_2"]').checked=false
+ })
+ const scope={__YLAVINT_FORM_TEST__:true,window,document,Date,Set,Error,Array,String,Number,Event:window.Event,HTMLInputElement:window.HTMLInputElement,HTMLSelectElement:window.HTMLSelectElement,HTMLTextAreaElement:window.HTMLTextAreaElement,MutationObserver:window.MutationObserver,CSS:{escape:s=>s},setTimeout,clearTimeout,chrome:{runtime:{onMessage:{addListener(){}}}}}
+ vm.runInNewContext(source,scope)
+ assert.equal(await scope.ylvFormTest.choice('condition',2,'Très bon état'),true)
+ assert.equal(await scope.ylvFormTest.choice('color',[16,1],['Kaki','Noir']),true)
+ assert.equal(open,false);assert.equal(color.value,'Kaki, Noir')
+ assert.equal(await scope.ylvFormTest.choice('package',1,'Petit'),true)
+ assert.equal(document.querySelector('[data-testid="package_type_selector_2"]').checked,false)
+ assert.equal(finalClicks,0)
+})
+
+test('progress reports confirmed fields in order; a reporting outage does not refill or submit',async()=>{
+ const {prepare,ui,writes}=setup(),reports=[]
+ ui.progress=async(task,p)=>{reports.push(structuredClone(p));if(p.seq===3)throw Error('Site momentanément indisponible')}
+ const result=await prepare(makeTask(),ui)
+ assert.deepEqual(Array.from(result.missing),[])
+ assert.deepEqual(reports.map(p=>p.seq),Array.from({length:reports.length},(_,i)=>i+1))
+ assert.equal(reports.at(-1).steps.every(s=>s.status==='done'),true)
+ assert.equal(writes.filter(w=>w[0]==='photos').length,1)
+})

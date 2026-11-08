@@ -221,10 +221,27 @@ export async function agentPoll(db,key,body,now=Date.now()){
   }
   return {state:'task',account:account.login,...extra,task:bundle}
 }
-const finish=(db,task,state,result,error)=>db.rpc('finish_vinted_agent_task',{p_task:task.id,p_lease:task.lease,p_state:state,p_result:result,p_error:error}).then(check)
+const finish=(db,task,state,result,error)=>db.rpc('finish_vinted_agent_task',{p_task:task.id,p_lease:task.lease,p_state:state,p_result:task.kind==='publish_item'?{...result,...(task.result?.progress?{progress:task.result.progress}:{})}:result,p_error:error}).then(check)
 
 const STOP={captcha:'vérification Vinted (captcha) à faire à la main dans ce profil',restricted:'Vinted signale une restriction sur le compte',
   logged_out:'le compte Vinted est déconnecté dans ce profil',rate_limited:'Vinted limite les requêtes de ce compte',forbidden:'Vinted a refusé l’action'}
+
+// Le suivi utilise le résultat JSON existant ; aucune modification de structure.
+export async function agentProgress(db,key,body,{now=Date.now()}={}){
+  if(!isId(body?.task_id)||!isId(body?.lease))throw new AppError('Tâche invalide.')
+  const p=body.progress
+  if(!Number.isInteger(p?.seq)||p.seq<1||p.seq>200||!Array.isArray(p.steps)||!p.steps.length||p.steps.length>30||p.steps.some(s=>typeof s.name!=='string'||!s.name.trim()||s.name.length>100||!['waiting','running','done','missing'].includes(s.status)))throw new AppError('Suivi invalide.')
+  const task=check(await db.from('vinted_agent_tasks').select('*').eq('id',body.task_id).eq('lease',body.lease).eq('kind','publish_item').eq('state','running').gt('lease_until',new Date(now).toISOString()).maybeSingle())
+  const {account}=await accountFor(db,body)
+  if(!task||task.payload?.listing?.assisted!==true||!account||account.id!==task.account_id)throw new AppError('Cette préparation a expiré.',409)
+  const before=task.result||null
+  if((before?.progress?.seq||0)>=p.seq)return {saved:false}
+  const progress={seq:p.seq,steps:p.steps.map(s=>({name:s.name.trim(),status:s.status})),at:new Date(now).toISOString()}
+  let q=db.from('vinted_agent_tasks').update({result:{...before,progress}}).eq('id',task.id).eq('lease',task.lease).eq('state','running').gt('lease_until',new Date(now).toISOString())
+  q=before===null?q.is('result',null):q.eq('result',JSON.stringify(before))
+  const saved=check(await q.select('id').maybeSingle())
+  return {saved:!!saved}
+}
 
 // Résultat d'une tâche. Effets : annonces suivies, ventes, bordereaux, prochaines tâches.
 export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}={}){

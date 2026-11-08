@@ -20,6 +20,10 @@
     const {fields, labels = {}, photos} = task.listing, missing = []
     if (!fields?.title || !Array.isArray(photos) || photos.length < 1 || photos.length > 20) throw new FormStop('failed', 'Fiche ou photos incomplètes.')
     ui.notice('Préparation du formulaire… Vérifie ensuite les informations et publie toi-même.')
+    let seq=0
+    const steps=[]
+    const progress=async (name,status)=>{const old=steps.find(s=>s.name===name);if(old)old.status=status;else steps.push({name,status});try{await ui.progress?.(task,{seq:++seq,steps:steps.map(s=>({...s}))})}catch{} }
+    await progress('Photos','running')
     const files = []
     for (let i = 0; i < photos.length; i++) {
       await guard()
@@ -30,8 +34,9 @@
     }
     await guard()
     await ui.photos(files) // Le formulaire Vinted gère son propre téléversement.
+    await progress('Photos','done')
     const text = [['title', fields.title, 'Titre'], ['description', fields.description, 'Description'], ['price', fields.price, 'Prix']]
-    for (const [name, value, label] of text) { await ui.wait?.(10000); await guard(); if (!await ui.text(name, String(value ?? ''))) missing.push(label) }
+    for (const [name, value, label] of text) { await progress(label,'waiting'); await ui.wait?.(10000); await guard(); await progress(label,'running'); const ok=await ui.text(name,String(value ?? '')); if(!ok)missing.push(label); await progress(label,ok?'done':'missing') }
     const choices = [
       ['category', fields.catalog_id, labels.category_path, 'Catégorie'],
       ['brand', fields.brand_id, fields.brand_title, 'Marque'],
@@ -43,13 +48,17 @@
     ]
     for (const [index, [name, id, label, title]] of choices.entries()) {
       if (id == null || Array.isArray(id) && !id.length) continue
+      await progress(title,'waiting')
       await ui.wait?.(10000)
       await guard()
+      await progress(title,'running')
       if (!await ui.choice(name, id, label)) {
         // Une catégorie ou une liste non résolue peut masquer/changer les champs suivants.
+        await progress(title,'missing')
         missing.push(title, ...choices.slice(index + 1).filter(c => c[1] != null && (!Array.isArray(c[1]) || c[1].length)).map(c => c[3]))
         break
       }
+      await progress(title,'done')
     }
     await guard()
     ui.notice(missing.length ? `À compléter : ${missing.join(', ')}. Vérifie aussi les photos, puis publie toi-même.` : 'Formulaire rempli. Vérifie les photos et chaque champ, puis clique toi-même sur Publier ou Enregistrer le brouillon.')
@@ -90,7 +99,8 @@
     return candidates.find(e => {
       const labelled=(e.getAttribute('aria-labelledby')||'').split(/\s+/).filter(Boolean).map(id=>document.getElementById(id)?.textContent||'').join(' ').trim()
       const text=labelled || e.getAttribute('aria-label') || [...(e.labels||[])].map(l=>l.textContent).join(' ') || e.textContent
-      return norm(text)===norm(label) && (e.getAttribute('value')==null || e.value===String(id))
+      const exactTitle=[...e.querySelectorAll('*')].some(n=>!n.children.length&&norm(n.textContent)===norm(label))
+      return (norm(text)===norm(label) || !labelled&&!e.getAttribute('aria-label')&&exactTitle) && (e.getAttribute('value')==null || e.value===String(id))
     })
   }
   function selectClick(element) {
@@ -102,8 +112,9 @@
   }
   async function choice(name, id, label) {
     if (!label || Array.isArray(label)&&!label.length) return false
-    const field=await waitFor(()=>control(name)), values=Array.isArray(id)?id:[id], labels=Array.isArray(label)?label:[label]
+    const field=name==='package'?control(name):await waitFor(()=>control(name)), values=Array.isArray(id)?id:[id], labels=Array.isArray(label)?label:[label]
     const displayed=()=>{const current=control(name);return norm(current?.value||current?.textContent)}
+    const matches=()=>{const actual=displayed().split(',').map(norm);return labels.length===actual.length&&labels.every(l=>actual.includes(norm(l)))}
     if(name==='category'&&displayed()===norm(labels.at(-1)?.title))return true
     if (field?.tagName==='SELECT') {
       if (values.length>1&&!field.multiple) return false
@@ -115,8 +126,9 @@
     if(name==='package') {
       const radio=document.querySelector(`[data-testid="package_type_selector_${Number(id)}"]`)
       if(!radio||!visible(radio))return false
-      if(!selectClick(radio))return false
-      return !!radio.checked||radio.getAttribute('aria-checked')==='true'
+      const cell=document.querySelector(`[data-testid="${Number(id)}-package-size--cell"]`)
+      if(!selectClick(cell||radio))return false
+      return !!await waitFor(()=>{const current=document.querySelector(`[data-testid="package_type_selector_${Number(id)}"]`);return current?.checked||current?.getAttribute('aria-checked')==='true'})
     }
     if (!field || !visible(field)) return false
     if(!selectClick(field))return false
@@ -138,10 +150,15 @@
       if(!option)return false
       if(option.getAttribute('aria-selected')!=='true'&&option.getAttribute('aria-checked')!=='true'&&!option.checked&&!selectClick(option))return false
     }
-    // Aucune fermeture / validation devinée : la sélection doit se refléter dans le champ.
-    return !!await waitFor(()=>labels.every(l=>displayed().includes(norm(l))))
+    // Les couleurs sont enregistrées à la fermeture de leur propre sélecteur.
+    if(name==='color'&&!matches()) {
+      const current=control(name)
+      if(!current||!selectClick(current))return false
+    }
+    return !!await waitFor(matches)
   }
   const ui = {
+    progress:(task,progress)=>chrome.runtime.sendMessage({type:'listing_progress',task_id:task.id,lease:task.lease,member_id:task.member_id,progress}),
     wait:ms=>new Promise(resolve=>setTimeout(resolve,ms)),
     identity:()=>globalThis.readVintedAccount?.(),
     blocked:()=> location.pathname!=='/items/new' || !!document.querySelector('iframe[src*="captcha"],iframe[src*="challenge"],form[action*="challenge"],[data-testid="item-upload-critical-error-dialog"]'),
