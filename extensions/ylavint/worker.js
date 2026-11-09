@@ -23,7 +23,8 @@ async function badge() {
   await chrome.action.setBadgeBackgroundColor({color}).catch(() => {})
 }
 chrome.storage.onChanged.addListener(changes => { if (changes.agent || changes.bridge) badge() })
-chrome.runtime.onInstalled.addListener(() => { schedule(); badge() })
+// Mise à jour : on oublie l'ancien état (une ancienne version pouvait se mettre en pause toute seule sur une alerte Vinted).
+chrome.runtime.onInstalled.addListener(() => { set({agent_next: 0, agent: null}).then(() => { schedule(); badge(); tick().catch(() => {}) }) })
 chrome.runtime.onStartup.addListener(() => { schedule(); badge() })
 
 async function site(action, body) {
@@ -105,7 +106,8 @@ async function tickWork() {
     catch(e){await journal({level:'warn',text:'Résultat de publication conservé : '+e.message});return set({agent_next:Date.now()+30000})}
   }
   const next = (await get('agent_next')) || 0
-  if (Date.now() < next) return
+  // Jamais plus de 30 min d'attente : une ancienne pause locale ne doit pas bloquer YlaVint.
+  if (Date.now() < next && next - Date.now() < 30 * 60000) return
   const tab = await vintedTab()
   if (!tab) { agentState = {state: 'no_tab', message: 'Ouvre un onglet Vinted dans ce profil.', at: Date.now()}; return set({agent: agentState,agent_next:Date.now()+30000}) }
   // Onglet ouvert avant l'installation ou la mise à jour de l'extension : la page n'a pas YlaVint.
