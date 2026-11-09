@@ -90,6 +90,7 @@ export function parseLikes(result){
   return out
 }
 export function parseLabel(result){
+  if(result?.skipped==='colissimo')return {skipped:'colissimo'}
   const bytes=typeof result?.pdf_base64==='string'&&result.pdf_base64.length<4.5e6?Buffer.from(result.pdf_base64,'base64'):null
   if(!bytes||bytes.length<100||bytes.subarray(0,5).toString()!=='%PDF-')throw new AppError('Vinted n’a pas renvoyé un bordereau PDF.')
   return bytes
@@ -169,13 +170,15 @@ async function taskBundle(db,task,settings){
   for(const k of [...KINDS[task.kind].needs,...uses,...(OPTIONAL[task.kind]||[])])if(!recipes[k]&&DEFAULT_RECIPES[k])recipes[k]=DEFAULT_RECIPES[k]
   const missing=KINDS[task.kind].needs.filter(k=>!recipes[k])
   const bundle={id:task.id,lease:task.lease,kind:task.kind,payload:task.payload,recipes,missing}
+  if(task.kind==='fetch_label'&&recipes.order_label&&/\/shipments\//.test(recipes.order_label.path||''))recipes.order_label={...recipes.order_label,id_from:'shipment'}
   if(task.kind==='like_message')bundle.payload=await (await import('./ylavint-flows.js')).likePayload(db,task,settings)
   if(task.kind==='reply_message'&&task.payload?.source==='ai'&&!inHistory(task.payload.source_message_at,settings.messaging.history_since))bundle.payload={...task.payload,skip:'Message antérieur à la période choisie.'}
   if(task.kind==='sync_inbox')bundle.payload={...task.payload,known:task.payload?.force_details?{}:await (await import('./ylavint.js')).knownConversations(db,task.account_id)}
   if(task.kind==='accept_offer')bundle.payload={...task.payload,offer_settings:settings.messaging.offers}
   if(task.kind==='sync_orders'){
-    const known=check(await db.from('vinted_agent_orders').select('transaction_id,item_ids').eq('account_id',task.account_id).order('first_seen_at',{ascending:false}).limit(60))
-    bundle.payload={...task.payload,detailed:known.filter(o=>o.item_ids?.length).map(o=>o.transaction_id)}
+    const known=check(await db.from('vinted_agent_orders').select('transaction_id,item_ids,shipment_id,carrier,photo_url,status').eq('account_id',task.account_id).order('first_seen_at',{ascending:false}).limit(60))
+    // Vente « détaillée » : articles, photo et envoi connus, ou vente close. Les autres sont relues (8 au plus par passage).
+    bundle.payload={...task.payload,detailed:known.filter(o=>o.item_ids?.length&&o.photo_url&&(o.shipment_id&&o.carrier||/annul|cancel|rembours|refund|termin|complete|livr/i.test(o.status||''))).map(o=>o.transaction_id)}
   }
   return bundle
 }
@@ -357,7 +360,7 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
   let summary={}
   if(task.kind==='scan_wardrobe')summary=await applyWardrobe(db,task,parseWardrobe(body.result),settings,{now,rand})
   if(task.kind==='sync_orders')summary=await applyOrders(db,task,parseOrders(body.result),settings,{rand})
-  if(task.kind==='fetch_label')summary=await applyLabel(db,task,parseLabel(body.result))
+  if(task.kind==='fetch_label')summary=await applyLabel(db,task,parseLabel(body.result),body.result||{})
   if(task.kind==='scan_likes')summary=await (await import('./ylavint-flows.js')).planLikes(db,task,parseLikes(body.result),settings,{now,rand,can:await learned(db)})
   if(task.kind==='scan_likes'&&!summary.likes&&Number.isSafeInteger(body.result?.notifications)){
     const n=body.result.notifications
@@ -424,10 +427,10 @@ async function applyWardrobe(db,task,{items,complete},settings,{now,rand}){
 async function applyOrders(db,task,orders,settings,{rand}){
   const at=new Date().toISOString()
   // Une lecture de la liste ne connaît pas toujours les articles ni l'envoi : on garde ce qu'une lecture détaillée a déjà appris.
-  const before=orders.length?new Map(check(await db.from('vinted_agent_orders').select('transaction_id,account_id,item_ids,shipment_id,conversation_id,ship_deadline,carrier,buyer_id').in('transaction_id',orders.map(o=>o.transaction_id))).map(o=>[o.transaction_id,o])):new Map()
+  const before=orders.length?new Map(check(await db.from('vinted_agent_orders').select('transaction_id,account_id,item_ids,shipment_id,conversation_id,ship_deadline,carrier,buyer_id,photo_url').in('transaction_id',orders.map(o=>o.transaction_id))).map(o=>[o.transaction_id,o])):new Map()
   orders=orders.filter(o=>!before.has(o.transaction_id)||before.get(o.transaction_id).account_id===task.account_id).map(o=>{const old=before.get(o.transaction_id)
     return {...o,item_ids:o.item_ids.length?o.item_ids:old?.item_ids||[],shipment_id:o.shipment_id||old?.shipment_id||null,conversation_id:o.conversation_id||old?.conversation_id||null}})
-  if(orders.length)check(await db.from('vinted_agent_orders').upsert(orders.map(({label_ready,photo_url,buyer_login,...o})=>({...o,ship_deadline:o.ship_deadline||before.get(o.transaction_id)?.ship_deadline||null,carrier:o.carrier||before.get(o.transaction_id)?.carrier||null,buyer_id:o.buyer_id||before.get(o.transaction_id)?.buyer_id||null,account_id:task.account_id,seen_at:at})),{onConflict:'transaction_id'}))
+  if(orders.length)check(await db.from('vinted_agent_orders').upsert(orders.map(({label_ready,buyer_login,...o})=>({...o,photo_url:o.photo_url||before.get(o.transaction_id)?.photo_url||null,ship_deadline:o.ship_deadline||before.get(o.transaction_id)?.ship_deadline||null,carrier:o.carrier||before.get(o.transaction_id)?.carrier||null,buyer_id:o.buyer_id||before.get(o.transaction_id)?.buyer_id||null,account_id:task.account_id,seen_at:at})),{onConflict:'transaction_id'}))
   const flows=await import('./ylavint-flows.js'),can=await learned(db)
   const flow=await flows.planFlow(db,task.account_id,orders,settings,{rand,can}).catch(e=>{console.error('ylavint_flow_failed',e?.message);return {queued:0}})
   let queued=0,pushed=0
@@ -440,11 +443,17 @@ async function applyOrders(db,task,orders,settings,{rand}){
   return {orders:orders.length,queued,pushed,flow:flow.queued,message:`${orders.length} vente(s) lue(s)${pushed?`, ${pushed} envoyée(s) dans l’onglet Ventes`:''}${queued?`, ${queued} bordereau(x) à récupérer`:''}${flow.queued?`, ${flow.queued} action(s) du flux de commande prévue(s)`:''}.`}
 }
 
-async function applyLabel(db,task,bytes){
+async function applyLabel(db,task,bytes,result={}){
   const id=vid(task.payload.transaction_id);if(!id)throw new AppError('Vente invalide.')
+  const extra={...(vid(result.shipment_id)?{shipment_id:vid(result.shipment_id)}:{}),...(text(result.carrier,40)?{carrier:text(result.carrier,40)}:{}),...(iso(result.ship_deadline)?{ship_deadline:iso(result.ship_deadline)}:{})}
+  // Colissimo : le bordereau n'est jamais généré (la vente serait annulée). On note le transporteur pour ne plus réessayer.
+  if(bytes?.skipped){
+    check(await db.from('vinted_agent_orders').update({...extra,carrier:'Colissimo'}).eq('transaction_id',id))
+    return {skipped:true,message:'Colissimo : bordereau non récupéré (à faire toi-même sur Vinted).'}
+  }
   const path=`agent-labels/${task.account_id}/${id}.pdf`
   check(await db.storage.from(BUCKET).upload(path,bytes,{contentType:'application/pdf',upsert:true}))
-  const saved=check(await db.from('vinted_agent_orders').update({label_path:path,label_fetched_at:new Date().toISOString()}).eq('transaction_id',id).select('sales_order_id'))
+  const saved=check(await db.from('vinted_agent_orders').update({...extra,label_path:path,label_fetched_at:new Date().toISOString()}).eq('transaction_id',id).select('sales_order_id'))
   const sale=saved?.[0]?.sales_order_id
   if(sale)await db.from('sales_orders').update({label_url:`ylavint:${path}`}).eq('id',sale)
   return {path,message:sale?'Bordereau enregistré et ajouté à la vente.':'Bordereau enregistré.'}

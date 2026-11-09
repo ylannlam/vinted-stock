@@ -175,5 +175,6 @@ async function recordFlowMessage(db,task,result,now){
   await db.from('ylavint_conversations').update({last_message:task.payload.body,last_message_at:at,last_from_me:true,updated_at:at}).eq('account_id',task.account_id).eq('conversation_id',conv)
 }
 // Bordereaux : transporteurs à ignorer (nom exact, sans tenir compte des majuscules).
-export const carrierIgnored=(settings,carrier)=>!!carrier&&settings.order_flow.labels.ignore_carriers.some(c=>String(carrier).toLowerCase().includes(c))
+// Colissimo toujours ignoré : générer son bordereau annule la vente.
+export const carrierIgnored=(settings,carrier)=>!!carrier&&(/colissimo/i.test(String(carrier))||settings.order_flow.labels.ignore_carriers.some(c=>String(carrier).toLowerCase().includes(c)))
 export {iso}

@@ -5,7 +5,7 @@ import {AppError} from './dotb.js'
 export const KINDS={
   scan_wardrobe:{writes:false,label:'Lecture du dressing',needs:[],uses:['wardrobe']},
   sync_orders:{writes:false,label:'Lecture des ventes',needs:[],uses:['orders_list','order_detail']},
-  fetch_label:{writes:false,label:'Bordereau',needs:['order_label']},
+  fetch_label:{writes:false,label:'Bordereau',needs:['order_label'],uses:['order_detail']},
   scan_likes:{writes:false,label:'Lecture des likes',needs:[],uses:['likes_list']},
   sync_inbox:{writes:false,label:'Lecture de la messagerie',needs:[],uses:['inbox_list','conversation_read']},
   unmask_item:{writes:true,label:'Démasquage',needs:['item_form','item_edit','photo_upload']},
@@ -30,6 +30,8 @@ export const DEFAULT_RECIPES={
   draft_create:{method:'POST',path:'/api/v2/item_upload/drafts',body:'json'},
   wardrobe:{method:'GET',path:'/api/v2/wardrobe/{id}/items',query:{order:'relevance'},headers:{},body:'none'},
   orders_list:{method:'GET',path:'/api/v2/my_orders',query:{type:'sold',status:'all'},headers:{},body:'none'},
+  // Détail d'une vente : articles, envoi (identifiant, transporteur, date limite). Lu par le site Vinted à l'ouverture d'une vente.
+  order_detail:{method:'GET',path:'/api/v2/transactions/{id}',query:{},headers:{},body:'none'},
   likes_list:{method:'GET',path:'/inbox-notifications/v1/notifications',origin:'https://api.vinted.fr',query:{},headers:{platform:'web','x-next-app':'marketplace-web',locale:'fr-FR'},body:'none'},
   inbox_list:{method:'GET',path:'/api/v2/inbox',query:{},headers:{},body:'none'},
   conversation_read:{method:'GET',path:'/api/v2/conversations/{id}',query:{},headers:{},body:'none'},

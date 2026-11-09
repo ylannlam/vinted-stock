@@ -95,13 +95,18 @@
       is_sold: !!(i.is_sold || i.item_closing_action === 'sold'), created_at: i.created_at_ts || i.created_at || i.photo?.high_resolution?.timestamp || i.photos?.[0]?.high_resolution?.timestamp || null}
   }
   // Date limite d'envoi, transporteur et acheteur : noms de champs variables selon les écrans Vinted.
+  const CARRIERS = /colissimo|mondial ?relay|relais ?colis|chronopost|inpost|vinted ?go|shop2shop|ups|dpd|dhl|gls|la poste|lettre suivie/i
   function orderExtras(o) {
-    const deadline = findDeep(o, (k, v) => (typeof v === 'string' || typeof v === 'number') && /(ship|shipping|send|dispatch)\w*_?(deadline|due|until|expires?|limit)|^deadline/i.test(k))
-    const carrier = findDeep(o, (k, v) => typeof v === 'string' && /^(carrier|carrier_name|transporter|shipping_carrier|delivery_service|courier)(_name|_title)?$/i.test(k))
-      || findDeep(o, (k, v) => v && typeof v === 'object' && /carrier|transporter/i.test(k) && typeof (v.name || v.title) === 'string')?.name || null
+    const deadline = findDeep(o, (k, v) => (typeof v === 'string' || typeof v === 'number') && /(ship|shipping|send|dispatch|delivery|package|parcel)\w*_?(deadline|due|until|expir\w*|limit|before|by)|deadline|must_ship|ship_by/i.test(k))
+    let carrier = findDeep(o, (k, v) => typeof v === 'string' && /^(carrier|carrier_name|carrier_code|transporter|shipping_carrier|delivery_service|courier|shipping_method|delivery_method)(_name|_title|_code)?$/i.test(k))
+      || findDeep(o, (k, v) => v && typeof v === 'object' && /carrier|transporter/i.test(k) && typeof (v.name || v.title || v.code) === 'string')
+    if (carrier && typeof carrier === 'object') carrier = carrier.name || carrier.title || carrier.code
+    // Nom du transporteur trouvé n'importe où dans la réponse (Colissimo surtout : son bordereau ne doit jamais être généré).
+    if (typeof carrier !== 'string' || !CARRIERS.test(carrier)) { const m = JSON.stringify(o).match(CARRIERS); if (m) carrier = m[0] }
     const buyer = o.buyer || o.user || o.opposite_user || o.transaction?.buyer || null
     return {ship_deadline: deadline ?? null, carrier: typeof carrier === 'string' ? carrier : null, buyer_id: buyer?.id || o.buyer_id || o.transaction?.buyer_id || null, buyer_login: buyer?.login || null}
   }
+  const photoOf = p => typeof p === 'string' ? p : p?.url || p?.full_size_url || p?.thumbnails?.find(t => /310|medium/.test(t.type || ''))?.url || p?.thumbnails?.[0]?.url || null
   function orderRow(o) {
     const t = o.transaction || o
     const status = [o.status, o.transaction_user_status, o.status_title, t.status].find(v => typeof v === 'string') || ''
@@ -110,7 +115,7 @@
       currency: (o.price || o.item?.price)?.currency_code || 'EUR', order_date: o.date || o.created_at || t.created_at || o.updated_at || null,
       item_ids: [o.item_id, o.item?.id, ...(o.item_ids || [])].filter(Boolean),
       shipment_id: o.shipment_id || o.shipment?.id || t.shipment_id || null, conversation_id: o.conversation_id || t.conversation_id || null,
-      photo_url: o.photo?.url || o.item?.photo?.url || o.photos?.[0]?.url || null, ...orderExtras(o)}
+      photo_url: photoOf(o.photo) || photoOf(o.item?.photo) || photoOf(o.photos?.[0]) || photoOf(o.item?.photos?.[0]) || null, ...orderExtras(o)}
     row.label_ready = !!(row.shipment_id || /exp[ée]di|envoy|ship|label|bordereau/i.test(status)) && !/annul|cancel|rembours|refund|termin|complete|livr/i.test(status)
     return row
   }
@@ -142,6 +147,7 @@
         const items = [t.item_id, t.item?.id, ...(Array.isArray(t.items) ? t.items.map(i => i.id) : []), ...(Array.isArray(t.order?.items) ? t.order.items.map(i => i.id || i.item_id) : [])].filter(Boolean)
         if (items.length) o.item_ids = [...new Set(items.map(String))]
         o.shipment_id = o.shipment_id || t.shipment?.id || t.shipment_id || null
+        if (!o.photo_url) o.photo_url = photoOf(t.item?.photo) || photoOf(t.item?.photos?.[0]) || photoOf(t.order?.items?.[0]?.photos?.[0]) || null
         o.conversation_id = o.conversation_id || t.conversation_id || null
         if (!o.title) o.title = t.item_title || t.item?.title || ''
         const x = orderExtras(t)
@@ -257,7 +263,16 @@
   const toBase64 = buffer => { const b = new Uint8Array(buffer); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(s) }
   async function fetchLabel(task) {
     const recipe = task.recipes.order_label, p = task.payload
-    const id = recipe.id_from === 'shipment' ? p.shipment_id : p.transaction_id
+    // On relit la vente avant tout : jamais de bordereau Colissimo (le générer annule la vente), et le bon identifiant d'envoi.
+    let shipment = p.shipment_id
+    const detailRecipe = task.recipes.order_detail || {method: 'GET', path: '/api/v2/transactions/{id}', query: {}, headers: {}, body: 'none'}
+    const d = await call(detailRecipe, {ids: {id: p.transaction_id}}), t = d.transaction || d
+    const x = orderExtras(t)
+    if (/colissimo/i.test(x.carrier || '') || /colissimo/i.test(JSON.stringify(t))) return {transaction_id: p.transaction_id, skipped: 'colissimo', carrier: 'Colissimo'}
+    shipment = shipment || t.shipment?.id || t.shipment_id || null
+    const byShipment = recipe.id_from === 'shipment' || /\/shipments\//.test(recipe.path || '')
+    const id = byShipment ? shipment : p.transaction_id
+    if (!id) throw new Stop('failed', 'Envoi pas encore créé sur Vinted : bordereau pas disponible.')
     const data = await call(recipe, {ids: {id}, raw: true})
     let pdf = data.pdf
     if (!pdf) {
@@ -266,7 +281,7 @@
       pdf = await fetchBytes(url)
     }
     if (pdf.byteLength > 4e6) throw new Stop('failed', 'Bordereau trop volumineux.')
-    return {transaction_id: p.transaction_id, pdf_base64: toBase64(pdf)}
+    return {transaction_id: p.transaction_id, shipment_id: shipment, carrier: x.carrier, ship_deadline: x.ship_deadline, pdf_base64: toBase64(pdf)}
   }
   async function scanLikes(task) {
     // Anciennes recettes enregistrées : l’ancienne route /api/v2/notifications renvoie désormais 404.
@@ -569,7 +584,7 @@
     }
     if (kind === 'order_label') {
       const id = url.pathname.match(/\/(\d+)(?=\/|$)/)?.[1]
-      recipe.id_from = [...memory.orders.values()].some(o => String(o.shipment_id) === id) ? 'shipment' : 'transaction'
+      recipe.id_from = /\/shipments\//.test(url.pathname) || [...memory.orders.values()].some(o => String(o.shipment_id) === id) ? 'shipment' : 'transaction'
     }
     if (['offer_send', 'shipping_extension', 'order_cancel', 'feedback_send', 'item_delete'].includes(kind)) {
       // Quel identifiant le chemin utilise : la conversation ouverte, une vente connue ou l'article.
