@@ -51,6 +51,7 @@ export async function recordWatch(db,key,report){
     ||(report.login?check(await db.from('publication_accounts').select('id,login').ilike('login',report.login).maybeSingle()):null)
   await db.from('vinted_watch_keys').update({last_seen_at:new Date().toISOString(),last_login:report.login||null}).eq('id',key.id)
   if(!account)return {saved:false,reason:'Compte absent de Dotb : il n’est pas suivi par le site.'}
+  if(check(await db.from('publication_accounts').select('ylavint_unlinked_at').eq('id',account.id).maybeSingle())?.ylavint_unlinked_at)return {saved:false,reason:'Compte délié de YlaVint.'}
   const id=bannerAlertId(account.id)
   const before=check(await db.from('account_health_alerts').select('status,kind,until_date,created_at').eq('id',id).maybeSingle())
   const title=report.status==='ok'?'Aucun bandeau sur la page du compte':report.message.split(/(?<=\d{4})\s|\.\s/)[0]?.slice(0,200)||'Bandeau Vinted'

@@ -138,8 +138,8 @@ export async function pauseAccount(db,accountId,reason,{event='paused',details=n
 // Appelé par la veille du compte : un bandeau Vinted (restreint, bloqué) arrête l'agent de ce compte.
 export async function pauseOnAlert(db,report){
   if(report.status==='ok')return false
-  const account=check(await db.from('publication_accounts').select('id').eq('vinted_id',report.member_id).maybeSingle())
-  if(!account)return false
+  const account=check(await db.from('publication_accounts').select('id,ylavint_unlinked_at').eq('vinted_id',report.member_id).maybeSingle())
+  if(!account||account.ylavint_unlinked_at)return false
   // Choix de Ylann : une alerte Vinted (compte restreint, bloqué) n'arrête plus les automatisations. Seul lui les coupe.
   // On note l'alerte une fois par jour dans le journal.
   const since=new Date(Date.now()-86400000).toISOString()
@@ -150,8 +150,10 @@ export async function pauseOnAlert(db,report){
 export async function accountFor(db,body){
   const member=vid(body?.member_id)
   if(!member)throw new AppError('Compte Vinted inconnu : ouvre une page Vinted connectée.')
-  const account=check(await db.from('publication_accounts').select('id,login,vinted_id').eq('vinted_id',member).maybeSingle())
-  return {member,account}
+  const row=check(await db.from('publication_accounts').select('id,login,vinted_id,ylavint_unlinked_at').eq('vinted_id',member).maybeSingle())
+  // Compte délié depuis le site : l'extension ne le reconnaît plus.
+  const account=row&&!row.ylavint_unlinked_at?{id:row.id,login:row.login,vinted_id:row.vinted_id}:null
+  return {member,account,unlinked:!!row?.ylavint_unlinked_at}
 }
 // Actions disponibles : relevées sur Vinted, ou prêtes à l'emploi.
 export const learned=async db=>new Set([...check(await db.from('vinted_agent_recipes').select('kind')).map(r=>r.kind),...Object.keys(DEFAULT_RECIPES)])
@@ -185,7 +187,8 @@ async function taskBundle(db,task,settings){
 
 // L'extension demande du travail pour le compte connecté dans son profil.
 export async function agentPoll(db,key,body,now=Date.now()){
-  const {member,account}=await accountFor(db,body)
+  const {member,account,unlinked}=await accountFor(db,body)
+  if(unlinked)return {state:'unknown',message:'Compte délié de YlaVint sur le site.',wait_seconds:3600}
   if(!account){
     await agentLog(db,{level:'warn',event:'unknown_profile',message:`Profil non rattaché : ${text(body.login,80)||member}`,details:{member_id:member,login:text(body.login,80)}})
     return {state:'unknown',message:'Ce compte Vinted n’est pas encore connu du site.',wait_seconds:3600}
@@ -496,7 +499,7 @@ const ACCOUNT_FIELDS='account_id,enabled,paused,pause_reason,paused_at,features,
 export async function agentOverview(db,user=null){
   const since=parisDayStart()
   const [accounts,settings,tasks,today,log,recipes,orders,listings,alerts,drafts,sent]=await Promise.all([
-    db.from('publication_accounts').select('id,login,vinted_id').order('login'),
+    db.from('publication_accounts').select('id,login,vinted_id,ylavint_unlinked_at').order('login'),
     db.from('vinted_agent_settings').select(ACCOUNT_FIELDS),
     db.from('vinted_agent_tasks').select('id,account_id,kind,state,not_before,created_at,started_at,finished_at,error,result,payload').order('created_at',{ascending:false}).limit(80),
     db.from('vinted_agent_tasks').select('account_id,kind,writes,state').gte('started_at',since),
@@ -514,7 +517,8 @@ export async function agentOverview(db,user=null){
   for(const r of sent.data)of(r.account_id).like_sent++
   const byAccount=new Map(settings.data.map(s=>[s.account_id,s])),alert=new Map(alerts.data.map(a=>[a.account_id,a]))
   return {
-    accounts:accounts.data.map(a=>{const s=byAccount.get(a.id);return {...a,last_seen_at:s?.last_seen_at||null,extension_version:s?.extension_version||null,settings:s?{...effectiveSettings(s),enabled:s.enabled,paused:s.paused,pause_reason:s.pause_reason,paused_at:s.paused_at,last_seen_at:s.last_seen_at,extension_version:s.extension_version,version:s.version,updated_at:s.updated_at}:null,today:counts[a.id]||{writes:0,like_sent:0},alert:alert.get(a.id)||null}}),
+    unlinked:accounts.data.filter(a=>a.ylavint_unlinked_at).map(a=>({id:a.id,login:a.login,unlinked_at:a.ylavint_unlinked_at})),
+    accounts:accounts.data.filter(a=>!a.ylavint_unlinked_at).map(({ylavint_unlinked_at,...a})=>{const s=byAccount.get(a.id);return {...a,last_seen_at:s?.last_seen_at||null,extension_version:s?.extension_version||null,settings:s?{...effectiveSettings(s),enabled:s.enabled,paused:s.paused,pause_reason:s.pause_reason,paused_at:s.paused_at,last_seen_at:s.last_seen_at,extension_version:s.extension_version,version:s.version,updated_at:s.updated_at}:null,today:counts[a.id]||{writes:0,like_sent:0},alert:alert.get(a.id)||null}}),
     tasks:tasks.data,log:log.data,orders:orders.data,hidden:listings.data,
     drafts:drafts.data.map(d=>({id:d.id,state:d.state,title:d.fields?.title||'Sans titre',account_id:String(d.fields?.account_id||'').toLowerCase()||null,price:d.fields?.price||null,photos:(d.photos||[]).length,planned_at:d.planned_at})),
     recipes:Object.entries(RECIPES).map(([kind,info])=>{const r=recipes.data.find(x=>x.kind===kind);return {kind,...info,default:!!DEFAULT_RECIPES[kind],learned_at:r?.learned_at||null,learned_login:r?.learned_login||null,samples:r?.samples||0,method:r?.recipe?.method||null,path:r?.recipe?.path||null}}),
@@ -532,6 +536,28 @@ export async function handleAgent(req,{db,user}){
   const ylavint=await import('./ylavint.js')
   if(ylavint.YLAVINT_ACTIONS.has(body.action))return ylavint.handleYlavint(req,{db,user})
   const account=isId(body.account_id)?body.account_id.toLowerCase():null
+  // Délier : le compte sort de YlaVint avec toutes ses données (commandes, bordereaux, messagerie, tâches, journal).
+  // Les ventes déjà passées dans l'onglet Ventes et le compte du site restent.
+  if(body.action==='unlink'){
+    if(!account)throw new AppError('Choisis un compte.')
+    const exists=check(await db.from('publication_accounts').select('id,login').eq('id',account).maybeSingle());if(!exists)throw new AppError('Compte introuvable.',404)
+    check(await db.from('publication_accounts').update({ylavint_unlinked_at:new Date().toISOString()}).eq('id',account))
+    const labels=check(await db.storage.from(BUCKET).list(`agent-labels/${account}`,{limit:1000}))||[]
+    if(labels.length)await db.storage.from(BUCKET).remove(labels.map(f=>`agent-labels/${account}/${f.name}`))
+    // Tâches liées à une annonce de l'atelier : annulées et gardées (l'annonce y fait référence), les autres effacées.
+    check(await db.from('vinted_agent_tasks').update({state:'cancelled',error:'Compte délié de YlaVint.',finished_at:new Date().toISOString()}).eq('account_id',account).in('state',['queued','running']))
+    const keep=new Set(check(await db.from('listing_drafts').select('publication_task_id').not('publication_task_id','is',null)).map(d=>d.publication_task_id))
+    const tasks=check(await db.from('vinted_agent_tasks').select('id').eq('account_id',account)).map(t=>t.id).filter(id=>!keep.has(id))
+    for(let i=0;i<tasks.length;i+=200)check(await db.from('vinted_agent_tasks').delete().in('id',tasks.slice(i,i+200)))
+    for(const t of ['ylavint_messages','ylavint_conversations','vinted_agent_contacts','vinted_agent_listings','vinted_agent_orders','vinted_agent_log','vinted_agent_settings','account_health_alerts'])
+      check(await db.from(t).delete().eq('account_id',account))
+    return {saved:true,message:`${exists.login} délié de YlaVint.`}
+  }
+  if(body.action==='relink'){
+    if(!account)throw new AppError('Choisis un compte.')
+    check(await db.from('publication_accounts').update({ylavint_unlinked_at:null}).eq('id',account))
+    return {saved:true}
+  }
   if(body.action==='copy_settings'){
     if(!user?.id)throw new AppError('Connecte-toi au site pour copier des réglages.',403)
     if(!account||!Object.hasOwn(COPY_GROUPS,body.section))throw new AppError('Choisis un compte et des paramètres à copier.')

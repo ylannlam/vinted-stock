@@ -300,9 +300,13 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
       <Td className="whitespace-nowrap text-right">
        {s?.enabled&&(s.paused?<button className={buttonClass+' mr-2 py-1.5'} disabled={busy||!!a.alert} onClick={()=>act({action:'resume',account_id:a.id},'YlaVint relancé.')}>Reprendre</button>:<button className={buttonClass+' mr-2 py-1.5'} disabled={busy} onClick={()=>act({action:'pause',account_id:a.id},'YlaVint mis en pause.')}>Pause</button>)}
        {s?.enabled&&!s.paused&&<select className={compactClass+' mr-2 py-1.5'} value="" disabled={busy} onChange={e=>e.target.value&&act({action:'enqueue',account_id:a.id,kind:e.target.value},'Lecture demandée à YlaVint.')}><option value="">Lire maintenant…</option><option value="sync_inbox">La messagerie</option><option value="scan_wardrobe">Le dressing</option><option value="sync_orders">Les ventes</option><option value="scan_likes">Les likes</option></select>}
-       <button className="text-sm font-medium text-blue-400 hover:text-blue-300" onClick={()=>setConfigure({account:a,only:'all'})}>Configurer ↗</button></Td>
+       <button className="text-sm font-medium text-blue-400 hover:text-blue-300" onClick={()=>setConfigure({account:a,only:'all'})}>Configurer ↗</button>
+       <button className="ml-3 text-sm font-medium text-rose-400 hover:text-rose-300" disabled={busy} onClick={()=>window.confirm(`Délier ${a.login} de YlaVint ?\n\nL’extension ne s’occupera plus de ce compte et tout ce que YlaVint a gardé pour lui sera effacé : commandes, bordereaux, messagerie, tâches et journal.\nLes ventes déjà dans ton onglet Ventes restent.`)&&act({action:'unlink',account_id:a.id},r=>r?.message||'Compte délié.')}>Délier</button></Td>
      </tr>})}
     </Table>
+    {data.unlinked?.length>0&&<div className="space-y-2"><p className="pt-2 text-sm font-semibold text-white">Comptes déliés</p>
+     <Table head={['Compte','Délié le','']}>{data.unlinked.map(u=><tr key={u.id}><Td className="text-zinc-300">{u.login}</Td><Td className="text-xs text-zinc-500">{when(u.unlinked_at)}</Td>
+      <Td className="text-right"><button className="text-sm font-medium text-blue-400 hover:text-blue-300" disabled={busy} onClick={()=>act({action:'relink',account_id:u.id},`${u.login} relié à YlaVint.`)}>Relier</button></Td></tr>)}</Table></div>}
     <p className="pt-2 text-sm font-semibold text-white">Actions connues ({data.recipes.filter(r=>r.learned_at||r.default).length}/{data.recipes.length})</p>
     <p className="text-xs text-zinc-500">Rien à faire à la main : les lectures, les messages, l’ouverture de conversation, l’offre et la suppression d’annonce marchent dès le départ. Les autres actions s’apprennent toutes seules la première fois que tu les fais normalement sur Vinted, sur n’importe quel compte.</p>
     <Table head={['Action','État','Détail','']}>
