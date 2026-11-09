@@ -435,7 +435,10 @@ async function applyOrders(db,task,orders,settings,{rand}){
   const flow=await flows.planFlow(db,task.account_id,orders,settings,{rand,can}).catch(e=>{console.error('ylavint_flow_failed',e?.message);return {queued:0}})
   let queued=0,pushed=0
   if(settings.features.sales&&orders.length)pushed=await (await import('./ylavint.js')).pushSales(db,task.account_id,orders)
-  if(settings.features.labels&&orders.length&&can.has('order_label')){
+  // Bordereaux seulement avec YlaVint 3.8.6 ou plus : les versions d'avant ne vérifiaient pas Colissimo.
+  const ext=check(await db.from('vinted_agent_settings').select('extension_version').eq('account_id',task.account_id).maybeSingle())?.extension_version
+  const [M=0,m=0,p=0]=String(ext||'').split('.').map(Number),labelsOk=M>3||M===3&&(m>8||m===8&&p>=6)
+  if(labelsOk&&settings.features.labels&&orders.length&&can.has('order_label')){
     const ready=orders.filter(o=>o.label_ready&&!/annul|cancel|rembours|refund/i.test(o.status||'')&&!flows.carrierIgnored(settings,o.carrier||before.get(o.transaction_id)?.carrier)),ids=ready.map(o=>o.transaction_id)
     const done=ids.length?new Set(check(await db.from('vinted_agent_orders').select('transaction_id,label_path').in('transaction_id',ids)).filter(o=>o.label_path).map(o=>o.transaction_id)):new Set()
     queued=await enqueue(db,ready.filter(o=>!done.has(o.transaction_id)).map(o=>({account_id:task.account_id,kind:'fetch_label',dedupe_key:`label:${o.transaction_id}`,not_before:new Date(Date.now()+jitter(1,10,rand)).toISOString(),payload:{transaction_id:o.transaction_id,shipment_id:o.shipment_id}})))
