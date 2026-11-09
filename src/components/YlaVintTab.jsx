@@ -3,6 +3,7 @@ import {buttonClass,primaryClass,fieldClass,compactClass,Pill,Card,PageTitle,Sta
 import VintedWatchPanel,{vintedWatchRequest} from './VintedWatchPanel'
 import {ORDER_LABELS} from '../lib/fulfillment'
 import {LikesSettings,FlowSettings} from './YlaVintFlows'
+import ylavintManifest from '../../extensions/ylavint/manifest.json'
 
 const YlaVintInbox=lazy(()=>import('./YlaVintInbox'))
 const YlaVintAi=lazy(()=>import('./YlaVintAi'))
@@ -17,6 +18,10 @@ const euro=n=>`${(Number(n)||0).toLocaleString('fr-FR',{minimumFractionDigits:2,
 export const FEATURES=[['inbox','Messagerie centralisée'],['ai','Agent IA'],['orders','Lecture des ventes'],['sales','Ventes → onglet Ventes'],['labels','Bordereau automatique'],['dressing','Dressing'],['unmask','Démasquage'],['pricing','Prix & cycle de vie'],['publish','Publication'],['likes','Messages aux likes']]
 const STATES={queued:'en attente',running:'en cours',done:'terminée',failed:'échec',cancelled:'annulée'}
 const ALERTS={temporary:'Bloqué temporairement',restricted:'Restreint',permanent:'Bloqué définitivement',blocked:'Bloqué'}
+// Dernière version d'YlaVint = celle du dépôt. Un compte qui remonte une version plus ancienne doit être mis à jour.
+export const LATEST_YLAVINT=ylavintManifest.version
+const vparts=v=>String(v||'').split('.').map(n=>parseInt(n,10)||0)
+export const outdated=v=>{if(!v)return false;const a=vparts(v),b=vparts(LATEST_YLAVINT);for(let i=0;i<3;i++){if((a[i]||0)!==(b[i]||0))return (a[i]||0)<(b[i]||0)}return false}
 export const bridgeOnline=a=>!!a.last_seen_at&&Date.now()-Date.parse(a.last_seen_at)<15*60000
 
 // Navigation latérale (rubriques et sous-rubriques), comme un tableau de bord de gestion Vinted.
@@ -208,6 +213,13 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
   <main className="min-w-0 flex-1 space-y-5 p-3 sm:p-6">
    <div className="flex items-center justify-between gap-2 lg:hidden"><button className={buttonClass} onClick={()=>setMobileNav(true)}>☰ {label(section)}</button><button className={buttonClass} onClick={()=>setSection('messagerie')}>💬{unread>0&&<span className="rounded-full bg-rose-500 px-1.5 text-[11px]">{unread}</span>}</button></div>
    {error&&<p role="alert" className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-300">{error}</p>}
+   {(()=>{const old=accounts.filter(a=>outdated(a.extension_version));if(!old.length)return null
+    return <div role="alert" className="rounded-xl border-2 border-rose-500 bg-rose-500/15 p-5 shadow-lg shadow-rose-900/30">
+     <p className="text-xl font-black text-rose-200">⚠️ Mets à jour YlaVint sur {old.length} compte{old.length>1?'s':''}</p>
+     <p className="mt-1 text-sm text-rose-100">Dernière version : <b>v{LATEST_YLAVINT}</b>. Ces profils AdsPower tournent encore sur une ancienne version :</p>
+     <ul className="mt-3 flex flex-wrap gap-2">{old.map(a=><li key={a.id} className="rounded-lg bg-rose-500/25 px-3 py-1.5 text-sm font-semibold text-white">{a.login} <span className="font-normal text-rose-200">v{a.extension_version}</span></li>)}</ul>
+     {section!=='extension'&&<button className="mt-4 rounded-lg bg-rose-500 px-4 py-2 text-sm font-bold text-white hover:bg-rose-400" onClick={()=>setSection('extension')}>Voir comment mettre à jour →</button>}
+    </div>})()}
    {notice&&<p role="status" className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-3 text-sm text-blue-200">{notice}</p>}
    <Suspense fallback={<p className="text-sm text-zinc-500">Chargement…</p>}>
 
@@ -282,7 +294,7 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
     <Table head={['Compte','Bridge','État','Aujourd’hui','']} empty={!accounts.length&&'Aucun compte.'}>
      {accounts.map(a=>{const s=a.settings;return <tr key={a.id}>
       <Td><p className="font-semibold text-white">{a.login}</p>{a.alert&&<Pill tone="red">{ALERTS[a.alert.status]||a.alert.title}</Pill>}</Td>
-      <Td className="whitespace-nowrap text-xs"><span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${bridgeOnline(a)?'bg-emerald-400':'bg-zinc-600'}`}/>{bridgeOnline(a)?'Connecté':a.last_seen_at?`Vu ${ago(a.last_seen_at)}`:'Jamais vu'}{a.extension_version?` · v${a.extension_version}`:''}</Td>
+      <Td className="whitespace-nowrap text-xs"><span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${bridgeOnline(a)?'bg-emerald-400':'bg-zinc-600'}`}/>{bridgeOnline(a)?'Connecté':a.last_seen_at?`Vu ${ago(a.last_seen_at)}`:'Jamais vu'}{a.extension_version&&<span className={outdated(a.extension_version)?'font-bold text-rose-400':''}> · v{a.extension_version}{outdated(a.extension_version)&&' ⚠️ à mettre à jour'}</span>}</Td>
       <Td>{!s?.enabled?<Pill>Non activé</Pill>:s.paused?<Pill tone="amber">En pause</Pill>:<Pill tone="green">Actif</Pill>}{s?.paused&&s.pause_reason&&<p className="mt-1 max-w-xs text-xs text-zinc-500">{s.pause_reason}</p>}</Td>
       <Td className="text-xs text-zinc-400">{s?.enabled?`${a.today.writes||0}/${s.limits.writes_per_day} modif.`:'—'}</Td>
       <Td className="whitespace-nowrap text-right">
