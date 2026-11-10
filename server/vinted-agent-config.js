@@ -12,7 +12,7 @@ export const KINDS={
   reprice_item:{writes:true,label:'Baisse de prix',needs:['item_form','item_edit']},
   publish_item:{writes:true,label:'Préparation du formulaire',needs:[]},
   like_message:{writes:true,label:'Message après un like',needs:['conversation_create','message_send'],uses:['user_read','conversation_read']},
-  reply_message:{writes:true,label:'Réponse à un acheteur',needs:['message_send']},
+  reply_message:{writes:true,label:'Réponse à un acheteur',needs:['message_send'],uses:['conversation_read']},
   accept_offer:{writes:true,label:'Acceptation d’une offre',needs:['offer_accept','conversation_read']},
   order_message:{writes:true,label:'Message de commande',needs:['message_send']},
   order_extension:{writes:true,label:'Demande de délai',needs:['shipping_extension'],uses:['order_detail']},

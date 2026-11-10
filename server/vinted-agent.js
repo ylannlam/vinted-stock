@@ -179,6 +179,7 @@ async function taskBundle(db,task,settings){
   if(task.kind==='fetch_label'&&recipes.order_label&&/\/shipments\//.test(recipes.order_label.path||''))recipes.order_label={...recipes.order_label,id_from:'shipment'}
   if(task.kind==='like_message')bundle.payload=await (await import('./ylavint-flows.js')).likePayload(db,task,settings)
   if(task.kind==='reply_message'&&task.payload?.source==='ai'&&!inHistory(task.payload.source_message_at,settings.messaging.history_since))bundle.payload={...task.payload,skip:'Message antérieur à la période choisie.'}
+  if(task.kind==='reply_message'&&!bundle.payload?.skip)bundle.payload=await (await import('./ylavint.js')).replyPayload(db,task)
   if(task.kind==='sync_inbox')bundle.payload={...task.payload,known:task.payload?.force_details?{}:await (await import('./ylavint.js')).knownConversations(db,task.account_id)}
   // Likes : l'extension s'arrête aux notifications déjà lues au dernier passage réussi (marge de 30 min).
   if(task.kind==='scan_likes'&&!task.payload?.history_page){

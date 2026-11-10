@@ -61,6 +61,40 @@ async function run(task) {
   return posted.find(p => p.type === 'result' && p.id === id).payload
 }
 
+test('automatic replies recheck the current conversation before sending on both messaging APIs',async()=>{
+  const uuid='12345678-1234-4234-8234-123456789abc'
+  const recipes={conversation_read:{method:'GET',path:'/api/v2/conversations/{id}'},message_send:{method:'POST',path:'/api/v2/conversations/{id}/replies',template:{reply:{body:''}}}}
+  for(const id of ['42',uuid]){
+    const modern=id===uuid
+    T.setChat(modern?'v2':'v1')
+    const task={kind:'reply_message',member_id:'7',recipes,payload:{conversation_id:id,body:'Je vérifie.',source:'ai',manual:false,source_message_id:'m1'}}
+    for(const [lastId,sender,shouldSend] of [['m1','88',true],['m2','88',false],['m2','7',false]]){
+      calls.length=0
+      vinted=async(_url,init)=>{
+        if(init.method==='POST')return {status:200,body:{reply:{id:'sent'},data:{id:'sent'}}}
+        return {status:200,body:modern?{id,messages:[{id:lastId,sender_id:sender,created_at:'2026-11-10T12:00:00Z',data:{content:'Une question'}}]}:
+          {conversation:{id,messages:[{entity_type:'message',created_at_ts:1794312000,entity:{id:lastId,user_id:sender,body:'Une question'}}]}}}
+      }
+      const r=await run(task)
+      assert.equal(r.ok,true,r.error)
+      assert.equal(calls.filter(c=>c.method==='POST').length,shouldSend?1:0)
+      if(!shouldSend)assert.equal(r.result.context_changed,true)
+    }
+    calls.length=0
+    await run({...task,payload:{...task.payload,manual:true}})
+    assert.equal(calls.length,1,'explicitly approved replies are not overridden');assert.equal(calls[0].method,'POST')
+  }
+  T.forgetChat()
+})
+
+test('an unreadable conversation never triggers an automatic reply',async()=>{
+  T.setChat('v1');calls.length=0
+  vinted=async()=>({status:200,body:{conversation:{id:'42'}}})
+  const r=await run({kind:'reply_message',member_id:'7',recipes:{},payload:{conversation_id:'42',body:'Bonjour',source:'ai',source_message_id:'m1'}})
+  assert.equal(r.ok,false);assert.ok(calls.every(c=>c.method==='GET'))
+  T.forgetChat()
+})
+
 test('likes: fresh buyer message or offer cancels the initial message and follow-up',async t=>{
  t.mock.method(globalThis,'setTimeout',fn=>{queueMicrotask(fn);return 0})
  const recipes={conversation_create:{method:'POST',path:'/api/v2/conversations',template:{item_id:0,opposite_user_id:0}},conversation_read:{method:'GET',path:'/api/v2/conversations/{id}'},message_send:{method:'POST',path:'/api/v2/conversations/{id}/replies',template:{reply:{body:''}}}}

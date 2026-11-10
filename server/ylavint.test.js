@@ -192,6 +192,59 @@ test('AI replies never carry links or phone numbers; the prompt keeps everything
   assert.equal(likeText('Merci pour ton like sur {article} à {prix} {inconnu}!',{title:'Robe',price:20}),'Merci pour ton like sur Robe à 20 € !')
 })
 
+test('AI waits for a quiet conversation and answers successive buyer messages together',async()=>{
+  const now=Date.now(),db=fakeDb(base());enableAi(db,{mode:'auto'})
+  const first={id:'burst1',from_me:false,body:'Bonjour, quelle taille ?',sent_at:new Date(now-5000).toISOString()}
+  await applyInbox(db,{account_id:ACC},{conversations:[convo({messages:[first]})]},{settings:settings(db),now})
+  let generated=0,received
+  const generate=async(_cfg,context)=>{generated++;received=context;return {reply:'Je vérifie la taille et la matière.',needs_human:false}}
+  await pollExtras(db,{id:ACC},settings(db),{now,generate})
+  assert.equal(generated,0,'wait before drafting, not only before sending')
+  const second={id:'burst2',from_me:false,body:'Et la matière ?',sent_at:new Date(now+20000).toISOString()}
+  await applyInbox(db,{account_id:ACC},{conversations:[convo({messages:[first,second]})]},{settings:settings(db),now:now+20000})
+  await pollExtras(db,{id:ACC},settings(db),{now:now+40000,generate})
+  assert.equal(generated,0,'a second message resets the quiet period')
+  await pollExtras(db,{id:ACC},settings(db),{now:now+51000,generate})
+  assert.equal(generated,1)
+  assert.deepEqual(received.conversation.map(m=>m.texte),[first.body,second.body])
+  assert.equal(db.state.vinted_agent_tasks[0].payload.source_message_id,'burst2')
+})
+
+test('a message arriving during AI generation discards the old response and drafts from the new context',async()=>{
+  const db=fakeDb(base());enableAi(db,{mode:'auto'})
+  await applyInbox(db,{account_id:ACC},{conversations:[convo()]},{settings:settings(db)})
+  const conv=db.state.ylavint_conversations[0]
+  const result=await draftAi(db,conv,normalizeAi({enabled:true,mode:'auto'}),{generate:async()=>{
+    await applyInbox(db,{account_id:ACC},{conversations:[convo({messages:[...convo().messages,{id:'new',from_me:false,body:'En fait, donne-moi les mesures.',sent_at:recent(1)}]})]},{settings:settings(db)})
+    return {reply:'Ancienne réponse à ne pas envoyer.',needs_human:false}
+  }})
+  assert.equal(result.state,'pending');assert.equal(db.state.vinted_agent_tasks.length,0)
+  const next=await draftAi(db,conv,normalizeAi({enabled:true,mode:'auto'}),{generate:fakeAi('Je vérifie les mesures.')})
+  assert.equal(next.state,'queued');assert.equal(db.state.vinted_agent_tasks[0].payload.source_message_id,'new')
+})
+
+test('a queued manual reply takes precedence over an automatic draft',async()=>{
+  const db=fakeDb(base());enableAi(db,{mode:'auto'})
+  await applyInbox(db,{account_id:ACC},{conversations:[convo()]},{settings:settings(db)})
+  await queueReply(db,{account_id:ACC,conversation_id:'9001',body:'Je m’en occupe.',user:USER})
+  let generated=0
+  const result=await draftAi(db,db.state.ylavint_conversations[0],normalizeAi({enabled:true,mode:'auto'}),{generate:async()=>{generated++;return {reply:'Doublon',needs_human:false}}})
+  assert.equal(result.state,'skipped');assert.equal(generated,0);assert.equal(db.state.vinted_agent_tasks.length,1)
+})
+
+test('a stale queued AI reply is skipped at dispatch and requests a fresh conversation',async()=>{
+  const db=fakeDb(base());enableAi(db,{mode:'auto'})
+  await applyInbox(db,{account_id:ACC},{conversations:[convo()]},{settings:settings(db)})
+  await draftAi(db,db.state.ylavint_conversations[0],normalizeAi({enabled:true,mode:'auto'}),{generate:fakeAi()})
+  const task=db.state.vinted_agent_tasks[0];task.not_before=recent(1)
+  await applyInbox(db,{account_id:ACC},{conversations:[convo({messages:[...convo().messages,{id:'m2',from_me:false,body:'Non merci finalement.',sent_at:recent(1)}]})]},{settings:settings(db)})
+  const poll=await agentPoll(db,'k',{member_id:'3206068112'})
+  assert.equal(poll.task.id,task.id);assert.equal(poll.task.payload.context_changed,true)
+  await agentResult(db,'k',{task_id:poll.task.id,lease:poll.task.lease,member_id:'3206068112',ok:true,result:{skipped:poll.task.payload.skip,context_changed:true}})
+  assert.equal(db.state.ylavint_messages.find(m=>m.source==='ai').state,'cancelled')
+  assert.ok(db.state.vinted_agent_tasks.some(t=>t.kind==='sync_inbox'&&t.payload?.force_details&&t.payload.conversation_ids.includes('9001')))
+})
+
 test('poll: the extension drafts at most one AI reply and reports unread conversations',async()=>{
   const db=fakeDb(base());enableAi(db)
   await applyInbox(db,{account_id:ACC},{conversations:[convo(),convo({id:'9004'})]},{settings:settings(db)})

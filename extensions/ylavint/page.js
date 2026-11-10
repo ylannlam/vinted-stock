@@ -355,10 +355,20 @@
     return {conversations: [...out.values()], more_history: moreHistory, chat, ...(moreHistory && chat === 'v2' ? {next_cursor: next} : {})}
   }
   async function replyMessage(task) {
-    if(task.payload.skip)return {skipped:task.payload.skip}
+    if(task.payload.skip)return {skipped:task.payload.skip,context_changed:task.payload.context_changed===true}
     const {conversation_id, body} = task.payload, R = task.recipes
     if (!body) throw new Stop('failed', 'Message vide.')
     const chat = isUuid(conversation_id) ? 'v2' : await detectChat()
+    if(task.payload.source==='ai'&&task.payload.manual!==true){
+      const c=await readConversation(R,conversation_id,chat)
+      if(!Array.isArray(c.messages))throw new Stop('failed','Conversation illisible : réponse automatique non envoyée.')
+      if(c.allow_reply===false)return {skipped:'Vinted ne permet plus de répondre dans cette conversation.'}
+      const at=v=>{const n=Number(v);return v==null?0:Number.isFinite(n)?n*(n<1e12?1000:1):Date.parse(v)||0}
+      const messages=c.messages.map(m=>messageRow(m,task.member_id)).filter(m=>!['action','status'].includes(m.kind)).sort((a,b)=>at(a.sent_at)-at(b.sent_at))
+      const last=messages.at(-1)
+      if(!last||last.from_me||!task.payload.source_message_id||last.id!==String(task.payload.source_message_id))
+        return {skipped:'La conversation a changé : réponse automatique à recalculer.',context_changed:true}
+    }
     const r = await sendText(R, conversation_id, body, chat)
     const m = r.reply || r.message || r.conversation?.messages?.slice(-1)?.[0]?.entity || r
     return {conversation_id: String(conversation_id), message_id: m?.id != null ? String(m.id) : null}
