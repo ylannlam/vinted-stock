@@ -35,22 +35,33 @@
   async function call(recipe, opts = {}) {
     try { return await callOnce(recipe, opts) }
     catch (e) { if (!(e instanceof Stop) || e.code !== 'logged_out' || opts.retried) throw e }
-    await sleep(4000); memory.csrf = null
+    // Session expirée : on la renouvelle comme le fait le site Vinted, puis un seul nouvel essai.
+    memory.csrf = null
+    try { await nativeFetch('/web/api/auth/refresh', {method: 'POST', credentials: 'include', headers: {accept: 'application/json', ...(csrf() ? {'x-csrf-token': csrf()} : {})}, signal: AbortSignal.timeout(10000)}) } catch {}
+    await sleep(3000)
     return callOnce(recipe, {...opts, retried: true})
   }
+  // Services Vinted hors du site (même compte, même session) : liste fermée de chemins.
+  const API_ORIGIN = 'https://api.vinted.fr'
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  const isUuid = v => UUID.test(String(v ?? ''))
+  const API_PATHS = [/^\/inbox-notifications\/v1\/notifications$/, /^\/messaging\/main\/(inbox|inquiries)$/,
+    /^\/messaging\/main\/conversations\/(\d{1,18}|[0-9a-f-]{36})(\/replies)?$/i, /^\/escrow-orders\/api\/v2\/current-user\/escrow-orders$/]
   async function callOnce(recipe, {ids = {}, query = {}, json = null, form = null, raw = false, timeout = null} = {}) {
     if (!recipe) throw new Stop('no_recipe', 'Action pas encore apprise.')
-    const path = recipe.path.replace(/\{(id|offer_id)\}/g, (_, key) => { const v = ids[key]; if (!/^\d{1,18}$/.test(String(v))) throw new Stop('failed', 'Identifiant manquant.'); return v })
-    const externalLikes = recipe.origin === 'https://api.vinted.fr' && path === '/inbox-notifications/v1/notifications' && recipe.method === 'GET'
-    if (recipe.origin && !externalLikes) throw new Stop('failed', 'Origine de requête refusée.')
-    const url = new URL(path, externalLikes ? recipe.origin : location.origin)
-    if (url.origin !== location.origin && !externalLikes) throw new Stop('failed', 'Adresse de requête refusée.')
+    const external = recipe.origin === API_ORIGIN
+    // UUID : seulement pour la nouvelle messagerie Vinted.
+    const path = recipe.path.replace(/\{(id|offer_id)\}/g, (_, key) => { const v = String(ids[key] ?? ''); if (!/^\d{1,18}$/.test(v) && !(key === 'id' && external && isUuid(v))) throw new Stop('failed', 'Identifiant manquant.'); return v })
+    if (recipe.origin && !(external && API_PATHS.some(p => p.test(path)))) throw new Stop('failed', 'Origine de requête refusée.')
+    const url = new URL(path, external ? API_ORIGIN : location.origin)
+    if (url.origin !== (external ? API_ORIGIN : location.origin)) throw new Stop('failed', 'Adresse de requête refusée.')
     for (const [k, v] of Object.entries({...(recipe.query || {}), ...query})) url.searchParams.set(k, v)
     const headers = {accept: 'application/json, text/plain, */*', ...(recipe.headers || {})}
     delete headers['content-type']; delete headers['content-length']
-    const token = csrf(), anon = memory.anon || cookie('anon_id')
-    if (token && !externalLikes) headers['x-csrf-token'] = token
-    if (anon && !externalLikes) headers['x-anon-id'] = anon
+    // Jetons de session : sur le site, et pour les envois de la nouvelle messagerie (comme le fait Vinted). Jamais ailleurs.
+    const token = csrf(), anon = memory.anon || cookie('anon_id'), withTokens = !external || recipe.method !== 'GET'
+    if (token && withTokens) headers['x-csrf-token'] = token
+    if (anon && withTokens) headers['x-anon-id'] = anon
     if (json) headers['content-type'] = 'application/json'
     let response
     try { response = await nativeFetch(url.href, {method: recipe.method, headers, body: json ? JSON.stringify(json) : form || undefined, credentials: 'include',...(timeout?{signal:AbortSignal.timeout(timeout)}:{})}) }
@@ -62,11 +73,21 @@
     try { data = JSON.parse(text) } catch {}
     if (response.status === 401) throw new Stop('logged_out', 'Session Vinted expirée.', 401)
     if (response.status === 429) throw new Stop('rate_limited', 'Vinted limite les requêtes.', 429)
-    if (/captcha-delivery|datadome|captcha/i.test(text.slice(0, 3000)) && !response.ok) throw new Stop('captcha', 'Vérification Vinted demandée.', response.status)
-    if (response.status === 403) throw new Stop(/restrict|bloqu|banned/i.test(text) ? 'restricted' : 'forbidden', errorText(data, text), 403)
+    const head = text.slice(0, 3000)
+    // Contrôle Cloudflare : la requête n'a pas atteint Vinted. L'onglet est rechargé et la tâche repart plus tard.
+    if (/challenge-platform|__CF\$cv\$params|_cf_chl_opt/.test(head) && !response.ok) throw new Stop('challenge', 'Vérification de sécurité Vinted.', response.status)
+    if (/captcha-delivery|datadome|captcha/i.test(head) && !response.ok) throw new Stop('captcha', 'Vérification Vinted demandée.', response.status)
+    if (response.status === 403) {
+      // Refus ciblés (membre qui t'a bloqué, conversation refusée) : à distinguer d'une restriction du compte.
+      const mc = String(data?.message_code || ''), c = data?.code
+      if (Number(c) === 106) throw new Stop('blocked', errorText(data, text), 403)
+      if (mc === 'access_denied') throw new Stop('access_denied', errorText(data, text), 403)
+      if (c === 'FORBIDDEN') throw new Stop('messaging_refused', errorText(data, text), 403)
+      throw new Stop(/restrict|restrein|bloqu|banned|suspendu/i.test(text) ? 'restricted' : 'forbidden', errorText(data, text), 403)
+    }
     if (!response.ok) throw new Stop('vinted_error', `Vinted ${response.status} :${errorText(data, '')}`, response.status)
     if (data && data.code && data.code !== 0 && data.message) {
-      if (/restrict/i.test(data.message)) throw new Stop('restricted', data.message)
+      if (/restrict|restrein/i.test(data.message)) throw new Stop('restricted', data.message)
     }
     return data ?? {}
   }
@@ -135,9 +156,13 @@
     }
     return {items, complete}
   }
+  // Ventes : liste classique de Vinted, ou la nouvelle (escrow-orders) si l'ancienne ne répond plus pour ce compte.
+  const ESCROW_ORDERS = {method: 'GET', origin: API_ORIGIN, path: '/escrow-orders/api/v2/current-user/escrow-orders', query: {type: 'sold'}, headers: {'x-next-app': 'marketplace-web'}}
   async function syncOrders(task) {
-    const data = await call(task.recipes.orders_list, {query: {page: 1, per_page: 20}})
-    const orders = firstArray(data).map(orderRow).filter(o => o.transaction_id)
+    let data
+    try { data = await call(task.recipes.orders_list, {query: {page: 1, per_page: 20}}) }
+    catch (e) { if (!(e instanceof Stop) || ![403, 404, 410].includes(e.status) || ['restricted', 'captcha'].includes(e.code)) throw e; data = await call(ESCROW_ORDERS, {query: {page: 1, per_page: 20}}) }
+    const orders = (Array.isArray(data?.my_orders) ? data.my_orders : firstArray(data)).map(orderRow).filter(o => o.transaction_id)
     // Détail d'une vente (articles du lot, envoi) : seulement pour les ventes pas encore détaillées, et si la lecture a été apprise.
     const detailed = new Set((task.payload?.detailed || []).map(String))
     if (task.recipes.order_detail) for (const o of orders.filter(o => !detailed.has(String(o.transaction_id))).slice(0, 8)) {
@@ -186,16 +211,134 @@
       offers: detail ? pendingOffers(c, me) : [],
       messages: detail ? firstArray(c.messages ? {messages: c.messages} : c).map(m => messageRow(m, me)).filter(m => m.body || m.kind !== 'message') : null}
   }
+  // Messagerie Vinted : ancienne (/api/v2/conversations) ou nouvelle (api.vinted.fr/messaging/main), selon le compte.
+  // On regarde laquelle le site Vinted utilise lui-même pour ce compte (comme Dotb), et on s'y tient.
+  const CHAT_HEADERS = {platform: 'web', 'x-next-app': 'marketplace-web'}
+  const CHAT = {
+    inbox: {method: 'GET', origin: API_ORIGIN, path: '/messaging/main/inbox', headers: CHAT_HEADERS},
+    read: {method: 'GET', origin: API_ORIGIN, path: '/messaging/main/conversations/{id}', headers: CHAT_HEADERS},
+    create: {method: 'POST', origin: API_ORIGIN, path: '/messaging/main/inquiries', headers: CHAT_HEADERS},
+    reply: {method: 'POST', origin: API_ORIGIN, path: '/messaging/main/conversations/{id}/replies', headers: CHAT_HEADERS},
+  }
+  const LEGACY_READ = {method: 'GET', path: '/api/v2/conversations/{id}'}
+  const CHAT_KEY = 'ylv_chat_api'
+  // Le passage à la nouvelle messagerie est définitif : « v2 » est gardé 7 jours, « v1 » revérifié toutes les 6 h.
+  function chatApi() {
+    try { const s = JSON.parse(localStorage.getItem(CHAT_KEY) || 'null'); if (s && ['v1', 'v2'].includes(s.v) && Date.now() - s.at < (s.v === 'v2' ? 7 * 86400000 : 6 * 3600000)) return s.v } catch {}
+    return memory.chat || null
+  }
+  function chatCheckedAt() { try { return Number(JSON.parse(localStorage.getItem(CHAT_KEY) || 'null')?.at) || memory.chatAt || 0 } catch { return memory.chatAt || 0 } }
+  function setChat(v) {
+    if (!['v1', 'v2'].includes(v)) return
+    if (memory.chat !== v) memory.chatAt = Date.now()
+    memory.chat = v
+    try { const s = JSON.parse(localStorage.getItem(CHAT_KEY) || 'null'); if (s?.v !== v || Date.now() - s.at > 3600000) localStorage.setItem(CHAT_KEY, JSON.stringify({v, at: Date.now()})) } catch {}
+  }
+  function forgetChat() { memory.chat = null; try { localStorage.removeItem(CHAT_KEY) } catch {} }
+  // Requêtes faites par la page Vinted elle-même (jamais les nôtres) : elles disent quelle messagerie le compte utilise.
+  function chatFromUrls(urls) {
+    if (urls.some(u => /\/messaging\/main\//.test(u))) return 'v2'
+    if (urls.some(u => /\/api\/v2\/(inbox|conversations)(\?|\/|$)/.test(u))) return 'v1'
+    return null
+  }
+  // Adresse où la messagerie Vinted s'ouvre : /inbox/123 (ancienne) ou /inbox/<uuid> (nouvelle).
+  const chatFromPath = path => { const id = String(path || '').match(/^\/inbox\/([^/?#]+)\/?$/)?.[1]; return !id ? null : /^\d+$/.test(id) ? 'v1' : isUuid(id) ? 'v2' : null }
+  // Compte pas encore vérifié : la messagerie Vinted est ouverte hors écran quelques secondes, comme le fait Dotb,
+  // pour voir ce qu'elle utilise (adresse de la conversation ouverte, requêtes faites par la page Vinted).
+  let probing = null
+  async function detectChat() {
+    const known = chatApi(); if (known) return known
+    if (!document.body || typeof document.createElement !== 'function') return 'v1'
+    probing ||= (async () => {
+      const frame = document.createElement('iframe')
+      frame.style.cssText = 'position:fixed;left:-3000px;top:0;width:1024px;height:800px;border:0;pointer-events:none'
+      frame.setAttribute('aria-hidden', 'true'); frame.tabIndex = -1; frame.src = '/inbox'
+      document.body.appendChild(frame)
+      try {
+        for (let i = 0; i < 20; i++) {
+          await sleep(500)
+          let v = null
+          try { const w = frame.contentWindow; v = chatFromPath(w.location.pathname) || chatFromUrls(w.performance.getEntriesByType('resource').map(e => e.name)) } catch {}
+          if (v) { setChat(v); return v }
+        }
+        return null
+      } finally { frame.src = 'about:blank'; frame.remove() }
+    })().finally(() => { probing = null })
+    return (await probing) || 'v1' // rien vu : l'ancienne messagerie, comme Dotb
+  }
+  // Nouvelle messagerie → même forme que l'ancienne, pour que la suite (lecture, IA, likes) ne change pas.
+  function v2Conversation(c) {
+    const d = c?.data || {}, first = (c?.opposite_users || [])[0], system = first?.type === 'system' || c?.conversation_type === 'notice'
+    const inv = Array.isArray(d.inventory_items) ? d.inventory_items : [], refs = (Array.isArray(d.items) ? d.items : []).filter(i => !i.is_deleted)
+    const messages = (Array.isArray(c?.messages) ? c.messages : []).flatMap(m => {
+      const x = m.data || {}, at = x.created_at_ts ?? m.created_at ?? null
+      if (typeof x.entity_type === 'string' && x.entity_type !== 'message') return [{entity_type: x.entity_type, created_at_ts: at, entity: {...x, user_id: x.user_id ?? m.sender_id}}]
+      const body = typeof x.content === 'string' ? x.content : '', photos = Array.isArray(x.photos) ? x.photos : []
+      if (!body && !photos.length) return []
+      return [{entity_type: 'message', created_at_ts: at, entity: {id: x.id ?? m.id, user_id: m.sender_id, body, photos}}]
+    })
+    const tid = d.order_id ?? d.transaction_id ?? null, last = c?.messages?.length ? c.messages[c.messages.length - 1] : null
+    return {id: c?.id, legacy_id: c?.core_id_deprecated ?? null, conversation_type: c?.conversation_type ?? null, allow_reply: c?.allow_reply !== false,
+      read_by_current_user: c?.is_unread_by_current_user !== true,
+      opposite_user: system ? {id: null, login: 'Vinted'} : first?.data ? {id: first.data.id, login: first.data.login_name, photo: first.data.photo} : null,
+      item: inv[0] || refs[0] ? {id: refs[0]?.inventory_item_id ?? inv[0]?.id ?? null, title: inv[0]?.title ?? null, price: inv[0]?.price ?? null, photo: inv[0]?.photos?.[0] ?? null} : null,
+      transaction: tid ? {id: tid, current_user_side: d.current_user_side ?? null} : null,
+      subtitle: d.subject ?? null, updated_at: last?.created_at ?? c?.updated_at ?? null, messages}
+  }
+  function v2Entry(e) {
+    const items = Array.isArray(e?.data?.inventory_items) ? e.data.inventory_items : [], other = (e?.opposite_users || [])[0]?.data, last = e?.last_message
+    return {id: e?.id, updated_at: last?.created_at ?? e?.updated_at ?? e?.created_at ?? null,
+      description: (typeof last?.data?.content === 'string' && last.data.content) || items.map(i => i.title).filter(Boolean).join(', '),
+      unread: e?.is_unread_by_current_user === true,
+      opposite_user: e?.conversation_type === 'notice' ? {id: null, login: 'Vinted'} : other ? {id: other.id, login: other.login_name, photo: other.photo} : {},
+      item_photos: items.map(i => i.photos?.[0]).filter(Boolean), item_title: items[0]?.title || null}
+  }
+  const skippable = e => e instanceof Stop && ['vinted_error', 'failed', 'access_denied', 'blocked', 'messaging_refused', 'forbidden'].includes(e.code)
+  // Une conversation, quelle que soit la messagerie du compte (forme de l'ancienne messagerie).
+  async function readConversation(R, id, chat) {
+    const legacy = () => call(R.conversation_read || LEGACY_READ, {ids: {id}}).then(d => d.conversation || d)
+    const fresh = () => call(CHAT.read, {ids: {id}}).then(v2Conversation)
+    if (isUuid(id)) return fresh()
+    if ((chat || chatApi()) === 'v2') { try { return await fresh() } catch (e) { if (!(e instanceof Stop && e.status === 404)) throw e } }
+    return legacy()
+  }
+  // Envoi d'un texte dans une conversation existante.
+  async function sendText(R, conversation, body, chat) {
+    const v2 = () => call(CHAT.reply, {ids: {id: conversation}, json: {content: body, is_personal_data_sharing_check_skipped: false, photo_temp_uuids: null}})
+      .then(r => ({reply: {id: r?.data?.id ?? r?.message?.id ?? r?.id ?? null}, conversation_id: r?.conversation_id ?? null}))
+    if (isUuid(conversation)) return v2()
+    if ((chat || chatApi()) === 'v2') { try { return await v2() } catch (e) { if (!(e instanceof Stop && e.status === 404)) throw e } }
+    if (!R.message_send) throw new Stop('no_recipe', 'Envoi de message pas encore appris.')
+    return call(R.message_send, {ids: {id: conversation}, json: fillShape(R.message_send.template, [[/^(body|message|text|content)$/, body], [/photo/, []]])})
+  }
+  async function inboxPage(R, chat, {page, cursor}) {
+    if (chat === 'v2') {
+      const data = await call(CHAT.inbox, {query: cursor ? {next_cursor: cursor.next, ...(cursor.temp ? {next_cursor_temp: cursor.temp} : {})} : {}})
+      const next = data?.pagination?.has_next === true && data.pagination.next_cursor ? {next: data.pagination.next_cursor, temp: data.pagination_temp?.next_cursor || null} : null
+      return {rows: (Array.isArray(data?.conversations) ? data.conversations : []).map(v2Entry), next}
+    }
+    const data = await call(R.inbox_list, {query: {page, per_page: 20}})
+    const rows = Array.isArray(data.conversations) ? data.conversations : firstArray(data)
+    return {rows, next: rows.length >= 20 ? {page: page + 1} : null}
+  }
   async function scanInbox(task) {
     const p = task.payload || {}, known = p.known || {}, forced = new Set((p.conversation_ids || []).map(String)), me = task.member_id
-    const first = !Object.keys(known).length, historyPage=Number(p.history_page)||0
-    const list = []
-    for (let page = historyPage||1; page <= (historyPage||(first && !forced.size ? 2 : 1)); page++) {
-      const data = await call(task.recipes.inbox_list, {query: {page, per_page: 20}})
-      const rows = Array.isArray(data.conversations) ? data.conversations : firstArray(data)
-      list.push(...rows)
-      if (rows.length < 20) break
-      await pause(200, 400)
+    const first = !Object.keys(known).length, historyPage = Number(p.history_page) || 0
+    let chat = await detectChat()
+    const list = [], pages = historyPage ? 1 : first && !forced.size ? 2 : 1
+    let cursor = chat === 'v2' && p.cursor && typeof p.cursor.next === 'string' ? p.cursor : null, page = historyPage || 1, next = null
+    for (let i = 0; i < pages; i++) {
+      let r
+      try { r = await inboxPage(task.recipes, chat, {page, cursor}) }
+      catch (e) {
+        // L'ancienne messagerie ne répond plus pour ce compte : il est passé sur la nouvelle.
+        if (chat !== 'v1' || !(e instanceof Stop) || ![403, 404, 410].includes(e.status)) throw e
+        forgetChat(); chat = 'v2'; setChat('v2'); r = await inboxPage(task.recipes, chat, {page, cursor: null})
+      }
+      list.push(...r.rows); next = r.next
+      if (!next) break
+      if (chat === 'v2') cursor = next; else page = next.page
+      if (i + 1 < pages) await pause(200, 400)
     }
     const changed = list.filter(c => c && (forced.has(String(c.id)) || known[String(c.id)] !== String(c.updated_at ?? ''))).slice(0, historyPage ? 20 : first ? 40 : 20)
     for (const id of forced) if (!list.some(c => String(c.id) === id)) changed.push({id})
@@ -203,20 +346,20 @@
     for (const c of changed) {
       await pause(100, 200)
       try {
-        const detail = await call(task.recipes.conversation_read, {ids: {id: c.id}})
+        const detail = await readConversation(task.recipes, c.id, chat)
         out.set(String(c.id), conversationRow(c, detail, me))
         progress()
-      } catch (e) { if (!(e instanceof Stop) || !['vinted_error', 'failed'].includes(e.code)) throw e }
+      } catch (e) { if (!skippable(e)) throw e }
     }
-    const moreHistory=!!historyPage&&list.length===20&&list.some(c=>{const v=c.updated_at,n=Number(v),t=Number.isFinite(n)?n*(n<1e12?1000:1):Date.parse(v);return !Number.isFinite(t)||t>=Date.parse(p.history_since)})
-    return {conversations: [...out.values()],more_history:moreHistory}
+    const moreHistory = !!historyPage && !!next && list.some(c => { const v = c.updated_at, n = Number(v), t = Number.isFinite(n) ? n * (n < 1e12 ? 1000 : 1) : Date.parse(v); return !Number.isFinite(t) || t >= Date.parse(p.history_since) })
+    return {conversations: [...out.values()], more_history: moreHistory, chat, ...(moreHistory && chat === 'v2' ? {next_cursor: next} : {})}
   }
   async function replyMessage(task) {
     if(task.payload.skip)return {skipped:task.payload.skip}
     const {conversation_id, body} = task.payload, R = task.recipes
     if (!body) throw new Stop('failed', 'Message vide.')
-    if (!R.message_send) throw new Stop('no_recipe', 'Envoi de message pas encore appris.')
-    const r = await call(R.message_send, {ids: {id: conversation_id}, json: fillShape(R.message_send.template, [[/^(body|message|text|content)$/, body], [/photo/, []]])})
+    const chat = isUuid(conversation_id) ? 'v2' : await detectChat()
+    const r = await sendText(R, conversation_id, body, chat)
     const m = r.reply || r.message || r.conversation?.messages?.slice(-1)?.[0]?.entity || r
     return {conversation_id: String(conversation_id), message_id: m?.id != null ? String(m.id) : null}
   }
@@ -270,27 +413,54 @@
     const x = orderExtras(t)
     if (/colissimo/i.test(x.carrier || '') || /colissimo/i.test(JSON.stringify(t))) return {transaction_id: p.transaction_id, skipped: 'colissimo', carrier: 'Colissimo'}
     shipment = shipment || t.shipment?.id || t.shipment_id || null
+    let carrier = x.carrier
     const byShipment = recipe.id_from === 'shipment' || /\/shipments\//.test(recipe.path || '')
+    if (!carrier || (byShipment && !shipment)) {
+      // Transporteur ou envoi absent du détail : Vinted les donne aussi à part (lecture seule). Même contrôle Colissimo.
+      try {
+        await pause(800, 2000)
+        const s = await call({method: 'GET', path: '/api/v2/escrow_orders/{id}/shipment'}, {ids: {id: p.transaction_id}})
+        if (/colissimo/i.test(JSON.stringify(s))) return {transaction_id: p.transaction_id, skipped: 'colissimo', carrier: 'Colissimo'}
+        shipment = shipment || s?.shipment?.id || s?.id || null
+        carrier = carrier || orderExtras(s?.shipment || s || {}).carrier
+      } catch (e) { if (!skippable(e)) throw e }
+    }
+    // Transporteur inconnu, ou La Poste (peut être Colissimo) : on ne prend aucun risque, le bordereau se fait sur Vinted.
+    if (/la ?poste/i.test(carrier || '')) return {transaction_id: p.transaction_id, skipped: 'colissimo', carrier}
+    if (!carrier || !CARRIERS.test(carrier)) return {transaction_id: p.transaction_id, shipment_id: shipment, pending: true, ship_deadline: x.ship_deadline}
     const id = byShipment ? shipment : p.transaction_id
-    if (!id) throw new Stop('failed', 'Envoi pas encore créé sur Vinted : bordereau pas disponible.')
-    const data = await call(recipe, {ids: {id}, raw: true})
+    // Pas encore d'envoi ou de bordereau généré sur Vinted : on ne l'active jamais nous-mêmes, on repassera.
+    if (!id) return {transaction_id: p.transaction_id, pending: true, carrier, ship_deadline: x.ship_deadline}
+    let data
+    try { data = await call(recipe, {ids: {id}, raw: true}) }
+    catch (e) { if (e instanceof Stop && e.status === 404) return {transaction_id: p.transaction_id, shipment_id: shipment, pending: true, carrier, ship_deadline: x.ship_deadline}; throw e }
     let pdf = data.pdf
     if (!pdf) {
       const url = findDeep(data, (k, v) => typeof v === 'string' && /^https:\/\//.test(v) && /label|pdf|url/i.test(k))
-      if (!url) throw new Stop('failed', 'Bordereau pas encore disponible sur Vinted.')
+      if (!url) return {transaction_id: p.transaction_id, shipment_id: shipment, pending: true, carrier, ship_deadline: x.ship_deadline}
       pdf = await fetchBytes(url)
     }
     if (pdf.byteLength > 4e6) throw new Stop('failed', 'Bordereau trop volumineux.')
-    return {transaction_id: p.transaction_id, shipment_id: shipment, carrier: x.carrier, ship_deadline: x.ship_deadline, pdf_base64: toBase64(pdf)}
+    return {transaction_id: p.transaction_id, shipment_id: shipment, carrier, ship_deadline: x.ship_deadline, pdf_base64: toBase64(pdf)}
   }
   async function scanLikes(task) {
     // Anciennes recettes enregistrées : l’ancienne route /api/v2/notifications renvoie désormais 404.
     const recipe = !task.recipes.likes_list || task.recipes.likes_list.path === '/api/v2/notifications'
       ? {method:'GET',origin:'https://api.vinted.fr',path:'/inbox-notifications/v1/notifications',headers:{platform:'web','x-next-app':'marketplace-web',locale:'fr-FR'}} : task.recipes.likes_list
     const likes = [], seen = new Set(), historyPage=Number(task.payload?.history_page)||0
+    // Lecture courante : on s'arrête dès qu'une page ne contient plus que des notifications déjà lues au passage précédent.
+    const since = Date.parse(task.payload?.since || '')
+    const timeOf = n => { const v=n.updated_at??n.created_at_ts??n.created_at??n.timestamp,num=Number(v); return v==null?NaN:Number.isFinite(num)?num*(num<1e12?1000:1):Date.parse(v) }
     let moreHistory=false, notifications=0
     for (let page = historyPage||1; page <= (historyPage||5); page++) {
-      const data = await call(recipe, {query:{page,per_page:50}})
+      const query = {page, per_page: historyPage ? 50 : 20}
+      let data
+      try { data = await call(recipe, {query}) }
+      catch (e) {
+        // Comme Dotb : si le service de notifications ne répond pas, la route du site Vinted prend le relais.
+        if (!(e instanceof Stop) || !e.status || [401, 429].includes(e.status) || ['captcha', 'restricted'].includes(e.code)) throw e
+        data = await call({method: 'GET', path: '/web/api/notifications/notifications', headers: {platform: 'web'}}, {query})
+      }
       const rows = Array.isArray(data?.notifications) ? data.notifications : firstArray(data)
       notifications += rows.length
       for (const n of rows) {
@@ -298,9 +468,11 @@
         if (!row || seen.has(`${row.item_id}:${row.user_id}`)) continue
         seen.add(`${row.item_id}:${row.user_id}`); likes.push(row)
       }
-      const hasMore=rows.length>0&&(data.pagination?.total_pages? page<Number(data.pagination.total_pages):rows.length===50)
-      if(historyPage){moreHistory=hasMore&&rows.some(n=>{const v=n.created_at_ts??n.created_at??n.updated_at??n.timestamp,numeric=Number(v),at=v==null?NaN:Number.isFinite(numeric)?numeric*(numeric<1e12?1000:1):Date.parse(v);return !Number.isFinite(at)||at>=Date.parse(task.payload.history_since)});break}
+      const hasMore=rows.length>0&&(data.pagination?.total_pages? page<Number(data.pagination.total_pages):rows.length===(historyPage?50:20))
+      if(historyPage){moreHistory=hasMore&&rows.some(n=>{const at=timeOf(n);return !Number.isFinite(at)||at>=Date.parse(task.payload.history_since)});break}
       if (!hasMore) break
+      const oldest = timeOf(rows[rows.length - 1])
+      if (Number.isFinite(since) && Number.isFinite(oldest) && oldest < since) break
       await pause(500, 1000)
     }
     return {likes,more_history:moreHistory,notifications}
@@ -313,9 +485,10 @@
     if (!(Number(n.entry_type) === 20 || /favou?ri|aim[ée]|like/i.test(String(n.body || n.title || '')))) return null
     const item = n.item_id || n.subject_id && Number(n.entry_type) === 20 && n.subject_id || raw.match(/items\/(\d+)/)?.[1] || n.item?.id
     // user_id est le destinataire de la notification, PAS le membre qui a liké.
-    const user = link.searchParams.get('offering_id') || raw.match(/offering_id=(\d+)/)?.[1] || n.sender_id || n.sender?.id || n.user?.id
-    const login = n.sender?.login || n.user?.login || String(n.body || '').match(/^([A-Za-z0-9._-]+) a marqué /)?.[1] || null
-    return item && user && String(user) !== String(me) ? {item_id:String(item),user_id:String(user),login,liked_at:n.created_at_ts??n.created_at??n.updated_at??n.timestamp??null} : null
+    const user = link.searchParams.get('offering_id') || raw.match(/offering_id=(\d+)/)?.[1] || link.searchParams.get('user_id') || n.sender_id || n.sender?.id || n.notifier?.id
+    const login = n.sender?.login || n.notifier?.login || String(n.body || '').match(/^([A-Za-z0-9._-]+) a (marqué|ajouté|aimé) /)?.[1] || null
+    // Date du like : updated_at d'abord (une notification regroupée est mise à jour au dernier like), comme Dotb.
+    return item && user && /^\d{1,18}$/.test(String(user)) && String(user) !== String(me) ? {item_id:String(item),user_id:String(user),login,liked_at:n.updated_at??n.created_at_ts??n.created_at??n.timestamp??null} : null
   }
 
   // Une photo envoyée comme le fait le formulaire Vinted (champs relevés à l'apprentissage).
@@ -413,7 +586,6 @@
     } }
     walk(body); return body
   }
-  const sendText = (R, conversation, body) => call(R.message_send, {ids: {id: conversation}, json: fillShape(R.message_send.template, [[/^(body|message|text|content)$/, body], [/photo/, []]])})
   // Identifiant à mettre dans le chemin d'une recette : celui relevé à l'apprentissage (vente, conversation, article…).
   const idFor = (recipe, p, fallback) => ({shipment: p.shipment_id, transaction: p.transaction_id, conversation: p.conversation_id, item: p.item_id, user: p.user_id})[recipe.id_from || fallback]
   // Membre filtré (note, sans évaluation, ignoré) : lecture de son profil seulement si un filtre le demande.
@@ -436,34 +608,70 @@
     await call(R.offer_send, {ids: {id: idFor(R.offer_send, {conversation_id: conversation, transaction_id: transaction}, 'transaction')}, json: body})
     return true
   }
+  // Refus de Vinted qui concernent ce membre ou cet article seulement : le like est écarté, la suite continue (comme Dotb).
+  function likeRefusal(e) {
+    if (!(e instanceof Stop)) return null
+    if (e.status === 404 || e.status === 410) return {skip_code: 'item_unavailable', skipped: 'article plus disponible sur Vinted'}
+    if (e.code === 'blocked') return {skip_code: 'user_blocked_you', skipped: 'le membre t’a bloqué'}
+    if (e.code === 'access_denied') return {skip_code: 'access_denied', skipped: 'Vinted refuse d’ouvrir une conversation avec ce membre'}
+    if (e.code === 'messaging_refused') return {skip_code: 'messaging_refused', skipped: 'Vinted refuse la messagerie avec ce membre'}
+    return null
+  }
+  async function openConversation(task, chat) {
+    const p = task.payload, R = task.recipes
+    if (chat === 'v2') {
+      const r = await call(CHAT.create, {json: {item_ids: [String(p.item_id)], receiver_id: String(p.user_id)}})
+      const id = r?.conversation_id || r?.conversation?.id || r?.id
+      if (!id) throw new Stop('vinted_error', 'Conversation non ouverte.')
+      return {id: String(id), transaction: null}
+    }
+    const created = await call(R.conversation_create, {json: fillShape(R.conversation_create.template, [[/item_id/, Number(p.item_id)], [/(opposite|receiver|recipient)_?user_id|^user_id$/, Number(p.user_id)]])})
+    const id = created.conversation?.id || created.id
+    if (!id) throw new Stop('vinted_error', 'Conversation non ouverte.')
+    return {id: String(id), transaction: created.conversation?.transaction?.id || null}
+  }
   async function likeMessage(task) {
     const p = task.payload, R = task.recipes
     if (p.skip) return {skipped: p.skip}
+    const chat = p.followup && isUuid(p.conversation_id) ? 'v2' : await detectChat()
     if (p.followup) {
-      // Relance : seulement si le membre n'a pas répondu.
-      const d = await call(R.conversation_read || {method: 'GET', path: '/api/v2/conversations/{id}'}, {ids: {id: p.conversation_id}})
-      const c = d.conversation || d, me = task.member_id
+      // Relance : seulement si le membre n'a pas répondu et que Vinted permet encore d'écrire.
+      let c
+      try { c = await readConversation(R, p.conversation_id, chat) } catch (e) { const r = likeRefusal(e); if (r) return {...r, conversation_id: String(p.conversation_id)}; throw e }
       if(!Array.isArray(c.messages))throw new Stop('failed','Conversation illisible : relance non envoyée.')
-      if (buyerEngaged(c, me)) return {skipped:'le membre a déjà envoyé un message ou une offre',conversation_id:String(p.conversation_id),buyer_engaged:true}
-      if (p.message) { await sendText(R, p.conversation_id, p.message); await pause(3000, 7000) }
+      if (c.allow_reply === false) return {skipped: 'Vinted ne permet plus d’écrire dans cette conversation', conversation_id: String(p.conversation_id)}
+      if (buyerEngaged(c, task.member_id)) return {skipped:'le membre a déjà envoyé un message ou une offre',conversation_id:String(p.conversation_id),buyer_engaged:true}
+      if (p.message) { await sendText(R, p.conversation_id, p.message, chat); await pause(3000, 7000) }
       const offer = await sendOffer(R, p.conversation_id, c.transaction?.id, p.offer_price).catch(() => false)
       return {conversation_id: String(p.conversation_id), message: p.message || null, offer}
     }
     const member = await memberCheck(task)
     if (member.skip) return {skipped: member.skip, login: member.login}
-    const created = await call(R.conversation_create, {json: fillShape(R.conversation_create.template, [[/item_id/, Number(p.item_id)], [/(opposite|receiver|recipient)_?user_id|^user_id$/, Number(p.user_id)]])})
-    const conversation = created.conversation?.id || created.id
-    if (!conversation) throw new Stop('vinted_error', 'Conversation non ouverte.')
+    let created
+    try { created = await openConversation(task, chat) }
+    catch (e) {
+      const r = likeRefusal(e)
+      // Refus d'accès sur l'ancienne messagerie : on revérifiera laquelle le compte utilise au prochain envoi.
+      if (r?.skip_code === 'access_denied' && chat === 'v1' && chatCheckedAt() < Date.now() - 30 * 60000) forgetChat()
+      if (r) return {...r, login: member.login}
+      throw e
+    }
+    const conversation = created.id
     await pause(4000, 9000)
     // Relire juste avant l'envoi : une offre ou un message peut arriver pendant l'attente du like.
-    const detail=await call(R.conversation_read||{method:'GET',path:'/api/v2/conversations/{id}'},{ids:{id:conversation}})
-    const current=detail.conversation||detail
+    let current
+    try { current = await readConversation(R, conversation, chat) } catch (e) { const r = likeRefusal(e); if (r) return {...r, conversation_id: conversation, login: member.login}; throw e }
     if(!Array.isArray(current.messages))throw new Stop('failed','Conversation illisible : message au like non envoyé.')
-    if(buyerEngaged(current,task.member_id))return {skipped:'le membre a déjà envoyé un message ou une offre',conversation_id:String(conversation),buyer_engaged:true,login:member.login}
-    if (p.message) await sendText(R, conversation, p.message)
+    if(buyerEngaged(current,task.member_id))return {skipped:'le membre a déjà envoyé un message ou une offre',conversation_id:conversation,buyer_engaged:true,login:member.login}
+    if (current.allow_reply === false) return {skipped: 'Vinted ne permet pas d’écrire dans cette conversation', conversation_id: conversation, login: member.login}
+    if (p.message) {
+      try { await sendText(R, conversation, p.message, chat) }
+      catch (e) { const r = likeRefusal(e); if (r) return {...r, conversation_id: conversation, login: member.login}; throw e }
+    }
     let offer = false
-    if (p.offer_price && R.offer_send) { await pause(3000, 7000); offer = await sendOffer(R, conversation, created.conversation?.transaction?.id, p.offer_price).catch(() => false) }
-    return {conversation_id: String(conversation), message: p.message || null, offer, login: member.login}
+    const transaction = created.transaction || current.transaction?.id || null
+    if (p.offer_price && R.offer_send) { await pause(3000, 7000); offer = await sendOffer(R, conversation, transaction, p.offer_price).catch(() => false) }
+    return {conversation_id: conversation, message: p.message || null, offer, login: member.login}
   }
   function buyerEngaged(conversation,me){
     return (conversation.messages||[]).map(m=>messageRow(m,me)).some(m=>!m.from_me&&['message','offer','photo'].includes(m.kind))
@@ -480,7 +688,7 @@
     const p = task.payload
     if (!p.conversation_id) throw new Stop('failed', 'Conversation de la vente inconnue.')
     if (!p.body) return {skipped: 'message vide'}
-    const r = await sendText(task.recipes, p.conversation_id, p.body)
+    const r = await sendText(task.recipes, p.conversation_id, p.body, isUuid(p.conversation_id) ? 'v2' : await detectChat())
     const m = r.reply || r.message || r
     return {conversation_id: String(p.conversation_id), message_id: m?.id != null ? String(m.id) : null}
   }
@@ -565,6 +773,8 @@
   }
   async function observe(method, href, headers, body, response) {
     const url = new URL(href, location.origin)
+    // La page Vinted elle-même dit quelle messagerie ce compte utilise.
+    if (response.ok !== false) { const chat = chatFromUrls([url.href]); if (chat) setChat(chat) }
     if (url.origin !== location.origin || !/^\/(api\/v2|web\/api)\//.test(url.pathname)) return
     const all = headersOf(headers)
     if (all['x-csrf-token']) memory.csrf = all['x-csrf-token']
@@ -640,5 +850,6 @@
   installWrappers()
   globalThis.__svAgent = {version: 4}
   // Pour les tests : fonctions pures.
-  globalThis.__svAgentTest = {publicationBody,fillItem, wardrobeItem, orderRow, shape, fillShape, hiddenFlag, messageRow, conversationRow, notificationLike, pendingOffers, offerAllowed}
+  globalThis.__svAgentTest = {publicationBody,fillItem, wardrobeItem, orderRow, shape, fillShape, hiddenFlag, messageRow, conversationRow, notificationLike, pendingOffers, offerAllowed,
+    v2Conversation, v2Entry, chatFromUrls, chatFromPath, setChat, forgetChat, chatApi}
 })()

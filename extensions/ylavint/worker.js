@@ -131,7 +131,9 @@ async function tickWork() {
     const task = {...r.task, member_id: who.member_id}
     await set({agent: {...agentState, task: task.kind}})
     // Page Vinted fermée ou rechargée pendant l'envoi de la tâche : rien n'a été fait sur Vinted, la tâche est remise en file.
-    const outcome = await (task.kind==='publish_item' ? openListingForm(task,chrome) : chrome.tabs.sendMessage(tab.id, {type: 'run', task})).catch(e => ({ok: false, code: /Receiving end does not exist|Could not establish connection/i.test(e.message || '') ? 'no_tab' : 'failed', error: e.message || 'Onglet Vinted fermé.'}))
+    const outcome = await (task.kind==='publish_item' ? openListingForm(task,chrome) : chrome.tabs.sendMessage(tab.id, {type: 'run', task})).catch(e => ({ok: false, code: linkError(e.message), error: e.message || 'Onglet Vinted fermé.'}))
+    // Contrôle de sécurité Vinted (Cloudflare) : un simple rechargement de l'onglet le passe, la tâche repart ensuite.
+    if (outcome?.code === 'challenge') chrome.tabs.reload(tab.id).catch(() => {})
     const report={task_id:task.id,lease:task.lease,member_id:who.member_id,...outcome}
     if(task.kind==='publish_item')await set({publication_result:report})
     const saved = await site('agent_result',report)
@@ -139,6 +141,13 @@ async function tickWork() {
     await journal({level: outcome.ok ? 'info' : 'warn', text: outcome.ok ? (saved.message || `${task.kind} : terminé`) : `${task.kind} : ${outcome.error || outcome.code}`})
     await set({agent: {...agentState, task: null, at: Date.now()}, agent_next: Date.now() + 1000})
   } finally { busyUntil = 0 }
+}
+
+// Lien coupé avec la page Vinted : jamais arrivée (no_tab) ou coupée en route (channel_closed, la page a été rechargée).
+function linkError(message = '') {
+  if (/Receiving end does not exist|Could not establish connection/i.test(message)) return 'no_tab'
+  if (/message channel (is )?closed|message port closed|listener indicated an asynchronous response/i.test(message)) return 'channel_closed'
+  return 'failed'
 }
 
 // Bridge du profil : allumé ou coupé depuis le popup ou le bouton YlaVint de la page.

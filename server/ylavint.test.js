@@ -462,3 +462,13 @@ test('order flow: an old sale seen for the first time triggers nothing',async()=
   await planFlow(db,ACF,[{transaction_id:'200',status:'Commande terminée'}],settings,{now,rand:()=>0,can})
   assert.equal((db.state.vinted_agent_tasks||[]).length,0);assert.equal(db.state.vinted_agent_orders[0].stage,'completed')
 })
+
+test('new Vinted messaging: a UUID conversation is stored, answered from the site and by the AI like any other',async()=>{
+  const db=fakeDb(base());enableAi(db)
+  const id='0b6f7c2e-4a1d-4c8e-9f3b-2d5e6a7b8c9d'
+  const r=await applyInbox(db,{account_id:ACC},{conversations:[convo({id:id.toUpperCase()})]},{settings:settings(db)})
+  assert.equal(r.conversations,1);assert.equal(r.ai_pending,1)
+  assert.equal(db.state.ylavint_conversations[0].conversation_id,id)
+  const q=await queueReply(db,{account_id:ACC,conversation_id:id,body:'Oui, dispo !',user:USER})
+  assert.equal(db.state.vinted_agent_tasks[0].payload.conversation_id,id);assert.ok(q.local_id)
+})

@@ -2,7 +2,7 @@
 // (confirmation, demande de délai, annulation, retrait, évaluation, message de fin, suppression de l'article vendu).
 // Toutes les actions passent par la file de tâches : plafonds du compte, plage horaire et recettes apprises.
 import {inHistory} from './ylavint-history.js'
-import {check,vid,text,iso,jitter,enqueue,KINDS} from './vinted-agent.js'
+import {check,vid,cid,text,iso,jitter,enqueue,KINDS} from './vinted-agent.js'
 import {fillTemplate,offerPrice,OPTIONAL} from './vinted-agent-config.js'
 
 const DAY=86400000,HOUR=3600000
@@ -62,7 +62,7 @@ export async function likeDone(db,task,result,settings,{now=Date.now(),rand=Math
     check(await where(db.from('vinted_agent_contacts').update({followup_state:skipped?'skipped':'sent'})))
     return {message:skipped?`Relance non envoyée : ${skipped}`:'Relance envoyée après un like.',skipped}
   }
-  const conversation=vid(result?.conversation_id)
+  const conversation=cid(result?.conversation_id)
   check(await where(db.from('vinted_agent_contacts').update({state:skipped?'skipped':'sent',sent_at:skipped?null:at,conversation_id:conversation,...(result?.login?{login:text(result.login,40)}:{})})))
   if(skipped)return {message:`Like écarté : ${skipped}`,skipped}
   const step=settings.likes.messages[Math.min(Number(p.step)||0,settings.likes.messages.length-1)]
@@ -170,7 +170,7 @@ export async function flowDone(db,task,{ok,result=null,error=null},{now=Date.now
   return {message:skipped?`${label} : ${skipped}`:`${label} : fait.`}
 }
 async function recordFlowMessage(db,task,result,now){
-  const at=nowIso(now),conv=vid(task.payload.conversation_id)
+  const at=nowIso(now),conv=cid(task.payload.conversation_id)
   check(await db.from('ylavint_messages').upsert({account_id:task.account_id,conversation_id:conv,message_id:vid(result?.message_id)||`local:flow:${task.id}`,from_me:true,body:task.payload.body,state:'sent',source:'flow',sent_at:at},{onConflict:'account_id,conversation_id,message_id',ignoreDuplicates:true}))
   await db.from('ylavint_conversations').update({last_message:task.payload.body,last_message_at:at,last_from_me:true,updated_at:at}).eq('account_id',task.account_id).eq('conversation_id',conv)
 }

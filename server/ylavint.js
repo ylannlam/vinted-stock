@@ -3,7 +3,7 @@
 // L'extension YlaVint lit et agit dans les profils AdsPower ; ce module range ce qu'elle rapporte et prépare ses tâches.
 import {createHash,randomUUID} from 'node:crypto'
 import {AppError,isId} from './dotb.js'
-import {check,vid,text,money,iso,agentLog,enqueue,learned,ready,effectiveSettings,jitter,markDraft,BUCKET,KINDS,RECIPES} from './vinted-agent.js'
+import {check,vid,cid,text,money,iso,agentLog,enqueue,learned,ready,effectiveSettings,jitter,markDraft,BUCKET,KINDS,RECIPES} from './vinted-agent.js'
 import {listingAiToken} from './listing-studio-core.js'
 import {LISTING_AI_MODELS} from '../src/lib/listingSettings.js'
 import {sizeFromTitle} from '../src/lib/soldSize.js'
@@ -23,7 +23,7 @@ export function parseInbox(result){
   if(!result||!Array.isArray(result.conversations)||result.conversations.length>100)throw new AppError('Messagerie illisible.')
   const out=[],seen=new Set()
   for(const c of result.conversations){
-    const id=vid(c?.id);if(!id||seen.has(id))continue;seen.add(id)
+    const id=cid(c?.id);if(!id||seen.has(id))continue;seen.add(id)
     let messages=null
     if(Array.isArray(c.messages)){
       messages=[];const ids=new Set()
@@ -154,7 +154,7 @@ export async function replyFailed(db,task,error){
 }
 // Message après un like : la conversation ouverte rejoint la messagerie du site.
 export async function recordLikeMessage(db,task,result,{now=Date.now()}={}){
-  const id=vid(result?.conversation_id);if(!id)return
+  const id=cid(result?.conversation_id);if(!id)return
   const at=nowIso(now)
   const listing=check(await db.from('vinted_agent_listings').select('title,photo_url,price').eq('account_id',task.account_id).eq('item_id',task.payload.item_id).maybeSingle())
   check(await db.from('ylavint_conversations').upsert({account_id:task.account_id,conversation_id:id,other_id:vid(task.payload.user_id),item_id:vid(task.payload.item_id),
@@ -398,7 +398,7 @@ export async function ylavintPublishReady(db,accountId){return (await import('./
 // ---------- Site : vues et actions ----------
 export const YLAVINT_ACTIONS=new Set(['reply','mark_read','ai_suggest','ai_discard','ai_send','cancel_message','refresh_conversation','refresh_inbox','human_done','save_ai','test_ai','item_unmask','item_reprice','label_link','retry_message'])
 const accountOf=v=>isId(v)?v.toLowerCase():null
-const convId=v=>vid(v)
+const convId=v=>cid(v)
 async function logins(db){return new Map(check(await db.from('publication_accounts').select('id,login')).map(a=>[a.id,a.login]))}
 
 // Non lu sur le site : le dernier message vient de l'acheteur et n'a pas été ouvert depuis.

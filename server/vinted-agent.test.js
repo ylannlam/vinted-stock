@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {normalizeSettings,effectiveSettings,unmaskPlan,repricePlan,dueScans,parseWardrobe,parseOrders,parseLikes,parseLabel,sanitizeRecipe,parisDayStart,
-  agentPoll,agentResult,agentLearn,pauseOnAlert,handleAgent,KINDS,DEFAULTS,rateLimitWait} from './vinted-agent.js'
+  agentPoll,agentResult,agentLearn,pauseOnAlert,handleAgent,KINDS,DEFAULTS,rateLimitWait,cid} from './vinted-agent.js'
 
 // --- Base en mémoire, juste assez proche de supabase-js pour ces parcours ---
 function fakeDb(state={}){
@@ -13,7 +13,7 @@ function fakeDb(state={}){
       if(op==='insert'){
         for(const row of [].concat(patch)){
           if(name==='vinted_agent_tasks'&&row.dedupe_key&&rows.some(r=>r.dedupe_key===row.dedupe_key&&['queued','running'].includes(r.state)))return {data:null,error:{code:'23505'}}
-          const defaults=name==='vinted_agent_settings'?{paused:false}:name==='vinted_agent_tasks'?{id:crypto.randomUUID(),state:'queued',created_at:new Date().toISOString(),attempts:0}:{}
+          const defaults=name==='vinted_agent_settings'?{paused:false}:name==='vinted_agent_tasks'?{id:crypto.randomUUID(),state:'queued',created_at:new Date().toISOString(),attempts:0}:name==='vinted_agent_log'?{created_at:new Date().toISOString()}:{}
           rows.push({...defaults,...row})
         }
         return {data:null,error:null}
@@ -25,7 +25,7 @@ function fakeDb(state={}){
       return {data:out.slice(0,limit).map(r=>({...r})),error:null}
     }
     const q={select(){if(op!=='select')returning=true;return q},eq(k,v){filters.push(r=>String(r[k])===String(v));return q},neq(k,v){filters.push(r=>String(r[k])!==String(v));return q},
-      in(k,v){filters.push(r=>v.map(String).includes(String(r[k])));return q},gte(k,v){filters.push(r=>r[k]&&r[k]>=v);return q},
+      in(k,v){filters.push(r=>v.map(String).includes(String(r[k])));return q},gte(k,v){filters.push(r=>r[k]&&r[k]>=v);return q},lt(k,v){filters.push(r=>!r[k]||r[k]<v);return q},not(k,op,v){if(op==='is'&&v===null)filters.push(r=>r[k]!=null);return q},
       order(k,o={}){order={k,asc:o.ascending!==false};return q},limit(n){limit=n;return q},
       insert(v){op='insert';patch=v;return q},update(v){op='update';patch=v;return q},delete(){op='delete';return q},
       upsert(v,{onConflict}={}){const keys=(onConflict||'id').split(',');for(const row of [].concat(v)){const i=rows.findIndex(r=>keys.every(k=>String(r[k])===String(row[k])));if(i>=0)Object.assign(rows[i],row);else rows.push({...row})}op='noop';return q},
@@ -247,4 +247,64 @@ test('likes older than the chosen period leave the queue at once, so recent like
   assert.deepEqual(state.vinted_agent_tasks.filter(t=>t.kind==='like_message').map(t=>t.state),['cancelled','cancelled','running'])
   assert.ok(state.vinted_agent_recipes.length)
   assert.deepEqual(state.vinted_agent_contacts.map(c=>c.state),['skipped','skipped','queued'])
+})
+
+// ---------- 3.8.7 ----------
+const likeSetup=(n=4)=>{
+  const state=base();state.vinted_agent_settings.push({account_id:ACC,enabled:true,paused:false,features:{},limits:{from_hour:0,to_hour:0},unmask:{},pricing:{},likes:{}})
+  for(let i=1;i<=n;i++){state.vinted_agent_tasks.push({id:crypto.randomUUID(),account_id:ACC,kind:'like_message',writes:true,state:'queued',attempts:0,not_before:new Date(Date.now()-60000).toISOString(),payload:{item_id:String(i),user_id:'7',step:0}});state.vinted_agent_contacts.push({account_id:ACC,item_id:String(i),user_id:'7',state:'queued'})}
+  return state
+}
+test('a like refused by Vinted is skipped, not failed; three refusals in 30 min push the other likes back about an hour, nothing pauses',async()=>{
+  const state=likeSetup(4),db=fakeDb(state)
+  for(let i=0;i<3;i++){
+    const r=await agentPoll(db,{},{member_id:'3206068112'})
+    assert.equal(r.task.kind,'like_message')
+    await agentResult(db,{},{task_id:r.task.id,lease:r.task.lease,member_id:'3206068112',ok:true,result:{skipped:'Vinted refuse d’ouvrir une conversation avec ce membre',skip_code:'access_denied'}})
+  }
+  const tasks=state.vinted_agent_tasks.filter(t=>t.kind==='like_message')
+  assert.deepEqual(tasks.map(t=>t.state),['done','done','done','queued'])
+  assert.equal(state.vinted_agent_contacts.filter(c=>c.state==='skipped').length,3)
+  assert.ok(Date.parse(tasks[3].not_before)>Date.now()+40*60000,'the last like waits about an hour')
+  assert.equal(state.vinted_agent_settings[0].paused,false,'the account keeps running')
+  assert.equal(state.vinted_agent_log.filter(l=>l.event==='likes_backoff').length,1)
+})
+test('failures that never reached Vinted put the task back without counting; a cut write is not replayed',async()=>{
+  for(const [code,kind,expected] of [['busy','like_message','queued'],['challenge','like_message','queued'],['channel_closed','sync_inbox','queued'],['network','sync_orders','queued'],['timeout','like_message','failed'],['channel_closed','reply_message','failed']]){
+    const state=base();state.vinted_agent_settings.push({account_id:ACC,enabled:true,paused:false,features:{},limits:{from_hour:0,to_hour:0},unmask:{},pricing:{},likes:{}})
+    state.vinted_agent_tasks.push({id:crypto.randomUUID(),account_id:ACC,kind,writes:KINDS[kind].writes,state:'queued',attempts:0,payload:kind==='like_message'?{item_id:'5',user_id:'7',step:0}:kind==='reply_message'?{conversation_id:'1',body:'x',local_id:'local:x'}:{}})
+    state.vinted_agent_recipes.push(recipe('message_send'))
+    const db=fakeDb(state),r=await agentPoll(db,{},{member_id:'3206068112'})
+    assert.equal(r.task?.kind,kind,code)
+    await agentResult(db,{},{task_id:r.task.id,lease:r.task.lease,member_id:'3206068112',ok:false,code,error:'x'})
+    const t=state.vinted_agent_tasks.find(x=>x.kind===kind)
+    assert.equal(t.state,expected,`${code} on ${kind}`)
+    if(expected==='queued')assert.equal(t.attempts,0)
+    assert.equal(state.vinted_agent_settings[0].paused,false)
+  }
+})
+test('a label not generated yet on Vinted is waited for, never stored as a failure',async()=>{
+  const state=base();state.vinted_agent_settings.push({account_id:ACC,enabled:true,paused:false,features:{labels:true},limits:{from_hour:0,to_hour:0},unmask:{},pricing:{},likes:{}})
+  state.vinted_agent_orders.push({transaction_id:'55',account_id:ACC,status:'À expédier'})
+  state.vinted_agent_recipes.push(recipe('order_label',{method:'GET',path:'/api/v2/shipments/{id}/label_url'}))
+  state.vinted_agent_tasks.push({id:crypto.randomUUID(),account_id:ACC,kind:'fetch_label',writes:false,state:'queued',attempts:0,payload:{transaction_id:'55'}})
+  const db=fakeDb(state),r=await agentPoll(db,{},{member_id:'3206068112'})
+  const out=await agentResult(db,{},{task_id:r.task.id,lease:r.task.lease,member_id:'3206068112',ok:true,result:{transaction_id:'55',pending:true,shipment_id:'66',carrier:'Mondial Relay'}})
+  assert.equal(out.pending,true);assert.equal(db.uploads.length,0)
+  assert.equal(state.vinted_agent_tasks[0].state,'done');assert.equal(state.vinted_agent_orders[0].shipment_id,'66');assert.equal(state.vinted_agent_orders[0].carrier,'Mondial Relay')
+  assert.deepEqual(parseLabel({pending:true}),{pending:true})
+})
+test('conversation ids: numbers from the old Vinted messaging, UUIDs from the new one, nothing else',()=>{
+  assert.equal(cid('123'),'123');assert.equal(cid('0B6F7C2E-4A1D-4C8E-9F3B-2D5E6A7B8C9D'),'0b6f7c2e-4a1d-4c8e-9f3b-2d5e6a7b8c9d')
+  for(const bad of ['../x','0','abc','12a',null,'0b6f7c2e-4a1d-4c8e-9f3b'])assert.equal(cid(bad),null)
+  assert.equal(parseOrders({orders:[{transaction_id:'5',conversation_id:'0b6f7c2e-4a1d-4c8e-9f3b-2d5e6a7b8c9d'}]})[0].conversation_id,'0b6f7c2e-4a1d-4c8e-9f3b-2d5e6a7b8c9d')
+})
+test('a regular likes read only goes back to the previous successful read',async()=>{
+  const state=base();state.vinted_agent_settings.push({account_id:ACC,enabled:true,paused:false,features:{likes:true},limits:{from_hour:0,to_hour:0},unmask:{},pricing:{},likes:{}})
+  const before=new Date(Date.now()-5*60000).toISOString()
+  state.vinted_agent_tasks.push({id:crypto.randomUUID(),account_id:ACC,kind:'scan_likes',writes:false,state:'done',created_at:new Date(Date.now()-10*60000).toISOString(),started_at:before,finished_at:before})
+  state.vinted_agent_tasks.push({id:crypto.randomUUID(),account_id:ACC,kind:'scan_wardrobe',writes:false,state:'done',created_at:new Date().toISOString()})
+  const db=fakeDb(state),r=await agentPoll(db,{},{member_id:'3206068112'})
+  assert.equal(r.task.kind,'scan_likes')
+  assert.equal(Date.parse(r.task.payload.since),Date.parse(before)-30*60000)
 })

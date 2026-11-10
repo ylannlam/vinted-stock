@@ -209,3 +209,168 @@ test('old direct publication is disabled and makes no Vinted request',async()=>{
  const result=await run({kind:'publish_item',member_id:'7',recipes:{},listing:{fields:{title:'Test'},photos:[],live:true}})
  assert.equal(result.ok,false);assert.match(result.error,/direct est désactivé/);assert.equal(calls.length,0)
 })
+
+// ---------- 3.8.7 : messages aux likes, nouvelle messagerie Vinted, ventes et bordereaux ----------
+const likeRecipes={conversation_create:{method:'POST',path:'/api/v2/conversations',body:'json',template:{initiator:'seller_enters_notification',item_id:0,opposite_user_id:0}},
+  conversation_read:{method:'GET',path:'/api/v2/conversations/{id}'},message_send:{method:'POST',path:'/api/v2/conversations/{id}/replies',body:'json',template:{reply:{body:'',photo_temp_uuids:null,is_personal_data_sharing_check_skipped:false}}}}
+const likeTask={kind:'like_message',member_id:'7',recipes:likeRecipes,payload:{item_id:'9',user_id:'88',message:'Merci pour ton like !'}}
+const CONV='0b6f7c2e-4a1d-4c8e-9f3b-2d5e6a7b8c9d'
+
+test('likes: a refusal from Vinted skips that like only (deleted item, blocked, access denied), nothing is sent',async t=>{
+ t.mock.method(globalThis,'setTimeout',fn=>{queueMicrotask(fn);return 0})
+ T.forgetChat()
+ for(const [status,body,code] of [[404,{code:404,message:'Not found'},'item_unavailable'],[403,{code:106,message:'Ce membre t’a bloqué'},'user_blocked_you'],[403,{code:0,message_code:'access_denied',message:'Accès refusé'},'access_denied']]){
+   calls.length=0
+   vinted=async(url,init)=>init.method==='POST'?{status,body}:{status:200,body:{conversation:{id:10,messages:[]}}}
+   const r=await run(likeTask)
+   assert.equal(r.ok,true,`${code}: not a failure`);assert.equal(r.result.skip_code,code);assert.ok(r.result.skipped)
+   assert.ok(calls.every(c=>!c.url.endsWith('/replies')),'no message after a refusal')
+ }
+ t.mock.restoreAll()
+})
+
+test('likes: a conversation where Vinted no longer allows replies is skipped before writing',async t=>{
+ t.mock.method(globalThis,'setTimeout',fn=>{queueMicrotask(fn);return 0})
+ T.forgetChat();calls.length=0
+ vinted=async url=>({status:200,body:url.endsWith('/api/v2/conversations')?{conversation:{id:10}}:{conversation:{id:10,allow_reply:false,messages:[]}}})
+ const r=await run(likeTask)
+ assert.match(r.result.skipped,/ne permet pas/);assert.ok(calls.every(c=>!c.url.endsWith('/replies')))
+ t.mock.restoreAll()
+})
+
+test('likes on the new Vinted messaging: inquiry, re-read, reply and offer go to the right services',async t=>{
+ t.mock.method(globalThis,'setTimeout',fn=>{queueMicrotask(fn);return 0})
+ T.setChat('v2');calls.length=0
+ vinted=async(url,init)=>{
+   const u=new URL(url)
+   if(u.pathname==='/messaging/main/inquiries')return {status:200,body:{conversation_id:CONV}}
+   if(u.pathname===`/messaging/main/conversations/${CONV}`)return {status:200,body:{id:CONV,core_id_deprecated:555,conversation_type:'inquiry',allow_reply:true,data:{transaction_id:777,items:[{inventory_item_id:9}]},opposite_users:[{type:'user',data:{id:88,login_name:'alice'}}],messages:[]}}
+   if(u.pathname===`/messaging/main/conversations/${CONV}/replies`)return {status:200,body:{data:{id:4242},conversation_id:CONV}}
+   if(u.pathname==='/api/v2/transactions/777/offers')return {status:200,body:{offer:{id:1}}}
+   return {status:404,body:{}}
+ }
+ const recipes={...likeRecipes,offer_send:{method:'POST',path:'/api/v2/transactions/{id}/offers',body:'json',template:{offer:{price:'',currency:''}},id_from:'transaction'}}
+ const r=await run({...likeTask,recipes,payload:{...likeTask.payload,offer_price:12}})
+ assert.equal(r.ok,true,r.error);assert.equal(r.result.conversation_id,CONV);assert.equal(r.result.offer,true)
+ const create=calls.find(c=>c.url.endsWith('/messaging/main/inquiries'))
+ assert.equal(new URL(create.url).origin,'https://api.vinted.fr')
+ assert.deepEqual(JSON.parse(create.body),{item_ids:['9'],receiver_id:'88'})
+ assert.equal(create.headers['x-csrf-token'],'csrf-1');assert.equal(create.headers['x-next-app'],'marketplace-web')
+ const reply=calls.find(c=>c.url.endsWith('/replies'))
+ assert.deepEqual(JSON.parse(reply.body),{content:'Merci pour ton like !',is_personal_data_sharing_check_skipped:false,photo_temp_uuids:null})
+ assert.ok(!calls.some(c=>c.url.includes('/api/v2/conversations')),'the old messaging is not used')
+ T.forgetChat();t.mock.restoreAll()
+})
+
+test('new Vinted messaging is read into the same shape: inbox, messages, item, buyer',async()=>{
+ T.setChat('v2');calls.length=0
+ vinted=async url=>{
+   const u=new URL(url)
+   if(u.pathname==='/messaging/main/inbox')return {status:200,body:{conversations:[{id:CONV,conversation_type:'inquiry',is_unread_by_current_user:true,last_message:{created_at:'2026-11-10T10:00:00Z',data:{content:'Toujours dispo ?'}},
+     opposite_users:[{type:'user',data:{id:88,login_name:'alice',photo:{url:'https://images1.vinted.net/a.jpg'}}}],data:{inventory_items:[{id:9,title:'Robe',photos:[{url:'https://images1.vinted.net/r.jpg'}]}]}}],pagination:{has_next:false}}}
+   if(u.pathname===`/messaging/main/conversations/${CONV}`)return {status:200,body:{id:CONV,conversation_type:'inquiry',allow_reply:true,is_unread_by_current_user:true,data:{items:[{inventory_item_id:9}],inventory_items:[{id:9,title:'Robe',price:{amount:'25.0',currency_code:'EUR'}}]},
+     opposite_users:[{type:'user',data:{id:88,login_name:'alice'}}],
+     messages:[{message_type:'reply_text',sender_id:'88',created_at:'2026-11-10T09:59:00Z',data:{id:1,content:'Bonjour'}},{message_type:'reply_text',sender_id:'3206068112',created_at:'2026-11-10T09:59:30Z',data:{id:2,content:'Bonjour !'}},
+       {message_type:'offer',sender_id:'88',created_at:'2026-11-10T10:00:00Z',data:{id:3,entity_type:'offer_request_message',price:{amount:'20.0'}}}]}}
+   return {status:404,body:{}}
+ }
+ const r=await run({kind:'sync_inbox',member_id:'3206068112',payload:{known:{}},recipes:{inbox_list:{method:'GET',path:'/api/v2/inbox'},conversation_read:{method:'GET',path:'/api/v2/conversations/{id}'}}})
+ assert.equal(r.ok,true,r.error);assert.equal(r.result.chat,'v2')
+ const [c]=r.result.conversations
+ assert.equal(c.id,CONV);assert.equal(c.other.login,'alice');assert.equal(c.item.id,9);assert.equal(c.item.title,'Robe');assert.equal(c.unread,true);assert.equal(c.allow_reply,true)
+ assert.deepEqual(c.messages.map(m=>[m.id,m.from_me,m.kind]),[['1',false,'message'],['2',true,'message'],['3',false,'offer']])
+ assert.ok(calls.every(c=>new URL(c.url).origin==='https://api.vinted.fr'))
+ assert.ok(calls.every(c=>c.headers['x-csrf-token']===undefined),'no session token on reads outside the site')
+ T.forgetChat()
+})
+
+test('an account moved to the new messaging is detected when the old inbox stops answering',async()=>{
+ T.forgetChat();calls.length=0
+ vinted=async url=>{
+   const u=new URL(url)
+   if(u.pathname==='/api/v2/inbox')return {status:404,body:{code:404}}
+   if(u.pathname==='/messaging/main/inbox')return {status:200,body:{conversations:[],pagination:{has_next:false}}}
+   return {status:404,body:{}}
+ }
+ const r=await run({kind:'sync_inbox',member_id:'7',payload:{known:{a:1}},recipes:{inbox_list:{method:'GET',path:'/api/v2/inbox'},conversation_read:{method:'GET',path:'/api/v2/conversations/{id}'}}})
+ assert.equal(r.ok,true,r.error);assert.equal(r.result.chat,'v2');assert.equal(T.chatApi(),'v2')
+ T.forgetChat()
+})
+
+test('replies go to the new messaging for a UUID conversation, to the learned recipe otherwise',async()=>{
+ T.forgetChat();calls.length=0
+ vinted=async()=>({status:200,body:{data:{id:99},conversation_id:CONV}})
+ const r=await run({kind:'reply_message',member_id:'7',payload:{conversation_id:CONV,body:'Oui !'},recipes:{}})
+ assert.deepEqual(r,{ok:true,result:{conversation_id:CONV,message_id:'99'}})
+ assert.equal(calls[0].url,`https://api.vinted.fr/messaging/main/conversations/${CONV}/replies`)
+ // Un UUID n'est jamais accepté sur une route de l'ancienne messagerie.
+ assert.equal((await run({kind:'accept_offer',member_id:'7',payload:{conversation_id:CONV,offer:{id:'1'}},recipes:{conversation_read:{method:'GET',path:'/api/v2/conversations/{id}'}}})).error,'Identifiant manquant.')
+ assert.equal(T.chatFromPath(`/inbox/${CONV}`),'v2');assert.equal(T.chatFromPath('/inbox/123'),'v1');assert.equal(T.chatFromPath('/inbox'),null)
+ assert.equal(T.chatFromUrls(['https://api.vinted.fr/messaging/main/inbox']),'v2');assert.equal(T.chatFromUrls(['https://www.vinted.fr/api/v2/inbox?page=1']),'v1')
+})
+
+test('orders: the newer Vinted orders list is used when the classic one stops answering',async()=>{
+ calls.length=0
+ vinted=async url=>{
+   const u=new URL(url)
+   if(u.pathname==='/api/v2/my_orders')return {status:404,body:{}}
+   if(u.pathname==='/escrow-orders/api/v2/current-user/escrow-orders')return {status:200,body:{my_orders:[{transaction_id:55,status:'À expédier',title:'Robe',price:{amount:'20.0',currency_code:'EUR'},conversation_id:CONV}]}}
+   return {status:404,body:{}}
+ }
+ const r=await run({kind:'sync_orders',member_id:'7',payload:{detailed:['55']},recipes:{orders_list:{method:'GET',path:'/api/v2/my_orders',query:{type:'sold',status:'all'}}}})
+ assert.equal(r.ok,true,r.error);assert.equal(r.result.orders[0].transaction_id,55);assert.equal(r.result.orders[0].conversation_id,CONV)
+ assert.equal(new URL(calls.at(-1).url).searchParams.get('type'),'sold')
+})
+
+test('labels: never generated by YlaVint; not ready yet = pending; Colissimo seen in the shipment = skipped',async t=>{
+ t.mock.method(globalThis,'setTimeout',fn=>{queueMicrotask(fn);return 0})
+ const recipes={order_label:{method:'GET',path:'/api/v2/shipments/{id}/label_url',id_from:'shipment'},order_detail:{method:'GET',path:'/api/v2/transactions/{id}'}}
+ // Envoi connu mais bordereau pas encore généré : 404 de Vinted → en attente, aucune écriture.
+ calls.length=0
+ vinted=async url=>new URL(url).pathname==='/api/v2/transactions/55'?{status:200,body:{transaction:{id:55,shipment:{id:66,carrier:{name:'Mondial Relay'}}}}}:{status:404,body:{code:404}}
+ let r=await run({kind:'fetch_label',payload:{transaction_id:'55'},recipes})
+ assert.equal(r.ok,true);assert.equal(r.result.pending,true);assert.equal(r.result.shipment_id,66)
+ assert.ok(calls.every(c=>(c.method||'GET')==='GET'),'reads only')
+ // Envoi absent du détail : lu à part ; Colissimo → jamais de bordereau.
+ calls.length=0
+ vinted=async url=>{const p=new URL(url).pathname;return p==='/api/v2/transactions/55'?{status:200,body:{transaction:{id:55}}}:p==='/api/v2/escrow_orders/55/shipment'?{status:200,body:{shipment:{id:67,carrier:{name:'Colissimo'}}}}:{status:404,body:{}}}
+ r=await run({kind:'fetch_label',payload:{transaction_id:'55'},recipes})
+ assert.equal(r.result.skipped,'colissimo');assert.ok(!calls.some(c=>c.url.includes('label')))
+ // Transporteur introuvable : aucun risque pris, pas de bordereau demandé.
+ calls.length=0
+ vinted=async url=>{const p=new URL(url).pathname;return p==='/api/v2/transactions/55'?{status:200,body:{transaction:{id:55,shipment:{id:68}}}}:p==='/api/v2/escrow_orders/55/shipment'?{status:200,body:{shipment:{id:68}}}:{status:200,body:{label_url:'https://x.test/l.pdf'}}}
+ r=await run({kind:'fetch_label',payload:{transaction_id:'55'},recipes})
+ assert.equal(r.result.pending,true);assert.ok(!calls.some(c=>c.url.includes('label')))
+ // La Poste peut être Colissimo : écarté aussi.
+ vinted=async url=>{const p=new URL(url).pathname;return p==='/api/v2/transactions/55'?{status:200,body:{transaction:{id:55,shipment:{id:68,carrier:{name:'La Poste'}}}}}:{status:404,body:{}}}
+ r=await run({kind:'fetch_label',payload:{transaction_id:'55'},recipes})
+ assert.equal(r.result.skipped,'colissimo')
+ t.mock.restoreAll()
+})
+
+test('Vinted refusals are told apart: Cloudflare check, blocked member, access denied, restriction',async()=>{
+ const read={kind:'reply_message',member_id:'7',payload:{conversation_id:'11',body:'x'},recipes:{message_send:{method:'POST',path:'/api/v2/conversations/{id}/replies',body:'json',template:{reply:{body:''}}}}}
+ T.forgetChat()
+ for(const [status,body,code] of [[503,'<html><script src="/cdn-cgi/challenge-platform/h/b/orchestrate"></script></html>','challenge'],[403,{code:106},'blocked'],[403,{message_code:'access_denied'},'access_denied'],[403,{code:'FORBIDDEN'},'messaging_refused'],[403,{message:'Compte restreint'},'restricted']]){
+   vinted=async()=>({status,body});assert.equal((await run(read)).code,code)
+ }
+})
+
+test('likes: a regular read stops at notifications already seen; the liker comes from the link',async t=>{
+ t.mock.method(globalThis,'setTimeout',fn=>{queueMicrotask(fn);return 0})
+ const n=(at,i)=>({entry_type:20,body:`bob${i} a marqué ton article comme favori`,subject_id:9,link:`/items/9/want_it/new?offering_id=${100+i}`,updated_at:at})
+ calls.length=0
+ vinted=async url=>{const page=Number(new URL(url).searchParams.get('page'));return {status:200,body:{notifications:Array.from({length:20},(_,i)=>n(page===1?'2026-11-10T10:00:00Z':'2026-11-09T08:00:00Z',page*100+i)),pagination:{total_pages:9}}}}
+ const r=await run({kind:'scan_likes',member_id:'7',recipes:{},payload:{since:'2026-11-10T09:00:00Z'}})
+ assert.equal(calls.length,2,'page 2 is older than the last read: stop there');assert.equal(r.result.likes.length,40)
+ assert.equal(T.notificationLike({entry_type:20,subject_id:9,link:'/member/general/notifications?user_id=55',body:'carla a marqué ton article comme favori'},'7').user_id,'55')
+ t.mock.restoreAll()
+})
+
+test('likes: the site notifications route takes over when the notifications service fails',async()=>{
+ calls.length=0
+ vinted=async url=>new URL(url).origin==='https://api.vinted.fr'?{status:500,body:{}}:{status:200,body:{notifications:[{entry_type:20,subject_id:9,link:'/items/9/want_it/new?offering_id=88',body:'alice a marqué ton article comme favori',updated_at:'2026-11-10T10:00:00Z'}],pagination:{total_pages:1}}}
+ const r=await run({kind:'scan_likes',member_id:'7',recipes:{},payload:{}})
+ assert.equal(r.ok,true,r.error);assert.equal(r.result.likes[0].user_id,'88')
+ assert.equal(new URL(calls.at(-1).url).pathname,'/web/api/notifications/notifications')
+})

@@ -11,6 +11,8 @@ import {AppError,isId} from './dotb.js'
 export const BUCKET='creative-assets'
 export const check=r=>{if(r.error)throw r.error;return r.data}
 export const vid=v=>{const s=String(v??'');return /^[1-9]\d{0,17}$/.test(s)?s:null}
+// Conversation Vinted : identifiant numérique (ancienne messagerie) ou UUID (nouvelle messagerie Vinted).
+export const cid=v=>{const s=String(v??'').trim();return /^[1-9]\d{0,17}$/.test(s)?s:/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)?s.toLowerCase():null}
 export const text=(v,max=300)=>typeof v==='string'?v.replace(/\s+/g,' ').trim().slice(0,max):''
 export const money=v=>{const n=v&&typeof v==='object'?Number(v.amount):Number(v);return v!==null&&v!==''&&Number.isFinite(n)&&n>=0&&n<100000?Math.round(n*100)/100:null}
 export const iso=v=>{const t=eventTime(v);return t===null?null:new Date(t).toISOString()}
@@ -75,7 +77,7 @@ export function parseOrders(result){
     const id=vid(raw?.transaction_id);if(!id||seen.has(id))continue;seen.add(id)
     orders.push({transaction_id:id,status:text(raw.status,60)||null,title:text(raw.title,200)||null,price:money(raw.price),
       currency:/^[A-Z]{3}$/.test(raw.currency||'')?raw.currency:'EUR',item_ids:(Array.isArray(raw.item_ids)?raw.item_ids:[]).map(vid).filter(Boolean).slice(0,20),
-      order_date:iso(raw.order_date),label_ready:raw.label_ready===true,shipment_id:vid(raw.shipment_id),conversation_id:vid(raw.conversation_id),
+      order_date:iso(raw.order_date),label_ready:raw.label_ready===true,shipment_id:vid(raw.shipment_id),conversation_id:cid(raw.conversation_id),
       ship_deadline:iso(raw.ship_deadline),carrier:text(raw.carrier,40)||null,buyer_id:vid(raw.buyer_id),buyer_login:text(raw.buyer_login,40)||null,
       photo_url:typeof raw.photo_url==='string'&&/^https:\/\/[a-z0-9.-]+\.vinted\.net\//.test(raw.photo_url)?raw.photo_url.slice(0,500):null})
   }
@@ -91,6 +93,8 @@ export function parseLikes(result){
 }
 export function parseLabel(result){
   if(result?.skipped==='colissimo')return {skipped:'colissimo'}
+  // Bordereau pas encore généré sur Vinted : rien à télécharger, nouvel essai à la prochaine lecture des ventes.
+  if(result?.pending===true)return {pending:true}
   const bytes=typeof result?.pdf_base64==='string'&&result.pdf_base64.length<4.5e6?Buffer.from(result.pdf_base64,'base64'):null
   if(!bytes||bytes.length<100||bytes.subarray(0,5).toString()!=='%PDF-')throw new AppError('Vinted n’a pas renvoyé un bordereau PDF.')
   return bytes
@@ -176,6 +180,11 @@ async function taskBundle(db,task,settings){
   if(task.kind==='like_message')bundle.payload=await (await import('./ylavint-flows.js')).likePayload(db,task,settings)
   if(task.kind==='reply_message'&&task.payload?.source==='ai'&&!inHistory(task.payload.source_message_at,settings.messaging.history_since))bundle.payload={...task.payload,skip:'Message antérieur à la période choisie.'}
   if(task.kind==='sync_inbox')bundle.payload={...task.payload,known:task.payload?.force_details?{}:await (await import('./ylavint.js')).knownConversations(db,task.account_id)}
+  // Likes : l'extension s'arrête aux notifications déjà lues au dernier passage réussi (marge de 30 min).
+  if(task.kind==='scan_likes'&&!task.payload?.history_page){
+    const last=check(await db.from('vinted_agent_tasks').select('started_at').eq('account_id',task.account_id).eq('kind','scan_likes').eq('state','done').order('finished_at',{ascending:false}).limit(1))[0]
+    if(last?.started_at)bundle.payload={...task.payload,since:new Date(Date.parse(last.started_at)-30*60000).toISOString()}
+  }
   if(task.kind==='accept_offer')bundle.payload={...task.payload,offer_settings:settings.messaging.offers}
   if(task.kind==='sync_orders'){
     const known=check(await db.from('vinted_agent_orders').select('transaction_id,item_ids,shipment_id,carrier,photo_url,status').eq('account_id',task.account_id).order('first_seen_at',{ascending:false}).limit(60))
@@ -275,7 +284,24 @@ async function dropStaleLikes(db,accountId,settings,now){
   await agentLog(db,{account_id:accountId,event:'likes_dropped',message:`${stale.length} like(s) antérieur(s) à la période choisie retiré(s) de la file.`})
   return stale.length
 }
+// Comme Dotb : un refus isolé de Vinted écarte seulement ce like ; trois refus en 30 min repoussent les messages
+// aux likes de ce compte d'environ une heure (rien n'est coupé, ils repartent tout seuls).
+export async function likeBackoff(db,task,now=Date.now(),rand=Math.random){
+  await agentLog(db,{account_id:task.account_id,task_id:task.id,level:'info',event:'like_refused',message:'Vinted a refusé d’ouvrir une conversation après un like : like écarté.'})
+  const since=new Date(now-30*60000).toISOString()
+  const refused=check(await db.from('vinted_agent_log').select('id').eq('account_id',task.account_id).eq('event','like_refused').gte('created_at',since)).length
+  if(refused<3)return false
+  if(check(await db.from('vinted_agent_log').select('id').eq('account_id',task.account_id).eq('event','likes_backoff').gte('created_at',new Date(now-60*60000).toISOString()).limit(1)).length)return false
+  const at=new Date(now+jitter(45,75,rand)).toISOString()
+  check(await db.from('vinted_agent_tasks').update({not_before:at}).eq('account_id',task.account_id).eq('kind','like_message').eq('state','queued').lt('not_before',at))
+  await agentLog(db,{account_id:task.account_id,task_id:task.id,level:'warn',event:'likes_backoff',message:`Vinted refuse plusieurs conversations d’affilée : messages aux likes repoussés jusqu’à ${new Date(at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Paris'})}.`})
+  return true
+}
 const MANUAL_PAUSES=['mise en pause depuis le site','arrêt général depuis le site']
+// Échecs sans effet sur Vinted : la tâche repart plus tard, sans compter l'essai.
+const TRANSIENT={no_tab:['Onglet Vinted rechargé : nouvel essai.',20],busy:['Onglet Vinted occupé : nouvel essai.',15],challenge:['Vérification de sécurité Vinted : nouvel essai.',120]}
+// Pour une lecture seulement : une coupure en cours de route ne change rien sur Vinted.
+const READ_RETRY={network:['Vinted ne répond pas : nouvel essai.',60],timeout:['Lecture trop longue : nouvel essai.',60],channel_closed:['Onglet Vinted rechargé pendant la lecture : nouvel essai.',20]}
 const MESSAGE_KINDS=['reply_message','like_message','order_message','accept_offer']
 // Remise en file sans compter l'essai : ni Vinted ni l'onglet n'ont exécuté la tâche.
 const requeue=(db,task,now,seconds)=>db.from('vinted_agent_tasks').update({attempts:Math.max(0,(task.attempts||1)-1),not_before:new Date(now+seconds*1000).toISOString()}).eq('id',task.id).eq('state','queued').then(check)
@@ -317,10 +343,13 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
   const label=KINDS[task.kind].label
   if(body.ok!==true){
     const code=typeof body.code==='string'?body.code:'failed',detail=text(body.error,300)
-    // Page Vinted sans YlaVint (onglet ouvert avant la mise à jour) : la tâche n'a jamais atteint Vinted.
-    if(code==='no_tab'){
-      await finish(db,task,'queued',null,'Onglet Vinted rechargé : nouvel essai.')
-      await requeue(db,task,now,20)
+    // Page Vinted sans YlaVint (onglet ouvert avant la mise à jour), onglet occupé ou vérification Cloudflare :
+    // la requête n'a pas atteint Vinted (ou Vinted l'a refusée avant de l'exécuter). Nouvel essai sans compter l'essai.
+    if(TRANSIENT[code]||(!task.writes&&READ_RETRY[code])){
+      const [msg,seconds]=TRANSIENT[code]||READ_RETRY[code]
+      await finish(db,task,'queued',null,msg)
+      await requeue(db,task,now,seconds)
+      if(code==='challenge')await log('warn','challenge',`${label} : vérification de sécurité de Vinted, onglet rechargé et nouvel essai dans 2 min.`,{kind:task.kind})
       return {saved:true}
     }
     if(code==='logged_out'&&!task.writes){
@@ -382,14 +411,18 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
   if(task.kind==='like_message'){
     summary=await (await import('./ylavint-flows.js')).likeDone(db,task,body.result,settings,{now,rand})
     if(!summary.skipped)await (await import('./ylavint.js')).recordLikeMessage(db,{...task,payload:{...task.payload,message:body.result?.message||null}},body.result,{now}).catch(()=>null)
-    if(body.result?.buyer_engaged===true&&vid(body.result.conversation_id))await enqueue(db,[{account_id:task.account_id,kind:'sync_inbox',priority:8,dedupe_key:`engaged:${task.account_id}:${body.result.conversation_id}`,payload:{conversation_ids:[String(body.result.conversation_id)],force_details:true}}])
+    const engaged=cid(body.result?.conversation_id)
+    if(body.result?.buyer_engaged===true&&engaged)await enqueue(db,[{account_id:task.account_id,kind:'sync_inbox',priority:8,dedupe_key:`engaged:${task.account_id}:${engaged}`,payload:{conversation_ids:[engaged],force_details:true}}])
+    if(['access_denied','messaging_refused'].includes(body.result?.skip_code))await likeBackoff(db,task,now,rand)
   }
   {const flows=await import('./ylavint-flows.js');if(flows.isFlowTask(task.kind))summary=await flows.flowDone(db,task,{ok:true,result:body.result},{now})}
   await finish(db,task,'done',summary,null)
    // Un formulaire rempli n'est pas une annonce publiée : aucune confirmation de vente n'est déduite.
   if(['sync_inbox','scan_likes'].includes(task.kind)&&task.payload?.history_since&&body.result?.more_history===true){
     const page=Number(task.payload.history_page)
-    if(Number.isInteger(page)&&page>=1&&page<1000)await enqueue(db,[{account_id:task.account_id,kind:task.kind,priority:3,dedupe_key:`history:${task.kind}:${task.account_id}:${task.payload.history_since}:${page+1}`,payload:{force_details:true,history_since:task.payload.history_since,history_page:page+1}}])
+    // Nouvelle messagerie Vinted : la page suivante se lit avec le curseur rendu par Vinted.
+    const c=body.result?.next_cursor,cursor=c&&typeof c.next==='string'&&c.next.length<=500?{next:c.next,...(typeof c.temp==='string'&&c.temp.length<=500?{temp:c.temp}:{})}:null
+    if(Number.isInteger(page)&&page>=1&&page<1000)await enqueue(db,[{account_id:task.account_id,kind:task.kind,priority:3,dedupe_key:`history:${task.kind}:${task.account_id}:${task.payload.history_since}:${page+1}`,payload:{force_details:true,history_since:task.payload.history_since,history_page:page+1,...(cursor?{cursor}:{})}}])
   }
   await log('info','done',`${label} · ${summary.message||'terminé'}`,{member_id:member})
   return {saved:true,...summary}
@@ -443,7 +476,9 @@ async function applyOrders(db,task,orders,settings,{rand}){
   const [M=0,m=0,p=0]=String(ext||'').split('.').map(Number),labelsOk=M>3||M===3&&(m>8||m===8&&p>=6)
   if(labelsOk&&settings.features.labels&&orders.length&&can.has('order_label')){
     const ready=orders.filter(o=>o.label_ready&&!/annul|cancel|rembours|refund/i.test(o.status||'')&&!flows.carrierIgnored(settings,o.carrier||before.get(o.transaction_id)?.carrier)),ids=ready.map(o=>o.transaction_id)
-    const done=ids.length?new Set(check(await db.from('vinted_agent_orders').select('transaction_id,label_path').in('transaction_id',ids)).filter(o=>o.label_path).map(o=>o.transaction_id)):new Set()
+    // Déjà récupéré, ou vérifié il y a moins de 2 h sans bordereau généré sur Vinted : on n'y revient pas tout de suite.
+    const waitUntil=Date.now()-2*3600000
+    const done=ids.length?new Set(check(await db.from('vinted_agent_orders').select('transaction_id,label_path,flow').in('transaction_id',ids)).filter(o=>o.label_path||Date.parse(o.flow?.label_pending_at||'')>waitUntil).map(o=>o.transaction_id)):new Set()
     queued=await enqueue(db,ready.filter(o=>!done.has(o.transaction_id)).map(o=>({account_id:task.account_id,kind:'fetch_label',dedupe_key:`label:${o.transaction_id}`,not_before:new Date(Date.now()+jitter(1,10,rand)).toISOString(),payload:{transaction_id:o.transaction_id,shipment_id:o.shipment_id}})))
   }
   return {orders:orders.length,queued,pushed,flow:flow.queued,message:`${orders.length} vente(s) lue(s)${pushed?`, ${pushed} envoyée(s) dans l’onglet Ventes`:''}${queued?`, ${queued} bordereau(x) à récupérer`:''}${flow.queued?`, ${flow.queued} action(s) du flux de commande prévue(s)`:''}.`}
@@ -456,6 +491,11 @@ async function applyLabel(db,task,bytes,result={}){
   if(bytes?.skipped){
     check(await db.from('vinted_agent_orders').update({...extra,carrier:'Colissimo'}).eq('transaction_id',id))
     return {skipped:true,message:'Colissimo : bordereau non récupéré (à faire toi-même sur Vinted).'}
+  }
+  if(bytes?.pending){
+    const row=check(await db.from('vinted_agent_orders').select('flow').eq('transaction_id',id).maybeSingle())
+    check(await db.from('vinted_agent_orders').update({...extra,flow:{...(row?.flow||{}),label_pending_at:new Date().toISOString()}}).eq('transaction_id',id))
+    return {pending:true,message:'Bordereau pas encore généré sur Vinted : nouvel essai à la prochaine lecture des ventes.'}
   }
   const path=`agent-labels/${task.account_id}/${id}.pdf`
   check(await db.storage.from(BUCKET).upload(path,bytes,{contentType:'application/pdf',upsert:true}))
