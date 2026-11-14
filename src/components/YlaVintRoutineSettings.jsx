@@ -1,12 +1,14 @@
 import {fieldClass,buttonClass} from './YlaVintUI'
 import {DESKTOP_DEFAULTS} from '../lib/ylavintExecution'
 import YlaVintPublicationSettings from './YlaVintPublicationSettings'
+import YlaVintBrowsingSettings from './YlaVintBrowsingSettings'
 
 const days=[[1,'Lundi'],[2,'Mardi'],[3,'Mercredi'],[4,'Jeudi'],[5,'Vendredi'],[6,'Samedi'],[7,'Dimanche']]
 const localDate=v=>v?new Date(Date.parse(v)-new Date(v).getTimezoneOffset()*60000).toISOString().slice(0,16):''
 export default function YlaVintRoutineSettings({messaging,onChange,desktop}){
  const pace={...DESKTOP_DEFAULTS,...messaging.desktop},setPace=(k,v)=>onChange('desktop',{...pace,[k]:v})
  return <>
+  {desktop&&<YlaVintBrowsingSettings pace={pace} onChange={setPace} onPreset={preset=>onChange('desktop',{...pace,...preset})}/>}
   {desktop&&<fieldset className="space-y-3 rounded-xl border border-zinc-700 p-4"><legend className="text-sm font-semibold">Porte-monnaie · deux passages par jour</legend>
    <p className="text-xs text-zinc-400">Active « Porte-monnaie » dans les fonctions du compte. L’agent ouvre le solde, lit les deux montants et actualise ton tableau de bord. Le retrait reste manuel.</p>
    <div className="grid gap-3 sm:grid-cols-2">{pace.wallet_hours.map((hour,index)=><label key={index} className="block text-xs text-zinc-400">{index===0?'Premier passage':'Second passage'} · heure de Paris<select className={fieldClass+' mt-1'} value={hour} onChange={e=>setPace('wallet_hours',pace.wallet_hours.map((h,i)=>i===index?Number(e.target.value):h))}>{Array.from({length:24},(_,h)=><option key={h} value={h}>{String(h).padStart(2,'0')} h</option>)}</select></label>)}</div>
@@ -26,7 +28,7 @@ export default function YlaVintRoutineSettings({messaging,onChange,desktop}){
    <p className="text-xs text-zinc-400">Un mot-clé doit apparaître dans la carte de l’annonce. Seules les annonces de la page chargée sont consultées ; s’il n’y en a aucune, l’assistant attend.</p>
    <div className="grid gap-3 sm:grid-cols-2">{[['browse_price_min','Prix minimum (€)'],['browse_price_max','Prix maximum (€, 0 = aucun)'],['browse_memory_hours','Éviter les annonces déjà vues pendant (h)']].map(([key,label])=><label className="block text-xs text-zinc-400" key={key}>{label}<input type="number" className={fieldClass+' mt-1'} min={key==='browse_memory_hours'?1:0} max={key==='browse_memory_hours'?168:10000} value={pace[key]} onChange={e=>setPace(key,Number(e.target.value))}/></label>)}</div>
    <label className="flex gap-2 text-sm"><input type="checkbox" checked={pace.browse_photos} onChange={e=>setPace('browse_photos',e.target.checked)}/> Consulter aussi la photo suivante lorsque son bouton est identifiable</label>
-   <p className="text-xs text-zinc-400">Défilement par étapes, puis retour à la liste. La mémoire des articles consultés reste sur ce PC. Aucun like automatique.</p>
+   <p className="text-xs text-zinc-400">Défilement par étapes, puis retour à la liste. La mémoire des articles consultés reste sur ce PC. Les favoris suivent leurs critères séparés ci-dessus.</p>
   </fieldset>}
   <fieldset className="space-y-3 rounded-xl border border-zinc-700 p-4"><legend className="text-sm font-semibold">Mémoire et style de cette boutique</legend>
    <label className="block text-xs text-zinc-400">Ton, informations fiables et disponibilités d’expédition<textarea className={fieldClass+' mt-1'} rows={4} maxLength={1500} value={messaging.reply_notes||''} onChange={e=>onChange('reply_notes',e.target.value)} placeholder="Je tutoie, réponses courtes, peu d’emojis. Mes jours réels d’expédition sont…"/></label>

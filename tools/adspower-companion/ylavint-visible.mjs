@@ -2,8 +2,10 @@
 import {createHash} from 'node:crypto'
 import {review,conversationUrl} from './ylavint-ui.mjs'
 import {PUBLICATION_PACE} from './ylavint-typing.mjs'
+import {randomInt,varied} from './ylavint-routine.mjs'
+import {renderedListing,visibleDraft,favouriteMatches} from './ylavint-browsing.mjs'
 export const BASE='https://www.vinted.fr'
-export const PACE={typing_delay_ms:70,page_wait_seconds:3,session_minutes:25,pause_minutes:5,browse_enabled:false,browse_every_minutes:30,browse_items:3,browse_item_seconds:8,browse_scrolls:2,active_days:[1,2,3,4,5,6,7],absent_until:null,browse_keywords:'',browse_price_min:0,browse_price_max:0,browse_photos:false,browse_memory_hours:24,reply_max_age_hours:24,...PUBLICATION_PACE,wallet_hours:[9,18]}
+export const PACE={typing_delay_ms:70,page_wait_seconds:3,session_minutes:25,pause_minutes:5,browse_enabled:false,browse_every_minutes:30,browse_items:3,browse_item_seconds:8,browse_scrolls:2,active_days:[1,2,3,4,5,6,7],absent_until:null,browse_keywords:'',browse_price_min:0,browse_price_max:0,browse_photos:false,browse_memory_hours:24,reply_max_age_hours:24,...PUBLICATION_PACE,wallet_hours:[9,18],browse_variety:true,browse_between_actions:true,browse_after_actions_min:3,browse_after_actions_max:7,browse_like_enabled:false,browse_like_keywords:'robe',browse_like_price_min:20,browse_like_price_max:50,browse_like_per_day:5,browse_like_percent:25,pause_close_percent:0}
 export const cid=v=>/^(?:[1-9]\d{0,17}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i.test(String(v))?String(v):null
 export const euros=v=>{const m=String(v??'').replace(/\u00a0|\u202f/g,' ').match(/(\d+(?:[ .,]\d{3})*(?:[,.]\d{1,2})?)\s*€/);return m?Number(m[1].replace(/ /g,'').replace(',','.')):null}
 // A relative label is rounded down conservatively; it must never make an old like look new.
@@ -84,7 +86,7 @@ export function browseCandidates(cards,pace,visited=new Map(),now=Date.now()){
 }
 
 export class VisibleVinted{
- constructor({page,binding,check,sleep,update,control,memory,pace=PACE}){Object.assign(this,{page,binding,check,sleep,update,control,pace});this.memory=memory||{visited:new Map(),record:async(id,at)=>this.memory.visited.set(id,at)};this.verified=false;this.browseCount=0;this.photoCount=0}
+ constructor({page,binding,check,sleep,update,control,memory,routine,pace=PACE,random=Math.random,now=Date.now}){Object.assign(this,{page,binding,check,sleep,update,control,pace,routine,random,now});this.memory=memory||{visited:new Map(),record:async(id,at)=>this.memory.visited.set(id,at)};this.verified=false;this.browseCount=0;this.photoCount=0;this.favouriteCount=0;this.feedScrollCount=0}
  async snapshot(){this.check();const u=new URL(this.page.url());if(u.origin!==BASE)throw review('La page ouverte n’est plus Vinted.');const s=await this.page.evaluate(renderedPage);if(/vérifie que tu es humain|vérification de sécurité|compte (?:a été |est )?(?:bloqué|restreint)|trop de requêtes/i.test(s.text))throw review('Vinted demande une vérification. Reprends la main sur ce profil.');return s}
  async settle(){await this.page.bringToFront();await this.sleep(this.pace.page_wait_seconds*1000);this.check()}
  async open(path){this.check();const u=new URL(path,BASE);if(u.origin!==BASE)throw review('Destination non autorisée.');await this.page.goto(u.href,{waitUntil:'domcontentloaded',timeout:30000});await this.settle();return this.snapshot()}
@@ -176,29 +178,86 @@ export class VisibleVinted{
    for(let i=0;i<20;i++){this.check();const c=await this.thread(),added=c.messages.filter(m=>!before.some(b=>b.id===m.id));const match=added.find(m=>m.from_me&&(kind==='message'?m.kind==='message'&&m.body===body:m.kind==='offer'&&euros(m.price)===price));if(match)return match;await this.sleep(1000)}
    throw review('Envoi non confirmé dans la conversation visible : vérifie Vinted avant de reprendre.')
  }
+ async assertNoDraft(){
+   this.check()
+   if(await this.page.evaluate(visibleDraft))throw Object.assign(review('Un brouillon est présent dans l’onglet de l’assistant. Termine-le puis reprends ; l’onglet reste ouvert.'),{keep_page:true})
+ }
+ async browseAllowed(){
+   this.check();const state=await this.control();this.check()
+   this.pace={...PACE,...state.pace}
+   return state.allowed===true&&state.in_window===true&&this.pace.browse_enabled===true
+ }
+ async listing(){
+   await this.identity();const detail=await this.page.evaluate(renderedListing)
+   return {...detail,price:/^\d[\d\s.,]*€$/.test(detail.price_text.trim())?euros(detail.price_text):null}
+ }
+ async maybeFavourite(id){
+   if(!await this.browseAllowed()||!this.pace.browse_like_enabled||!this.routine)return false
+   if(!this.routine.canLike(id,this.pace.browse_like_per_day)||this.random()*100>=this.pace.browse_like_percent)return false
+   let detail=await this.listing()
+   if(!favouriteMatches(detail,this.pace,this.binding.member_id,id))return false
+   if(!await this.browseAllowed()||!this.pace.browse_like_enabled)return false
+   detail=await this.listing()
+   if(!favouriteMatches(detail,this.pace,this.binding.member_id,id))return false
+   // Reserve before clicking; an interruption or uncertain result must never cause a retry.
+   if(!await this.routine.reserveLike(id,this.pace.browse_like_per_day))return false
+   if(!await this.browseAllowed()||!this.pace.browse_like_enabled)return false
+   detail=await this.listing()
+   if(!favouriteMatches(detail,this.pace,this.binding.member_id,id))return false
+   const button=this.page.locator('button[data-testid="favourite-button"]').filter({visible:true})
+   if(await button.count()!==1||await button.getAttribute('aria-pressed')!=='false')return false
+   this.check()
+   try{
+     await button.click({timeout:10000})
+     for(let i=0;i<8;i++){
+       this.check();await this.sleep(500);detail=await this.listing()
+       if(new URL(detail.url).pathname.match(/^\/items\/(\d+)(?:-|\/|$)/)?.[1]!==id)break
+       if(detail.favourite==='true'){await this.routine.confirmLike(id);this.favouriteCount++;this.update({message:'Annonce ajoutée aux favoris : '+detail.title});return true}
+     }
+     throw Error('unconfirmed')
+   }catch{
+     throw Object.assign(review('L’ajout au favori n’est pas confirmé à l’écran. Vérifie l’annonce ; aucun second clic ne sera tenté.'),{keep_page:true})
+   }
+ }
  async browseOne(){
-   let state=await this.control();if(!state.allowed||!state.in_window||!state.pace.browse_enabled)return false
-   this.pace={...PACE,...state.pace};this.update({state:'browsing',message:'Consultation selon tes critères, sans ajout aux favoris'})
+   if(!await this.browseAllowed())return false
+   await this.assertNoDraft()
+   this.update({state:'browsing',message:'Consultation du fil entre les tâches'})
    let s=await this.open('/');await this.identity()
-   if(this.listScroll){await this.page.mouse.wheel(0,this.listScroll);await this.sleep(500);s=await this.snapshot()}
-   let links=browseCandidates(s.cards,this.pace,this.memory.visited)
-   if(!links.length){await this.page.mouse.wheel(0,350);await this.sleep(500);s=await this.snapshot();links=browseCandidates(s.cards,this.pace,this.memory.visited)}
+   if(this.listScroll){
+     if(!await this.browseAllowed())return false
+     await this.page.mouse.wheel(0,Math.min(2000,this.listScroll));await this.sleep(500);s=await this.snapshot()
+   }
+   const scrolls=this.pace.browse_variety?randomInt(1,this.pace.browse_scrolls,this.random):0
+   for(let i=0;i<scrolls;i++){
+     if(!await this.browseAllowed())return false
+     await this.identity();await this.page.mouse.wheel(0,randomInt(200,520,this.random)*(i>0&&this.random()<0.2?-1:1));this.feedScrollCount++
+     await this.sleep(randomInt(900,2200,this.random));s=await this.snapshot()
+   }
+   let links=browseCandidates(s.cards,this.pace,this.memory.visited,this.now())
+   if(!links.length){
+     if(!await this.browseAllowed())return false
+     await this.page.mouse.wheel(0,350);this.feedScrollCount++;await this.sleep(700);s=await this.snapshot();links=browseCandidates(s.cards,this.pace,this.memory.visited,this.now())
+   }
    if(!links.length){this.listScroll=s.scroll_y||0;this.update({message:'Aucune nouvelle annonce correspondant aux critères dans la page chargée.'});return false}
-   state=await this.control();if(!state.allowed||!state.in_window||!state.pace.browse_enabled)return false
-   const card=links[0];this.listScroll=s.scroll_y||0
-   await this.clickLink(card.href)
-   await this.settle()
+   if(!await this.browseAllowed())return false
+   const card=links[this.pace.browse_variety?randomInt(0,links.length-1,this.random):0];this.listScroll=s.scroll_y||0
+   await this.clickLink(card.href);await this.settle()
    for(let i=0;i<this.pace.browse_scrolls;i++){
-     state=await this.control();if(!state.allowed||!state.in_window||!state.pace.browse_enabled)return false
-     this.check();await this.identity();await this.page.mouse.wheel(0,Math.min(360,Math.max(180,240+i*40)));await this.sleep(this.pace.browse_item_seconds*1000/this.pace.browse_scrolls)
+     if(!await this.browseAllowed())return false
+     await this.identity()
+     if(new URL(this.page.url()).pathname.match(/^\/items\/(\d+)(?:-|\/|$)/)?.[1]!==card.id)throw review('L’annonce consultée a changé. Reprends la main sur cet onglet.')
+     await this.page.mouse.wheel(0,this.pace.browse_variety?randomInt(180,360,this.random):240+i*40)
+     await this.sleep(varied(this.pace.browse_item_seconds*1000/this.pace.browse_scrolls,this.pace.browse_variety,this.random))
    }
    if(this.pace.browse_photos){
      const next=this.page.getByRole('button',{name:/^(Photo suivante|Image suivante|Next photo|Next image)$/i}).filter({visible:true})
-     state=await this.control()
-     if(state.allowed&&state.in_window&&state.pace.browse_enabled&&await next.count()===1){await next.click();await this.sleep(this.pace.page_wait_seconds*1000);this.photoCount++}
+     if(await this.browseAllowed()&&await next.count()===1){await next.click();await this.sleep(this.pace.page_wait_seconds*1000);this.photoCount++}
    }
-   await this.memory.record(card.id,Date.now());this.browseCount++
-   state=await this.control();if(!state.allowed||!state.in_window)return true
+   await this.memory.record(card.id,this.now());this.browseCount++
+   await this.maybeFavourite(card.id)
+   if(!await this.browseAllowed())return true
+   await this.assertNoDraft()
    await this.page.goBack({waitUntil:'domcontentloaded',timeout:30000});await this.settle();await this.identity()
    return true
  }

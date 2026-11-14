@@ -1,6 +1,6 @@
 STOCK VINTED — CONNECTEUR ADSPOWER
 
-ASSISTANT YLAVINT SUR PC (version 1.6.0)
+ASSISTANT YLAVINT SUR PC (version 1.7.0)
 Cette version ajoute le pilotage des favoris et de la messagerie depuis
 https://vinted-stock.vercel.app/ylavint#assistant-pc.
 La mise à jour du site et de sa base doit être installée avant de choisir ce mode.
@@ -22,8 +22,8 @@ dont la date est illisible n'est pas traité automatiquement.
 Les messages sont saisis progressivement dans le formulaire Vinted.
 Dans les réglages du compte, « Rythme et navigation sur Vinted » contrôle
 la vitesse de saisie, le temps de lecture, les sessions et les pauses.
-La consultation d'annonces est facultative : ouverture et défilement uniquement,
-sans favoris automatiques, abonnement ou achat. Les tâches sont prioritaires.
+La consultation d'annonces est facultative et peut s'intercaler entre deux tâches
+terminées. Ses favoris éventuels suivent des critères et un plafond séparés.
 Une pause sur le site est vérifiée entre les consultations et avant tout envoi.
 Le PC doit rester éveillé. Le bouton Arrêter interrompt le travail et ferme
 uniquement les onglets de l'assistant. Le profil AdsPower reste ouvert.
@@ -31,6 +31,26 @@ Un résultat incertain met le compte en pause : vérifie la conversation avant
 de reprendre. L'assistant ne renvoie jamais un message simplement parce que
 sa confirmation manque. Après redémarrage, il faut le relancer depuis le site.
 Ne saisis pas toi-même de texte dans les onglets utilisés par l'assistant.
+
+CONSULTATIONS, FAVORIS ET PAUSES 1.7
+- Dans les réglages du compte, « Appliquer la routine robes 20–50 € » prépare
+  les options demandées. Clique ensuite Enregistrer. Les anciens réglages
+  ne sont pas activés automatiquement par la mise à jour.
+- Les consultations varient les cartes choisies, les distances de défilement
+  et les temps de lecture (jusqu'à 20 %). L'intervalle et le nombre de tâches
+  terminées doivent être atteints avant une consultation entre deux actions.
+- Par défaut dans cette routine : titres contenant robe ou robes, prix de
+  l'article entre 20 et 50 € inclus, 5 favoris maximum par jour et par compte,
+  25 % des annonces éligibles, au moins 10 minutes entre deux tentatives.
+- Le titre, le prix, le vendeur et l'état du bouton sont relus sur la fiche.
+  Une annonce déjà en favori reste intacte. Un clic non confirmé n'est jamais
+  rejoué et compte dans le plafond. Le suivi est conservé sur ce PC (heure
+  de Paris) : pilote un compte depuis un seul PC et conserve le dossier de données.
+- Une pause sur deux environ ferme seulement l'onglet de l'assistant pendant
+  cinq minutes. Les autres onglets et AdsPower restent ouverts. Après la pause,
+  l'identité et les conversations sont vérifiées avant la prochaine tâche.
+- Un brouillon empêche une fermeture ou un départ en consultation. « Je reprends
+  la main », Arrêter ou la pause sur le site empêchent une réouverture automatique.
 
 PORTE-MONNAIE ET BORDEREAUX 1.6
 - Active Porte-monnaie et règle ses deux horaires (9 h et 18 h par défaut,

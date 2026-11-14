@@ -3,6 +3,7 @@ import {taskJournal} from './ylavint-journal.mjs'
 import {VintedMessenger,review} from './ylavint-ui.mjs'
 import {VisibleVinted,PACE} from './ylavint-visible.mjs'
 import {browseMemory} from './ylavint-memory.mjs'
+import {routineMemory,randomInt} from './ylavint-routine.mjs'
 import {preparePublication,PublicationForm} from './ylavint-publication.mjs'
 import {VisibleCommerce} from './ylavint-commerce.mjs'
 
@@ -11,31 +12,31 @@ const writes=task=>['like_message','reply_message','publish_item'].includes(task
 const SITE='https://vinted-stock.vercel.app'
 const wait=(ms,signal)=>new Promise(resolve=>{if(signal.aborted)return resolve();const done=()=>{clearTimeout(timer);signal.removeEventListener('abort',done);resolve()};const timer=setTimeout(done,ms);signal.addEventListener('abort',done,{once:true})})
 export async function desktopRequest(token,action,body,fetcher=fetch){
-  const r=await fetcher(SITE+'/api/collector',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...body,action,version:'pc-1.6.0'}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(30000)})
+  const r=await fetcher(SITE+'/api/collector',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...body,action,version:'pc-1.7.0'}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(30000)})
   const data=await r.json().catch(()=>null)
   if(!r.ok)throw Object.assign(Error(data?.error||'Le site ne répond pas.'),{status:r.status})
   if(!data||typeof data!=='object')throw Error('Réponse du site illisible.')
   return data
 }
 
-export async function runDesktop(binding,ads,{signal,update,dataDir,connect,request=desktopRequest,Reader=VisibleVinted}={}){
+export async function runDesktop(binding,ads,{signal,update,dataDir,connect,request=desktopRequest,Reader=VisibleVinted,now=Date.now,random=Math.random,waitFor=ms=>wait(ms,signal)}={}){
   let deadline=Infinity
-  const check=()=>{if(signal.aborted)throw review('Assistant arrêté. Vérifie l’action en cours avant de la relancer.');if(Date.now()>deadline)throw review('Le délai de l’action est dépassé : vérifie Vinted.')}
+  const check=()=>{if(signal.aborted)throw review('Assistant arrêté. Vérifie l’action en cours avant de la relancer.');if(now()>deadline)throw review('Le délai de l’action est dépassé : vérifie Vinted.')}
   let browser,worker,reader,task,submitted=false,activeTimer,keepPage=false
-  const summary={conversations_read:0,articles_read:0,likes_read:0,messages_sent:0,offers_sent:0,actions_cancelled:0,articles_browsed:0,photos_opened:0,wallets_read:0,orders_read:0,labels_saved:0}
-  const publishSummary=()=>update({summary:{...summary,articles_browsed:reader?.browseCount||0,photos_opened:reader?.photoCount||0}})
+  const summary={conversations_read:0,articles_read:0,likes_read:0,messages_sent:0,offers_sent:0,actions_cancelled:0,articles_browsed:0,photos_opened:0,favourites_added:0,feed_scrolls:0,tabs_reopened:0,wallets_read:0,orders_read:0,labels_saved:0}
+  const publishSummary=()=>update({summary:{...summary,articles_browsed:reader?.browseCount||0,photos_opened:reader?.photoCount||0,favourites_added:reader?.favouriteCount||0,feed_scrolls:reader?.feedScrollCount||0}})
   const journal=taskJournal(path.join(dataDir,'ylavint',binding.account_id))
   const ownPages=[]
   const stopPages=()=>{if(signal.reason?.takeover||task?.kind==='publish_item'){keepPage=true;return}for(const page of ownPages)void page.close().catch(()=>{})}
   signal.addEventListener('abort',stopPages,{once:true})
   const api=(action,body={})=>request(binding.token,action,{member_id:binding.member_id,profile_id:binding.profile_id,login:binding.login,...body})
-  const sleep=ms=>wait(ms,signal),control=()=>api('agent_status')
+  const sleep=waitFor,control=()=>api('agent_status')
   async function acknowledge(payload){
     // Retry the report, never the Vinted interaction. If the server cannot confirm, stop.
     let last
     for(let i=0;i<3;i++){
       try{const r=await api('agent_result',payload);if(r.saved){if(writes(task))await journal.acknowledge(payload.task_id);return r}throw Error('Résultat non enregistré.')}
-      catch(e){last=e;if(e.status&&e.status<500)break;await wait(3000,signal)}
+      catch(e){last=e;if(e.status&&e.status<500)break;await sleep(3000)}
     }
     throw review('Résultat conservé sur ce PC, mais non confirmé par le site. Vérifie le journal avant de reprendre.'+(last?.status===401?' Reconnecte cet assistant.':''))
   }
@@ -45,12 +46,19 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
     check();const connector=connect||((address,options)=>import('playwright-core').then(({chromium})=>chromium.connectOverCDP(address,options)))
     browser=await connector(opened.address,{timeout:20000,noDefaults:true})
     const context=browser.contexts()[0];if(!context)throw review('Ce profil AdsPower est inaccessible.')
-    worker=await context.newPage();ownPages.push(worker)
     const memory=await browseMemory(path.join(dataDir,'ylavint',binding.account_id))
-    reader=new Reader({page:worker,binding,check,sleep,update,control,memory})
-    await reader.open('/')
-    await reader.identity(true)
+    const routine=await routineMemory(path.join(dataDir,'ylavint',binding.account_id),{now,random})
+    reader=new Reader({binding,check,sleep,update,control,memory,routine,now,random})
+    const ensureWorker=async()=>{
+      check()
+      if(worker?.isClosed?.())throw review('L’onglet de l’assistant a été fermé. Reprends-le depuis le site pour continuer.')
+      if(worker)return
+      worker=await context.newPage();ownPages.push(worker);reader.page=worker;reader.verified=false
+      await reader.open('/');await reader.identity(true)
+      if(ownPages.length>1){summary.tabs_reopened++;publishSummary()}
+    }
     if(binding.check_only===true||binding.rehearse===true){
+      await ensureWorker()
       update({state:'opening',message:'Vérification des lectures visibles, sans envoi'})
       const wardrobe=await reader.wardrobe(),likes=await reader.likes(),inbox=await reader.inbox()
       Object.assign(summary,{articles_read:wardrobe.items.length,likes_read:likes.likes.length,conversations_read:inbox.conversations.length});publishSummary()
@@ -67,37 +75,58 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       if(saved.paused||!payload.ok)throw review('Une action interrompue a été signalée au site. Vérifie Vinted puis reprends ce compte dans les réglages.')
     }
     task=null;submitted=false
-    let sessionStarted=Date.now(),breakUntil=0,nextBrowse=Date.now(),browseRemaining=0,lastContextRefresh=0
+    let initialized=false,lastContextRefresh=0
+    const browseRound=async()=>{
+      const pace=reader.pace,total=pace.browse_variety?randomInt(1,pace.browse_items,random):pace.browse_items,started=now()
+      await routine.browsed(pace)
+      for(let i=0;i<total&&now()-started<120000;i++){
+        if(!await reader.browseOne())break
+        publishSummary()
+      }
+      publishSummary()
+    }
     while(!signal.aborted){
       task=null;submitted=false;deadline=Infinity
       const status=await control()
       if(!status.allowed){update({state:'stopped',message:'Compte désactivé, en pause ou confié à l’extension sur le site.'});return}
       reader.pace={...PACE,...status.pace}
       if(!status.in_window){update({state:'waiting',message:'En attente du planning · jours, horaires et absences'});await sleep(20000);continue}
-      if(!breakUntil&&Date.now()-sessionStarted>=reader.pace.session_minutes*60000)breakUntil=Date.now()+reader.pace.pause_minutes*60000
-      if(breakUntil){if(Date.now()<breakUntil){update({state:'break',message:'Pause de navigation jusqu’à '+new Date(breakUntil).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})});await sleep(Math.min(15000,breakUntil-Date.now()));continue}breakUntil=0;sessionStarted=Date.now();lastContextRefresh=0}
-      if(!lastContextRefresh||Date.now()-lastContextRefresh>15*60000){
+      if(!initialized){await routine.initialize(reader.pace);initialized=true}
+      if(!routine.state.break_until&&now()>=routine.state.next_pause_at){
+        if(worker)await reader.assertNoDraft()
+        await routine.beginBreak(reader.pace)
+      }
+      if(routine.state.break_until){
+        if(now()<routine.state.break_until){
+          if(routine.state.close_for_break&&worker){
+            await reader.assertNoDraft();await worker.close();worker=null;reader.page=null;reader.verified=false
+          }
+          update({state:'break',message:(routine.state.close_for_break?'Onglet de l’assistant fermé. ':'')+'Pause jusqu’à '+new Date(routine.state.break_until).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),resume_at:new Date(routine.state.break_until).toISOString(),current_action:null})
+          await sleep(Math.min(15000,routine.state.break_until-now()));continue
+        }
+        await routine.finishBreak(reader.pace);lastContextRefresh=0;update({resume_at:null})
+      }
+      await ensureWorker()
+      if(!lastContextRefresh||now()-lastContextRefresh>15*60000){
         update({state:'reading',message:'Reprise : relecture des conversations avant les actions en attente'})
         const preview=await api('agent_preview');update({actions_preview:preview.actions})
         const inbox=await reader.inbox({conversation_ids:[...new Set((preview.actions||[]).filter(a=>a.kind==='reply_message').map(a=>a.conversation_id).filter(Boolean))].slice(0,4)})
-        await api('agent_context',{result:inbox});summary.conversations_read+=inbox.conversations.length;publishSummary();lastContextRefresh=Date.now()
+        await api('agent_context',{result:inbox});summary.conversations_read+=inbox.conversations.length;publishSummary();lastContextRefresh=now()
         continue
       }
+      if(routine.due(reader.pace)){await browseRound();continue}
       await reader.identity()
       update({state:'running',message:'Lecture des actions prévues sur le site'})
       const next=await api('agent_poll')
       check()
       if(['other_executor','unknown','disabled','paused','update_required'].includes(next.state)){update({state:'stopped',message:next.reason||next.message||'Compte désactivé ou en pause sur le site.'});return}
       if(next.state!=='task'){
-        if(next.state==='idle'&&reader.pace.browse_enabled){
-          if(!browseRemaining&&Date.now()>=nextBrowse)browseRemaining=reader.pace.browse_items
-          if(browseRemaining){await reader.browseOne();publishSummary();browseRemaining--;if(!browseRemaining)nextBrowse=Date.now()+reader.pace.browse_every_minutes*60000;continue}
-        }else browseRemaining=0
+        if(next.state==='idle'&&routine.due(reader.pace,{idle:true})){await browseRound();continue}
         update({state:'waiting',message:next.reason||'En attente des prochains favoris et messages'});await sleep(Math.max(1,Math.min(20,Number(next.wait_seconds)||20))*1000);continue
       }
       task=next.task
-      deadline=Math.min(Date.now()+(task.kind==='publish_item'?25*60000:175000),(Date.parse(task.lease_until)||Date.now()+180000)-5000)
-      check();activeTimer=setTimeout(stopPages,Math.max(1,deadline-Date.now()))
+      deadline=Math.min(now()+(task.kind==='publish_item'?25*60000:175000),(Date.parse(task.lease_until)||now()+180000)-5000)
+      check();activeTimer=setTimeout(stopPages,Math.max(1,deadline-now()))
       if(!DESKTOP_KINDS.includes(task?.kind))throw review('Cette fonction attend encore son adaptation à l’assistant PC.')
       const before=writes(task)?await journal.read(task.id):null
       if(before){
@@ -126,7 +155,7 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
         if(value.prepared)keepPage=true
       }
       else{
-        if((p.message||p.body||'').length*reader.pace.typing_delay_ms+60000>deadline-Date.now())throw review('Ce texte est trop long pour la vitesse de saisie choisie. Raccourcis-le ou accélère la saisie dans les réglages.')
+        if((p.message||p.body||'').length*reader.pace.typing_delay_ms+60000>deadline-now())throw review('Ce texte est trop long pour la vitesse de saisie choisie. Raccourcis-le ou accélère la saisie dans les réglages.')
         if(task.kind==='like_message'&&p.offer_requested&&!p.offer_price)throw review('Le prix de la réduction n’est pas connu. Relis d’abord le dressing.')
         const filter=task.kind==='like_message'?await reader.memberFilter(p):null
         if(filter)value={skipped:filter}
@@ -165,8 +194,9 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       if(!result.ok||saved.paused)throw review(result.error||'Vérifie ce compte sur Vinted avant de reprendre.')
       update({state:'waiting',message:saved.message||'Action terminée',current_action:null})
       if(task.kind==='publish_item'&&value.prepared){update({state:'manual',message:'Formulaire prêt dans Vinted. Tu as la main pour vérifier et publier ; aucune reprise automatique.',current_action:null});task=null;return}
+      await routine.completed()
       task=null
-      await wait(1500,signal)
+      await sleep(1500)
     }
   }catch(e){
     if(e.keep_page||task?.kind==='publish_item')keepPage=true

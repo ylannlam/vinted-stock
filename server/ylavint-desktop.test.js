@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {authorizeDesktop,pairDesktop,desktopDriver,guardDesktop,statusDesktop,desktopWindow} from './ylavint-desktop.js'
 import {normalizeSettings} from './vinted-agent-config.js'
-import {executionSettings} from '../src/lib/ylavintExecution.js'
+import {executionSettings,DRESS_ROUTINE} from '../src/lib/ylavintExecution.js'
 import {newWatchToken} from './vinted-watch.js'
 import {copiedSettings} from './ylavint-settings-copy.js'
 const account={id:'00000000-0000-4000-8000-000000000001',vinted_id:'123',login:'test'}
@@ -45,6 +45,14 @@ test('desktop status shares settings and Paris hours without claiming tasks',asy
  assert.equal(desktopWindow(settings.limits,Date.parse('2026-11-14T12:00:00Z')),false)
  settings.paused=true;assert.equal((await statusDesktop(d,{desktop_account_id:account.id})).allowed,false)
  await assert.rejects(statusDesktop(d,{}))
+})
+
+test('dress routine validates optional favourites without enabling them on existing accounts',()=>{
+ const legacy=normalizeSettings({messaging:{desktop:{browse_enabled:true}}}).messaging.desktop
+ assert.equal(legacy.browse_like_enabled,false);assert.equal(legacy.pause_close_percent,0)
+ const saved=normalizeSettings({messaging:{desktop:DRESS_ROUTINE}}).messaging.desktop
+ assert.equal(saved.browse_like_keywords,'robe');assert.equal(saved.browse_like_price_min,20);assert.equal(saved.browse_like_price_max,50);assert.equal(saved.browse_like_per_day,5);assert.equal(saved.pause_minutes,5)
+ for(const desktop of [{browse_like_enabled:'yes'},{browse_variety:1},{browse_between_actions:'yes'},{browse_like_enabled:true,browse_like_keywords:''},{browse_like_price_min:60,browse_like_price_max:50},{browse_like_per_day:21},{browse_like_percent:0},{pause_close_percent:101},{browse_after_actions_min:8,browse_after_actions_max:3}])assert.throws(()=>normalizeSettings({messaging:{desktop}}))
 })
 
 test('the final send guard observes pause, executor, version and lease changes',async()=>{

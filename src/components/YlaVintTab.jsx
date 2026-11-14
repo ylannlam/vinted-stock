@@ -76,7 +76,7 @@ function AccountSettings({account,defaults,onSave,busy,only}){
    <p className="text-xs text-zinc-400">L’assistant utilise les pages visibles pour lire et agir. Ces réglages contrôlent son rythme ; ils ne garantissent pas qu’une automatisation soit indétectable.</p>
    <div className="grid gap-3 sm:grid-cols-2">{['typing_delay_ms','page_wait_seconds','session_minutes','pause_minutes'].map(k=><Num key={k} label={DESKTOP_LABELS[k]} value={pace[k]} min={DESKTOP_BOUNDS[k][0]} max={DESKTOP_BOUNDS[k][1]} suffix={k==='typing_delay_ms'?'ms':k==='page_wait_seconds'?'s':'min'} onChange={v=>setPace(k,v)}/>)}</div>
    <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={pace.browse_enabled} onChange={e=>setPace('browse_enabled',e.target.checked)}/> Consulter des annonces entre les tâches</label>
-   <p className="text-xs text-zinc-400">Consultation et défilement uniquement, sans like, abonnement, achat ni message. Les messages à traiter restent prioritaires.</p>
+   <p className="text-xs text-zinc-400">Consultations, défilements et favoris facultatifs selon tes critères. Chaque passage commence après la fin de la tâche en cours.</p>
    {pace.browse_enabled&&<div className="grid gap-3 sm:grid-cols-2">{['browse_every_minutes','browse_items','browse_item_seconds','browse_scrolls'].map(k=><Num key={k} label={DESKTOP_LABELS[k]} value={pace[k]} min={DESKTOP_BOUNDS[k][0]} max={DESKTOP_BOUNDS[k][1]} suffix={k==='browse_every_minutes'?'min':k==='browse_item_seconds'?'s':undefined} onChange={v=>setPace(k,v)}/>)}</div>}
   </fieldset>}
   {show('messaging')&&<YlaVintRoutineSettings messaging={form.messaging} desktop={desktop} onChange={(k,v)=>set('messaging',k,v)}/>}

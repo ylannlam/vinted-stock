@@ -152,7 +152,7 @@ test('visible identity requires the own-profile menu, not a profile visited on s
 })
 test('consultation stops on site pause before clicking an article and never likes',async()=>{
  let requests=0,clicks=0,wheels=0
- const reader=new VisibleVinted({page:{mouse:{wheel:async()=>{wheels++}}},binding,check:()=>{},sleep:async()=>{},update:()=>{},control:async()=>({allowed:++requests===1,in_window:true,pace:{...PACE,browse_enabled:true}})})
+ const reader=new VisibleVinted({page:{evaluate:async()=>false,mouse:{wheel:async()=>{wheels++}}},binding,check:()=>{},sleep:async()=>{},update:()=>{},control:async()=>({allowed:++requests===1,in_window:true,pace:{...PACE,browse_enabled:true}})})
  reader.open=async()=>({cards:[{href:'https://www.vinted.fr/items/101'}]});reader.identity=async()=>{};reader.clickLink=async()=>{clicks++}
  assert.equal(await reader.browseOne(),false);assert.equal(clicks,0);assert.equal(wheels,0)
 })

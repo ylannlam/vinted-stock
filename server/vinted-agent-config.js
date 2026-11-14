@@ -125,6 +125,10 @@ export function normalizeSettings(input={}){
   out.messaging.desktop.browse_enabled=desktop.browse_enabled===true
   if(desktop.browse_photos!==undefined&&typeof desktop.browse_photos!=='boolean')throw new AppError('Consultation des photos : choix invalide.')
   out.messaging.desktop.browse_photos=desktop.browse_photos===true
+  for(const key of ['browse_variety','browse_between_actions','browse_like_enabled']){
+    if(desktop[key]!==undefined&&typeof desktop[key]!=='boolean')throw new AppError('Réglages des consultations et favoris : choix invalide.')
+    out.messaging.desktop[key]=desktop[key]??DESKTOP_DEFAULTS[key]
+  }
   if(desktop.publication_corrections!==undefined&&typeof desktop.publication_corrections!=='boolean')throw new AppError('Corrections de saisie : choix invalide.')
   out.messaging.desktop.publication_corrections=desktop.publication_corrections===true
   if(desktop.active_days!==undefined){
@@ -135,6 +139,8 @@ export function normalizeSettings(input={}){
   out.messaging.desktop.absent_until=historyDate(desktop.absent_until)
   if(desktop.absent_until&&!out.messaging.desktop.absent_until)throw new AppError('Date de retour invalide.')
   out.messaging.desktop.browse_keywords=str(desktop.browse_keywords,200,'Centres d’intérêt')
+  out.messaging.desktop.browse_like_keywords=str(desktop.browse_like_keywords??DESKTOP_DEFAULTS.browse_like_keywords,200,'Critères des favoris')
+  if(out.messaging.desktop.browse_like_enabled&&!out.messaging.desktop.browse_like_keywords.trim())throw new AppError('Précise au moins un mot-clé pour les favoris.')
   out.messaging.reply_notes=str(input.messaging?.reply_notes,1500,'Informations et style de la boutique')
   const examples=input.messaging?.reply_examples??[]
   if(!Array.isArray(examples)||examples.length>3)throw new AppError('Trois exemples de style au maximum.')
@@ -144,6 +150,8 @@ export function normalizeSettings(input={}){
     out.messaging.desktop[key]=value
   }
   if(out.messaging.desktop.browse_price_max&&out.messaging.desktop.browse_price_max<out.messaging.desktop.browse_price_min)throw new AppError('Le prix maximum doit dépasser le prix minimum.')
+  if(out.messaging.desktop.browse_like_price_max<out.messaging.desktop.browse_like_price_min)throw new AppError('Le prix maximum des favoris doit dépasser le prix minimum.')
+  if(out.messaging.desktop.browse_after_actions_max<out.messaging.desktop.browse_after_actions_min)throw new AppError('Le nombre maximum d’actions doit dépasser le minimum.')
   for(const group of ['likes','messaging'])out[group].history_since=historyDate(input[group]?.history_since)
   normalizeLikes(input.likes||{},out.likes)
   out.messaging.offers=normalizeOffers(input.messaging?.offers)
