@@ -61,7 +61,8 @@ test('desktop ownership prevents extension claims and does not auto-resume a rev
  const state=base(),db=fakeDb(state)
  state.vinted_agent_settings.push({account_id:ACC,enabled:true,paused:true,pause_reason:'Assistant PC : vérifie la dernière action sur Vinted avant de reprendre.',messaging:{executor:'desktop'}})
  assert.equal((await agentPoll(db,{}, {member_id:'3206068112',driver:'desktop'})).state,'other_executor')
- assert.equal((await agentPoll(db,{desktop_account_id:ACC},{member_id:'3206068112',version:'pc-1.3.0'})).state,'paused')
+ assert.equal((await agentPoll(db,{desktop_account_id:ACC},{member_id:'3206068112',version:'pc-1.3.0'})).state,'update_required')
+ assert.equal((await agentPoll(db,{desktop_account_id:ACC},{member_id:'3206068112',version:'pc-1.4.0'})).state,'paused')
  assert.equal(state.vinted_agent_settings[0].paused,true)
 })
 

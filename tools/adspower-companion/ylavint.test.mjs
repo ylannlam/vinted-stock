@@ -180,3 +180,88 @@ test('first-contact availability requires a unique visible seller control on the
  }
  await assert.rejects(reader.availableItem('../inbox'),/Article inconnu/)
 })
+
+import {browseMemory} from './ylavint-memory.mjs'
+import {browseCandidates} from './ylavint-visible.mjs'
+import {DESKTOP_DEFAULTS} from '../../src/lib/ylavintExecution.js'
+
+test('website and connector share the same complete pacing defaults',()=>assert.deepEqual(PACE,DESKTOP_DEFAULTS))
+
+test('consultation filters visible cards, excludes recent visits and deduplicates item links',()=>{
+ const now=Date.now(),pace={...PACE,browse_keywords:'Sézane, robe',browse_price_min:10,browse_price_max:30}
+ const card=(id,text)=>({href:'https://www.vinted.fr/items/'+id,text})
+ const cards=[card('1','Robe 20 €'),card('1','Robe 20 €'),card('2','SEZANE 25 €'),card('3','Jean 12 €'),card('4','Robe 50 €'),card('5','Robe sans prix'),{href:'https://evil.example/items/6',text:'Robe 20 €'}]
+ assert.deepEqual(browseCandidates(cards,pace,new Map([['1',now]]),now).map(c=>c.id),['2'])
+ assert.deepEqual(browseCandidates(cards,pace,new Map([['1',now-25*3600000]]),now).map(c=>c.id),['1','2'])
+})
+
+test('consultation memory persists across restarts without storing page content',async()=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'ylavint-browse-')),now=Date.now()
+ try{
+  const memory=await browseMemory(dir,now);await memory.record('123',now)
+  assert.equal((await browseMemory(dir,now)).visited.get('123'),now)
+  assert.equal((await browseMemory(dir,now+9*86400000)).visited.size,0)
+  assert.deepEqual(JSON.parse(await readFile(path.join(dir,'navigation.json'),'utf8')),[['123',now]])
+ }finally{if(path.relative(tmpdir(),dir).startsWith('ylavint-browse-')&&!path.relative(tmpdir(),dir).includes(path.sep))await rm(dir,{recursive:true,force:true})}
+})
+
+test('a new buyer message interrupts a long reply before the rest is typed',async()=>{
+ const f=fixture({changed:true}),body='Bonjour, je regarde les mesures de cette robe et je te réponds.'
+ f.ui.task={...task,payload:{body}}
+ const r=await f.ui.send({task_id:task.id,conversation_id:'55',body})
+ assert.equal(r.desktop_cancelled,'Buyer replied');assert.equal(f.typed.reduce((n,c)=>n+c.v.length,0),12)
+ assert.equal(f.clicked,0);assert.equal(f.text,'')
+})
+
+test('a seller edit during typing is kept and never submitted or cleared',async()=>{
+ const f=fixture(),body='Bonjour, je vérifie les mesures avant de répondre.'
+ f.ui.task={...task,payload:{body}};f.ui.recheck=async()=>{if(f.typed.length)await f.ui.page.locator('textarea').fill('Mon propre brouillon');return {ok:true}}
+ await assert.rejects(f.ui.send({task_id:task.id,conversation_id:'55',body}),e=>e.keep_page===true)
+ assert.equal(f.text,'Mon propre brouillon');assert.equal(f.clicked,0)
+})
+
+test('loss of focus stops progressive typing with the draft left for review',async()=>{
+ const f=fixture(),body='Bonjour, je vérifie les mesures avant de répondre.';f.ui.task={...task,payload:{body}}
+ f.ui.page.locator('textarea').evaluate=async()=>false
+ await assert.rejects(f.ui.send({task_id:task.id,conversation_id:'55',body}),e=>e.keep_page===true&&/focus/.test(e.message))
+ assert.equal(f.typed.length,1);assert.equal(f.clicked,0)
+})
+
+test('manual replies require review when their remembered context has changed',async()=>{
+ const reader=new VisibleVinted({binding,check:()=>{},sleep:async()=>{},update:()=>{}})
+ reader.identity=async()=>{};reader.thread=async()=>({id:'55',allow_reply:true,messages:[{id:'new',from_me:false}]})
+ const r=await reader.recheck({...task,kind:'reply_message',payload:{context_message_id:'old',source:'site',manual:true}},'55')
+ assert.equal(r.context_changed,true);assert.equal(r.review_required,true)
+ const auto=await reader.recheck({...task,kind:'reply_message',payload:{source_message_id:'old',source:'ai',manual:false}},'55')
+ assert.equal(auto.context_changed,true);assert.equal(auto.review_required,false)
+})
+
+test('rehearsal only reads visible pages and the scoped plan, without task claims or sends',async()=>{
+ const actions=[],updates=[],page={close:async()=>{}}
+ await runDesktop({...binding,rehearse:true},{start:async()=>({address:'test'})},{signal:new AbortController().signal,dataDir:tmpdir(),Reader:FakeReader,update:x=>updates.push(x),connect:async()=>({contexts:()=>[{newPage:async()=>page}],close:async()=>{}}),request:async(_token,action)=>{actions.push(action);return {actions:[{id:'preview'}]}}})
+ assert.deepEqual(actions,['agent_preview']);assert.equal(updates.at(-1).state,'rehearsed');assert.equal(updates.at(-1).actions_preview[0].id,'preview')
+ assert.equal(updates.find(x=>x.summary).summary.messages_sent,0)
+})
+
+test('resume rereads and imports context before polling; takeover leaves the owned page open',async()=>{
+ const actions=[],controller=new AbortController();let closed=0
+ const page={close:async()=>{closed++}}
+ class Reader extends FakeReader{async inbox(){actions.push('visible_inbox');return {conversations:[]}}}
+ await runDesktop(binding,{start:async()=>({address:'test'})},{signal:controller.signal,dataDir:tmpdir(),Reader,update:()=>{},connect:async()=>({contexts:()=>[{newPage:async()=>page}],close:async()=>{}}),request:async(_token,action)=>{
+  actions.push(action)
+  if(action==='agent_status')return {allowed:true,in_window:true,pace:PACE}
+  if(action==='agent_preview')return {actions:[]}
+  if(action==='agent_context')return {saved:true}
+  if(action==='agent_poll'){controller.abort({takeover:true});return {state:'idle'}}
+  assert.fail(action)
+ }})
+ assert.deepEqual(actions,['agent_status','agent_preview','visible_inbox','agent_context','agent_status','agent_poll']);assert.equal(closed,0)
+})
+
+test('manual takeover blocks automatic restart and keeps a distinct session status',async()=>{
+ const manager=new DesktopAssistants({getClient:()=>({}),dataDir:'.',run:async(_binding,_ads,{signal})=>{await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}))}})
+ manager.start(binding);await new Promise(setImmediate)
+ assert.throws(()=>manager.start({...binding,account_id:task.lease,profile_id:'another'}),/déjà/)
+ manager.stop(binding.account_id,true);await new Promise(setImmediate)
+ assert.equal(manager.active,false);assert.equal(manager.snapshot()[0].state,'manual');await manager.close()
+})

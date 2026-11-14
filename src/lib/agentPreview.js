@@ -1,7 +1,7 @@
 // Données fictives de l'onglet Agent (mode démo, aucune requête réelle).
 import {DEFAULTS,RECIPES,KINDS,DEFAULT_RECIPES,normalizeSettings} from '../../server/vinted-agent-config.js'
 // Démo : versions simplifiées (le module serveur YlaVint n'est pas chargé dans le navigateur).
-const AI_DEFAULTS={enabled:false,mode:'suggest',instructions:'',signature:'',delay_min_seconds:60,delay_max_seconds:240,max_auto_per_conversation:3,human_keywords:'remboursement, litige, arnaque, perdu, pas reçu, abîmé, cassé, retour',model:'gemini-3.5-flash-lite'}
+const AI_DEFAULTS={enabled:false,mode:'suggest',instructions:'',signature:'',delay_min_seconds:60,delay_max_seconds:240,max_auto_per_conversation:3,group_seconds:45,memory_messages:40,human_keywords:'remboursement, litige, arnaque, perdu, pas reçu, abîmé, cassé, retour',model:'gemini-3.5-flash-lite'}
 const normalizeAi=(v={})=>({...AI_DEFAULTS,...v})
 const orderStatus=t=>/annul/i.test(t)?'cancelled':/expédi|à expédier/i.test(t)?'label_sent':'payment_received'
 import {LISTING_AI_MODELS} from './listingSettings.js'
@@ -18,6 +18,10 @@ const state={
     {id:ids[3],login:'mode_nina',vinted_id:'1004',settings:null,last_seen_at:ago(7),extension_version:'3.0.0',today:{writes:0},alert:null},
   ],
   recipes:Object.entries(RECIPES).map(([kind,info],i)=>({kind,...info,default:!!DEFAULT_RECIPES[kind],learned_at:i<5?ago(300+i*20):null,learned_login:i<5?'test_lili':null,samples:i<5?1:0,method:i<5?(['GET','GET','GET','GET','GET'][i]):null,path:i<5?['/api/v2/wardrobe/{id}/items','/api/v2/my_orders','/api/v2/shipments/{id}/label_url','/web/api/notifications/notifications','/api/v2/item_upload/items/{id}'][i]:null})),
+  planned:[
+    {id:'p1',account_id:ids[0],login:'test_lili',kind:'like_message',state:'queued',recipient:'julie.mode',item_title:'Robe longue fleurie',body:'Bonjour Julie, merci pour ton favori ! Je peux te proposer la robe à 16,20 € si elle te plaît.',offer_requested:true,offer_price:16.2,reason:'Premier contact après un favori.',not_before:ago(-8),executor:'desktop'},
+    {id:'p2',account_id:ids[1],login:'boutique_emma',kind:'reply_message',state:'queued',recipient:'sarah_m',item_title:'Jean taille haute',body:'Bonjour, je vérifie les mesures et je reviens vers toi.',reason:'Réponse validée depuis la messagerie.',not_before:ago(-15),executor:'desktop',blocked_reason:'Compte en pause.'},
+  ],
   tasks:[
     {id:'t1',account_id:ids[0],kind:'unmask_item',state:'queued',not_before:ago(-25),created_at:ago(5)},
     {id:'t2',account_id:ids[0],kind:'scan_wardrobe',state:'done',started_at:ago(12),finished_at:ago(11)},
@@ -61,6 +65,7 @@ export async function agentPreview(method='GET',body,query=''){
   await new Promise(r=>setTimeout(r,150))
   const q=Object.fromEntries(new URLSearchParams(query.replace(/^&/,'')))
   const names=new Map(state.accounts.map(a=>[a.id,a.login]))
+  if(method==='GET'&&q.view==='actions')return structuredClone({actions:state.planned.filter(a=>a.state==='queued'&&(!q.account_id||a.account_id===q.account_id))})
   if(method==='GET'&&q.view==='inbox'){
     let list=convs.filter(c=>!q.account_id||c.account_id===q.account_id).map(c=>({...c,login:names.get(c.account_id),unseen:!c.last_from_me&&!c.site_read_at}))
     if(q.filter==='unread')list=list.filter(c=>c.unseen);if(q.filter==='human')list=list.filter(c=>c.needs_human);if(q.filter==='ai')list=list.filter(c=>['drafted','queued','human'].includes(c.ai_state))
@@ -71,7 +76,8 @@ export async function agentPreview(method='GET',body,query=''){
   if(method==='GET'&&q.view==='wardrobe'){const counts={};for(const l of wardrobe)counts[l.state]=(counts[l.state]||0)+1;const a=state.accounts.find(x=>x.id===q.account_id);return structuredClone({listings:wardrobe,counts,last_scan:ago(40),settings:a?.settings||null})}
   if(method==='GET'&&q.view==='sales')return structuredClone({orders:state.orders.map(o=>({...o,login:names.get(o.account_id),normalized:orderStatus(o.status),sales_order_id:o.label_path?'x':null}))})
   if(body?.action==='reply'||body?.action==='ai_send'){const c=convs.find(c=>c.conversation_id===body.conversation_id);const m={id:Date.now(),message_id:'local:'+Date.now(),from_me:true,body:body.body||c.ai_draft,kind:'message',sent_at:new Date().toISOString(),state:'queued',source:'site'};(messages[c.conversation_id]||=[]).push(m);Object.assign(c,{last_message:m.body,last_message_at:m.sent_at,last_from_me:true,ai_state:'none',ai_draft:null,needs_human:false});return {message:'Message envoyé à YlaVint : il part dès que le profil AdsPower est ouvert.'}}
-  if(body?.action==='ai_suggest')return {state:'drafted',reply:'Coucou ! Oui elle est toujours disponible, tu peux l’acheter directement 😊',message:'Proposition prête.'}
+  if(body?.action==='ai_suggest'){const c=convs.find(c=>c.conversation_id===body.conversation_id);Object.assign(c,{ai_state:'drafted',ai_draft:'Bonjour ! Oui elle est toujours disponible 😊'});return {state:'drafted',reply:c.ai_draft,message:'Proposition prête.'}}
+  if(body?.action==='remember_reply'){const c=convs.find(c=>c.conversation_id===body.conversation_id),a=state.accounts.find(a=>a.id===body.account_id);a.settings.messaging.reply_examples=[...(a.settings.messaging.reply_examples||[]),{before:c.ai_draft,after:body.body}].slice(-3);a.settings.version++;return {saved:true,message:'Correction retenue pour ce compte. Aucun message envoyé.'}}
   if(body?.action==='ai_discard'||body?.action==='human_done'){const c=convs.find(c=>c.conversation_id===body.conversation_id);Object.assign(c,{ai_draft:null,ai_state:'skipped',needs_human:false});return {saved:true}}
   if(body?.action==='save_ai'){ai={...normalizeAi(body.config),version:ai.version+1};return {saved:true,version:ai.version,config:ai}}
   if(body?.action==='test_ai')return {reply:'Coucou ! Elle taille normalement, prends ta taille habituelle. Pour le prix, je peux te faire 22 € si tu la prends aujourd’hui 😊',needs_human:false,reason:''}
@@ -83,7 +89,7 @@ export async function agentPreview(method='GET',body,query=''){
   if(body.action==='resume'){a.settings.paused=false;a.settings.pause_reason=null;return {saved:true}}
   if(body.action==='pause_all'){let n=0;for(const x of state.accounts)if(x.settings?.enabled&&!x.settings.paused){x.settings.paused=true;x.settings.pause_reason='arrêt général depuis le site';n++}return {paused:n}}
   if(body.action==='enqueue'){state.tasks.unshift({id:crypto.randomUUID(),account_id:a.id,kind:body.kind,state:'queued',not_before:new Date().toISOString()});return {queued:1}}
-  if(body.action==='cancel'){const t=state.tasks.find(t=>t.id===body.task_id);if(t)t.state='cancelled';return {cancelled:1}}
+  if(body.action==='cancel'){const planned=state.planned.find(t=>t.id===body.task_id);if(planned)planned.state='cancelled';const t=state.tasks.find(t=>t.id===body.task_id);if(t)t.state='cancelled';return {cancelled:1}}
   if(body.action==='publish_drafts')return {queued:0,refused:body.ids.map(id=>({id,reason:'démo : apprends d’abord la création d’annonce'}))}
   if(body.action==='forget_recipe'){const r=state.recipes.find(r=>r.kind===body.kind);if(r)r.learned_at=null;return {saved:true}}
   return {}

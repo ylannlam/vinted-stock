@@ -83,7 +83,7 @@ export const DEFAULTS={
     cancel:{enabled:false,minutes_before:30},
     pickup:{enabled:false,first_days:1,first:'Bonjour @username, ton colis est arrivé au point relais :)',second_days:3,second:''},
     review:{enabled:false,after_days:1,text:'Parfait, merci !',end_message:''},delete_sold:false},
-  messaging:{sync_seconds:20,sync_minutes:1,reply_unlimited:true,history_hours:0,history_since:null,reply_per_day:80,reply_gap_seconds:40,action_gap_min:30,action_gap_max:45,desktop:{...DESKTOP_DEFAULTS},
+  messaging:{sync_seconds:20,sync_minutes:1,reply_unlimited:true,history_hours:0,history_since:null,reply_per_day:80,reply_gap_seconds:40,action_gap_min:30,action_gap_max:45,desktop:{...DESKTOP_DEFAULTS},reply_notes:'',reply_examples:[],
     offers:{enabled:false,history_hours:0,history_since:null,single_discount:20,bundle_discount:20,max_per_buyer:5,period_days:1}},
 }
 const BOUNDS={
@@ -118,10 +118,25 @@ export function normalizeSettings(input={}){
   if(!desktop||typeof desktop!=='object'||Array.isArray(desktop))throw new AppError('Réglages de rythme invalides.')
   if(desktop.browse_enabled!==undefined&&typeof desktop.browse_enabled!=='boolean')throw new AppError('Consultation des annonces : choix invalide.')
   out.messaging.desktop.browse_enabled=desktop.browse_enabled===true
+  if(desktop.browse_photos!==undefined&&typeof desktop.browse_photos!=='boolean')throw new AppError('Consultation des photos : choix invalide.')
+  out.messaging.desktop.browse_photos=desktop.browse_photos===true
+  if(desktop.active_days!==undefined){
+    if(!Array.isArray(desktop.active_days)||desktop.active_days.length>7||desktop.active_days.some(d=>!Number.isInteger(d)||d<1||d>7))throw new AppError('Jours d’activité invalides.')
+    out.messaging.desktop.active_days=[...new Set(desktop.active_days)].sort()
+  }
+  if(desktop.absent_until!=null&&desktop.absent_until!==''&&!/^\d{4}-\d{2}-\d{2}T/.test(desktop.absent_until))throw new AppError('Date de retour invalide.')
+  out.messaging.desktop.absent_until=historyDate(desktop.absent_until)
+  if(desktop.absent_until&&!out.messaging.desktop.absent_until)throw new AppError('Date de retour invalide.')
+  out.messaging.desktop.browse_keywords=str(desktop.browse_keywords,200,'Centres d’intérêt')
+  out.messaging.reply_notes=str(input.messaging?.reply_notes,1500,'Informations et style de la boutique')
+  const examples=input.messaging?.reply_examples??[]
+  if(!Array.isArray(examples)||examples.length>3)throw new AppError('Trois exemples de style au maximum.')
+  out.messaging.reply_examples=examples.map(e=>({before:str(e?.before,1000,'Proposition initiale'),after:str(e?.after,1000,'Réponse corrigée')})).filter(e=>e.after)
   for(const [key,[min,max]] of Object.entries(DESKTOP_BOUNDS))if(desktop[key]!==undefined){
     const value=Number(desktop[key]);if(!Number.isInteger(value)||value<min||value>max)throw new AppError(`${DESKTOP_LABELS[key]} : choisis une valeur entre ${min} et ${max}.`)
     out.messaging.desktop[key]=value
   }
+  if(out.messaging.desktop.browse_price_max&&out.messaging.desktop.browse_price_max<out.messaging.desktop.browse_price_min)throw new AppError('Le prix maximum doit dépasser le prix minimum.')
   for(const group of ['likes','messaging'])out[group].history_since=historyDate(input[group]?.history_since)
   normalizeLikes(input.likes||{},out.likes)
   out.messaging.offers=normalizeOffers(input.messaging?.offers)

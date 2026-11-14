@@ -47,7 +47,7 @@ export function LikesSettings({likes,onChange,gap,onGap}){
  return <div className="space-y-4">
   <div className="rounded-xl border border-blue-900/60 bg-blue-950/40 p-3 text-xs text-blue-100">
    <p className="mb-1 font-semibold">Comment ça marche ?</p>
-   <ul className="list-disc space-y-0.5 pl-4"><li>Les messages sont envoyés dans l’ordre, à chaque like d’un même membre.</li><li>Bob aime l’article A → il reçoit le message 1. Bob aime l’article B → il reçoit le message 2.</li>
+   <ul className="list-disc space-y-0.5 pl-4"><li>Les messages suivent l’ordre prévu, en respectant le délai entre deux contacts.</li><li>Plusieurs favoris du même membre sont regroupés tant qu’un premier message attend son envoi. Un nouveau contact éligible utilisera le message suivant.</li>
     <li>S’il n’y a que 2 messages, la rotation s’arrête au message 2.</li><li>Aucun message au même membre pendant le nombre de jours choisi plus bas.</li></ul></div>
   {steps.map((s,i)=><Box key={i}>
    <div className="mb-1 flex items-center justify-between"><p className="text-sm font-semibold text-white">Ce message / cette offre sera envoyé(e) au {ordinal(i)} article aimé par un membre</p>

@@ -60,6 +60,11 @@ export async function applyInbox(db,task,result,{settings,now=Date.now()}={}){
   if(!convs.length)return {conversations:0,new_messages:0,message:'Messagerie lue : aucune conversation.'}
   const ids=convs.map(c=>c.id)
   const before=new Map(check(await db.from('ylavint_conversations').select('*').eq('account_id',account).in('conversation_id',ids)).map(r=>[r.conversation_id,r]))
+  const detailed=convs.filter(c=>c.messages)
+  const existing=detailed.length?check(await db.from('ylavint_messages').select('id,conversation_id,message_id,from_me,body,state,sent_at,created_at').eq('account_id',account).in('conversation_id',detailed.map(c=>c.id))):[]
+  const observed=new Map(existing.map(m=>[`${m.conversation_id}|${m.message_id}`,m]))
+  // Relative dates on visible pages move with time; an already observed message keeps its first timestamp.
+  for(const c of detailed)for(const m of c.messages){const known=observed.get(`${c.id}|${m.id}`);if(known?.sent_at)m.sent_at=known.sent_at}
   const rows=convs.map(c=>{
     const old=before.get(c.id),last=c.messages?.length?c.messages[c.messages.length-1]:null,human=c.messages?[...c.messages].reverse().find(m=>!SYSTEM_KINDS.has(m.kind)):undefined
     return {account_id:account,conversation_id:c.id,...merge({other_id:c.other_id,other_login:c.other_login,other_photo:c.other_photo,item_id:c.item_id,item_title:c.item_title,
@@ -72,10 +77,8 @@ export async function applyInbox(db,task,result,{settings,now=Date.now()}={}){
   check(await db.from('ylavint_conversations').upsert(rows,{onConflict:'account_id,conversation_id'}))
 
   // Messages : un message envoyé depuis le site (identifiant local) prend l'identifiant Vinted quand il réapparaît.
-  const detailed=convs.filter(c=>c.messages)
   let added=0
   if(detailed.length){
-    const existing=check(await db.from('ylavint_messages').select('id,conversation_id,message_id,from_me,body,state').eq('account_id',account).in('conversation_id',detailed.map(c=>c.id)))
     const known=new Set(existing.map(m=>`${m.conversation_id}|${m.message_id}`))
     const locals=existing.filter(m=>m.message_id.startsWith('local:')&&['queued','sent'].includes(m.state))
     const inserts=[]
@@ -85,10 +88,26 @@ export async function applyInbox(db,task,result,{settings,now=Date.now()}={}){
         const local=locals.find(l=>l.conversation_id===c.id&&clean(l.body,4000)===m.body)
         if(local){locals.splice(locals.indexOf(local),1);check(await db.from('ylavint_messages').update({message_id:m.id,state:'sent',sent_at:m.sent_at||at,error:null}).eq('id',local.id));continue}
       }
-      inserts.push({account_id:account,conversation_id:c.id,message_id:m.id,from_me:m.from_me,body:m.body,kind:m.kind,sent_at:m.sent_at||at})
+      inserts.push({account_id:account,conversation_id:c.id,message_id:m.id,from_me:m.from_me,body:m.body,kind:m.kind,sent_at:m.sent_at||at,created_at:at})
     }
     for(let i=0;i<inserts.length;i+=200)check(await db.from('ylavint_messages').upsert(inserts.slice(i,i+200),{onConflict:'account_id,conversation_id,message_id',ignoreDuplicates:true}))
     added=inserts.filter(m=>!m.from_me).length
+  }
+
+  // Supersede stale AI drafts as soon as new context is imported. Claimed tasks recheck the visible thread too.
+  const changed=detailed.filter(c=>{const old=before.get(c.id),last=c.messages.at(-1);return old?.ai_handled_message_id&&last&&last.id!==old.ai_handled_message_id&&['queued','drafted'].includes(old.ai_state)})
+  if(changed.length){
+    const queued=check(await db.from('vinted_agent_tasks').select('id,payload').eq('account_id',account).eq('kind','reply_message').eq('state','queued'))
+    for(const c of changed){
+      const superseded=queued.filter(t=>t.payload?.source==='ai'&&!t.payload.manual&&t.payload.conversation_id===c.id)
+      if(superseded.length){
+        const cancelled=check(await db.from('vinted_agent_tasks').update({state:'cancelled',finished_at:at,error:'Nouveau message : réponse à recalculer.'}).in('id',superseded.map(t=>t.id)).eq('state','queued').select('id'))
+        if(cancelled.length)check(await db.from('ylavint_messages').update({state:'cancelled',error:'Nouveau message : réponse à recalculer.'}).eq('account_id',account).in('task_id',cancelled.map(t=>t.id)).eq('state','queued'))
+      }
+      const last=c.messages.at(-1),state=before.get(c.id)?.needs_human?'human':last.from_me?'none':'pending'
+      check(await db.from('ylavint_conversations').update({ai_state:state,ai_draft:null,ai_reason:'Conversation mise à jour.'}).eq('account_id',account).eq('conversation_id',c.id))
+      before.set(c.id,{...before.get(c.id),ai_state:state})
+    }
   }
 
   const offersQueued=await planOffers(db,account,detailed,settings,{now})
@@ -124,10 +143,12 @@ export async function queueReply(db,{account_id,conversation_id,body,source='sit
   if(!conv.allow_reply)throw new AppError('Vinted ne permet plus de répondre dans cette conversation.',409)
   const settings=check(await db.from('vinted_agent_settings').select('enabled,paused,messaging').eq('account_id',account_id).maybeSingle())
   if(!settings?.enabled)throw new AppError('YlaVint n’est pas activé sur ce compte : active-le dans Réglages.',409)
+  const context=isDesktop(settings)?check(await db.from('ylavint_messages').select('message_id,kind').eq('account_id',account_id).eq('conversation_id',conversation_id).neq('state','queued').neq('state','failed').neq('state','cancelled').order('sent_at',{ascending:false}).limit(50)).find(m=>!SYSTEM_KINDS.has(m.kind)):null
+  if(isDesktop(settings)&&!context)throw new AppError('Relis cette conversation sur Vinted avant de préparer la réponse.',409)
   const id=localId(),at=nowIso(now)
   check(await db.from('ylavint_messages').insert({account_id,conversation_id,message_id:id,from_me:true,body:message,state:'queued',source,created_by:user,sent_at:nowIso(now+delayMs)}))
   const taskId=await insertTask(db,{account_id,kind:'reply_message',priority:manual?10:5,dedupe_key:`reply:${id}`,not_before:nowIso(now+delayMs),
-    payload:{conversation_id,body:message,local_id:id,manual,source,source_message_at,source_message_id},created_by:user})
+    payload:{conversation_id,body:message,local_id:id,manual,source,source_message_at,source_message_id,...(context?{context_message_id:context.message_id}:{})},created_by:user})
   check(await db.from('ylavint_messages').update({task_id:taskId}).eq('account_id',account_id).eq('conversation_id',conversation_id).eq('message_id',id))
   const patch={last_message:message,last_message_at:at,last_from_me:true,updated_at:at}
   if(source==='site')Object.assign(patch,{ai_state:'none',ai_draft:null,site_read_at:at,needs_human:false})
@@ -153,8 +174,9 @@ export async function applyReply(db,task,result,{now=Date.now()}={}){
   if(result?.skipped){
     check(await db.from('ylavint_messages').update({state:'cancelled',error:clean(result.skipped,300)}).eq('account_id',task.account_id).eq('conversation_id',p.conversation_id).eq('message_id',p.local_id))
     if(p.source==='ai')check(await db.from('ylavint_conversations').update({ai_state:'skipped',ai_reason:clean(result.skipped,300)}).eq('account_id',task.account_id).eq('conversation_id',p.conversation_id))
-    if(p.source==='ai'&&p.manual!==true&&result.context_changed===true)
+    if(result.context_changed===true)
       await enqueue(db,[{account_id:task.account_id,kind:'sync_inbox',priority:8,dedupe_key:`reply-context:${task.account_id}:${p.conversation_id}`,payload:{conversation_ids:[p.conversation_id],force_details:true}}])
+    if(result.review_required===true)check(await db.from('ylavint_conversations').update({ai_state:'human',needs_human:true,ai_draft:p.body||null,ai_reason:clean(result.skipped,300)}).eq('account_id',task.account_id).eq('conversation_id',p.conversation_id))
     return {conversation_id:p.conversation_id,message:`Réponse non envoyée : ${clean(result.skipped,150)}`}
   }
   const patch={state:'sent',error:null,sent_at:nowIso(now)}
@@ -185,7 +207,7 @@ export function likeText(template,payload={}){
 }
 
 // ---------- Agent IA ----------
-export const AI_DEFAULTS={enabled:false,mode:'suggest',instructions:'',signature:'',delay_min_seconds:10,delay_max_seconds:20,max_auto_per_conversation:3,
+export const AI_DEFAULTS={enabled:false,mode:'suggest',instructions:'',signature:'',delay_min_seconds:10,delay_max_seconds:20,max_auto_per_conversation:3,group_seconds:45,memory_messages:40,
   human_keywords:'remboursement, rembourser, litige, arnaque, avocat, police, perdu, pas reçu, jamais reçu, abîmé, cassé, déchiré, faux, contrefaçon, retour, signaler',
   model:'gemini-3.5-flash-lite'}
 export function normalizeAi(input={},base=AI_DEFAULTS){
@@ -194,7 +216,7 @@ export function normalizeAi(input={},base=AI_DEFAULTS){
   if('mode' in input){if(!['suggest','auto'].includes(input.mode))throw new AppError('Choisis « proposer » ou « répondre seul ».');out.mode=input.mode}
   for(const [k,max] of [['instructions',6000],['signature',120],['human_keywords',800]])if(k in input){
     if(typeof input[k]!=='string'||input[k].length>max)throw new AppError(`Texte trop long (${max} caractères maximum).`);out[k]=input[k].trim()}
-  for(const [k,min,max] of [['delay_min_seconds',10,3600],['delay_max_seconds',10,7200],['max_auto_per_conversation',0,20]])if(k in input){
+  for(const [k,min,max] of [['delay_min_seconds',10,3600],['delay_max_seconds',10,7200],['max_auto_per_conversation',0,20],['group_seconds',20,180],['memory_messages',20,100]])if(k in input){
     const n=Number(input[k]);if(!Number.isFinite(n)||n<min||n>max)throw new AppError(`Valeur hors limites (${min} à ${max}).`);out[k]=Math.round(n)}
   if(out.delay_max_seconds<out.delay_min_seconds)out.delay_max_seconds=out.delay_min_seconds
   if('model' in input){if(!LISTING_AI_MODELS.some(m=>m.id===input.model))throw new AppError('Modèle inconnu.');out.model=input.model}
@@ -214,6 +236,9 @@ export function aiInstructions(config,login){
     'Règles absolues : tout se passe sur Vinted. Ne propose jamais de paiement, d’échange ou de contact hors de Vinted, ne donne jamais de numéro, d’adresse e-mail, de lien ou de réseau social, et n’en demande pas. N’invente rien sur l’article (mesures, matière, état, délai exact) : si l’information n’est ni dans l’annonce ni dans les consignes, dis que tu vérifies et mets needs_human=true. N’accorde pas de remise que les consignes n’autorisent pas.',
     'Mets needs_human=true si la demande touche à un litige, un remboursement, un retour, un colis perdu, abîmé ou non conforme, une réclamation, une menace, ou si tu n’es pas sûr de la bonne réponse. Écris quand même une proposition de réponse prudente.',
     'reason : quelques mots pour le vendeur (non envoyés).',
+    'Adapte la longueur à la question. Les exemples de corrections approuvées servent uniquement à apprendre le style ; ne réutilise jamais leurs prix, mesures, dates ou promesses pour un autre article.',
+    'Les informations déclarées pour cette boutique précisent son style et ses disponibilités réelles. Ne promets une date d’expédition que si elle y figure explicitement. Une demande de photo ou de mesure absente exige needs_human=true.',
+    'Respecte un refus, une demande d’attendre ou une conversation close : aucun argument commercial supplémentaire ni nouvelle réduction. Une relance demandée à une date précise doit être laissée au vendeur avec needs_human=true.',
     ...(config.signature?[`Termine si c’est naturel par : ${config.signature}`]:[]),
     ...(config.instructions?[`Consignes du vendeur (à suivre si elles respectent les règles ci-dessus) :\n${config.instructions}`]:[]),
   ].join('\n')
@@ -237,13 +262,14 @@ export async function generateReply(config,context,{fetcher=fetch,token=listingA
   if(reply.length<2){needs=true;reason=reason||'Pas de réponse proposée.'}
   return {reply,needs_human:needs,reason,usage:body?.usage?{model:config.model,input_tokens:Number(body.usage.prompt_tokens)||0,output_tokens:Number(body.usage.completion_tokens)||0}:null}
 }
-async function aiContext(db,conv){
-  const [messages,account,listing]=await Promise.all([
-    db.from('ylavint_messages').select('message_id,from_me,body,kind,sent_at').eq('account_id',conv.account_id).eq('conversation_id',conv.conversation_id).neq('state','queued').neq('state','failed').neq('state','cancelled').order('sent_at',{ascending:false}).limit(20).then(check),
+async function aiContext(db,conv,config){
+  const [messages,account,listing,settings]=await Promise.all([
+    db.from('ylavint_messages').select('message_id,from_me,body,kind,sent_at').eq('account_id',conv.account_id).eq('conversation_id',conv.conversation_id).neq('state','queued').neq('state','failed').neq('state','cancelled').order('sent_at',{ascending:false}).limit(config.memory_messages||40).then(check),
     db.from('publication_accounts').select('login').eq('id',conv.account_id).maybeSingle().then(check),
     conv.item_id?db.from('vinted_agent_listings').select('title,price,state').eq('account_id',conv.account_id).eq('item_id',conv.item_id).maybeSingle().then(check):null,
+    db.from('vinted_agent_settings').select('messaging').eq('account_id',conv.account_id).maybeSingle().then(check),
   ])
-  return {boutique:account?.login||null,article:{titre:conv.item_title||listing?.title||null,prix:conv.item_price??listing?.price??null,etat_annonce:listing?.state||null,vente:conv.transaction_status||null},
+  return {boutique:account?.login||null,informations_du_vendeur:settings?.messaging?.reply_notes||'',exemples_de_style_approuves:settings?.messaging?.reply_examples||[],article:{titre:conv.item_title||listing?.title||null,prix:conv.item_price??listing?.price??null,etat_annonce:listing?.state||null,vente:conv.transaction_status||null},
     conversation:messages.reverse().filter(m=>m.body).map(m=>({id:m.message_id,auteur:m.from_me?'vendeur':'acheteur',texte:m.body,date:m.sent_at,type:m.kind}))}
 }
 async function recordUsage(db,usage,accountId){
@@ -252,7 +278,7 @@ async function recordUsage(db,usage,accountId){
 }
 // Prépare la réponse IA d'une conversation : proposition à valider, ou envoi programmé en mode « répondre seul ».
 export async function draftAi(db,conv,config,{generate=generateReply,now=Date.now(),rand=Math.random,force=false}={}){
-  const context=await aiContext(db,conv),last=[...context.conversation].reverse().find(m=>!SYSTEM_KINDS.has(m.type))
+  const context=await aiContext(db,conv,config),last=[...context.conversation].reverse().find(m=>!SYSTEM_KINDS.has(m.type))
   if(!last||last.auteur!=='acheteur'){
     check(await db.from('ylavint_conversations').update({ai_state:'skipped',ai_reason:'Dernier message envoyé par toi.'}).eq('account_id',conv.account_id).eq('conversation_id',conv.conversation_id))
     return {state:'skipped'}
@@ -264,7 +290,8 @@ export async function draftAi(db,conv,config,{generate=generateReply,now=Date.no
     check(await db.from('ylavint_conversations').update({ai_state:state,ai_draft:null,ai_reason:before.skip}).eq('account_id',conv.account_id).eq('conversation_id',conv.conversation_id))
     return {state}
   }
-  const keyword=humanKeyword(config,last.texte)
+  const unanswered=[];for(const m of [...context.conversation].reverse()){if(m.auteur==='vendeur')break;if(!SYSTEM_KINDS.has(m.type))unanswered.push(m.texte)}
+  const keyword=humanKeyword(config,unanswered.join('\n'))
   let result
   try{result=await generate(config,context)}
   catch(e){
@@ -305,9 +332,11 @@ export async function pollExtras(db,account,settings,{paused=false,draft=true,no
     const config=await readAi(db)
     if(config.enabled){
       const stale=nowIso(now-120000)
-      // Laisser 30 secondes depuis le dernier message avant de rédiger : l'acheteur peut compléter sa question.
-      const conv=check(await db.from('ylavint_conversations').select('*').eq('account_id',account.id).or(`ai_state.eq.pending,and(ai_state.eq.drafting,updated_at.lt.${stale})`).order('last_message_at',{ascending:true}).limit(20))
-        .find(c=>Number.isFinite(Date.parse(c.last_message_at))&&Date.parse(c.last_message_at)<=now-30000)
+      const candidates=check(await db.from('ylavint_conversations').select('*').eq('account_id',account.id).or(`ai_state.eq.pending,and(ai_state.eq.drafting,updated_at.lt.${stale})`).order('last_message_at',{ascending:true}).limit(20))
+      const incoming=candidates.length?check(await db.from('ylavint_messages').select('conversation_id,created_at').eq('account_id',account.id).eq('from_me',false).in('conversation_id',candidates.map(c=>c.conversation_id)).gte('created_at',iso(now-(config.group_seconds||45)*1000)).order('created_at',{ascending:false}).limit(300)):[]
+      if(incoming.length===300)return out // A truncated burst cannot establish a quiet conversation.
+      const observed=new Map();for(const m of incoming)if(!observed.has(m.conversation_id))observed.set(m.conversation_id,Date.parse(m.created_at)||0)
+      const conv=candidates.find(c=>Number.isFinite(Date.parse(c.last_message_at))&&Math.max(Date.parse(c.last_message_at),observed.get(c.conversation_id)||0)<=now-(config.group_seconds||45)*1000)
       if(conv&&!inHistory(conv.last_message_at,settings.messaging.history_since)){check(await db.from('ylavint_conversations').update({ai_state:'skipped',ai_reason:'Message antérieur à la période choisie.'}).eq('account_id',account.id).eq('conversation_id',conv.conversation_id));return out}
       if(conv){
         const claimed=check(await db.from('ylavint_conversations').update({ai_state:'drafting',updated_at:nowIso(now)}).eq('account_id',conv.account_id).eq('conversation_id',conv.conversation_id).eq('ai_state',conv.ai_state).select('conversation_id'))
@@ -430,7 +459,7 @@ export {queueYlavintListing as queueStudioPublish,cancelYlavintListing as cancel
 export async function ylavintPublishReady(db,accountId){return (await import('./listing-ylavint.js').then(m=>m.publicationStatus(db,accountId))).ready}
 
 // ---------- Site : vues et actions ----------
-export const YLAVINT_ACTIONS=new Set(['reply','mark_read','ai_suggest','ai_discard','ai_send','cancel_message','refresh_conversation','refresh_inbox','human_done','save_ai','test_ai','item_unmask','item_reprice','label_link','retry_message'])
+export const YLAVINT_ACTIONS=new Set(['reply','mark_read','ai_suggest','ai_discard','ai_send','remember_reply','cancel_message','refresh_conversation','refresh_inbox','human_done','save_ai','test_ai','item_unmask','item_reprice','label_link','retry_message'])
 const accountOf=v=>isId(v)?v.toLowerCase():null
 const convId=v=>cid(v)
 async function logins(db){return new Map(check(await db.from('publication_accounts').select('id,login')).map(a=>[a.id,a.login]))}
@@ -450,6 +479,7 @@ export async function overviewExtras(db){
 
 export async function ylavintView(req,{db}){
   const q=req.query||{},view=q.view
+  if(view==='actions')return (await import('./ylavint-actions.js')).upcomingActions(db,accountOf(q.account_id))
   if(view==='inbox'){
     const account=accountOf(q.account_id),filter=['all','unread','human','ai'].includes(q.filter)?q.filter:'all'
     let query=db.from('ylavint_conversations').select('account_id,conversation_id,other_login,other_photo,item_title,item_photo,item_price,transaction_status,last_message,last_message_at,last_from_me,unread,site_read_at,needs_human,ai_state,ai_draft,allow_reply').order('last_message_at',{ascending:false,nullsFirst:false}).limit(150)
@@ -509,8 +539,20 @@ export async function handleYlavint(req,{db,user},{generate=generateReply}={}){
   }
   switch(b.action){
     case 'reply':{await needConv();const r=await queueReply(db,{account_id:account,conversation_id:conversation,body:b.body,source:'site',user:user.id,manual:true});return {...r,message:r.paused?'Message en attente : YlaVint est en pause sur ce compte.':r.executor==='desktop'?'Message en attente : démarre l’assistant de ce compte dans Assistant PC pour l’envoyer.':'Message envoyé à YlaVint : il part dès que le profil AdsPower est ouvert.'}}
-    case 'ai_send':{const c=await needConv();if(!c.ai_draft)throw new AppError('Aucune proposition à envoyer.');const body=typeof b.body==='string'&&b.body.trim()?b.body:c.ai_draft
+    case 'ai_send':{const c=await needConv();if(!c.ai_draft)throw new AppError('Aucune proposition à envoyer.');if(b.expected_draft!==undefined&&(b.expected_draft!==c.ai_draft||b.source_message_id!==c.ai_handled_message_id))throw new AppError('La proposition ou la conversation a changé. Relis la nouvelle proposition.',409);const body=typeof b.body==='string'&&b.body.trim()?b.body:c.ai_draft
       const r=await queueReply(db,{account_id:account,conversation_id:conversation,body,source:'site',user:user.id,manual:true});return {...r,message:'Réponse validée et envoyée à YlaVint.'}}
+    case 'remember_reply':{
+      const c=await needConv(),after=clean(b.body,1000)
+      if(!c.ai_draft||b.expected_draft!==c.ai_draft||b.source_message_id!==c.ai_handled_message_id)throw new AppError('Cette proposition a changé. Actualise-la avant de retenir une correction.',409)
+      if(after.length<2||after===c.ai_draft)throw new AppError('Modifie la proposition avant de retenir une correction.')
+      const row=check(await db.from('vinted_agent_settings').select('*').eq('account_id',account).maybeSingle())
+      if(!row)throw new AppError('Configure ce compte avant de retenir un exemple.',409)
+      const messaging=effectiveSettings(row).messaging
+      messaging.reply_examples=[...messaging.reply_examples.filter(e=>e.after!==after),{before:c.ai_draft.slice(0,1000),after}].slice(-3)
+      const saved=check(await db.from('vinted_agent_settings').update({messaging,version:row.version+1,updated_at:nowIso()}).eq('account_id',account).eq('version',row.version).select('account_id'))
+      if(!saved.length)throw new AppError('Les réglages ont changé. Réessaie après actualisation.',409)
+      return {saved:true,message:'Correction retenue pour le style de cette boutique. Aucun message envoyé.'}
+    }
     case 'mark_read':{await needConv();check(await db.from('ylavint_conversations').update({site_read_at:nowIso()}).eq('account_id',account).eq('conversation_id',conversation));return {saved:true}}
     case 'human_done':{await needConv();check(await db.from('ylavint_conversations').update({needs_human:false,ai_state:'none',ai_reason:null}).eq('account_id',account).eq('conversation_id',conversation));return {saved:true}}
     case 'ai_discard':{await needConv();check(await db.from('ylavint_conversations').update({ai_state:'skipped',ai_draft:null}).eq('account_id',account).eq('conversation_id',conversation));return {saved:true}}

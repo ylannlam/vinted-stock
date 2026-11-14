@@ -1,6 +1,7 @@
 import {useEffect,useMemo,useState,lazy,Suspense} from 'react'
 import {buttonClass,primaryClass,fieldClass,compactClass,Pill,Card,PageTitle,Table,Td,Icon} from './YlaVintUI'
 import YlaVintDashboard from './YlaVintDashboard'
+import YlaVintRoutineSettings from './YlaVintRoutineSettings'
 import '../ylavint.css'
 import VintedWatchPanel,{vintedWatchRequest} from './VintedWatchPanel'
 import {ORDER_LABELS} from '../lib/fulfillment'
@@ -13,6 +14,7 @@ const YlaVintAi=lazy(()=>import('./YlaVintAi'))
 const YlaVintWardrobe=lazy(()=>import('./YlaVintWardrobe'))
 const YlaVintSales=lazy(()=>import('./YlaVintSales'))
 const YlaVintDesktop=lazy(()=>import('./YlaVintDesktop'))
+const YlaVintActions=lazy(()=>import('./YlaVintActions'))
 
 export const ylavintRequest=(method='GET',body,query='')=>import('../lib/api').then(m=>m.resourcesRequest(method,body,`?scope=agent${query}`))
 export const when=v=>v?new Date(v).toLocaleString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Europe/Paris'}):'—'
@@ -36,6 +38,7 @@ const NAV=[
  {label:'Automatisations',icon:'⚙',children:[['likes','Likes d’articles'],['flux','Flux de commande'],['agent','Smart Agent'],['prix','Démasquage & prix']]},
  {key:'messagerie',label:'Messagerie',icon:'💬'},
  {key:'assistant-pc',label:'Assistant PC',icon:'▣'},
+ {key:'actions',label:'Prochaines actions',icon:'◷'},
  {label:'Plus',icon:'⋯',children:[['reglages','Comptes & réglages'],['journal','Journal'],['extension','Extension']]},
 ]
 const KEYS=NAV.flatMap(n=>n.children?n.children.map(c=>c[0]):[n.key])
@@ -74,6 +77,7 @@ function AccountSettings({account,defaults,onSave,busy,only}){
    <p className="text-xs text-zinc-400">Consultation et défilement uniquement, sans like, abonnement, achat ni message. Les messages à traiter restent prioritaires.</p>
    {pace.browse_enabled&&<div className="grid gap-3 sm:grid-cols-2">{['browse_every_minutes','browse_items','browse_item_seconds','browse_scrolls'].map(k=><Num key={k} label={DESKTOP_LABELS[k]} value={pace[k]} min={DESKTOP_BOUNDS[k][0]} max={DESKTOP_BOUNDS[k][1]} suffix={k==='browse_every_minutes'?'min':k==='browse_item_seconds'?'s':undefined} onChange={v=>setPace(k,v)}/>)}</div>}
   </fieldset>}
+  {show('messaging')&&<YlaVintRoutineSettings messaging={form.messaging} desktop={desktop} onChange={(k,v)=>set('messaging',k,v)}/>}
   <fieldset><Legend>Fonctions</Legend>
    <div className="mt-2 grid gap-2 sm:grid-cols-2">{feats.map(([k,l])=><label key={k} className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-sm text-zinc-200"><input type="checkbox" className="accent-blue-500" disabled={!supportsFeature(form,k)} checked={!!form.features[k]} onChange={e=>set('features',k,e.target.checked)}/>{l}{!supportsFeature(form,k)&&<span className="text-xs text-amber-300">Mode Extension requis</span>}</label>)}</div>
    {feats.some(([k])=>k==='sales')&&<p className="mt-2 text-xs text-zinc-500">« Ventes → onglet Ventes » remplace le webhook Dotb pour ce compte : coupe d’abord Dotb sur ce compte. Une vente déjà reçue de Dotb n’est jamais dupliquée.</p>}
@@ -222,7 +226,7 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
    <p className="ylv-nav-group px-3 py-1.5">{n.label}</p>
    {n.children.map(([k,l])=><button key={k} aria-current={section===k?'page':undefined} onClick={()=>setSection(k)} className={`ylv-nav-link flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-[13px] ${section===k?'font-semibold text-white':'text-zinc-400 hover:text-zinc-100'}`}><Icon className="h-4 w-4 opacity-70" name={({commandes:'bag',classement:'chart',dressing:'box',publication:'grid',likes:'heart',flux:'box',agent:'spark',prix:'chart',reglages:'settings',journal:'clock',extension:'grid'})[k]}/>{l}</button>)}
   </div>:<button key={n.key} aria-current={section===n.key?'page':undefined} onClick={()=>setSection(n.key)} className={`ylv-nav-link flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] font-medium ${section===n.key?'text-white':'text-zinc-300'}`}>
-   <Icon className="h-4 w-4" name={({accueil:'grid',messagerie:'message','assistant-pc':'monitor'})[n.key]}/>{n.label}{n.key==='messagerie'&&unread>0&&<span className="ml-auto rounded-full bg-indigo-500/25 px-2 py-0.5 text-[10px] text-indigo-200">{unread}</span>}</button>)}
+   <Icon className="h-4 w-4" name={({accueil:'grid',messagerie:'message','assistant-pc':'monitor',actions:'clock'})[n.key]}/>{n.label}{n.key==='messagerie'&&unread>0&&<span className="ml-auto rounded-full bg-indigo-500/25 px-2 py-0.5 text-[10px] text-indigo-200">{unread}</span>}</button>)}
   <div className="mt-auto space-y-2 border-t border-zinc-800 px-2 pt-3 text-xs text-zinc-400">
    <p><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-emerald-400"/>{online.length} contact{online.length>1?'s':''} récent{online.length>1?'s':''}</p>
    <p>{active.length-paused.length} compte{active.length-paused.length>1?'s':''} activé{active.length-paused.length>1?'s':''}{paused.length?` · ${paused.length} en pause`:''}</p>
@@ -334,7 +338,8 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
       {!data.log.length&&<li className="p-4 text-zinc-500">Rien pour l’instant.</li>}</ul></Card></div>
    </div>}
 
-   {section==='assistant-pc'&&<Suspense fallback={<p>Chargement…</p>}><YlaVintDesktop accounts={accounts} onConfigure={account=>setConfigure({account,only:'all'})} pair={watchRequest} request={desktopRequest}/></Suspense>}
+   {section==='assistant-pc'&&<Suspense fallback={<p>Chargement…</p>}><YlaVintDesktop accounts={accounts} onActions={()=>setSection('actions')} onConfigure={account=>setConfigure({account,only:'all'})} pair={watchRequest} request={desktopRequest}/></Suspense>}
+   {section==='actions'&&<YlaVintActions request={request} accounts={accounts} onAssistant={()=>setSection('assistant-pc')}/>}
    {section==='extension'&&<><PageTitle title="Extension YlaVint" hint="À installer dans chaque profil AdsPower. Le gros bouton du popup allume ou coupe YlaVint dans le profil."/><div className="mx-auto max-w-4xl"><VintedWatchPanel request={watchRequest}/></div></>}
    </Suspense>
   </main>

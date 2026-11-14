@@ -204,7 +204,7 @@ test('AI waits for a quiet conversation and answers successive buyer messages to
   await applyInbox(db,{account_id:ACC},{conversations:[convo({messages:[first,second]})]},{settings:settings(db),now:now+20000})
   await pollExtras(db,{id:ACC},settings(db),{now:now+40000,generate})
   assert.equal(generated,0,'a second message resets the quiet period')
-  await pollExtras(db,{id:ACC},settings(db),{now:now+51000,generate})
+  await pollExtras(db,{id:ACC},settings(db),{now:now+66000,generate})
   assert.equal(generated,1)
   assert.deepEqual(received.conversation.map(m=>m.texte),[first.body,second.body])
   assert.equal(db.state.vinted_agent_tasks[0].payload.source_message_id,'burst2')
@@ -232,23 +232,24 @@ test('a queued manual reply takes precedence over an automatic draft',async()=>{
   assert.equal(result.state,'skipped');assert.equal(generated,0);assert.equal(db.state.vinted_agent_tasks.length,1)
 })
 
-test('a stale queued AI reply is skipped at dispatch and requests a fresh conversation',async()=>{
+test('a queued AI reply is cancelled as soon as a new buyer message is imported',async()=>{
   const db=fakeDb(base());enableAi(db,{mode:'auto'})
   await applyInbox(db,{account_id:ACC},{conversations:[convo()]},{settings:settings(db)})
   await draftAi(db,db.state.ylavint_conversations[0],normalizeAi({enabled:true,mode:'auto'}),{generate:fakeAi()})
   const task=db.state.vinted_agent_tasks[0];task.not_before=recent(1)
   await applyInbox(db,{account_id:ACC},{conversations:[convo({messages:[...convo().messages,{id:'m2',from_me:false,body:'Non merci finalement.',sent_at:recent(1)}]})]},{settings:settings(db)})
-  const poll=await agentPoll(db,'k',{member_id:'3206068112'})
-  assert.equal(poll.task.id,task.id);assert.equal(poll.task.payload.context_changed,true)
-  await agentResult(db,'k',{task_id:poll.task.id,lease:poll.task.lease,member_id:'3206068112',ok:true,result:{skipped:poll.task.payload.skip,context_changed:true}})
+  assert.equal(task.state,'cancelled')
   assert.equal(db.state.ylavint_messages.find(m=>m.source==='ai').state,'cancelled')
-  assert.ok(db.state.vinted_agent_tasks.some(t=>t.kind==='sync_inbox'&&t.payload?.force_details&&t.payload.conversation_ids.includes('9001')))
+  assert.equal(db.state.ylavint_conversations[0].ai_state,'pending')
+  let drafted=0
+  await pollExtras(db,{id:ACC},settings(db),{generate:async()=>{drafted++;return {reply:'Trop tôt'}}})
+  assert.equal(drafted,0,'new context gets its own quiet period')
 })
 
 test('poll: the extension drafts at most one AI reply and reports unread conversations',async()=>{
   const db=fakeDb(base());enableAi(db)
   await applyInbox(db,{account_id:ACC},{conversations:[convo(),convo({id:'9004'})]},{settings:settings(db)})
-  const out=await pollExtras(db,{id:ACC},settings(db),{generate:fakeAi()})
+  const out=await pollExtras(db,{id:ACC},settings(db),{now:Date.now()+46000,generate:fakeAi()})
   assert.equal(out.unread,2);assert.equal(out.ai,'drafted');assert.ok(out.features.includes('inbox'))
   assert.equal(db.state.ylavint_conversations.filter(c=>c.ai_state==='drafted').length,1)
   const paused=await pollExtras(db,{id:ACC},settings(db),{paused:true,generate:fakeAi()})
@@ -524,4 +525,89 @@ test('new Vinted messaging: a UUID conversation is stored, answered from the sit
   assert.equal(db.state.ylavint_conversations[0].conversation_id,id)
   const q=await queueReply(db,{account_id:ACC,conversation_id:id,body:'Oui, dispo !',user:USER})
   assert.equal(db.state.vinted_agent_tasks[0].payload.conversation_id,id);assert.ok(q.local_id)
+})
+
+import {upcomingActions,cancelPlannedAction} from './ylavint-actions.js'
+import {previewDesktop,refreshDesktop} from './ylavint-desktop.js'
+
+test('planned actions are read-only, account-scoped and show the current reduction',async()=>{
+ const db=fakeDb(base());const s=db.state.vinted_agent_settings[0];s.messaging={executor:'desktop'};s.likes={messages:[{message:'Bonjour {login}, {article}',discount:{mode:'simple',unit:'pct',amount:10}}]}
+ db.state.vinted_agent_listings.push({account_id:ACC,item_id:'5551',title:'Robe',price:20,state:'visible'})
+ db.state.vinted_agent_tasks.push({id:crypto.randomUUID(),account_id:ACC,kind:'like_message',state:'queued',created_at:recent(),payload:{item_id:'5551',user_id:'77',login:'alice'}},{id:crypto.randomUUID(),account_id:USER,kind:'reply_message',state:'queued',payload:{body:'Private other account'}})
+ const before=structuredClone(db.state),r=await previewDesktop(db,{desktop_account_id:ACC})
+ assert.equal(r.actions.length,1);assert.equal(r.actions[0].offer_price,18);assert.equal(r.actions[0].item_title,'Robe')
+ assert.deepEqual(db.state,before);assert.equal(db.calls.length,0)
+ await assert.rejects(previewDesktop(db,{}),/réservé/)
+})
+
+test('cancelling a planned reply cancels its pending bubble, but cannot cancel work already claimed',async()=>{
+ const db=fakeDb(base());await applyInbox(db,{account_id:ACC},{conversations:[convo()]},{settings:{features:{}}})
+ await queueReply(db,{account_id:ACC,conversation_id:'9001',body:'Réponse à annuler',user:USER})
+ const t=db.state.vinted_agent_tasks[0];await cancelPlannedAction(db,t.id)
+ assert.equal(t.state,'cancelled');assert.equal(db.state.ylavint_messages.find(m=>m.task_id===t.id).state,'cancelled')
+ assert.equal((await upcomingActions(db)).actions.length,0)
+ await queueReply(db,{account_id:ACC,conversation_id:'9001',body:'En cours',user:USER})
+ const running=db.state.vinted_agent_tasks[1];running.state='running'
+ await assert.rejects(cancelPlannedAction(db,running.id),/déjà prise/)
+ assert.equal(db.state.ylavint_messages.find(m=>m.task_id===running.id).state,'queued')
+})
+
+test('a manual PC reply remembers its visible source and stale replies need seller review',async()=>{
+ const db=fakeDb(base());db.state.vinted_agent_settings[0].messaging={executor:'desktop',desktop:{reply_max_age_hours:1}}
+ await applyInbox(db,{account_id:ACC},{conversations:[convo()]},{settings:settings(db)})
+ await queueReply(db,{account_id:ACC,conversation_id:'9001',body:'Une réponse validée',user:USER})
+ const t=db.state.vinted_agent_tasks[0];assert.equal(t.payload.context_message_id,'m1');t.created_at=recent(120)
+ assert.match((await upcomingActions(db,ACC)).actions[0].blocked_reason,/ancienne/)
+ await applyReply(db,t,{skipped:'Réponse ancienne',context_changed:true,review_required:true})
+ const c=db.state.ylavint_conversations[0];assert.equal(c.needs_human,true);assert.equal(c.ai_state,'human');assert.equal(c.ai_draft,'Une réponse validée')
+ assert.ok(db.state.vinted_agent_tasks.some(t=>t.kind==='sync_inbox'))
+})
+
+test('re-reading relative timestamps preserves the original message date and quiet period',async()=>{
+ const now=Date.now(),db=fakeDb(base());enableAi(db)
+ await applyInbox(db,{account_id:ACC},{conversations:[convo()]},{settings:settings(db),now})
+ const before=db.state.ylavint_messages.find(m=>m.message_id==='m1'),sent=before.sent_at,created=before.created_at
+ await applyInbox(db,{account_id:ACC},{conversations:[convo({messages:convo().messages.map(m=>({...m,sent_at:new Date(now+20000).toISOString()}))})]},{settings:settings(db),now:now+20000})
+ assert.equal(before.sent_at,sent);assert.equal(before.created_at,created)
+ let generated=0;await pollExtras(db,{id:ACC},settings(db),{now:now+46000,generate:async()=>{generated++;return {reply:'Je regarde.',needs_human:false}}})
+ assert.equal(generated,1,'unchanged messages do not reset the quiet period')
+})
+
+test('a sensitive earlier bubble cannot be hidden by a benign last bubble',async()=>{
+ const db=fakeDb(base());enableAi(db,{mode:'auto'})
+ await applyInbox(db,{account_id:ACC},{conversations:[convo({messages:[{id:'a',from_me:false,body:'Mon colis est abîmé',sent_at:recent(5)},{id:'b',from_me:false,body:'Merci',sent_at:recent(4)}]})]},{settings:settings(db)})
+ const r=await draftAi(db,db.state.ylavint_conversations[0],normalizeAi({mode:'auto',enabled:true}),{generate:fakeAi('Je regarde.')})
+ assert.equal(r.state,'human');assert.equal(db.state.vinted_agent_tasks.length,0)
+})
+
+test('only an explicitly retained correction becomes a per-account style example, without sending',async()=>{
+ const db=fakeDb(base());enableAi(db);db.state.vinted_agent_settings[0].messaging={reply_notes:'Envoi réel le mardi.'}
+ await applyInbox(db,{account_id:ACC},{conversations:[convo()]},{settings:settings(db)})
+ const c=db.state.ylavint_conversations[0];await draftAi(db,c,normalizeAi({mode:'suggest'}),{generate:fakeAi()})
+ const body={action:'remember_reply',account_id:ACC,conversation_id:'9001',body:'Bonjour, je vérifie la taille.',expected_draft:c.ai_draft,source_message_id:'m1'}
+ await handleYlavint({body},{db,user:{id:USER}})
+ assert.equal(db.state.vinted_agent_tasks.length,0);assert.equal(db.state.vinted_agent_settings[0].messaging.reply_examples[0].after,body.body)
+ await draftAi(db,c,normalizeAi({mode:'suggest'}),{generate:async(_config,context)=>{assert.equal(context.informations_du_vendeur,'Envoi réel le mardi.');assert.equal(context.exemples_de_style_approuves[0].after,body.body);return {reply:'Autre proposition',needs_human:false}}})
+ await assert.rejects(handleYlavint({body},{db,user:{id:USER}}),/changé/)
+ await assert.rejects(handleYlavint({body:{...body,action:'ai_send'}},{db,user:{id:USER}}),/changé/)
+ assert.equal(db.state.vinted_agent_tasks.length,0)
+})
+
+test('resume context is scoped to the paired account and refuses a paused account',async()=>{
+ const db=fakeDb(base());db.state.vinted_agent_settings[0].messaging={executor:'desktop'}
+ await refreshDesktop(db,{desktop_account_id:ACC},{result:{conversations:[convo()]},account_id:USER})
+ assert.equal(db.state.ylavint_conversations[0].account_id,ACC)
+ assert.equal(db.calls.length,0,'no task claimed')
+ db.state.vinted_agent_settings[0].paused=true
+ await assert.rejects(refreshDesktop(db,{desktop_account_id:ACC},{result:{conversations:[convo({id:'9008'})]}}),/pause/)
+ assert.equal(db.state.ylavint_conversations.length,1)
+})
+
+test('several favourites from one buyer create only one contact even with zero cooldown',async()=>{
+ const db=fakeDb(base());db.state.vinted_agent_settings[0].features.likes=true;db.state.vinted_agent_settings[0].likes={cooldown_days:0}
+ const s=settings(db),now=Date.now()
+ const r=await planLikes(db,{account_id:ACC},[{item_id:'1',user_id:'77'},{item_id:'2',user_id:'77'}],s,{now,can})
+ assert.equal(r.queued,1)
+ const next=await planLikes(db,{account_id:ACC},[{item_id:'3',user_id:'77'}],s,{now:now+1000,can})
+ assert.equal(next.queued,0,'another scan cannot add a second pending contact')
 })

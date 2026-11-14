@@ -38,6 +38,11 @@ export default function YlaVintAi({request,accounts=[],onAccounts}){
     <textarea className={fieldClass+' mt-1 font-mono text-[13px]'} rows={12} maxLength={6000} placeholder={EXAMPLE} value={form.instructions} onChange={e=>set('instructions',e.target.value)}/></label>
    {!form.instructions&&<button className="text-xs text-teal-700 underline" onClick={()=>set('instructions',EXAMPLE)}>Partir de l’exemple</button>}
    <div className="grid gap-3 sm:grid-cols-2">
+    <label className="text-xs text-slate-600">Attendre après le dernier message reçu (secondes)<input type="number" className={fieldClass+' mt-1'} min={20} max={180} value={form.group_seconds??45} onChange={e=>set('group_seconds',Number(e.target.value))}/></label>
+    <label className="text-xs text-slate-600">Messages précédents à relire<input type="number" className={fieldClass+' mt-1'} min={20} max={100} value={form.memory_messages??40} onChange={e=>set('memory_messages',Number(e.target.value))}/></label>
+   </div>
+   <p className="text-xs text-slate-500">Chaque nouveau message relance l’attente pour répondre à l’ensemble des questions. Les consignes et exemples propres à une boutique se règlent dans « Comptes & réglages ».</p>
+   <div className="grid gap-3 sm:grid-cols-2">
     <label className="block text-xs text-slate-600">Signature (facultatif)<input className={fieldClass+' mt-1'} maxLength={120} value={form.signature} onChange={e=>set('signature',e.target.value)} placeholder="Belle journée ✨"/></label>
     <label className="block text-xs text-slate-600">Modèle<select className={fieldClass+' mt-1'} value={form.model} onChange={e=>set('model',e.target.value)}>{data.models.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
    </div>

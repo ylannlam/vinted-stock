@@ -209,7 +209,7 @@ export async function agentPoll(db,key,body,now=Date.now()){
   const version=text(body.version,20)
   const row=check(await db.from('vinted_agent_settings').select('*').eq('account_id',account.id).maybeSingle())
   const driver=desktopDriver(key)
-  if(driver==='desktop'&&!/^pc-1\.(?:[3-9]|[1-9]\d)\./.test(version))return {state:'update_required',message:'Mets à jour le connecteur 1.3 pour utiliser les lectures visibles.',wait_seconds:600}
+  if(driver==='desktop'&&!/^pc-1\.(?:[4-9]|[1-9]\d)\./.test(version))return {state:'update_required',message:'Mets à jour le connecteur 1.4 pour utiliser les lectures visibles.',wait_seconds:600}
   if((row?.messaging?.executor||'extension')!==driver)return {state:'other_executor',message:driver==='extension'?'Ce compte est confié à l’assistant PC.':'Ce compte est confié à l’extension.',wait_seconds:60}
   const claim=()=>db.rpc('claim_vinted_agent_task',driver==='desktop'?{p_account:account.id,p_driver:driver}:{p_account:account.id})
   // YlaVint coupé sur ce compte : simple signal de présence (Bridge connecté), nouvel appel dans 10 min.
@@ -241,6 +241,7 @@ export async function agentPoll(db,key,body,now=Date.now()){
     }else pauseNote=`${STOP.rate_limited} : reprise automatique vers ${new Date(Date.parse(row.paused_at)+wait*60000).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Paris'})}`
   }
   const settings=executionSettings(effectiveSettings(row))
+  if(driver==='desktop'&&!desktopWindow(settings.limits,now,settings.messaging.desktop))return {state:'idle',reason:'Compte en dehors de son planning ou en absence.',wait_seconds:20}
   if(!row.paused){
     const recent=check(await db.from('vinted_agent_tasks').select('kind,created_at').eq('account_id',account.id).in('kind',SCANS).neq('state','cancelled').order('created_at',{ascending:false}).limit(40))
     const last={};for(const t of recent)last[t.kind]??=t.created_at
@@ -270,6 +271,9 @@ export async function agentPoll(db,key,body,now=Date.now()){
   const idleWait=nextMessage?(dueIn>0?Math.max(1,Math.min(20,dueIn)):Math.max(5,Math.min(15,Math.round((settings.messaging.action_gap_min||30)/3)))):settings.features.inbox||settings.features.ai||settings.messaging.offers.enabled?Math.min(20,settings.messaging.sync_seconds):120
   if(claimed?.state!=='task')return {state:claimed?.state||'idle',reason:(claimed?.state==='paused'&&pauseNote)||claimed?.reason||waitingNote||null,account:account.login,...extra,wait_seconds:{paused:600,disabled:1800,busy:45}[claimed?.state]||idleWait}
   const bundle=await taskBundle(db,claimed.task,settings)
+  if(driver==='desktop'&&claimed.task.kind==='reply_message'&&now-Date.parse(claimed.task.created_at)>settings.messaging.desktop.reply_max_age_hours*3600000){
+    bundle.payload={...bundle.payload,skip:'Cette réponse attend depuis trop longtemps. Relis la conversation avant de la valider.',context_changed:true,review_required:true}
+  }
   if(bundle.missing.length){
     // Sans recette relevée, rien n'est envoyé à Vinted : la tâche attend l'apprentissage.
     await finish(db,claimed.task,'failed',null,`Action pas encore apprise : ${bundle.missing.map(k=>RECIPES[k]?.label||k).join(', ')}.`)
@@ -694,6 +698,7 @@ export async function handleAgent(req,{db,user}){
   if(body.action==='cancel'){
     if(!isId(body.task_id))throw new AppError('Tâche invalide.')
     const publication=check(await db.from('vinted_agent_tasks').select('id,kind,payload,created_by').eq('id',body.task_id).maybeSingle())
+    if(['reply_message','like_message'].includes(publication?.kind))return (await import('./ylavint-actions.js')).cancelPlannedAction(db,body.task_id)
     if(publication?.kind==='publish_item'){const row=check(await db.from('listing_drafts').select('*').eq('publication_task_id',publication.id).eq('owner_id',user.id).maybeSingle());if(!row)throw new AppError('Fiche introuvable.',404);await cancelYlavintListing(db,row);return {cancelled:1}}
     const r=check(await db.from('vinted_agent_tasks').update({state:'cancelled',finished_at:new Date().toISOString()}).eq('id',body.task_id).eq('state','queued').select('id,kind,payload'))
     if(r?.[0]?.kind==='publish_item')await markDraft(db,r[0].payload.draft_id,{state:'draft',scheduled_at:null,message:'Publication par l’agent annulée.'})

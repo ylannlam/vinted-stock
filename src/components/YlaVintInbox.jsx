@@ -14,10 +14,11 @@ function Avatar({src,name}){
 
 function Thread({request,conv,onBack,onChanged}){
  const [data,setData]=useState(null),[text,setText]=useState(''),[draft,setDraft]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('')
+ const [draftBase,setDraftBase]=useState(null)
  const end=useRef(null),key=`${conv.account_id}:${conv.conversation_id}`
  const q=`&view=thread&account_id=${conv.account_id}&conversation_id=${conv.conversation_id}`
  const active=useRef(key),loading=useRef(null);active.current=key
- const load=async(read=true)=>{if(loading.current===key)return;loading.current=key;try{const r=await request('GET',undefined,q+(read?'':'&read=0'));if(active.current!==key)return;setData(r);setDraft(d=>d||r.conversation.ai_draft||'');setError('')}catch(e){if(active.current===key)setError(e.message)}finally{if(loading.current===key)loading.current=null}}
+ const load=async(read=true)=>{if(loading.current===key)return;loading.current=key;try{const r=await request('GET',undefined,q+(read?'':'&read=0'));if(active.current!==key)return;setData(r);setDraft(d=>d||r.conversation.ai_draft||'');if(r.conversation.ai_draft)setDraftBase(b=>b||{body:r.conversation.ai_draft,id:r.conversation.ai_handled_message_id});setError('')}catch(e){if(active.current===key)setError(e.message)}finally{if(loading.current===key)loading.current=null}}
  useEffect(()=>{active.current=key;setData(null);setText('');setDraft('');load().then(onChanged);const t=setInterval(()=>{if(document.visibilityState==='visible')load(false)},3000);return()=>{clearInterval(t);if(active.current===key)active.current=null}},[key])
  useEffect(()=>{end.current?.scrollIntoView({block:'end'})},[data?.messages?.length])
  async function act(body,after){
@@ -25,6 +26,8 @@ function Thread({request,conv,onBack,onChanged}){
   try{const r=await request('POST',{account_id:conv.account_id,conversation_id:conv.conversation_id,...body});if(r.message)setNotice(r.message);after?.(r);await load();onChanged()}catch(e){setError(e.message)}finally{setBusy(false)}
  }
  const c=data?.conversation||conv,agent=data?.agent
+ const staleDraft=!!draftBase&&(draftBase.body!==c.ai_draft||draftBase.id!==c.ai_handled_message_id)
+ const expectedDraft={expected_draft:draftBase?.body,source_message_id:draftBase?.id}
  return <div className="flex h-full min-h-[70vh] flex-col">
   <header className="flex items-center gap-3 border-b border-slate-100 px-3 py-3 sm:px-4">
    <button className="rounded-lg px-2 py-1 text-lg text-slate-500 hover:bg-slate-100 lg:hidden" onClick={onBack} aria-label="Retour aux conversations">←</button>
@@ -55,13 +58,14 @@ function Thread({request,conv,onBack,onChanged}){
   {c.needs_human&&<div className="flex flex-wrap items-center justify-between gap-2 border-t border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900"><span>À traiter toi-même{c.ai_reason?` : ${c.ai_reason}`:''}</span><button className="text-xs underline" disabled={busy} onClick={()=>act({action:'human_done'})}>Marquer comme traité</button></div>}
   {c.ai_draft&&['drafted','human'].includes(c.ai_state)&&<div className="space-y-2 border-t border-violet-100 bg-violet-50/60 px-3 py-3 sm:px-4">
    <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">Proposition de l’agent IA</p>
-   <textarea className={fieldClass} rows={3} value={draft} onChange={e=>setDraft(e.target.value)} maxLength={2000}/>
-   <div className="flex flex-wrap justify-end gap-2"><button className={buttonClass+' py-1.5'} disabled={busy} onClick={()=>act({action:'ai_discard'},()=>setDraft(''))}>Ignorer</button><button className={primaryClass+' py-1.5'} disabled={busy||!draft.trim()||c.allow_reply===false} onClick={()=>act({action:'ai_send',body:draft},()=>setDraft(''))}>Envoyer cette réponse</button></div>
+   <textarea aria-label="Proposition de réponse IA" className={fieldClass} rows={3} value={draft} onChange={e=>setDraft(e.target.value)} maxLength={2000}/>
+   {staleDraft&&<p className="text-xs text-amber-700">La proposition a changé. Ton texte est conservé pour relecture. <button className="underline" onClick={()=>{setDraft(c.ai_draft);setDraftBase({body:c.ai_draft,id:c.ai_handled_message_id})}}>Charger la nouvelle proposition</button></p>}
+   <div className="flex flex-wrap justify-end gap-2"><button className={buttonClass+' py-1.5'} disabled={busy||staleDraft||!draft.trim()||draft===c.ai_draft} onClick={()=>act({action:'remember_reply',body:draft,...expectedDraft})}>Retenir cette correction</button><button className={buttonClass+' py-1.5'} disabled={busy} onClick={()=>act({action:'ai_discard'},()=>{setDraft('');setDraftBase(null)})}>Ignorer</button><button className={primaryClass+' py-1.5'} disabled={busy||staleDraft||!draftBase||!draft.trim()||c.allow_reply===false} onClick={()=>act({action:'ai_send',body:draft,...expectedDraft},()=>{setDraft('');setDraftBase(null)})}>Envoyer cette réponse</button></div>
   </div>}
   <form className="flex items-end gap-2 border-t border-slate-100 bg-white px-3 py-3 sm:px-4" onSubmit={e=>{e.preventDefault();if(text.trim())act({action:'reply',body:text},()=>setText(''))}}>
-   <textarea className={fieldClass+' min-h-[44px] flex-1 resize-none'} rows={text.split('\n').length>2?4:1} placeholder={c.allow_reply===false?'Vinted ne permet plus de répondre ici':'Écris ta réponse…'} disabled={c.allow_reply===false} value={text} maxLength={2000}
+   <textarea aria-label="Écrire une réponse" className={fieldClass+' min-h-[44px] flex-1 resize-none'} rows={text.split('\n').length>2?4:1} placeholder={c.allow_reply===false?'Vinted ne permet plus de répondre ici':'Écris ta réponse…'} disabled={c.allow_reply===false} value={text} maxLength={2000}
     onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();if(text.trim())act({action:'reply',body:text},()=>setText(''))}}}/>
-   <button type="button" className={buttonClass+' shrink-0 px-2.5'} title="Proposer une réponse avec l’agent IA" disabled={busy} onClick={()=>act({action:'ai_suggest'},r=>{if(r.reply)setDraft(r.reply)})}>✨ IA</button>
+   <button type="button" className={buttonClass+' shrink-0 px-2.5'} title="Proposer une réponse avec l’agent IA" disabled={busy} onClick={()=>act({action:'ai_suggest'},r=>{if(r.reply){setDraft(r.reply);setDraftBase(null)}})}>✨ IA</button>
    <button className={primaryClass+' shrink-0'} disabled={busy||!text.trim()||c.allow_reply===false}>Envoyer</button>
   </form>
  </div>

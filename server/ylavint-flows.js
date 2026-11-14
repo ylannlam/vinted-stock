@@ -20,7 +20,7 @@ export async function planLikes(db,task,likes,settings,{now=Date.now(),can}){
   const users=[...new Set(fresh.map(l=>l.user_id))],items=[...new Set(fresh.map(l=>l.item_id))]
   const history=check(await db.from('vinted_agent_contacts').select('item_id,user_id,state,created_at,sent_at').eq('account_id',account).in('user_id',users).in('state',['queued','sent']))
   const perItem=L.per_item.enabled?check(await db.from('vinted_agent_contacts').select('item_id').eq('account_id',account).in('item_id',items).in('state',['queued','sent'])):[]
-  const byUser=new Map(),byItem=new Map()
+  const byUser=new Map(),byItem=new Map(),pendingUsers=new Set(history.filter(h=>h.state==='queued').map(h=>h.user_id))
   for(const h of history){const u=byUser.get(h.user_id)||{count:0,last:0};u.count++;u.last=Math.max(u.last,Date.parse(h.sent_at||h.created_at)||0);byUser.set(h.user_id,u)}
   for(const c of perItem)byItem.set(c.item_id,(byItem.get(c.item_id)||0)+1)
   const ignored=new Set(L.ignored),rows=[],tasks=[]
@@ -28,11 +28,13 @@ export async function planLikes(db,task,likes,settings,{now=Date.now(),can}){
     const u=byUser.get(l.user_id)||{count:0,last:0}
     let skip=null
     if(l.login&&ignored.has(l.login.toLowerCase()))skip='ignored'
+    else if(pendingUsers.has(l.user_id))skip='grouped'
     else if(u.last&&u.last>now-L.cooldown_days*DAY)skip='cooldown'
     else if(L.per_item.enabled&&(byItem.get(l.item_id)||0)>=L.per_item.max)skip='per_item'
     const step=Math.min(u.count,L.messages.length-1)
     rows.push({account_id:account,item_id:l.item_id,user_id:l.user_id,login:l.login||null,state:skip?'skipped':'queued',step:skip?null:step})
     if(skip)continue
+    pendingUsers.add(l.user_id)
     byUser.set(l.user_id,{count:u.count+1,last:now});byItem.set(l.item_id,(byItem.get(l.item_id)||0)+1)
     tasks.push({account_id:account,kind:'like_message',dedupe_key:`like:${account}:${l.item_id}:${l.user_id}`,
       not_before:nowIso(now+L.wait_minutes*60000),payload:{item_id:l.item_id,user_id:l.user_id,login:l.login||null,step,liked_at:l.liked_at||null}})
@@ -48,7 +50,7 @@ export async function likePayload(db,task,settings){
   const listing=check(await db.from('vinted_agent_listings').select('title,price,state').eq('account_id',task.account_id).eq('item_id',p.item_id).maybeSingle())
   const part=p.followup?step.followup:step
   const vars={login:p.login,title:listing?.title,price:listing?.price}
-  return {...p,message:fillTemplate(part.message,vars)||'',offer_price:offerPrice(listing?.price,part.discount),offer_requested:part.discount?.mode==='simple',expected_price:listing?.price??null,
+  return {...p,title:listing?.title||null,message:fillTemplate(part.message,vars)||'',offer_price:offerPrice(listing?.price,part.discount),offer_requested:part.discount?.mode==='simple',expected_price:listing?.price??null,
     skip:!inHistory(p.liked_at,L.history_since)?'Like antérieur à la période choisie.':listing?.state==='sold'||listing?.state==='draft'?'L’article n’est plus en vente.':null,
     filters:{min_rating:L.min_rating.enabled?L.min_rating.value:null,skip_unrated:L.skip_unrated,ignored:L.ignored}}
 }

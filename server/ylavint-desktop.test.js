@@ -58,3 +58,18 @@ test('the final send guard observes pause, executor, version and lease changes',
  task.lease_until=new Date(Date.now()-1).toISOString();await assert.rejects(guardDesktop(d,key,body))
  await assert.rejects(guardDesktop(d,{},body))
 })
+
+test('weekly planning handles overnight windows, empty days and absence in Paris time',()=>{
+ const limits={from_hour:22,to_hour:6},pace={active_days:[5]}
+ assert.equal(desktopWindow(limits,Date.parse('2026-11-13T22:00:00Z'),pace),true)
+ assert.equal(desktopWindow(limits,Date.parse('2026-11-14T02:00:00Z'),pace),true,'Saturday dawn belongs to Friday session')
+ assert.equal(desktopWindow(limits,Date.parse('2026-11-14T22:00:00Z'),pace),false)
+ assert.equal(desktopWindow({from_hour:0,to_hour:0},Date.now(),{active_days:[]}),false)
+ assert.equal(desktopWindow(limits,Date.parse('2026-11-13T22:00:00Z'),{...pace,absent_until:'2026-11-14T05:00:00Z'}),false)
+})
+
+test('routine settings preserve a valid calendar and reject invalid filters and memories',()=>{
+ const saved=normalizeSettings({messaging:{desktop:{active_days:[5,1,1],absent_until:'2026-12-01T10:00:00+01:00',browse_price_min:10,browse_price_max:30},reply_notes:'Envoi mardi',reply_examples:[{before:'Salut',after:'Bonjour'}]}})
+ assert.deepEqual(saved.messaging.desktop.active_days,[1,5]);assert.equal(saved.messaging.desktop.absent_until,'2026-12-01T09:00:00.000Z')
+ for(const desktop of [{active_days:[0]},{active_days:'1'},{absent_until:'bad'},{browse_price_min:40,browse_price_max:30},{browse_photos:'yes'},{reply_max_age_hours:0}])assert.throws(()=>normalizeSettings({messaging:{desktop}}))
+})

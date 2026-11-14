@@ -2,7 +2,7 @@
 import {createHash} from 'node:crypto'
 import {review,conversationUrl} from './ylavint-ui.mjs'
 export const BASE='https://www.vinted.fr'
-export const PACE={typing_delay_ms:70,page_wait_seconds:3,session_minutes:25,pause_minutes:5,browse_enabled:false,browse_every_minutes:30,browse_items:3,browse_item_seconds:8,browse_scrolls:2}
+export const PACE={typing_delay_ms:70,page_wait_seconds:3,session_minutes:25,pause_minutes:5,browse_enabled:false,browse_every_minutes:30,browse_items:3,browse_item_seconds:8,browse_scrolls:2,active_days:[1,2,3,4,5,6,7],absent_until:null,browse_keywords:'',browse_price_min:0,browse_price_max:0,browse_photos:false,browse_memory_hours:24,reply_max_age_hours:24}
 export const cid=v=>/^(?:[1-9]\d{0,17}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i.test(String(v))?String(v):null
 export const euros=v=>{const m=String(v??'').replace(/\u00a0|\u202f/g,' ').match(/(\d+(?:[ .,]\d{3})*(?:[,.]\d{1,2})?)\s*€/);return m?Number(m[1].replace(/ /g,'').replace(',','.')):null}
 // A relative label is rounded down conservatively; it must never make an old like look new.
@@ -38,7 +38,7 @@ export function renderedPage(){
  const cards=all('a[href*="/items/"]').filter(e=>!e.href.includes('/items/new')).map(e=>{const box=e.closest('[data-testid="grid-item"]')||e.parentElement;return {...link(e),text:txt(box)||e.getAttribute('title')||'',image:box.querySelector('img')?.src||null}})
  const editor=document.querySelector('textarea[data-testid="composer-input"]')
  const hero=all('a[data-testid="hero-message"]')[0],header=document.querySelector('[data-testid="conversation-header"]')
- return {url:location.href,login:user?.alt||null,links,notices,cards,messages,conversation:!!content,allow_reply:!!editor&&!editor.disabled,
+ return {url:location.href,scroll_y:typeof scrollY==='number'?scrollY:0,login:user?.alt||null,links,notices,cards,messages,conversation:!!content,allow_reply:!!editor&&!editor.disabled,
    history_start:!!content&&all('[class*="conversation-message-container"]',content).some(e=>/^Bonjour, je suis /.test(txt(e))&&!e.querySelector('[aria-label^="Message from "]')),
    threadLinks:header?all('a[href]',header).map(link):[],threadItem:hero?{...link(hero),text:txt(hero)}:null,
    text:txt(document.body).slice(0,60000),conversationText:txt(content),heading:all('h1').map(txt).join(' '),ratings:all('[aria-label]').map(e=>e.getAttribute('aria-label')).filter(s=>/étoile|rating|sur 5|out of 5/i.test(s))}
@@ -71,8 +71,19 @@ export function readThread(snapshot,now=Date.now()){
    uncertain:messages.some(m=>m.kind==='unknown')||[...counts.values()].some(n=>n>1),history_start:snapshot.history_start===true,offers:[],complete:false}
 }
 
+export function browseCandidates(cards,pace,visited=new Map(),now=Date.now()){
+ const plain=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
+ const words=plain(pace.browse_keywords).split(',').map(s=>s.trim()).filter(Boolean)
+ return [...new Map(cards.map(c=>{let u;try{u=new URL(c.href)}catch{return [null,null]};const id=u.origin===BASE?u.pathname.match(/^\/items\/(\d+)/)?.[1]:null;return [id,id?{...c,id}:null]})).values()].filter(c=>{
+  if(!c||visited.get(c.id)>now-(pace.browse_memory_hours||24)*3600000)return false
+  if(words.length&&!words.some(w=>plain([c.title,c.alt,c.text].join(' ')).includes(w)))return false
+  const price=euros(c.text)
+  return (!(pace.browse_price_min||pace.browse_price_max)||price!=null)&&(!pace.browse_price_min||price>=pace.browse_price_min)&&(!pace.browse_price_max||price<=pace.browse_price_max)
+ })
+}
+
 export class VisibleVinted{
- constructor({page,binding,check,sleep,update,control,pace=PACE}){Object.assign(this,{page,binding,check,sleep,update,control,pace});this.verified=false}
+ constructor({page,binding,check,sleep,update,control,memory,pace=PACE}){Object.assign(this,{page,binding,check,sleep,update,control,pace});this.memory=memory||{visited:new Map(),record:async(id,at)=>this.memory.visited.set(id,at)};this.verified=false;this.browseCount=0;this.photoCount=0}
  async snapshot(){this.check();const u=new URL(this.page.url());if(u.origin!==BASE)throw review('La page ouverte n’est plus Vinted.');const s=await this.page.evaluate(renderedPage);if(/vérifie que tu es humain|vérification de sécurité|compte (?:a été |est )?(?:bloqué|restreint)|trop de requêtes/i.test(s.text))throw review('Vinted demande une vérification. Reprends la main sur ce profil.');return s}
  async settle(){await this.page.bringToFront();await this.sleep(this.pace.page_wait_seconds*1000);this.check()}
  async open(path){this.check();const u=new URL(path,BASE);if(u.origin!==BASE)throw review('Destination non autorisée.');await this.page.goto(u.href,{waitUntil:'domcontentloaded',timeout:30000});await this.settle();return this.snapshot()}
@@ -145,9 +156,12 @@ export class VisibleVinted{
      if(p.offer_requested&&(c.item.price===null||c.item.price!==Number(p.expected_price)))throw review('Le prix affiché a changé ou n’est pas lisible : réduction à vérifier.')
      if(!afterMessage&&!p.followup&&c.messages.some(m=>m.from_me))return {cancelled:'Ce membre a déjà reçu un message ou une offre.'}
    }
-   if(task.kind==='reply_message'&&p.source==='ai'&&!p.manual){const last=c.messages.at(-1);if(!last||last.from_me||last.id!==p.source_message_id)return {cancelled:'La conversation a changé : réponse IA à recalculer.'}}
+   if(task.kind==='reply_message'){
+     const last=c.messages.at(-1),source=p.source_message_id||p.context_message_id
+     if(source&&(!last||last.id!==source)||p.source==='ai'&&!p.manual&&(!last||last.from_me||!source))return {cancelled:'La conversation a changé : réponse à revoir.',context_changed:true,review_required:p.source!=='ai'||p.manual===true}
+   }
    const signature=JSON.stringify(c.messages.map(m=>m.id))
-   if(task.kind==='reply_message'&&this.baseline?.task===task.id&&this.baseline.signature!==signature)return {cancelled:'Un nouveau message est arrivé pendant la préparation de la réponse.'}
+   if(task.kind==='reply_message'&&this.baseline?.task===task.id&&this.baseline.signature!==signature)return {cancelled:'Un nouveau message est arrivé pendant la préparation de la réponse.',context_changed:true,review_required:p.source!=='ai'||p.manual===true}
    this.baseline={task:task.id,signature}
    return {ok:true}
  }
@@ -163,15 +177,28 @@ export class VisibleVinted{
  }
  async browseOne(){
    let state=await this.control();if(!state.allowed||!state.in_window||!state.pace.browse_enabled)return false
-   this.pace=state.pace;this.update({state:'browsing',message:'Consultation d’une annonce, sans ajout aux favoris'})
-   const s=await this.open('/');await this.identity()
-   const links=[...new Map(s.cards.map(c=>[c.href,c])).values()].filter(c=>/^\/items\/\d+/.test(new URL(c.href).pathname))
-   if(!links.length)return false
+   this.pace={...PACE,...state.pace};this.update({state:'browsing',message:'Consultation selon tes critères, sans ajout aux favoris'})
+   let s=await this.open('/');await this.identity()
+   if(this.listScroll){await this.page.mouse.wheel(0,this.listScroll);await this.sleep(500);s=await this.snapshot()}
+   let links=browseCandidates(s.cards,this.pace,this.memory.visited)
+   if(!links.length){await this.page.mouse.wheel(0,350);await this.sleep(500);s=await this.snapshot();links=browseCandidates(s.cards,this.pace,this.memory.visited)}
+   if(!links.length){this.listScroll=s.scroll_y||0;this.update({message:'Aucune nouvelle annonce correspondant aux critères dans la page chargée.'});return false}
    state=await this.control();if(!state.allowed||!state.in_window||!state.pace.browse_enabled)return false
-   const card=links[(this.browseIndex||0)%links.length];this.browseIndex=(this.browseIndex||0)+1
+   const card=links[0];this.listScroll=s.scroll_y||0
    await this.clickLink(card.href)
    await this.settle()
-   for(let i=0;i<this.pace.browse_scrolls;i++){state=await this.control();if(!state.allowed||!state.in_window||!state.pace.browse_enabled)return false;this.check();await this.page.mouse.wheel(0,480);await this.sleep(this.pace.browse_item_seconds*1000/this.pace.browse_scrolls)}
+   for(let i=0;i<this.pace.browse_scrolls;i++){
+     state=await this.control();if(!state.allowed||!state.in_window||!state.pace.browse_enabled)return false
+     this.check();await this.identity();await this.page.mouse.wheel(0,Math.min(360,Math.max(180,240+i*40)));await this.sleep(this.pace.browse_item_seconds*1000/this.pace.browse_scrolls)
+   }
+   if(this.pace.browse_photos){
+     const next=this.page.getByRole('button',{name:/^(Photo suivante|Image suivante|Next photo|Next image)$/i}).filter({visible:true})
+     state=await this.control()
+     if(state.allowed&&state.in_window&&state.pace.browse_enabled&&await next.count()===1){await next.click();await this.sleep(this.pace.page_wait_seconds*1000);this.photoCount++}
+   }
+   await this.memory.record(card.id,Date.now());this.browseCount++
+   state=await this.control();if(!state.allowed||!state.in_window)return true
+   await this.page.goBack({waitUntil:'domcontentloaded',timeout:30000});await this.settle();await this.identity()
    return true
  }
 }

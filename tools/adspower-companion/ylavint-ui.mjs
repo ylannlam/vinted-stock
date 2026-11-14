@@ -21,16 +21,29 @@ export class VintedMessenger{
     await this.page.bringToFront()
     await this.sleep(this.pace.page_wait_seconds*1000)
   }
-  async type(locator,value){
+  async type(locator,value,inspect=async()=>null){
     if((await locator.inputValue()).trim())throw review('Un brouillon est déjà saisi : traite-le avant de relancer.')
+    let typed=''
     // Fixed readable cadence, punctuation pauses; never insert typos or conceal automation.
     for(const part of value.match(/[^.!?\n]+[.!?\n]*|[.!?\n]+/g)||[]){
       this.check()
       const lines=part.split('\n')
-      for(let i=0;i<lines.length;i++){if(i)await locator.press('Shift+Enter');for(let start=0;start<lines[i].length;start+=40){this.check();await locator.pressSequentially(lines[i].slice(start,start+40),{delay:this.pace.typing_delay_ms,timeout:15000})}}
+      for(let i=0;i<lines.length;i++){
+        if(i){await locator.press('Shift+Enter');typed+='\n'}
+        for(let start=0;start<lines[i].length;start+=12){
+          this.check()
+          if(await locator.inputValue()!==typed)throw Object.assign(review('Le brouillon a été modifié : tu gardes la main.'),{keep_page:true})
+          if(typed&&locator.evaluate&&!await locator.evaluate(e=>document.activeElement===e&&document.hasFocus()))throw Object.assign(review('La fenêtre ou le champ a perdu le focus. Reprends la main puis relance si nécessaire.'),{keep_page:true})
+          const chunk=lines[i].slice(start,start+12)
+          await locator.pressSequentially(chunk,{delay:this.pace.typing_delay_ms,timeout:15000});typed+=chunk
+          const current=await inspect()
+          if(current?.cancelled){if(await locator.inputValue()===typed)await locator.fill('');return current}
+        }
+      }
       if(/[.!?\n]$/.test(part))await this.sleep(250)
     }
-    if(await locator.inputValue()!==value)throw review('Le texte saisi a changé. Vérifie le brouillon avant l’envoi.')
+    if(await locator.inputValue()!==value)throw Object.assign(review('Le texte saisi a changé. Vérifie le brouillon avant l’envoi.'),{keep_page:true})
+    return null
   }
   async send({task_id,conversation_id,body}){
     const expected=this.task.payload.message??this.task.payload.body
@@ -38,17 +51,20 @@ export class VintedMessenger{
     if(this.task.payload.conversation_id&&String(this.task.payload.conversation_id)!==conversation_id)throw review('Conversation différente de celle prévue.')
     await this.open(conversation_id)
     const first=await this.recheck(conversation_id)
-    if(first.cancelled)return {desktop_cancelled:first.cancelled}
-    this.update({message:'Saisie du message dans Vinted'})
+    if(first.cancelled)return {...first,desktop_cancelled:first.cancelled}
+    this.update({state:'typing',message:'Saisie du message dans Vinted · conversation surveillée'})
     const editor=await unique(this.page.locator('textarea[data-testid="composer-input"]:visible'),'Champ de message')
-    await this.type(editor,body)
+    const interrupted=await this.type(editor,body,()=>this.recheck(conversation_id))
+    if(interrupted)return {...interrupted,desktop_cancelled:interrupted.cancelled}
     await this.guard()
     const current=await this.recheck(conversation_id)
-    if(current.cancelled){if(await editor.inputValue()===body)await editor.fill('');return {desktop_cancelled:current.cancelled}}
+    if(current.cancelled){if(await editor.inputValue()===body)await editor.fill('');return {...current,desktop_cancelled:current.cancelled}}
     // Observed on the current Vinted composer: the arrow has no accessible name.
     const send=await unique(this.page.locator('[data-testid="composer"] button[type="button"]:visible'),'Bouton Envoyer')
-    await this.journal.step(task_id,'message','submitting')
     await this.authorize()
+    const final=await this.recheck(conversation_id)
+    if(final.cancelled){if(await editor.inputValue()===body)await editor.fill('');return {...final,desktop_cancelled:final.cancelled}}
+    await this.journal.step(task_id,'message','submitting')
     this.check()
     const before=(await this.thread()).messages
     await send.click({timeout:5000})
@@ -63,7 +79,7 @@ export class VintedMessenger{
     await this.open(conversation_id)
     const first=await this.recheck(conversation_id,{afterMessage:this.messageConfirmed===true})
     if(first.cancelled)return {desktop_cancelled:first.cancelled,message_confirmed:this.messageConfirmed===true}
-    this.update({message:'Préparation de la réduction dans Vinted'})
+    this.update({state:'preparing',message:'Préparation de la réduction dans Vinted'})
     await (await unique(this.page.getByRole('button',{name:/^(Faire une offre|Make an offer)$/i}).filter({visible:true}),'Bouton de réduction')).click()
     const dialog=await unique(this.page.locator('[data-testid="offer-modal"][role="dialog"]:visible'),'Fenêtre de réduction')
     const priceField=await unique(dialog.locator('input[data-testid="offer-price-field--input"]:visible'),'Prix de l’offre')
@@ -78,8 +94,14 @@ export class VintedMessenger{
       await priceField.press('Escape')
       return {desktop_cancelled:current.cancelled,message_confirmed:this.messageConfirmed===true}
     }
-    await this.journal.step(task_id,'offer','submitting')
     await this.authorize()
+    const final=await this.recheck(conversation_id,{afterMessage:this.messageConfirmed===true})
+    if(final.cancelled){
+      if(Number((await priceField.inputValue()).replace(',','.'))===price)await priceField.fill('')
+      await priceField.press('Escape')
+      return {desktop_cancelled:final.cancelled,message_confirmed:this.messageConfirmed===true}
+    }
+    await this.journal.step(task_id,'offer','submitting')
     this.check()
     const before=(await this.thread()).messages
     await submit.click({timeout:5000})
