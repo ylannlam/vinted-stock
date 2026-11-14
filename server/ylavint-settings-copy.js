@@ -6,6 +6,7 @@ export function copiedSettings(source,target,section){
   // Copier les paramètres ne doit pas allumer une automatisation sur un autre compte.
   out.features=effectiveSettings(target).features
   out.messaging.offers.enabled=target?.messaging?.offers?.enabled===true
+  out.messaging.executor=target?.messaging?.executor||'extension'
   out.likes.history_since=target?.likes?.history_since||null
   out.messaging.history_since=target?.messaging?.history_since||null
   out.messaging.offers.history_since=target?.messaging?.offers?.history_since||null

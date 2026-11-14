@@ -70,6 +70,7 @@ export function watchArchive(token,read=name=>name.endsWith('.png')?new Uint8Arr
   return zipFiles(WATCH_FILES.map(name=>({name,data:name==='config.js'?read(name).replace('__STOCK_VINTED_WATCH_TOKEN__',token):read(name)})))
 }
 export async function handleWatch(req,{db,user}){
+  if(req.method==='POST'&&req.body?.action==='desktop_pair')return (await import('./ylavint-desktop.js')).pairDesktop(db,user,req.body,newWatchToken)
   if(req.method==='GET'){
     const keys=check(await db.from('vinted_watch_keys').select('id,created_at,last_seen_at,last_login,revoked_at').order('created_at',{ascending:false}).limit(20))
     return {keys}

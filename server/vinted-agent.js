@@ -7,6 +7,7 @@ import {copiedSettings,COPY_GROUPS} from './ylavint-settings-copy.js'
 // Les actions qui modifient Vinted ne partent qu'avec une « recette » relevée sur le vrai site Vinted
 // (mode apprentissage) : jamais de requête devinée.
 import {AppError,isId} from './dotb.js'
+import {desktopDriver,DESKTOP_KINDS} from './ylavint-desktop.js'
 
 export const BUCKET='creative-assets'
 export const check=r=>{if(r.error)throw r.error;return r.data}
@@ -205,6 +206,9 @@ export async function agentPoll(db,key,body,now=Date.now()){
   }
   const version=text(body.version,20)
   const row=check(await db.from('vinted_agent_settings').select('*').eq('account_id',account.id).maybeSingle())
+  const driver=desktopDriver(key)
+  if((row?.messaging?.executor||'extension')!==driver)return {state:'other_executor',message:driver==='extension'?'Ce compte est confié à l’assistant PC.':'Ce compte est confié à l’extension.',wait_seconds:60}
+  const claim=()=>db.rpc('claim_vinted_agent_task',driver==='desktop'?{p_account:account.id,p_driver:driver}:{p_account:account.id})
   // YlaVint coupé sur ce compte : simple signal de présence (Bridge connecté), nouvel appel dans 10 min.
   if(!row?.enabled){
     await db.from('vinted_agent_settings').upsert({account_id:account.id,last_seen_at:new Date(now).toISOString(),...(version?{extension_version:version}:{})},{onConflict:'account_id'})
@@ -212,19 +216,19 @@ export async function agentPoll(db,key,body,now=Date.now()){
   }
   if(version&&version!==row.extension_version)await db.from('vinted_agent_settings').update({extension_version:version}).eq('account_id',account.id)
   // Pause « compte déconnecté » : l'extension vient de lire le compte connecté, donc la session est revenue.
-  if(row.paused&&row.pause_reason===STOP.logged_out&&member){
+  if(driver==='extension'&&row.paused&&row.pause_reason===STOP.logged_out&&member){
     check(await db.from('vinted_agent_settings').update({paused:false,pause_reason:null,paused_at:null}).eq('account_id',account.id).eq('paused',true))
     await agentLog(db,{account_id:account.id,event:'resumed',message:'Session Vinted retrouvée : YlaVint reprend tout seul.'})
     row.paused=false
   }
   // Anciennes pauses « compte restreint / alerte Vinted » : levées, seul Ylann arrête les automatisations.
-  if(row.paused&&row.pause_reason&&!MANUAL_PAUSES.includes(row.pause_reason)&&![STOP.captcha,STOP.logged_out,STOP.rate_limited].includes(row.pause_reason)){
+  if(driver==='extension'&&row.paused&&row.pause_reason&&!MANUAL_PAUSES.includes(row.pause_reason)&&![STOP.captcha,STOP.logged_out,STOP.rate_limited].includes(row.pause_reason)){
     check(await db.from('vinted_agent_settings').update({paused:false,pause_reason:null,paused_at:null}).eq('account_id',account.id).eq('paused',true))
     await agentLog(db,{account_id:account.id,event:'resumed',message:'Alerte Vinted : les automatisations continuent (seul l’arrêt manuel les coupe).'})
     row.paused=false
   }
   let pauseNote=null
-  if(row.paused&&row.pause_reason===STOP.rate_limited&&row.paused_at){
+  if(driver==='extension'&&row.paused&&row.pause_reason===STOP.rate_limited&&row.paused_at){
     const events=check(await db.from('vinted_agent_log').select('id').eq('account_id',account.id).eq('event','rate_limited').gte('created_at',new Date(now-86400000).toISOString())).length
     const wait=rateLimitWait(events)
     if(Date.parse(row.paused_at)<now-wait*60000){
@@ -237,11 +241,11 @@ export async function agentPoll(db,key,body,now=Date.now()){
   if(!row.paused){
     const recent=check(await db.from('vinted_agent_tasks').select('kind,created_at').eq('account_id',account.id).in('kind',SCANS).neq('state','cancelled').order('created_at',{ascending:false}).limit(40))
     const last={};for(const t of recent)last[t.kind]??=t.created_at
-    const can=await learned(db),due=dueScans(settings,last,now).filter(kind=>ready(kind,can))
+    const can=await learned(db),due=dueScans(settings,last,now).filter(kind=>ready(kind,can)&&(driver!=='desktop'||DESKTOP_KINDS.includes(kind)))
     if(due.length)await enqueue(db,due.map(kind=>({account_id:account.id,kind,priority:kind==='sync_inbox'?4:0,dedupe_key:`${kind}:${account.id}`})))
     await dropStaleLikes(db,account.id,settings,now)
   }
-  let claimed=check(await db.rpc('claim_vinted_agent_task',{p_account:account.id}))
+  let claimed=check(await claim())
   // Message après like à écarter d'office (article vendu, like hors période) : réglé ici, sans passer par Vinted
   // ni consommer l'écart entre deux envois, puis on prend la tâche suivante.
   for(let i=0;i<10&&claimed?.state==='task'&&claimed.task.kind==='like_message';i++){
@@ -250,10 +254,10 @@ export async function agentPoll(db,key,body,now=Date.now()){
     const summary=await (await import('./ylavint-flows.js')).likeDone(db,claimed.task,{skipped:payload.skip},settings,{now})
     await finish(db,claimed.task,'done',summary,null)
     await db.from('vinted_agent_tasks').update({started_at:null}).eq('id',claimed.task.id).then(check)
-    claimed=check(await db.rpc('claim_vinted_agent_task',{p_account:account.id}))
+    claimed=check(await claim())
   }
   const extra=await (await import('./ylavint.js')).pollExtras(db,account,settings,{paused:row.paused,draft:claimed?.state!=='task'}).catch(e=>{console.error('ylavint_poll_extra_failed',{code:e.code||e.status||'unknown'});return {}})
-  if(claimed?.state==='idle'&&extra.ai==='queued')claimed=check(await db.rpc('claim_vinted_agent_task',{p_account:account.id}))
+  if(claimed?.state==='idle'&&extra.ai==='queued')claimed=check(await claim())
   // Des messages attendent l'écart entre deux envois : on repasse vite pour tenir le délai réglé (30 à 45 s par défaut).
   const nextMessage=claimed?.state==='idle'?check(await db.from('vinted_agent_tasks').select('not_before').eq('account_id',account.id).eq('state','queued').in('kind',['reply_message','like_message','order_message','accept_offer']).order('not_before',{ascending:true}).limit(1))[0]:null
   const from=settings.limits.from_hour,to=settings.limits.to_hour,hour=Number(new Date(now).toLocaleString('fr-FR',{hour:'2-digit',hourCycle:'h23',timeZone:'Europe/Paris'}))
@@ -270,7 +274,7 @@ export async function agentPoll(db,key,body,now=Date.now()){
     if(claimed.task.kind==='reply_message')await (await import('./ylavint.js')).replyFailed(db,claimed.task,'Envoi de message pas encore appris : envoie un message à la main sur Vinted une fois.')
     return {state:'idle',account:account.login,...extra,wait_seconds:30}
   }
-  return {state:'task',account:account.login,...extra,task:bundle}
+  return {state:'task',account:account.login,...extra,task:{...bundle,lease_until:claimed.task.lease_until}}
 }
 const finish=(db,task,state,result,error)=>db.rpc('finish_vinted_agent_task',{p_task:task.id,p_lease:task.lease,p_state:state,p_result:task.kind==='publish_item'?{...result,...(task.result?.progress?{progress:task.result.progress}:{})}:result,p_error:error}).then(check)
 
@@ -333,6 +337,10 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
   if(!isId(body?.task_id)||!isId(body?.lease))throw new AppError('Tâche invalide.')
   const task=check(await db.from('vinted_agent_tasks').select('*').eq('id',body.task_id).eq('lease',body.lease).eq('state','running').maybeSingle())
   if(!task){
+    if(desktopDriver(key)==='desktop'){
+      const previous=check(await db.from('vinted_agent_tasks').select('id,account_id,state').eq('id',body.task_id).maybeSingle())
+      if(previous?.account_id===key.desktop_account_id&&['done','failed','cancelled'].includes(previous.state))return {saved:true,paused:previous.state!=='done'}
+    }
     const previous=check(await db.from('vinted_agent_tasks').select('*').eq('id',body.task_id).eq('kind','publish_item').maybeSingle())
     const who=previous?await accountFor(db,body):null
     if(previous&&who?.account?.id===previous.account_id&&['done','failed','cancelled'].includes(previous.state))return {saved:true,message:previous.result?.message||previous.error||'Envoi terminé : consulte le suivi.'}
@@ -344,6 +352,13 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
   const label=KINDS[task.kind].label
   if(body.ok!==true){
     const code=typeof body.code==='string'?body.code:'failed',detail=text(body.error,300)
+    if(desktopDriver(key)==='desktop'){
+      await finish(db,task,'failed',null,detail||'Action à vérifier sur Vinted.')
+      await pauseAccount(db,task.account_id,'Assistant PC : vérifie la dernière action sur Vinted avant de reprendre.',{event:'desktop_review',details:{kind:task.kind,detail}})
+      if(task.kind==='reply_message')await (await import('./ylavint.js')).replyFailed(db,task,detail||'Envoi à vérifier sur Vinted.')
+      if(task.kind==='like_message')check(await db.from('vinted_agent_contacts').update(task.payload.followup?{followup_state:'failed'}:{state:'failed'}).eq('account_id',task.account_id).eq('item_id',task.payload.item_id).eq('user_id',task.payload.user_id))
+      return {saved:true,paused:true}
+    }
     // Page Vinted sans YlaVint (onglet ouvert avant la mise à jour), onglet occupé ou vérification Cloudflare :
     // la requête n'a pas atteint Vinted (ou Vinted l'a refusée avant de l'exécuter). Nouvel essai sans compter l'essai.
     if(TRANSIENT[code]||(!task.writes&&READ_RETRY[code])){
@@ -630,6 +645,10 @@ export async function handleAgent(req,{db,user}){
     if(!account)throw new AppError('Choisis un compte.')
     const exists=check(await db.from('publication_accounts').select('id').eq('id',account).maybeSingle());if(!exists)throw new AppError('Compte introuvable.',404)
     const settings=normalizeSettings(body.settings||{}),enabled=body.enabled===true
+    if(settings.messaging.executor==='desktop'){
+      const ready=await db.rpc('ylavint_desktop_ready')
+      if(ready.error||ready.data!==true)throw new AppError('L’assistant PC attend encore l’activation de la mise à jour.',409)
+    }
     if(settings.messaging.offers.enabled){
       const capability=await db.rpc('ylavint_offers_ready')
       if(capability.error||capability.data!==true)throw new AppError('L’acceptation des offres attend encore l’activation de la mise à jour.',409)

@@ -48,7 +48,7 @@ export async function likePayload(db,task,settings){
   const listing=check(await db.from('vinted_agent_listings').select('title,price,state').eq('account_id',task.account_id).eq('item_id',p.item_id).maybeSingle())
   const part=p.followup?step.followup:step
   const vars={login:p.login,title:listing?.title,price:listing?.price}
-  return {...p,message:fillTemplate(part.message,vars)||'',offer_price:offerPrice(listing?.price,part.discount),
+  return {...p,message:fillTemplate(part.message,vars)||'',offer_price:offerPrice(listing?.price,part.discount),offer_requested:part.discount?.mode==='simple',expected_price:listing?.price??null,
     skip:!inHistory(p.liked_at,L.history_since)?'Like antérieur à la période choisie.':listing?.state==='sold'||listing?.state==='draft'?'L’article n’est plus en vente.':null,
     filters:{min_rating:L.min_rating.enabled?L.min_rating.value:null,skip_unrated:L.skip_unrated,ignored:L.ignored}}
 }

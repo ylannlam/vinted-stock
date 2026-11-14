@@ -111,6 +111,8 @@ export function normalizeSettings(input={}){
   if(input.messaging?.sync_seconds===undefined&&input.messaging?.sync_minutes!==undefined)out.messaging.sync_seconds=out.messaging.sync_minutes*60
   if(input.messaging?.reply_unlimited!==undefined&&typeof input.messaging.reply_unlimited!=='boolean')throw new AppError('Réponses illimitées : choix invalide.')
   out.messaging.reply_unlimited=input.messaging?.reply_unlimited??(input.messaging?.reply_per_day===undefined)
+  if(input.messaging?.executor!==undefined&&!['extension','desktop'].includes(input.messaging.executor))throw new AppError('Choisis l’extension ou l’assistant PC.')
+  out.messaging.executor=input.messaging?.executor||'extension'
   for(const group of ['likes','messaging'])out[group].history_since=historyDate(input[group]?.history_since)
   normalizeLikes(input.likes||{},out.likes)
   out.messaging.offers=normalizeOffers(input.messaging?.offers)

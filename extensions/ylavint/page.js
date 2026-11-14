@@ -3,7 +3,7 @@
 // 2. Mode apprentissage (activé à la main dans le popup) : relève la forme des requêtes que Vinted fait lui-même.
 // Jamais de cookie ni de jeton envoyé hors de Vinted ; ce script ne connaît pas la clé du site.
 (() => {
-  if (globalThis.__svAgent) return
+  if (globalThis.__svAgent && !globalThis.__ylavintDesktopMode) return
   const nativeFetch = window.fetch.bind(window)
   const memory = {csrf: null, anon: null, orders: new Map()}
   // Apprentissage automatique : les requêtes que Vinted fait quand tu l'utilises normalement sont relevées (forme seulement, jamais de cookie ni de jeton).
@@ -304,6 +304,11 @@
   }
   // Envoi d'un texte dans une conversation existante.
   async function sendText(R, conversation, body, chat) {
+    if(currentTask?.desktop===true){
+      const result=await globalThis.__ylavintDesktopSend({task_id:currentTask.id,conversation_id:String(conversation),body,chat:chat||chatApi()})
+      if(result?.desktop_cancelled)throw new Stop('desktop_context_changed',result.desktop_cancelled)
+      return result
+    }
     const v2 = () => call(CHAT.reply, {ids: {id: conversation}, json: {content: body, is_personal_data_sharing_check_skipped: false, photo_temp_uuids: null}})
       .then(r => ({reply: {id: r?.data?.id ?? r?.message?.id ?? r?.id ?? null}, conversation_id: r?.conversation_id ?? null}))
     if (isUuid(conversation)) return v2()
@@ -613,6 +618,11 @@
     return {skip: null, login}
   }
   async function sendOffer(R, conversation, transaction, price) {
+    if(currentTask?.desktop===true&&price){
+      const r=await globalThis.__ylavintDesktopOffer({task_id:currentTask.id,conversation_id:String(conversation),price,chat:chatApi()})
+      if(r?.desktop_cancelled){if(r.message_confirmed)return false;throw new Stop('desktop_context_changed',r.desktop_cancelled)}
+      return r===true
+    }
     if (!R.offer_send || !price) return false
     const body = fillShape(R.offer_send.template, [[/^(price|amount|offer_price|value)$/, price.toFixed(2)], [/currency/, 'EUR']])
     await call(R.offer_send, {ids: {id: idFor(R.offer_send, {conversation_id: conversation, transaction_id: transaction}, 'transaction')}, json: body})
@@ -643,6 +653,8 @@
   async function likeMessage(task) {
     const p = task.payload, R = task.recipes
     if (p.skip) return {skipped: p.skip}
+    if(task.desktop&&p.offer_requested&&!p.offer_price)throw new Stop('price_unknown','Prix de l’article indisponible : message et réduction à vérifier.')
+    const offerAttempt=async(...args)=>{try{return await sendOffer(...args)}catch(e){if(task.desktop)throw e;return false}}
     const chat = p.followup && isUuid(p.conversation_id) ? 'v2' : await detectChat()
     if (p.followup) {
       // Relance : seulement si le membre n'a pas répondu et que Vinted permet encore d'écrire.
@@ -652,7 +664,7 @@
       if (c.allow_reply === false) return {skipped: 'Vinted ne permet plus d’écrire dans cette conversation', conversation_id: String(p.conversation_id)}
       if (buyerEngaged(c, task.member_id)) return {skipped:'le membre a déjà envoyé un message ou une offre',conversation_id:String(p.conversation_id),buyer_engaged:true}
       if (p.message) { await sendText(R, p.conversation_id, p.message, chat); await pause(3000, 7000) }
-      const offer = await sendOffer(R, p.conversation_id, c.transaction?.id, p.offer_price).catch(() => false)
+      const offer = await offerAttempt(R, p.conversation_id, c.transaction?.id, p.offer_price)
       return {conversation_id: String(p.conversation_id), message: p.message || null, offer}
     }
     const member = await memberCheck(task)
@@ -680,11 +692,27 @@
     }
     let offer = false
     const transaction = created.transaction || current.transaction?.id || null
-    if (p.offer_price && R.offer_send) { await pause(3000, 7000); offer = await sendOffer(R, conversation, transaction, p.offer_price).catch(() => false) }
+    if (p.offer_price && (task.desktop||R.offer_send)) { await pause(3000, 7000); offer = await offerAttempt(R, conversation, transaction, p.offer_price) }
     return {conversation_id: conversation, message: p.message || null, offer, login: member.login}
   }
   function buyerEngaged(conversation,me){
     return (conversation.messages||[]).map(m=>messageRow(m,me)).some(m=>!m.from_me&&['message','offer','photo'].includes(m.kind))
+  }
+  async function desktopRecheck(task,conversation,{afterMessage=false}={}){
+    const c=await readConversation(task.recipes,conversation,isUuid(conversation)?'v2':await detectChat())
+    if(!Array.isArray(c.messages)||c.allow_reply===false)return {cancelled:'Conversation indisponible.'}
+    if(task.kind==='like_message'){
+      if(buyerEngaged(c,task.member_id))return {cancelled:'L’acheteur a répondu ou fait une offre : relance annulée.'}
+      if(String(c.opposite_user?.id)!==String(task.payload.user_id)||String(c.item?.id)!==String(task.payload.item_id))throw new Stop('desktop_review','Le membre ou l’article de la conversation n’est pas confirmé.')
+      if(task.payload.offer_requested&&(amount(c.item?.price)==null||Number(amount(c.item.price))!==Number(task.payload.expected_price)))throw new Stop('desktop_review','Le prix a changé ou n’est plus lisible : réduction à vérifier.')
+      if(!afterMessage&&!task.payload.followup&&c.messages.map(m=>messageRow(m,task.member_id)).some(m=>m.from_me&&m.kind==='message'))return {cancelled:'Ce membre a déjà reçu un message dans cette conversation.'}
+    }
+    if(task.kind==='reply_message'&&task.payload.source==='ai'&&task.payload.manual!==true){
+      const at=v=>{const n=Number(v);return v==null?0:Number.isFinite(n)?n*(n<1e12?1000:1):Date.parse(v)||0}
+      const last=c.messages.map(m=>messageRow(m,task.member_id)).filter(m=>!['action','status'].includes(m.kind)).sort((a,b)=>at(a.sent_at)-at(b.sent_at)).at(-1)
+      if(!last||last.from_me||last.id!==String(task.payload.source_message_id))return {cancelled:'La conversation a changé : réponse IA à recalculer.'}
+    }
+    return {ok:true}
   }
 
   // ---------- Flux de commande ----------
@@ -741,6 +769,7 @@
       if (!runners[task.kind]) throw new Stop('failed', 'Tâche inconnue.')
       return {ok: true, result: await runners[task.kind](task)}
     } catch (e) {
+      if(e.code==='desktop_context_changed')return {ok:true,result:{skipped:e.message,context_changed:true}}
       return {ok: false, code: e.code || 'failed', error: String(e.message || 'Erreur').slice(0, 300), status: e.status || null}
     } finally { currentTask = null }
   }
@@ -858,8 +887,8 @@
     else if (d.type === 'run') post({type: 'result', id: d.id, payload: {ok: false, code: 'busy', error: 'Une tâche est déjà en cours dans cet onglet.'}})
   })
   installWrappers()
-  globalThis.__svAgent = {version: 4}
+  globalThis.__svAgent = {version: 5,...(globalThis.__ylavintDesktopMode?{run,recheck:desktopRecheck}: {})}
   // Pour les tests : fonctions pures.
   globalThis.__svAgentTest = {publicationBody,fillItem, wardrobeItem, orderRow, shape, fillShape, hiddenFlag, messageRow, conversationRow, notificationLike, pendingOffers, offerAllowed,
-    v2Conversation, v2Entry, chatFromUrls, chatFromPath, setChat, forgetChat, chatApi}
+    v2Conversation, v2Entry, chatFromUrls, chatFromPath, setChat, forgetChat, chatApi, desktopRecheck}
 })()

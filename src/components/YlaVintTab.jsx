@@ -9,6 +9,7 @@ const YlaVintInbox=lazy(()=>import('./YlaVintInbox'))
 const YlaVintAi=lazy(()=>import('./YlaVintAi'))
 const YlaVintWardrobe=lazy(()=>import('./YlaVintWardrobe'))
 const YlaVintSales=lazy(()=>import('./YlaVintSales'))
+const YlaVintDesktop=lazy(()=>import('./YlaVintDesktop'))
 
 export const ylavintRequest=(method='GET',body,query='')=>import('../lib/api').then(m=>m.resourcesRequest(method,body,`?scope=agent${query}`))
 export const when=v=>v?new Date(v).toLocaleString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Europe/Paris'}):'—'
@@ -21,7 +22,7 @@ const ALERTS={temporary:'Bloqué temporairement',restricted:'Restreint',permanen
 // Dernière version d'YlaVint = celle du dépôt. Un compte qui remonte une version plus ancienne doit être mis à jour.
 export const LATEST_YLAVINT=ylavintManifest.version
 const vparts=v=>String(v||'').split('.').map(n=>parseInt(n,10)||0)
-export const outdated=v=>{if(!v)return false;const a=vparts(v),b=vparts(LATEST_YLAVINT);for(let i=0;i<3;i++){if((a[i]||0)!==(b[i]||0))return (a[i]||0)<(b[i]||0)}return false}
+export const outdated=v=>{if(!v||String(v).startsWith('pc-'))return false;const a=vparts(v),b=vparts(LATEST_YLAVINT);for(let i=0;i<3;i++){if((a[i]||0)!==(b[i]||0))return (a[i]||0)<(b[i]||0)}return false}
 export const bridgeOnline=a=>!!a.last_seen_at&&Date.now()-Date.parse(a.last_seen_at)<15*60000
 
 // Navigation latérale (rubriques et sous-rubriques), comme un tableau de bord de gestion Vinted.
@@ -31,6 +32,7 @@ const NAV=[
  {label:'Articles',icon:'◈',children:[['dressing','Articles Vinted'],['publication','Publications planifiées']]},
  {label:'Automatisations',icon:'⚙',children:[['likes','Likes d’articles'],['flux','Flux de commande'],['agent','Smart Agent'],['prix','Démasquage & prix']]},
  {key:'messagerie',label:'Messagerie',icon:'💬'},
+ {key:'assistant-pc',label:'Assistant PC',icon:'▣'},
  {label:'Plus',icon:'⋯',children:[['reglages','Comptes & réglages'],['journal','Journal'],['extension','Extension']]},
 ]
 const KEYS=NAV.flatMap(n=>n.children?n.children.map(c=>c[0]):[n.key])
@@ -57,6 +59,8 @@ function AccountSettings({account,defaults,onSave,busy,only}){
  const feats=only&&only!=='all'?FEATURES.filter(([k])=>FEATURE_SETS[only].includes(k)):FEATURES
  return <div className="space-y-4">
   <label className="flex items-center gap-2 text-sm font-medium text-white"><input type="checkbox" className="accent-blue-500" checked={form.enabled} onChange={e=>setForm({...form,enabled:e.target.checked})}/> YlaVint actif sur ce compte</label>
+  <label className="block text-sm">Exécution<select className={fieldClass+' mt-2'} value={form.messaging.executor||'extension'} onChange={e=>set('messaging','executor',e.target.value)}><option value="extension">Extension — toutes les fonctions</option><option value="desktop">Assistant PC — favoris et réponses IA</option></select></label>
+  {form.messaging.executor==='desktop'&&<p className="text-xs text-zinc-400">L’extension attend pendant que l’assistant PC gère ce compte. Les autres fonctions reprendront en repassant au mode Extension.</p>}
   <fieldset><Legend>Fonctions</Legend>
    <div className="mt-2 grid gap-2 sm:grid-cols-2">{feats.map(([k,l])=><label key={k} className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-sm text-zinc-200"><input type="checkbox" className="accent-blue-500" checked={!!form.features[k]} onChange={e=>set('features',k,e.target.checked)}/>{l}</label>)}</div>
    {feats.some(([k])=>k==='sales')&&<p className="mt-2 text-xs text-zinc-500">« Ventes → onglet Ventes » remplace le webhook Dotb pour ce compte : coupe d’abord Dotb sur ce compte. Une vente déjà reçue de Dotb n’est jamais dupliquée.</p>}
@@ -158,7 +162,7 @@ function SalesChart({orders,range}){
  </svg>
 }
 
-export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWatchRequest,standalone=false,onLogout}){
+export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWatchRequest,desktopRequest,standalone=false,onLogout}){
  const [section,setSectionState]=useState(readSection)
  const [data,setData]=useState(null),[sales,setSales]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[notice,setNotice]=useState('')
  const [configure,setConfigure]=useState(null),[range,setRange]=useState('7d'),[accountFilter,setAccountFilter]=useState(''),[mobileNav,setMobileNav]=useState(false)
@@ -329,6 +333,7 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
       {!data.log.length&&<li className="p-4 text-zinc-500">Rien pour l’instant.</li>}</ul></Card></div>
    </div>}
 
+   {section==='assistant-pc'&&<Suspense fallback={<p>Chargement…</p>}><YlaVintDesktop accounts={accounts} onConfigure={account=>setConfigure({account,only:'all'})} pair={watchRequest} request={desktopRequest}/></Suspense>}
    {section==='extension'&&<><PageTitle title="Extension YlaVint" hint="À installer dans chaque profil AdsPower. Le gros bouton du popup allume ou coupe YlaVint dans le profil."/><div className="mx-auto max-w-4xl"><VintedWatchPanel request={watchRequest}/></div></>}
    </Suspense>
   </main>

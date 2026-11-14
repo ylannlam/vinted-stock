@@ -8,6 +8,8 @@ dist
 supabase/.temp/
 tools/shein-collector/.data/
 tools/adspower-companion/.data/
+tools/adspower-companion/ylavint-page.js
+tools/adspower-companion/ylavint-read.js
 
 # Local database exports must never enter this public repository.
 /backup-private/

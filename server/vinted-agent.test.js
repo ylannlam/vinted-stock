@@ -57,6 +57,25 @@ const ACC='11111111-1111-4111-8111-111111111111'
 const base=()=>({publication_accounts:[{id:ACC,login:'compte_demo',vinted_id:'3206068112'}],vinted_agent_settings:[],vinted_agent_tasks:[],vinted_agent_log:[],vinted_agent_recipes:[],vinted_agent_listings:[],vinted_agent_orders:[],vinted_agent_contacts:[],listing_drafts:[]})
 const recipe=(kind,extra={})=>({kind,recipe:{method:'POST',path:'/api/v2/x',body:'none',...extra}})
 
+test('desktop ownership prevents extension claims and does not auto-resume a review pause',async()=>{
+ const state=base(),db=fakeDb(state)
+ state.vinted_agent_settings.push({account_id:ACC,enabled:true,paused:true,pause_reason:'Assistant PC : vérifie la dernière action sur Vinted avant de reprendre.',messaging:{executor:'desktop'}})
+ assert.equal((await agentPoll(db,{}, {member_id:'3206068112',driver:'desktop'})).state,'other_executor')
+ assert.equal((await agentPoll(db,{desktop_account_id:ACC},{member_id:'3206068112'})).state,'paused')
+ assert.equal(state.vinted_agent_settings[0].paused,true)
+})
+
+test('desktop partial failure is never requeued, is acknowledged idempotently and pauses the account',async()=>{
+ const state=base(),db=fakeDb(state),id=crypto.randomUUID(),lease=crypto.randomUUID(),key={desktop_account_id:ACC}
+ state.vinted_agent_settings.push({account_id:ACC,enabled:true,paused:false,messaging:{executor:'desktop'}})
+ state.vinted_agent_tasks.push({id,lease,account_id:ACC,kind:'like_message',writes:true,state:'running',payload:{item_id:'1',user_id:'2'}})
+ state.vinted_agent_contacts.push({account_id:ACC,item_id:'1',user_id:'2',state:'queued'})
+ const report={task_id:id,lease,member_id:'3206068112',ok:false,code:'rate_limited',error:'Message confirmé, réduction non confirmée.'}
+ assert.equal((await agentResult(db,key,report)).paused,true)
+ assert.equal(state.vinted_agent_tasks[0].state,'failed');assert.equal(state.vinted_agent_contacts[0].state,'failed');assert.equal(state.vinted_agent_settings[0].paused,true)
+ assert.equal((await agentResult(db,key,report)).saved,true)
+})
+
 test('settings are bounded and keep careful defaults',()=>{
   const s=normalizeSettings({features:{unmask:true},limits:{writes_per_day:30},unmask:{price_drop:1.234}})
   assert.equal(s.features.unmask,true);assert.equal(s.features.likes,false);assert.equal(s.limits.writes_per_day,30);assert.equal(s.limits.min_gap_minutes,12);assert.equal(s.unmask.price_drop,1.23)

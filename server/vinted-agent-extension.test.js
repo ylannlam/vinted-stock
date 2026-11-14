@@ -22,6 +22,37 @@ globalThis.document = {cookie: 'anon_id=anon-1', querySelector: () => ({content:
 await import('../extensions/ylavint/page.js')
 const T = globalThis.__svAgentTest
 
+test('desktop recheck protects recipient, item, price, duplicate message and buyer reply',async()=>{
+ T.setChat('v1')
+ const task={kind:'like_message',member_id:'7',recipes:{},payload:{user_id:'88',item_id:'9',offer_requested:true,expected_price:10}}
+ let c={opposite_user:{id:88},item:{id:9,price:10},messages:[]}
+ vinted=async()=>({status:200,body:{conversation:c}})
+ assert.equal((await T.desktopRecheck(task,'10')).ok,true)
+ c.item.price=11;await assert.rejects(T.desktopRecheck(task,'10'),/prix/i);c.item.price=10
+ c.opposite_user.id=89;await assert.rejects(T.desktopRecheck(task,'10'),/membre/i);c.opposite_user.id=88
+ c.messages=[{entity_type:'message',entity:{id:'m1',user_id:7,body:'Déjà envoyé'}}]
+ assert.match((await T.desktopRecheck(task,'10')).cancelled,/déjà/)
+ assert.equal((await T.desktopRecheck(task,'10',{afterMessage:true})).ok,true)
+ c.messages.push({entity_type:'message',entity:{id:'m2',user_id:88,body:'Merci'}})
+ assert.match((await T.desktopRecheck(task,'10',{afterMessage:true})).cancelled,/répondu/)
+ T.forgetChat()
+})
+
+test('desktop uses visible callbacks and distinguishes cancelled offer from a sent message',async t=>{
+ t.mock.method(globalThis,'setTimeout',fn=>{queueMicrotask(fn);return 0})
+ T.setChat('v1');let sent=0
+ globalThis.__ylavintDesktopSend=async()=>{sent++;return {reply:{id:'native'}}}
+ globalThis.__ylavintDesktopOffer=async()=>({desktop_cancelled:'Buyer replied',message_confirmed:false})
+ const task={id:'native',kind:'like_message',desktop:true,member_id:'7',recipes:{},payload:{followup:true,conversation_id:'10',user_id:'88',item_id:'9',offer_price:8}}
+ vinted=async()=>({status:200,body:{conversation:{id:10,messages:[]}}});calls.length=0
+ let r=await run(task);assert.equal(r.ok,true);assert.equal(r.result.context_changed,true);assert.equal(sent,0)
+ globalThis.__ylavintDesktopOffer=async()=>({desktop_cancelled:'Buyer replied',message_confirmed:true})
+ r=await run({...task,payload:{...task.payload,message:'Bonjour'}})
+ assert.equal(r.result.message,'Bonjour');assert.equal(r.result.offer,false);assert.equal(sent,1)
+ assert.ok(calls.every(c=>c.method==='GET'),'no API sends or offers')
+ delete globalThis.__ylavintDesktopSend;delete globalThis.__ylavintDesktopOffer;T.forgetChat();t.mock.restoreAll()
+})
+
 test('notifications: offering_id is the liker; user_id is the seller', async()=>{
   const notification={entry_type:20,body:'alice a marqué ton article comme favori',user_id:7,subject_id:9,link:'/items/9/want_it/new?offering_id=88'}
   assert.deepEqual(T.notificationLike(notification,'7'),{item_id:'9',user_id:'88',login:'alice',liked_at:null})

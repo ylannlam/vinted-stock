@@ -1,5 +1,39 @@
 STOCK VINTED — CONNECTEUR ADSPOWER
 
+ASSISTANT YLAVINT SUR PC (version 1.2.0)
+Cette version ajoute le pilotage des favoris et de la messagerie depuis
+https://vinted-stock.vercel.app/#ylavint/assistant-pc.
+La mise à jour du site et de sa base doit être installée avant de choisir ce mode.
+
+Après la connexion AdsPower décrite ci-dessous :
+1. Arrête Scalency et Dotb sur le compte réservé à YlaVint.
+2. Dans les réglages du compte, choisis « Assistant PC » comme exécution.
+3. Sélectionne le compte et son profil dans Assistant PC.
+4. Clique « Vérifier le compte sans envoyer ». Le nom du compte est contrôlé.
+5. Configure les messages, réductions et relances dans Likes d’articles,
+   et les réponses IA dans Smart Agent. Active seulement les fonctions voulues.
+6. Clique « Démarrer cet assistant » lorsque les réglages sont prêts.
+
+Les messages sont saisis progressivement dans le formulaire Vinted.
+Le PC doit rester éveillé. Le bouton Arrêter interrompt le travail et ferme
+uniquement les onglets de l'assistant. Le profil AdsPower reste ouvert.
+Un résultat incertain met le compte en pause : vérifie la conversation avant
+de reprendre. L'assistant ne renvoie jamais un message simplement parce que
+sa confirmation manque. Après redémarrage, il faut le relancer depuis le site.
+Ne saisis pas toi-même de texte dans les onglets utilisés par l'assistant.
+
+Ce mode reprend les favoris, réductions, relances et réponses. Les ventes,
+bordereaux, publications et changements d'annonces restent en attente jusqu'au
+retour au mode Extension. La frappe progressive ne garantit pas qu'une
+automatisation est indétectable.
+
+Les cookies et la clé AdsPower restent sur ce PC. Le site reçoit les favoris,
+articles et conversations nécessaires à ses fonctions existantes. Les réponses
+IA utilisent le fournisseur configuré sur le site. La connexion YlaVint est
+limitée au compte et au profil sélectionnés ; elle n'est pas enregistrée sur disque.
+
+CONNEXION ADSPOWER ET LANCEUR DOTB
+
 1. Garde AdsPower ouvert et connecté à ton compte.
 2. Lance run.bat. Au premier lancement, les dépendances sont installées depuis npm.
 3. Ouvre http://127.0.0.1:17442/setup sur ce PC.
@@ -28,7 +62,8 @@ L’onglet AdsPower vérifie régulièrement les profils et les quatre blocs Dot
 Fermer le profil ou la page Automatisations met le statut à jour automatiquement.
 Les contrôles se font sans ouvrir de page ni relancer une automatisation.
 Garde le PC éveillé et les pages Dotb ouvertes pour qu’elles continuent à travailler.
-Fermer le connecteur ne ferme pas les profils et n'arrête pas leurs automatisations.
+Fermer le connecteur ne ferme pas les profils et n'arrête pas les automatisations
+Dotb. En revanche, l'assistant YlaVint sur PC s'arrête avec le connecteur.
 « Annuler l'attente » annule uniquement les profils pas encore lancés.
 
 PROFILS ET PROXYS (version 1.1.3)
@@ -53,4 +88,5 @@ remplace ses fichiers dans le même dossier en conservant .data, puis relance ru
 Ne partage pas le dossier .data : il contient ta connexion locale.
 Le programme n'est accessible que depuis ce PC et exige une autorisation
 administrateur temporaire émise par Stock Vinted. La clé AdsPower, les cookies
-et les conversations ne sont pas envoyés au site.
+ne sont pas envoyés au site. Le transfert des conversations concerne uniquement
+le mode YlaVint décrit plus haut.

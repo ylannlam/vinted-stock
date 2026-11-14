@@ -10,8 +10,9 @@ import {RuntimeMonitor} from './monitor.mjs'
 import {createProfile,replaceFingerprint,profileProxies} from './factory.mjs'
 import {createFactoryJournal} from './factory-journal.mjs'
 import {verifyTicket as verifyRemoteTicket,createTicketVerifier} from './authorization.mjs'
+import {DesktopAssistants} from './ylavint.mjs'
 
-export const VERSION='1.1.3',PORT=17442,SITE='https://vinted-stock.vercel.app',LOCAL=`http://127.0.0.1:${PORT}`
+export const VERSION='1.2.0',PORT=17442,SITE='https://vinted-stock.vercel.app',LOCAL=`http://127.0.0.1:${PORT}`
 const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
 const html=(token,{configured=false,message='',port=50325}={})=>`<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connexion AdsPower · Stock Vinted</title><style>body{background:#f4f7f6;color:#173e35;font:16px system-ui;margin:0;padding:32px 16px}main{max-width:560px;margin:5vh auto;background:white;border:1px solid #dde7e2;border-radius:24px;padding:32px}p{line-height:1.6;color:#52675f}label{display:block;margin:20px 0 8px;font-weight:600}input{box-sizing:border-box;width:100%;padding:14px;border:1px solid #bacdc3;border-radius:10px;font:inherit}button,a{display:inline-block;padding:14px 20px;border:0;border-radius:10px;background:#087f6b;color:white;font:600 15px system-ui;text-decoration:none;margin-top:20px}small{display:block;color:#64756d;margin-top:12px}.notice{background:#e9f6ef;padding:15px;border-radius:12px}</style><main><small>STOCK VINTED · CONNEXION SUR CE PC</small><h1>AdsPower, prêt en un clic.</h1>${message?`<p role="status" class="notice">${escape(message)}</p>`:''}<p>${configured?'Une clé est déjà enregistrée sur ce PC. Tu peux la remplacer ci-dessous.':'Dans AdsPower, ouvre <strong>Automatisation → API</strong>, puis copie ta clé existante ici.'}</p><form method="post" action="/setup" autocomplete="off"><input type="hidden" name="csrf" value="${token}"><label for="key">Clé API AdsPower</label><input type="password" id="key" name="apiKey" required minlength="8" maxlength="512" autocomplete="off"><details><summary>Port de connexion</summary><label for="port">Port indiqué dans AdsPower</label><input type="number" id="port" name="port" value="${port}" min="1024" max="65535" required></details><button>Vérifier et enregistrer sur ce PC</button></form><small>La clé reste sur ce PC. Sous Windows, elle est protégée avec ton compte Windows. Cette étape n’ouvre aucun profil.</small>${configured?`<a href="${SITE}/#adspower">Revenir à mon site →</a>`:''}</main></html>`
 async function body(req){let size=0,parts=[];for await(const part of req){size+=part.length;if(size>16000)throw new LocalError('Demande trop volumineuse.',413);parts.push(part)}return Buffer.concat(parts).toString('utf8')}
@@ -19,11 +20,12 @@ function json(res,status,value){res.writeHead(status,{'Content-Type':'applicatio
 export async function verifyTicket(ticket,fetcher=fetch){
   return verifyRemoteTicket(ticket,{site:SITE,fetcher})
 }
-export async function createCompanion({dataDir,verify=verifyTicket,clientFactory=c=>new AdsPowerClient(c),runner=startDotb,load=readConfig,save=saveConfig,monitorOptions={}}={}){
+export async function createCompanion({dataDir,verify=verifyTicket,clientFactory=c=>new AdsPowerClient(c),runner=startDotb,desktopRunner,load=readConfig,save=saveConfig,monitorOptions={}}={}){
   let config=await load(dataDir).catch(()=>null),ads=config?clientFactory(config):null,profiles=[],listAt=0,loadingList=null,settingUp=false
   const authorize=createTicketVerifier(verify),csrf=new Map()
   const queue=new LaunchQueue({run:(profile,update)=>runner(profile,update,ads)})
   const monitor=new RuntimeMonitor({...monitorOptions,getClient:()=>ads})
+  const assistants=new DesktopAssistants({getClient:()=>ads,dataDir,...(desktopRunner?{run:desktopRunner}:{})})
   // Profile creation and fingerprint changes run one at a time; a replayed request id
   // (network retry from the site) returns the first result instead of creating twice.
   let factoryBusy=false;const journal=await createFactoryJournal(dataDir)
@@ -54,7 +56,7 @@ export async function createCompanion({dataDir,verify=verifyTicket,clientFactory
           if(origin!==local||!req.headers['content-type']?.startsWith('application/x-www-form-urlencoded'))throw new LocalError('Ouvre les réglages depuis ce PC.',403)
           const form=new URLSearchParams(await body(req)),token=form.get('csrf'),expires=csrf.get(token);csrf.delete(token)
           if(!expires||expires<Date.now())throw new LocalError('Ce formulaire a expiré. Recharge les réglages.',403)
-          if(settingUp||factoryBusy||queue.running||queue.jobs.some(j=>j.state==='queued'))throw new LocalError('Attends la fin des démarrages avant de changer la connexion.',409)
+          if(settingUp||factoryBusy||assistants.active||queue.running||queue.jobs.some(j=>j.state==='queued'))throw new LocalError('Arrête les assistants et attends la fin des démarrages avant de changer la connexion.',409)
           const apiKey=form.get('apiKey')?.trim(),port=Number(form.get('port'))
           if(!apiKey||apiKey.length<8||apiKey.length>512||/[\r\n\x00-\x1f]/.test(apiKey))throw new LocalError('Clé invalide. Recopie la clé API AdsPower.')
           settingUp=true
@@ -74,7 +76,7 @@ export async function createCompanion({dataDir,verify=verifyTicket,clientFactory
       await authorize(ticket)
       if(req.method==='GET'&&url.pathname==='/state'){
         void monitor.refresh(profiles,queue.snapshot())
-        json(res,200,{version:VERSION,factory:true,configured:!!config,jobs:queue.snapshot(),list_at:listAt,...monitor.snapshot()});return
+        json(res,200,{version:VERSION,factory:true,ylavint:true,assistants:assistants.snapshot(),configured:!!config,jobs:queue.snapshot(),list_at:listAt,...monitor.snapshot()});return
       }
       if(req.method==='GET'&&url.pathname==='/profiles'){json(res,200,{profiles:await refresh()});return}
       if(req.method==='GET'&&url.pathname==='/profiles/proxies'){
@@ -84,7 +86,14 @@ export async function createCompanion({dataDir,verify=verifyTicket,clientFactory
       if(req.method==='POST'){
         if(!req.headers['content-type']?.startsWith('application/json'))throw new LocalError('Format de demande invalide.',415)
         let input;try{input=JSON.parse(await body(req))}catch{throw new LocalError('Demande invalide.')}
+        if(url.pathname==='/ylavint/start'){
+          if(settingUp||factoryBusy)throw new LocalError('Attends la fin de la configuration AdsPower.',409)
+          if(queue.jobs.some(j=>j.profile.id===input.profile_id&&pendingStates.has(j.state)))throw new LocalError('Ce profil démarre déjà un autre assistant.',409)
+          json(res,202,{assistants:assistants.start(input)});return
+        }
+        if(url.pathname==='/ylavint/stop'){json(res,200,{assistants:assistants.stop(input.account_id)});return}
         if(url.pathname==='/launch'){
+          if(assistants.active)throw new LocalError('Arrête l’assistant YlaVint avant de démarrer Dotb.',409)
           if(settingUp)throw new LocalError('La connexion est en cours de modification.',409)
           if(factoryBusy)throw new LocalError('Un profil est en cours de création ou de modification. Réessaie dans quelques secondes.',409)
           if(!listAt||Date.now()-listAt>60000)await refresh()
@@ -114,7 +123,8 @@ export async function createCompanion({dataDir,verify=verifyTicket,clientFactory
     }catch(error){json(res,error.status||500,{error:error.status?error.message:'La connexion locale a été interrompue. Relance le connecteur.',...(error.code?{code:error.code}:{})})}
   })
   server.headersTimeout=15000;server.requestTimeout=20000
-  return {server,queue}
+  server.on('close',()=>{void assistants.close()})
+  return {server,queue,assistants}
 }
 async function main(){
   const dir=path.join(path.dirname(fileURLToPath(import.meta.url)),'.data')

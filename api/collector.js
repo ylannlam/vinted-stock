@@ -19,6 +19,7 @@ export default async function handler(req,res) {
       if(req.method!=='POST'||!['watch_report','agent_poll','agent_progress','agent_result','agent_learn','agent_self'].includes(action))throw new AppError('Action non autorisée pour cette extension.',403)
       const {authorizeWatch,watchReport,recordWatch}=await import('../server/vinted-watch.js')
       const {db,key}=await authorizeWatch(req)
+      await (await import('../server/ylavint-desktop.js')).authorizeDesktop(db,key,req.body)
       const agent=await import('../server/vinted-agent.js')
       if(action==='watch_report'){
         const report=watchReport(req.body),saved=await recordWatch(db,key,report)

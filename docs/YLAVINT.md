@@ -29,3 +29,17 @@
 
 ## À confirmer en conditions réelles
 Formats exacts de la messagerie Vinted (lecture souple dans `page.js` : `messageRow`, `conversationRow`), statuts des ventes, champ « masqué du catalogue », corps de création / modification d'annonce.
+
+## Assistant PC 1.2.0 — pilote favoris et messagerie
+
+Le connecteur existant ouvre deux onglets dans le profil AdsPower choisi : lecture des tâches et formulaire visible. Les messages passent par le champ Vinted avec une frappe progressive. Les réglages de favoris, réduction, relance, IA, plage horaire et plafonds restent ceux du site. Les clics ne sont pas considérés comme des confirmations : l'assistant attend la réponse Vinted correspondant à la conversation et au texte.
+
+L'exécuteur est opt-in par compte (`messaging.executor`, `extension` par défaut). La migration `20261114160000_ylavint_desktop.sql` garde le verrou par compte, réserve les cinq types de tâches pris en charge et laisse les autres dans la file. L'ancien RPC ne peut pas prendre les tâches d'un compte en mode PC. Les clés de jumelage sont hachées en base et limitées au compte, au profil et aux actions poll/result ; le PC ne reçoit pas la session administrateur.
+
+Avant toute activation : appliquer la migration, déployer le site, générer l'archive avec `tools/package-adspower.ps1`, puis remplacer les fichiers du connecteur arrêté en conservant `.data`. L'archive contient une copie générée de `extensions/ylavint/page.js` et `read.js`, pas de données locales ni de clés. Le bouton de vérification ne réclame aucune tâche et n'envoie rien. Aucun compte n'est activé par la migration.
+
+Les envois possèdent un journal local durable. Au redémarrage, seuls leurs comptes rendus sont renvoyés au site. Un envoi partiel ou incertain met le compte en pause, sans réessai automatique. Un brouillon manuel, un changement de compte, un nouveau message acheteur ou un prix modifié empêchent la soumission. Les onglets créés par l'assistant sont fermés à l'arrêt ; les onglets de l'utilisateur et le profil restent ouverts.
+
+Vérification locale : tests de la migration avec un vrai moteur Postgres PGlite, des clés limitées au compte, de la file et des plafonds, des favoris/relances/IA, de la frappe, des confirmations et de l'annulation. La démo `preview.html#ylavint/assistant-pc` utilise un connecteur fictif et ne contacte ni AdsPower ni Vinted.
+
+Validation réelle encore nécessaire avant généralisation : confirmation d'un envoi complet sur un compte réservé et compatibilité avec l'ancienne messagerie. L'inspection du profil 42 a confirmé le champ `composer-input` et le bouton sans nom dans `composer`. Celle du profil 76 a confirmé `offer-modal`, `offer-price-field--input` (vide, prix actuel en placeholder) et `offer-submit-button`. Aucun texte, montant, message ni offre n'a été soumis. Les tests simulés ne prouvent pas la compatibilité de toutes les variantes Vinted. Ne pas présenter cette version comme validée en production tant que le pilote réel reste incomplet.
