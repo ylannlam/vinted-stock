@@ -21,13 +21,38 @@ test('the HTTP service preserves temporary verification errors without executing
   const states=await Promise.all([fetch(base+'/state',{headers}),fetch(base+'/state',{headers})])
   assert.ok(states.every(response=>response.status===200));assert.equal(verified,2);assert.equal(started,0)
   const state=await states[0].json()
-  assert.equal(state.version,'1.8.0');assert.equal(state.commerce_ui,true);assert.equal(state.browse_routine,true)
+  assert.equal(state.version,'1.8.1');assert.equal(state.commerce_ui,true);assert.equal(state.browse_routine,true)
 })
 
 test('local connection survives encrypted Windows storage without plaintext on disk',async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'stock-vinted-storage-')),key='dummy-secret-for-storage-test'
   try{await saveConfig(dir,{apiKey:key,port:50325});assert.deepEqual(await readConfig(dir),{apiKey:key,port:50325});if(process.platform==='win32')assert.equal((await readFile(path.join(dir,'connection.json'),'utf8')).includes(key),false)}
   finally{const relative=path.relative(path.resolve(tmpdir()),path.resolve(dir));if(relative.startsWith('stock-vinted-storage-')&&!relative.includes(path.sep))await rm(dir,{recursive:true,force:true})}
+})
+
+test('setup keeps the browser origin, explains the existing connection, and recovers from errors without replacing it',async t=>{
+ let saved=0,checked=0
+ const {server}=await createCompanion({load:async()=>({apiKey:'existing-protected-secret',port:50325}),save:async()=>{saved++},clientFactory:config=>({call:async()=>{checked++;if(config.apiKey==='invalid-key')throw new LocalError('Clé refusée par AdsPower.',401)}})})
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>server.close())
+ const base=`http://127.0.0.1:${server.address().port}`
+ const page=await fetch(base+'/setup'),html=await page.text(),token=html.match(/name="csrf" value="([\w-]+)"/)[1]
+ assert.equal(page.headers.get('Referrer-Policy'),'same-origin','no-referrer makes native form POST Origin:null')
+ assert.match(html,/Ta connexion AdsPower est déjà enregistrée/)
+ assert.match(html,/Ouvrir l’Assistant PC/)
+ assert.equal(html.includes('existing-protected-secret'),false)
+ for(const origin of ['null','https://evil.test']){
+  const forbidden=await fetch(base+'/setup',{method:'POST',headers:{Origin:origin,'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({csrf:token,apiKey:'new-dummy-key',port:'50325'})})
+  assert.equal(forbidden.status,403);assert.match(await forbidden.text(),/role="alert"/)
+ }
+ assert.equal(saved,0);assert.equal(checked,0)
+ const rejected=await fetch(base+'/setup',{method:'POST',headers:{Origin:base,'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({csrf:token,apiKey:'invalid-key',port:'50325'})})
+ assert.equal(rejected.status,401)
+ const retry=await rejected.text()
+ assert.match(retry,/Ta connexion AdsPower est déjà enregistrée/);assert.match(retry,/Clé refusée par AdsPower/)
+ assert.equal(retry.includes('invalid-key'),false);assert.equal(saved,0)
+ const renewed=retry.match(/name="csrf" value="([\w-]+)"/)[1]
+ const success=await fetch(base+'/setup',{method:'POST',redirect:'manual',headers:{Origin:base,'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({csrf:renewed,apiKey:'new-dummy-key',port:'50325'})})
+ assert.equal(success.status,303);assert.equal(saved,1);assert.equal(checked,2)
 })
 
 test('a partly configured profile retains confirmed starts and reports attention',async()=>{

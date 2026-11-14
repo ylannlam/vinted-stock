@@ -11,10 +11,10 @@ import {createProfile,replaceFingerprint,profileProxies} from './factory.mjs'
 import {createFactoryJournal} from './factory-journal.mjs'
 import {verifyTicket as verifyRemoteTicket,createTicketVerifier} from './authorization.mjs'
 import {DesktopAssistants} from './ylavint.mjs'
+import {setupPage} from './setup-page.mjs'
+import {prepareDataDirectory} from './data-directory.mjs'
 
-export const VERSION='1.8.0',PORT=17442,SITE='https://vinted-stock.vercel.app',LOCAL=`http://127.0.0.1:${PORT}`
-const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
-const html=(token,{configured=false,message='',port=50325}={})=>`<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connexion AdsPower · Stock Vinted</title><style>body{background:#f4f7f6;color:#173e35;font:16px system-ui;margin:0;padding:32px 16px}main{max-width:560px;margin:5vh auto;background:white;border:1px solid #dde7e2;border-radius:24px;padding:32px}p{line-height:1.6;color:#52675f}label{display:block;margin:20px 0 8px;font-weight:600}input{box-sizing:border-box;width:100%;padding:14px;border:1px solid #bacdc3;border-radius:10px;font:inherit}button,a{display:inline-block;padding:14px 20px;border:0;border-radius:10px;background:#087f6b;color:white;font:600 15px system-ui;text-decoration:none;margin-top:20px}small{display:block;color:#64756d;margin-top:12px}.notice{background:#e9f6ef;padding:15px;border-radius:12px}</style><main><small>STOCK VINTED · CONNEXION SUR CE PC</small><h1>AdsPower, prêt en un clic.</h1>${message?`<p role="status" class="notice">${escape(message)}</p>`:''}<p>${configured?'Une clé est déjà enregistrée sur ce PC. Tu peux la remplacer ci-dessous.':'Dans AdsPower, ouvre <strong>Automatisation → API</strong>, puis copie ta clé existante ici.'}</p><form method="post" action="/setup" autocomplete="off"><input type="hidden" name="csrf" value="${token}"><label for="key">Clé API AdsPower</label><input type="password" id="key" name="apiKey" required minlength="8" maxlength="512" autocomplete="off"><details><summary>Port de connexion</summary><label for="port">Port indiqué dans AdsPower</label><input type="number" id="port" name="port" value="${port}" min="1024" max="65535" required></details><button>Vérifier et enregistrer sur ce PC</button></form><small>La clé reste sur ce PC. Sous Windows, elle est protégée avec ton compte Windows. Cette étape n’ouvre aucun profil.</small>${configured?`<a href="${SITE}/#adspower">Revenir à mon site →</a>`:''}</main></html>`
+export const VERSION='1.8.1',PORT=17442,SITE='https://vinted-stock.vercel.app',LOCAL=`http://127.0.0.1:${PORT}`
 async function body(req){let size=0,parts=[];for await(const part of req){size+=part.length;if(size>16000)throw new LocalError('Demande trop volumineuse.',413);parts.push(part)}return Buffer.concat(parts).toString('utf8')}
 function json(res,status,value){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(value))}
 export async function verifyTicket(ticket,fetcher=fetch){
@@ -23,6 +23,7 @@ export async function verifyTicket(ticket,fetcher=fetch){
 export async function createCompanion({dataDir,verify=verifyTicket,clientFactory=c=>new AdsPowerClient(c),runner=startDotb,desktopRunner,load=readConfig,save=saveConfig,monitorOptions={}}={}){
   let config=await load(dataDir).catch(()=>null),ads=config?clientFactory(config):null,profiles=[],listAt=0,loadingList=null,settingUp=false
   const authorize=createTicketVerifier(verify),csrf=new Map()
+  const setupToken=()=>{const token=randomBytes(24).toString('base64url');csrf.set(token,Date.now()+1200000);if(csrf.size>8)csrf.delete(csrf.keys().next().value);return token}
   const queue=new LaunchQueue({run:(profile,update)=>runner(profile,update,ads)})
   const monitor=new RuntimeMonitor({...monitorOptions,getClient:()=>ads})
   const assistants=new DesktopAssistants({getClient:()=>ads,dataDir,...(desktopRunner?{run:desktopRunner}:{})})
@@ -50,6 +51,8 @@ export async function createCompanion({dataDir,verify=verifyTicket,clientFactory
       if(req.headers.host!==`127.0.0.1:${address.port}`)throw new LocalError('Adresse locale invalide.',403)
       const url=new URL(req.url,local),origin=req.headers.origin
       if(url.pathname==='/setup'){
+        // A no-referrer form POST has Origin:null in browsers, even on localhost.
+        res.setHeader('Referrer-Policy','same-origin')
         res.setHeader('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
         let message=url.searchParams.get('saved')==='1'?'Connexion enregistrée. Reviens sur le site et actualise la liste des profils.':''
         if(req.method==='POST'){
@@ -64,8 +67,7 @@ export async function createCompanion({dataDir,verify=verifyTicket,clientFactory
           res.writeHead(303,{Location:'/setup?saved=1'});res.end();return
         }
         if(req.method!=='GET')throw new LocalError('Méthode non autorisée.',405)
-        const token=randomBytes(24).toString('base64url');csrf.set(token,Date.now()+1200000);if(csrf.size>8)csrf.delete(csrf.keys().next().value)
-        res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(html(token,{configured:!!config,message,port:config?.port||50325}));return
+        res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(setupPage(setupToken(),{configured:!!config,message,port:config?.port||50325,site:SITE,version:VERSION}));return
       }
       if(origin!==SITE)throw new LocalError('Ouvre cet onglet depuis Stock Vinted.',403)
       res.setHeader('Access-Control-Allow-Origin',SITE);res.setHeader('Vary','Origin');res.setHeader('Access-Control-Allow-Private-Network','true')
@@ -121,14 +123,21 @@ export async function createCompanion({dataDir,verify=verifyTicket,clientFactory
         }
       }
       throw new LocalError('Commande inconnue.',404)
-    }catch(error){json(res,error.status||500,{error:error.status?error.message:'La connexion locale a été interrompue. Relance le connecteur.',...(error.code?{code:error.code}:{})})}
+    }catch(error){
+      const message=error.status?error.message:'La connexion locale a été interrompue. Relance le connecteur.'
+      if(res.getHeader('Content-Security-Policy')){
+        res.writeHead(error.status||500,{'Content-Type':'text/html; charset=utf-8'})
+        res.end(setupPage(setupToken(),{configured:!!config,error:true,message,port:config?.port||50325,site:SITE,version:VERSION}));return
+      }
+      json(res,error.status||500,{error:message,...(error.code?{code:error.code}:{})})
+    }
   })
   server.headersTimeout=15000;server.requestTimeout=20000
   server.on('close',()=>{void assistants.close()})
   return {server,queue,assistants}
 }
 async function main(){
-  const dir=path.join(path.dirname(fileURLToPath(import.meta.url)),'.data')
+  const dir=await prepareDataDirectory(path.dirname(fileURLToPath(import.meta.url)))
   const {server}=await createCompanion({dataDir:dir})
   server.on('error',error=>{console.error(error.code==='EADDRINUSE'?'Le connecteur est déjà ouvert. Reviens sur ton site.':'Impossible de démarrer le connecteur.');process.exitCode=1})
   server.listen(PORT,'127.0.0.1',()=>console.log(`Stock Vinted · AdsPower\nRéglages : ${LOCAL}/setup\nPrêt. Garde ce programme et AdsPower ouverts. Les profils démarrent seulement depuis ton site.`))
