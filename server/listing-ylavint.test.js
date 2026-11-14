@@ -52,6 +52,13 @@ test('publication availability reports old extensions and waiting profiles witho
  settings.extension_version='3.10.0';settings.paused=true;settings.pause_reason='Vérification du compte';assert.match((await publicationStatus(db,account)).waiting,/Vérification/)
 })
 
+test('PC mode refuses publication even when a recent extension was previously connected',async()=>{
+ const {db,settings,d,read}=fixture();settings.messaging={executor:'desktop'}
+ const state=await publicationStatus(db,account);assert.equal(state.ready,false);assert.match(state.reason,/mode Extension/)
+ await assert.rejects(queueYlavintListing(db,{id:owner},d,{read}),/mode Extension/)
+ assert.equal(db.calls.length,0)
+})
+
 test('only a prepared form can be marked published by an explicit user action with a Vinted link',async()=>{
  const {db,d,read}=fixture();Object.assign(d,{state:'attention',publish_provider:'ylavint',publication_task_id:crypto.randomUUID(),payload:{assisted:true,form_ready:true}})
  const r=await handleListingStudio({method:'POST',body:{action:'mark_published',id,version:d.version,url:'https://www.vinted.fr/items/123456'}},{db,user:{id:owner}},{read})

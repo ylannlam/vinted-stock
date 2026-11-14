@@ -10,6 +10,7 @@ import {sizeFromTitle} from '../src/lib/soldSize.js'
 import {parseOffers,planOffers} from './ylavint-offers.js'
 import {inHistory} from './ylavint-history.js'
 import {acceptableOffer} from './vinted-agent-config.js'
+import {isDesktop,executionSettings,EXTENSION_REQUIRED} from '../src/lib/ylavintExecution.js'
 
 const nowIso=(now=Date.now())=>new Date(now).toISOString()
 const MESSAGE_KINDS=new Set(['message','offer','action','status','photo'])
@@ -54,6 +55,7 @@ export async function knownConversations(db,accountId){
 }
 
 export async function applyInbox(db,task,result,{settings,now=Date.now()}={}){
+  settings=executionSettings(settings)
   const convs=parseInbox(result),at=nowIso(now),account=task.account_id
   if(!convs.length)return {conversations:0,new_messages:0,message:'Messagerie lue : aucune conversation.'}
   const ids=convs.map(c=>c.id)
@@ -120,7 +122,7 @@ export async function queueReply(db,{account_id,conversation_id,body,source='sit
   const conv=check(await db.from('ylavint_conversations').select('account_id,conversation_id,allow_reply').eq('account_id',account_id).eq('conversation_id',conversation_id).maybeSingle())
   if(!conv)throw new AppError('Conversation introuvable.',404)
   if(!conv.allow_reply)throw new AppError('Vinted ne permet plus de répondre dans cette conversation.',409)
-  const settings=check(await db.from('vinted_agent_settings').select('enabled,paused').eq('account_id',account_id).maybeSingle())
+  const settings=check(await db.from('vinted_agent_settings').select('enabled,paused,messaging').eq('account_id',account_id).maybeSingle())
   if(!settings?.enabled)throw new AppError('YlaVint n’est pas activé sur ce compte : active-le dans Réglages.',409)
   const id=localId(),at=nowIso(now)
   check(await db.from('ylavint_messages').insert({account_id,conversation_id,message_id:id,from_me:true,body:message,state:'queued',source,created_by:user,sent_at:nowIso(now+delayMs)}))
@@ -130,7 +132,7 @@ export async function queueReply(db,{account_id,conversation_id,body,source='sit
   const patch={last_message:message,last_message_at:at,last_from_me:true,updated_at:at}
   if(source==='site')Object.assign(patch,{ai_state:'none',ai_draft:null,site_read_at:at,needs_human:false})
   check(await db.from('ylavint_conversations').update(patch).eq('account_id',account_id).eq('conversation_id',conversation_id))
-  return {local_id:id,task_id:taskId,paused:!!settings.paused}
+  return {local_id:id,task_id:taskId,paused:!!settings.paused,executor:isDesktop(settings)?'desktop':'extension'}
 }
 // Vérifier le contexte connu au serveur, même pour un profil utilisant une ancienne extension.
 // L'extension récente relit aussi la conversation Vinted juste avant l'envoi automatique.
@@ -468,7 +470,7 @@ export async function ylavintView(req,{db}){
     if(!conv)throw new AppError('Conversation introuvable.',404)
     const [messages,names,settings]=await Promise.all([
       db.from('ylavint_messages').select('id,message_id,from_me,body,kind,sent_at,state,source,error').eq('account_id',account).eq('conversation_id',conversation).order('sent_at',{ascending:true}).limit(300).then(check),
-      logins(db),db.from('vinted_agent_settings').select('enabled,paused,pause_reason').eq('account_id',account).maybeSingle().then(check)])
+      logins(db),db.from('vinted_agent_settings').select('enabled,paused,pause_reason,messaging').eq('account_id',account).maybeSingle().then(check)])
     if(q.read!=='0')await db.from('ylavint_conversations').update({site_read_at:nowIso()}).eq('account_id',account).eq('conversation_id',conversation)
     return {conversation:{...conv,login:names.get(account)||null},messages,agent:settings||{enabled:false}}
   }
@@ -506,7 +508,7 @@ export async function handleYlavint(req,{db,user},{generate=generateReply}={}){
     return c
   }
   switch(b.action){
-    case 'reply':{await needConv();const r=await queueReply(db,{account_id:account,conversation_id:conversation,body:b.body,source:'site',user:user.id,manual:true});return {...r,message:r.paused?'Message en attente : YlaVint est en pause sur ce compte.':'Message envoyé à YlaVint : il part dès que le profil AdsPower est ouvert.'}}
+    case 'reply':{await needConv();const r=await queueReply(db,{account_id:account,conversation_id:conversation,body:b.body,source:'site',user:user.id,manual:true});return {...r,message:r.paused?'Message en attente : YlaVint est en pause sur ce compte.':r.executor==='desktop'?'Message en attente : démarre l’assistant de ce compte dans Assistant PC pour l’envoyer.':'Message envoyé à YlaVint : il part dès que le profil AdsPower est ouvert.'}}
     case 'ai_send':{const c=await needConv();if(!c.ai_draft)throw new AppError('Aucune proposition à envoyer.');const body=typeof b.body==='string'&&b.body.trim()?b.body:c.ai_draft
       const r=await queueReply(db,{account_id:account,conversation_id:conversation,body,source:'site',user:user.id,manual:true});return {...r,message:'Réponse validée et envoyée à YlaVint.'}}
     case 'mark_read':{await needConv();check(await db.from('ylavint_conversations').update({site_read_at:nowIso()}).eq('account_id',account).eq('conversation_id',conversation));return {saved:true}}
@@ -551,6 +553,8 @@ export async function handleYlavint(req,{db,user},{generate=generateReply}={}){
     }
     case 'item_unmask':case 'item_reprice':{
       if(!account||!vid(b.item_id))throw new AppError('Annonce invalide.')
+      const settings=check(await db.from('vinted_agent_settings').select('messaging').eq('account_id',account).maybeSingle())
+      if(isDesktop(settings))throw new AppError(EXTENSION_REQUIRED,409)
       const row=check(await db.from('vinted_agent_listings').select('*').eq('account_id',account).eq('item_id',String(b.item_id)).maybeSingle())
       if(!row)throw new AppError('Annonce introuvable dans le dressing lu.',404)
       const kind=b.action==='item_unmask'?'unmask_item':'reprice_item',can=await learned(db)

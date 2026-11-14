@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react'
 import {buttonClass,primaryClass,fieldClass} from './YlaVintUI'
+import {isDesktop} from '../lib/ylavintExecution'
 
 const ago=v=>{if(!v)return '';const m=Math.round((Date.now()-Date.parse(v))/60000);if(m<1)return 'à l’instant';if(m<60)return `${m} min`;if(m<1440)return `${Math.round(m/60)} h`;return new Date(v).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})}
 const hour=v=>v?new Date(v).toLocaleString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Europe/Paris'}):''
@@ -36,6 +37,7 @@ function Thread({request,conv,onBack,onChanged}){
    <p className="min-w-0 flex-1 truncate text-sm">{c.item_title||'Article'}</p>{c.item_price!=null&&<span className="text-sm font-semibold">{Number(c.item_price).toFixed(2).replace('.',',')} €</span>}
   </div>}
   {agent&&(!agent.enabled||agent.paused)&&<p className="bg-amber-50 px-4 py-2 text-xs text-amber-900">{!agent.enabled?'YlaVint n’est pas activé sur ce compte : les réponses ne partiront pas.':`YlaVint est en pause sur ce compte (${agent.pause_reason||'à relancer'}) : tes réponses attendront la reprise.`}</p>}
+  {isDesktop(agent)&&<p className="bg-blue-50 px-4 py-2 text-xs text-blue-900">Ce compte utilise l’Assistant PC : ses réponses restent en attente tant que tu ne l’as pas démarré dans cette rubrique, avec le PC éveillé et le connecteur ouvert.</p>}
   <div className="flex-1 space-y-2 overflow-y-auto bg-[#faf8f5] px-3 py-4 sm:px-4">
    {!data&&<p className="text-sm text-slate-500">Chargement…</p>}
    {data&&!data.messages.length&&<p className="text-sm text-slate-500">Les messages arrivent à la prochaine lecture de YlaVint.</p>}
@@ -44,7 +46,7 @@ function Thread({request,conv,onBack,onChanged}){
      <p className="whitespace-pre-wrap break-words">{m.kind==='offer'?'💶 ':''}{m.body}</p>
      <p className={`mt-1 text-[11px] ${m.from_me?'text-white/70':'text-slate-400'}`}>{hour(m.sent_at)}{m.source==='ai'?' · agent IA':m.source==='likes'?' · après un like':''}{STATE_TEXT[m.state]?` · ${STATE_TEXT[m.state]}`:''}{m.error?` · ${m.error}`:''}</p>
      {m.state==='queued'&&<button className="mt-1 text-[11px] underline" disabled={busy} onClick={()=>act({action:'cancel_message',message_id:m.message_id})}>Annuler l’envoi</button>}
-     {m.state==='failed'&&<button className="mt-1 text-[11px] underline" disabled={busy} onClick={()=>act({action:'retry_message',message_id:m.message_id})}>Renvoyer</button>}
+     {m.state==='failed'&&<button className="mt-1 text-[11px] underline" disabled={busy} onClick={()=>{if(!isDesktop(agent)||window.confirm('Vérifie d’abord la conversation sur Vinted : si le message est déjà présent, ne le renvoie pas. Confirmer un nouvel envoi de ce texte ?'))act({action:'retry_message',message_id:m.message_id})}}>Renvoyer</button>}
     </div></div>)}
    <div ref={end}/>
   </div>
@@ -95,7 +97,7 @@ export default function YlaVintInbox({request,accounts=[]}){
      </button></li>})}</ul>
    </div>
    <div className={current?'':'hidden lg:block'}>{current?<Thread key={`${current.account_id}:${current.conversation_id}`} request={request} conv={current} onBack={()=>setCurrent(null)} onChanged={load}/>
-    :<div className="grid min-h-[60vh] place-items-center p-8 text-center text-sm text-slate-500"><div><p className="text-base font-semibold text-slate-700">Toutes tes conversations, au même endroit</p><p className="mt-1">Choisis une conversation. Tes réponses partent par le Bridge YlaVint du compte dès que son profil AdsPower est ouvert.</p></div></div>}</div>
+    :<div className="grid min-h-[60vh] place-items-center p-8 text-center text-sm text-slate-500"><div><p className="text-base font-semibold text-slate-700">Toutes tes conversations, au même endroit</p><p className="mt-1">Choisis une conversation. Tes réponses partent avec le mode choisi pour ce compte : extension connectée ou Assistant PC démarré.</p></div></div>}</div>
   </div>
  </section>
 }

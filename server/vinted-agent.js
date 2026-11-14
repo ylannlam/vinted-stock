@@ -7,7 +7,8 @@ import {copiedSettings,COPY_GROUPS} from './ylavint-settings-copy.js'
 // Les actions qui modifient Vinted ne partent qu'avec une « recette » relevée sur le vrai site Vinted
 // (mode apprentissage) : jamais de requête devinée.
 import {AppError,isId} from './dotb.js'
-import {desktopDriver,DESKTOP_KINDS} from './ylavint-desktop.js'
+import {desktopDriver,desktopWindow,DESKTOP_KINDS} from './ylavint-desktop.js'
+import {executionSettings,isDesktop,supportsTask,EXTENSION_REQUIRED} from '../src/lib/ylavintExecution.js'
 
 export const BUCKET='creative-assets'
 export const check=r=>{if(r.error)throw r.error;return r.data}
@@ -33,6 +34,7 @@ export const jitter=(min,max,rand=Math.random)=>Math.round(minutes(min+(max-min)
 
 // Lectures périodiques à programmer pour ce compte, selon les fonctions actives et la dernière lecture.
 export function dueScans(settings,last={},now=Date.now()){
+  settings=executionSettings(settings)
   const f=settings.features
   const every={scan_wardrobe:120,sync_orders:30,scan_likes:2,sync_inbox:(settings.messaging?.sync_seconds||20)/60}
   const o=settings.order_flow||{},flow=!!(o.confirm?.enabled||o.extension?.enabled||o.cancel?.enabled||o.pickup?.enabled||o.review?.enabled||o.delete_sold)
@@ -207,6 +209,7 @@ export async function agentPoll(db,key,body,now=Date.now()){
   const version=text(body.version,20)
   const row=check(await db.from('vinted_agent_settings').select('*').eq('account_id',account.id).maybeSingle())
   const driver=desktopDriver(key)
+  if(driver==='desktop'&&!/^pc-1\.(?:[3-9]|[1-9]\d)\./.test(version))return {state:'update_required',message:'Mets à jour le connecteur 1.3 pour utiliser les lectures visibles.',wait_seconds:600}
   if((row?.messaging?.executor||'extension')!==driver)return {state:'other_executor',message:driver==='extension'?'Ce compte est confié à l’assistant PC.':'Ce compte est confié à l’extension.',wait_seconds:60}
   const claim=()=>db.rpc('claim_vinted_agent_task',driver==='desktop'?{p_account:account.id,p_driver:driver}:{p_account:account.id})
   // YlaVint coupé sur ce compte : simple signal de présence (Bridge connecté), nouvel appel dans 10 min.
@@ -237,7 +240,7 @@ export async function agentPoll(db,key,body,now=Date.now()){
       row.paused=false
     }else pauseNote=`${STOP.rate_limited} : reprise automatique vers ${new Date(Date.parse(row.paused_at)+wait*60000).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Paris'})}`
   }
-  const settings=effectiveSettings(row)
+  const settings=executionSettings(effectiveSettings(row))
   if(!row.paused){
     const recent=check(await db.from('vinted_agent_tasks').select('kind,created_at').eq('account_id',account.id).in('kind',SCANS).neq('state','cancelled').order('created_at',{ascending:false}).limit(40))
     const last={};for(const t of recent)last[t.kind]??=t.created_at
@@ -259,9 +262,9 @@ export async function agentPoll(db,key,body,now=Date.now()){
   const extra=await (await import('./ylavint.js')).pollExtras(db,account,settings,{paused:row.paused,draft:claimed?.state!=='task'}).catch(e=>{console.error('ylavint_poll_extra_failed',{code:e.code||e.status||'unknown'});return {}})
   if(claimed?.state==='idle'&&extra.ai==='queued')claimed=check(await claim())
   // Des messages attendent l'écart entre deux envois : on repasse vite pour tenir le délai réglé (30 à 45 s par défaut).
-  const nextMessage=claimed?.state==='idle'?check(await db.from('vinted_agent_tasks').select('not_before').eq('account_id',account.id).eq('state','queued').in('kind',['reply_message','like_message','order_message','accept_offer']).order('not_before',{ascending:true}).limit(1))[0]:null
-  const from=settings.limits.from_hour,to=settings.limits.to_hour,hour=Number(new Date(now).toLocaleString('fr-FR',{hour:'2-digit',hourCycle:'h23',timeZone:'Europe/Paris'}))
-  const inWindow=from===to||(from<to?hour>=from&&hour<to:hour>=from||hour<to)
+  const nextMessage=claimed?.state==='idle'?check(await db.from('vinted_agent_tasks').select('not_before').eq('account_id',account.id).eq('state','queued').in('kind',MESSAGE_KINDS.filter(kind=>supportsTask(settings,kind))).order('not_before',{ascending:true}).limit(1))[0]:null
+  const from=settings.limits.from_hour,to=settings.limits.to_hour
+  const inWindow=desktopWindow(settings.limits,now)
   const waitingNote=nextMessage&&!inWindow?`Messages en attente : envoi entre ${from} h et ${to} h (réglage Créneau).`:null
   const dueIn=nextMessage?Math.ceil((Date.parse(nextMessage.not_before)-Date.now())/1000):null
   const idleWait=nextMessage?(dueIn>0?Math.max(1,Math.min(20,dueIn)):Math.max(5,Math.min(15,Math.round((settings.messaging.action_gap_min||30)/3)))):settings.features.inbox||settings.features.ai||settings.messaging.offers.enabled?Math.min(20,settings.messaging.sync_seconds):120
@@ -274,7 +277,7 @@ export async function agentPoll(db,key,body,now=Date.now()){
     if(claimed.task.kind==='reply_message')await (await import('./ylavint.js')).replyFailed(db,claimed.task,'Envoi de message pas encore appris : envoie un message à la main sur Vinted une fois.')
     return {state:'idle',account:account.login,...extra,wait_seconds:30}
   }
-  return {state:'task',account:account.login,...extra,task:{...bundle,lease_until:claimed.task.lease_until}}
+  return {state:'task',account:account.login,...extra,task:{...bundle,lease_until:claimed.task.lease_until,...(driver==='desktop'?{settings_version:row.version}:{})}}
 }
 const finish=(db,task,state,result,error)=>db.rpc('finish_vinted_agent_task',{p_task:task.id,p_lease:task.lease,p_state:state,p_result:task.kind==='publish_item'?{...result,...(task.result?.progress?{progress:task.result.progress}:{})}:result,p_error:error}).then(check)
 
@@ -404,7 +407,7 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
     if(flows.isFlowTask(task.kind))await flows.flowDone(db,task,{ok:false,error:detail||'échec'}).catch(()=>null)
     return {saved:true}
   }
-  const settings=effectiveSettings(check(await db.from('vinted_agent_settings').select('*').eq('account_id',task.account_id).maybeSingle()))
+  const settings=executionSettings(effectiveSettings(check(await db.from('vinted_agent_settings').select('*').eq('account_id',task.account_id).maybeSingle())))
   let summary={}
   if(task.kind==='scan_wardrobe')summary=await applyWardrobe(db,task,parseWardrobe(body.result),settings,{now,rand})
   if(task.kind==='sync_orders')summary=await applyOrders(db,task,parseOrders(body.result),settings,{rand})
@@ -634,6 +637,7 @@ export async function handleAgent(req,{db,user}){
     const exists=check(await db.from('publication_accounts').select('id').eq('id',account).maybeSingle());if(!exists)throw new AppError('Compte introuvable.',404)
     const current=check(await db.from('vinted_agent_settings').select('*').eq('account_id',account).maybeSingle())
     const settings=effectiveSettings(current)
+    if(isDesktop(settings))throw new AppError(EXTENSION_REQUIRED,409)
     settings.features.publish=true
     const row={enabled:true,features:settings.features,updated_at:new Date().toISOString(),updated_by:user?.id||null,version:(current?.version||0)+1}
     if(current){const saved=check(await db.from('vinted_agent_settings').update(row).eq('account_id',account).eq('version',current.version).select('account_id'));if(!saved.length)throw new AppError('Réglages modifiés entre-temps : réessaie.',409)}
@@ -682,6 +686,8 @@ export async function handleAgent(req,{db,user}){
   }
   if(body.action==='enqueue'){
     if(!account||!SCANS.includes(body.kind))throw new AppError('Lecture inconnue.')
+    const settings=check(await db.from('vinted_agent_settings').select('messaging').eq('account_id',account).maybeSingle())
+    if(!supportsTask(settings,body.kind))throw new AppError(EXTENSION_REQUIRED,409)
     const added=await enqueue(db,[{account_id:account,kind:body.kind,dedupe_key:`${body.kind}:${account}`,created_by:user.id,priority:3}])
     return {queued:added}
   }

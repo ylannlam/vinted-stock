@@ -1,4 +1,5 @@
 import {useEffect,useState} from 'react'
+import {isDesktop,executionSettings} from '../lib/ylavintExecution'
 import {buttonClass,compactClass,Pill,PageTitle,Table,Td} from './YlaVintUI'
 import {when} from './YlaVintTab'
 
@@ -15,7 +16,7 @@ export default function YlaVintWardrobe({request,accounts=[]}){
  async function act(body){setBusy(true);setError('');setNotice('');try{const r=await request('POST',{account_id:account,...body});setNotice(r.message||(r.queued?'Demandé à YlaVint.':'Déjà prévu.'));await load()}catch(e){setError(e.message)}finally{setBusy(false)}}
  const reprice=l=>{const v=window.prompt(`Nouveau prix pour « ${l.title||l.item_id} » (actuel ${euros(l.price)}) :`,l.price!=null?String(Math.max(1,Number(l.price)-1)):'');if(v)act({action:'item_reprice',item_id:l.item_id,new_price:Number(v.replace(',','.'))})}
  const rows=(data?.listings||[]).filter(l=>(state==='all'||l.state===state)&&(!q||`${l.title} ${l.item_id}`.toLowerCase().includes(q.toLowerCase())))
- const f=data?.settings?.features||{}
+ const desktop=isDesktop(data?.settings),f=executionSettings(data?.settings)?.features||{}
  return <div className="space-y-4">
   <PageTitle title="Articles Vinted" hint="Le dressing de chaque compte, relu par YlaVint toutes les 2 h quand « Dressing », « Démasquage » ou « Prix » est actif. Il alimente aussi le suivi « Tes publications, jour après jour »."/>
   <div className="flex flex-wrap items-center gap-2">
@@ -24,6 +25,7 @@ export default function YlaVintWardrobe({request,accounts=[]}){
    <button className={buttonClass} disabled={busy||!data?.settings?.enabled} onClick={()=>act({action:'enqueue',kind:'scan_wardrobe'})}>↻ Relire le dressing</button>
    <span className="ml-auto text-xs text-zinc-500">Dernière lecture : {when(data?.last_scan)} · démasquage {f.unmask?'auto':'manuel'} · prix {f.pricing?'auto':'manuels'}</span>
   </div>
+  {desktop&&<p className="text-sm text-amber-300">L’Assistant PC peut relire le dressing. Les changements de prix et le démasquage nécessitent le mode Extension.</p>}
   {data&&<div className="flex flex-wrap gap-1">{STATES.map(([k,l])=><button key={k} onClick={()=>setState(k)} className={`rounded-md px-2.5 py-1 text-xs font-medium ${state===k?'bg-zinc-100 text-zinc-900':'text-zinc-400 hover:bg-zinc-800'}`}>{l} <span className="opacity-60">{k==='all'?data.listings.length:data.counts[k]||0}</span></button>)}</div>}
   {error&&<p role="alert" className="text-sm text-rose-400">{error}</p>}
   {notice&&<p role="status" className="text-sm text-blue-300">{notice}</p>}
@@ -37,7 +39,7 @@ export default function YlaVintWardrobe({request,accounts=[]}){
     <Td><Pill tone={tone}>{label}</Pill></Td>
     <Td className="whitespace-nowrap text-xs text-zinc-400">{when(l.listed_at)}</Td>
     <Td className="text-xs text-zinc-400">{l.repairs||0}</Td>
-    <Td className="whitespace-nowrap text-right">{['visible','hidden','repairing'].includes(l.state)&&<>
+    <Td className="whitespace-nowrap text-right">{!desktop&&['visible','hidden','repairing'].includes(l.state)&&<>
      {l.state==='hidden'&&<button className="mr-2 rounded-md bg-rose-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-50" disabled={busy||l.busy} onClick={()=>act({action:'item_unmask',item_id:l.item_id})}>Démasquer</button>}
      <button className="rounded-md border border-zinc-700 px-2.5 py-1 text-xs hover:bg-zinc-800 disabled:opacity-50" disabled={busy||l.busy} onClick={()=>reprice(l)}>{l.busy?'Prévu…':'Prix'}</button></>}</Td>
    </tr>})}

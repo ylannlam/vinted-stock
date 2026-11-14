@@ -3,6 +3,11 @@ import assert from 'node:assert/strict'
 import {normalizeSettings,acceptableOffer} from './vinted-agent-config.js'
 import {parseOffers,planOffers} from './ylavint-offers.js'
 const offer={id:'30',transaction_id:'20',buyer_id:'88',price:40,original_price:50,currency:'EUR',is_bundle:false}
+
+test('PC mode never queues automatic acceptance even with saved extension settings',async()=>{
+ const config=normalizeSettings({messaging:{executor:'desktop',offers:{enabled:true}}})
+ assert.equal(await planOffers({from(){assert.fail('unsupported acceptance must never enter the queue')}},'account',[],config),0)
+})
 test('offers disabled by default; exact cents and separate bundle threshold',()=>{
  const config=normalizeSettings().messaging.offers
  assert.equal(acceptableOffer(offer,config),false)

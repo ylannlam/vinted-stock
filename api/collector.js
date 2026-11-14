@@ -16,10 +16,12 @@ export default async function handler(req,res) {
     if(req.headers.authorization?.startsWith('Bearer svwk_')) {
       // Extension des profils AdsPower : veille du compte (bandeau Vinted) et, depuis la version 2, agent Vinted.
       const action=req.body?.action
-      if(req.method!=='POST'||!['watch_report','agent_poll','agent_progress','agent_result','agent_learn','agent_self'].includes(action))throw new AppError('Action non autorisée pour cette extension.',403)
+      if(req.method!=='POST'||!['watch_report','agent_poll','agent_progress','agent_result','agent_guard','agent_status','agent_learn','agent_self'].includes(action))throw new AppError('Action non autorisée pour cette extension.',403)
       const {authorizeWatch,watchReport,recordWatch}=await import('../server/vinted-watch.js')
       const {db,key}=await authorizeWatch(req)
       await (await import('../server/ylavint-desktop.js')).authorizeDesktop(db,key,req.body)
+      if(action==='agent_guard')return res.json(await (await import('../server/ylavint-desktop.js')).guardDesktop(db,key,req.body))
+      if(action==='agent_status')return res.json(await (await import('../server/ylavint-desktop.js')).statusDesktop(db,key))
       const agent=await import('../server/vinted-agent.js')
       if(action==='watch_report'){
         const report=watchReport(req.body),saved=await recordWatch(db,key,report)

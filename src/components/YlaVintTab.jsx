@@ -1,9 +1,12 @@
 import {useEffect,useMemo,useState,lazy,Suspense} from 'react'
-import {buttonClass,primaryClass,fieldClass,compactClass,Pill,Card,PageTitle,StatCard,Table,Td} from './YlaVintUI'
+import {buttonClass,primaryClass,fieldClass,compactClass,Pill,Card,PageTitle,Table,Td,Icon} from './YlaVintUI'
+import YlaVintDashboard from './YlaVintDashboard'
+import '../ylavint.css'
 import VintedWatchPanel,{vintedWatchRequest} from './VintedWatchPanel'
 import {ORDER_LABELS} from '../lib/fulfillment'
 import {LikesSettings,FlowSettings} from './YlaVintFlows'
 import ylavintManifest from '../../extensions/ylavint/manifest.json'
+import {isDesktop,supportsFeature,supportsTask,DESKTOP_DEFAULTS,DESKTOP_BOUNDS,DESKTOP_LABELS} from '../lib/ylavintExecution'
 
 const YlaVintInbox=lazy(()=>import('./YlaVintInbox'))
 const YlaVintAi=lazy(()=>import('./YlaVintAi'))
@@ -57,12 +60,22 @@ function AccountSettings({account,defaults,onSave,busy,only}){
  const set=(group,key,value)=>setForm(f=>({...f,[group]:{...f[group],[key]:value}}))
  const show=g=>!only||only==='all'||GROUPS[only]?.includes(g)
  const feats=only&&only!=='all'?FEATURES.filter(([k])=>FEATURE_SETS[only].includes(k)):FEATURES
+ const desktop=isDesktop(form)
+ const pace={...DESKTOP_DEFAULTS,...form.messaging.desktop}
+ const setPace=(key,value)=>set('messaging','desktop',{...pace,[key]:value})
  return <div className="space-y-4">
   <label className="flex items-center gap-2 text-sm font-medium text-white"><input type="checkbox" className="accent-blue-500" checked={form.enabled} onChange={e=>setForm({...form,enabled:e.target.checked})}/> YlaVint actif sur ce compte</label>
   <label className="block text-sm">Exécution<select className={fieldClass+' mt-2'} value={form.messaging.executor||'extension'} onChange={e=>set('messaging','executor',e.target.value)}><option value="extension">Extension — toutes les fonctions</option><option value="desktop">Assistant PC — favoris et réponses IA</option></select></label>
   {form.messaging.executor==='desktop'&&<p className="text-xs text-zinc-400">L’extension attend pendant que l’assistant PC gère ce compte. Les autres fonctions reprendront en repassant au mode Extension.</p>}
+  {desktop&&<fieldset className="space-y-3 rounded-xl border border-zinc-700 p-4"><Legend>Rythme et navigation sur Vinted</Legend>
+   <p className="text-xs text-zinc-400">L’assistant utilise les pages visibles pour lire et agir. Ces réglages contrôlent son rythme ; ils ne garantissent pas qu’une automatisation soit indétectable.</p>
+   <div className="grid gap-3 sm:grid-cols-2">{['typing_delay_ms','page_wait_seconds','session_minutes','pause_minutes'].map(k=><Num key={k} label={DESKTOP_LABELS[k]} value={pace[k]} min={DESKTOP_BOUNDS[k][0]} max={DESKTOP_BOUNDS[k][1]} suffix={k==='typing_delay_ms'?'ms':k==='page_wait_seconds'?'s':'min'} onChange={v=>setPace(k,v)}/>)}</div>
+   <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={pace.browse_enabled} onChange={e=>setPace('browse_enabled',e.target.checked)}/> Consulter des annonces entre les tâches</label>
+   <p className="text-xs text-zinc-400">Consultation et défilement uniquement, sans like, abonnement, achat ni message. Les messages à traiter restent prioritaires.</p>
+   {pace.browse_enabled&&<div className="grid gap-3 sm:grid-cols-2">{['browse_every_minutes','browse_items','browse_item_seconds','browse_scrolls'].map(k=><Num key={k} label={DESKTOP_LABELS[k]} value={pace[k]} min={DESKTOP_BOUNDS[k][0]} max={DESKTOP_BOUNDS[k][1]} suffix={k==='browse_every_minutes'?'min':k==='browse_item_seconds'?'s':undefined} onChange={v=>setPace(k,v)}/>)}</div>}
+  </fieldset>}
   <fieldset><Legend>Fonctions</Legend>
-   <div className="mt-2 grid gap-2 sm:grid-cols-2">{feats.map(([k,l])=><label key={k} className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-sm text-zinc-200"><input type="checkbox" className="accent-blue-500" checked={!!form.features[k]} onChange={e=>set('features',k,e.target.checked)}/>{l}</label>)}</div>
+   <div className="mt-2 grid gap-2 sm:grid-cols-2">{feats.map(([k,l])=><label key={k} className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-sm text-zinc-200"><input type="checkbox" className="accent-blue-500" disabled={!supportsFeature(form,k)} checked={!!form.features[k]} onChange={e=>set('features',k,e.target.checked)}/>{l}{!supportsFeature(form,k)&&<span className="text-xs text-amber-300">Mode Extension requis</span>}</label>)}</div>
    {feats.some(([k])=>k==='sales')&&<p className="mt-2 text-xs text-zinc-500">« Ventes → onglet Ventes » remplace le webhook Dotb pour ce compte : coupe d’abord Dotb sur ce compte. Une vente déjà reçue de Dotb n’est jamais dupliquée.</p>}
   </fieldset>
   {show('messaging')&&<fieldset className="grid grid-cols-2 gap-3 sm:grid-cols-3"><Legend>Messagerie</Legend>
@@ -79,13 +92,20 @@ function AccountSettings({account,defaults,onSave,busy,only}){
    {show('messaging')&&<><HistorySelect label="Messages (Smart Agent)" what="nouveaux messages" value={form.messaging.history_hours??0} onChange={v=>set('messaging','history_hours',v)}/><HistorySelect label="Offres" what="nouvelles offres" value={form.messaging.offers?.history_hours??0} onChange={v=>set('messaging','offers',{...defaults.messaging.offers,...form.messaging.offers,history_hours:v})}/></>}
    </div>
   </fieldset>}
-  {show('messaging')&&<fieldset className="space-y-3"><Legend>Acceptation automatique des offres</Legend>
+  {(show('likes')||show('messaging'))&&<fieldset className="grid grid-cols-2 gap-3"><Legend>Horaires et plafonds d’envoi</Legend>
+   <Num label="Début des envois (heure de Paris)" value={form.limits.from_hour} max={23} suffix="h" onChange={v=>set('limits','from_hour',v)}/>
+   <Num label="Fin des envois (heure de Paris)" value={form.limits.to_hour} max={23} suffix="h" onChange={v=>set('limits','to_hour',v)}/>
+   <p className="col-span-full text-xs text-zinc-400">Deux heures identiques autorisent les envois toute la journée. Ces horaires s’appliquent aux messages de ce compte.</p>
+   {show('likes')&&<Num label="Messages aux likes / jour (relances incluses)" value={form.limits.like_message_per_day} max={1000000} onChange={v=>set('limits','like_message_per_day',v)}/>}
+  </fieldset>}
+  {show('messaging')&&<fieldset disabled={desktop} className="space-y-3"><Legend>Acceptation automatique des offres</Legend>
+   {desktop&&<p className="text-xs text-amber-300">Mode Extension requis pour accepter les offres reçues. L’Assistant PC peut envoyer les réductions réglées dans Likes d’articles.</p>}
    <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!form.messaging.offers?.enabled} onChange={e=>set('messaging','offers',{...defaults.messaging.offers,...form.messaging.offers,enabled:e.target.checked})}/> Accepter les offres qui atteignent mes seuils</label>
    <div className="grid grid-cols-2 gap-3">{[['single_discount','Remise maximale — article seul',0,80,'%'],['bundle_discount','Remise maximale — lot',0,80,'%'],['max_per_buyer','Offres par acheteur',1,100,''],['period_days','Sur une période de',1,30,'jours']].map(([key,label,min,max,suffix])=><Num key={key} label={label} value={form.messaging.offers?.[key]??defaults.messaging.offers?.[key]} min={min} max={max} suffix={suffix} onChange={v=>set('messaging','offers',{...defaults.messaging.offers,...form.messaging.offers,[key]:v})}/>)}</div>
    <p className="text-xs text-zinc-400">Acceptation réelle sur Vinted, sans message. Prix et statut revérifiés avant l’action. Les offres sous le seuil et les négociations écrites restent à traiter par toi. Nécessite YlaVint 3.6.0 pour le choix de l’historique.</p>
   </fieldset>}
   {show('likes')&&<LikesSettings likes={form.likes} onChange={likes=>setForm(f=>({...f,likes}))} gap={form.messaging} onGap={(k,v)=>set('messaging',k,v)}/>}
-  {show('order_flow')&&<FlowSettings flow={form.order_flow} onChange={order_flow=>setForm(f=>({...f,order_flow}))} features={form.features} onFeature={(k,v)=>set('features',k,v)}/>}
+  {show('order_flow')&&<fieldset disabled={desktop}>{desktop&&<p className="mb-2 text-xs text-amber-300">Le flux de commande reste réservé au mode Extension.</p>}<FlowSettings flow={form.order_flow} onChange={order_flow=>setForm(f=>({...f,order_flow}))} features={form.features} onFeature={(k,v)=>set('features',k,v)}/></fieldset>}
   {show('limits')&&<fieldset className="grid grid-cols-2 gap-3 sm:grid-cols-4"><Legend>Plafonds des modifications</Legend>
    <Num label="Modifications / jour" value={form.limits.writes_per_day} max={200} onChange={v=>set('limits','writes_per_day',v)}/>
    <Num label="Écart minimal" value={form.limits.min_gap_minutes} min={1} max={240} suffix="min" onChange={v=>set('limits','min_gap_minutes',v)}/>
@@ -93,14 +113,14 @@ function AccountSettings({account,defaults,onSave,busy,only}){
    <Num label="Baisses de prix / jour" value={form.limits.reprice_item_per_day} max={100} onChange={v=>set('limits','reprice_item_per_day',v)}/>
    <Num label="Publications / jour" value={form.limits.publish_item_per_day} max={100} onChange={v=>set('limits','publish_item_per_day',v)}/>
   </fieldset>}
-  {show('unmask')&&<fieldset className="grid grid-cols-2 gap-3 sm:grid-cols-5"><Legend>Démasquage</Legend>
+  {show('unmask')&&<fieldset disabled={desktop} className="grid grid-cols-2 gap-3 sm:grid-cols-5"><Legend>Démasquage{desktop?' — mode Extension requis':''}</Legend>
    <Num label="Baisse par réparation" value={form.unmask.price_drop} step={0.5} max={10} suffix="€" onChange={v=>set('unmask','price_drop',v)}/>
    <Num label="Baisse maximale" value={form.unmask.max_drop} step={0.5} max={50} suffix="€" onChange={v=>set('unmask','max_drop',v)}/>
    <Num label="Jamais sous" value={form.unmask.floor} min={1} step={0.5} suffix="€" onChange={v=>set('unmask','floor',v)}/>
    <Num label="Réparations max" value={form.unmask.max_repairs} max={10} onChange={v=>set('unmask','max_repairs',v)}/>
    <Num label="Attente entre deux" value={form.unmask.wait_hours} min={1} max={168} suffix="h" onChange={v=>set('unmask','wait_hours',v)}/>
   </fieldset>}
-  {show('pricing')&&<fieldset className="grid grid-cols-2 gap-3 sm:grid-cols-5"><Legend>Prix & cycle de vie</Legend>
+  {show('pricing')&&<fieldset disabled={desktop} className="grid grid-cols-2 gap-3 sm:grid-cols-5"><Legend>Prix & cycle de vie{desktop?' — mode Extension requis':''}</Legend>
    <Num label="Première baisse après" value={form.pricing.after_days} min={1} max={90} suffix="j" onChange={v=>set('pricing','after_days',v)}/>
    <Num label="Baisse" value={form.pricing.step} min={0.5} step={0.5} max={20} suffix="€" onChange={v=>set('pricing','step',v)}/>
    <Num label="Puis tous les" value={form.pricing.every_days} min={1} max={60} suffix="j" onChange={v=>set('pricing','every_days',v)}/>
@@ -115,7 +135,7 @@ function AccountSettings({account,defaults,onSave,busy,only}){
 function Drawer({title,onClose,children}){
  useEffect(()=>{const f=e=>e.key==='Escape'&&onClose();window.addEventListener('keydown',f);return()=>window.removeEventListener('keydown',f)},[])
  return <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={onClose}>
-  <aside role="dialog" aria-label={title} className="h-full w-full max-w-2xl overflow-y-auto border-l border-zinc-800 bg-[#141416] p-5 text-zinc-100" onClick={e=>e.stopPropagation()}>
+  <aside role="dialog" aria-modal="true" aria-label={title} className="ylv-drawer h-full w-full max-w-2xl overflow-y-auto border-l border-zinc-800 p-5 text-zinc-100 sm:p-7" onClick={e=>e.stopPropagation()}>
    <div className="mb-4 flex items-center justify-between gap-2"><h2 className="font-semibold text-white">{title}</h2><button className={buttonClass+' px-2.5 py-1.5'} onClick={onClose} aria-label="Fermer">✕</button></div>
    {children}
   </aside>
@@ -139,9 +159,9 @@ function AutomationTable({kind,accounts,data,busy,act,chips,setConfigure}){
   <Table head={['','Compte','Réglages actuels','Dernière mise à jour','']} empty={!rows.length&&'Aucun compte.'}>
    {rows.map(a=><tr key={a.id} className="hover:bg-zinc-800/30">
     <Td className="w-48"><button className={buttonClass+' py-1.5 text-xs'} disabled={busy||!a.settings} title={a.settings?'':'Configure d’abord ce compte'} onClick={()=>useAsSource(a)}>Copier ces réglages vers tous</button><button className={buttonClass+' mt-2 py-1.5 text-xs'} disabled={busy||!a.settings} onClick={()=>useAsSource(a,'all')}>Copier tous les paramètres</button></Td>
-    <Td><p className="flex items-center gap-2 font-semibold text-white"><span className={`h-2 w-2 rounded-full ${bridgeOnline(a)?'bg-emerald-400':'bg-zinc-600'}`} title={bridgeOnline(a)?'Bridge connecté':'Bridge non connecté'}/>{a.login}<span className="rounded bg-zinc-800 px-1 text-[10px] text-zinc-400">FR</span></p>
-     <p className="text-xs text-zinc-500">{!a.settings?.enabled?'YlaVint non activé':a.settings.paused?'En pause':'Actif'}</p></Td>
-    <Td><div className="flex max-w-xl flex-wrap gap-1.5">{chips(a)}</div></Td>
+    <Td><p className="flex items-center gap-2 font-semibold text-white"><span className={`h-2 w-2 rounded-full ${bridgeOnline(a)?'bg-emerald-400':'bg-zinc-600'}`} title={bridgeOnline(a)?'Contact récent':'Pas de contact récent'}/>{a.login}<span className="rounded bg-zinc-800 px-1 text-[10px] text-zinc-400">FR</span></p>
+     <p className="text-xs text-zinc-500">{!a.settings?.enabled?'YlaVint non activé':a.settings.paused?'En pause':'Activé'} · {isDesktop(a.settings)?'Assistant PC':'Extension'}</p>{isDesktop(a.settings)&&['flux','prix'].includes(kind)&&<p className="text-xs text-amber-300">Ces actions attendent le mode Extension.</p>}</Td>
+    <Td><div className="flex max-w-xl flex-wrap gap-1.5">{isDesktop(a.settings)&&['flux','prix'].includes(kind)?<Pill tone="amber">Disponible en mode Extension</Pill>:chips(a)}</div></Td>
     <Td className="whitespace-nowrap text-zinc-300">{ago(a.settings?.updated_at)}</Td>
     <Td className="text-right"><button className="text-sm font-medium text-blue-400 hover:text-blue-300" onClick={()=>setConfigure({account:a,only:kind})}>Configurer ↗</button></Td>
    </tr>)}
@@ -154,11 +174,12 @@ function SalesChart({orders,range}){
  if(range==='today'){for(let h=0;h<24;h++)buckets.push({label:`${String(h).padStart(2,'0')}:00`,v:0})}
  else{const n=range==='7d'?7:30;for(let i=n-1;i>=0;i--){const d=new Date(now);d.setDate(d.getDate()-i);buckets.push({label:d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}),key:d.toDateString(),v:0})}}
  for(const o of orders){const d=new Date(o.order_date);const b=range==='today'?buckets[d.getHours()]:buckets.find(x=>x.key===d.toDateString());if(b)b.v+=Number(o.price)||0}
- const max=Math.max(4,...buckets.map(b=>b.v)),W=900,H=200,step=W/buckets.length
- return <svg viewBox={`0 0 ${W} ${H+28}`} className="h-56 w-full" role="img" aria-label="Ventes au fil du temps">
-  {[0,.25,.5,.75,1].map(t=><g key={t}><line x1="0" x2={W} y1={H-H*t} y2={H-H*t} stroke="#27272a" strokeDasharray="3 4"/><text x="2" y={H-H*t-3} fill="#71717a" fontSize="10">{Math.round(max*t)} €</text></g>)}
-  {buckets.map((b,i)=><g key={i}><rect x={i*step+step*.18} width={step*.64} y={H-(b.v/max)*H} height={(b.v/max)*H} rx="3" fill="#3b82f6"><title>{b.label} : {euro(b.v)}</title></rect>
-   {(buckets.length<=12||i%Math.ceil(buckets.length/12)===0)&&<text x={i*step+step/2} y={H+18} fill="#71717a" fontSize="10" textAnchor="middle">{b.label}</text>}</g>)}
+ const max=Math.ceil(Math.max(4,...buckets.map(b=>b.v))/4)*4,W=720,H=190,left=44,top=12,step=(W-left)/buckets.length
+ return <svg viewBox={`0 0 ${W} ${H+40}`} className="h-56 w-full" role="img" aria-label="Chiffre d’affaires par jour ou par heure, en euros">
+  <defs><linearGradient id="ylv-sales-gradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#a49aff"/><stop offset="100%" stopColor="#586fe0"/></linearGradient></defs>
+  {[0,.25,.5,.75,1].map(t=><g key={t}><line x1={left} x2={W} y1={top+H-H*t} y2={top+H-H*t} stroke="#2d3b57" strokeDasharray="3 6"/><text x={left-8} y={top+H-H*t+4} fill="#9aaac4" fontSize="10" textAnchor="end">{Math.round(max*t)} €</text></g>)}
+  {buckets.map((b,i)=><g key={b.label}><rect className="ylv-chart-bar" x={left+i*step+step*.24} width={step*.52} y={top+H-(b.v/max)*H} height={(b.v/max)*H} rx="5" fill="url(#ylv-sales-gradient)"><title>{b.label} : {euro(b.v)}</title></rect>
+   {(buckets.length<=12||i%Math.ceil(buckets.length/8)===0)&&<text x={left+i*step+step/2} y={top+H+23} fill="#9aaac4" fontSize="10" textAnchor="middle">{b.label}</text>}</g>)}
  </svg>
 }
 
@@ -189,63 +210,43 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
  const revenue=valid.reduce((n,o)=>n+(Number(o.price)||0),0)
  const toShip=(sales||[]).filter(o=>['payment_received','label_sent'].includes(o.normalized)&&(!accountFilter||o.account_id===accountFilter)).length
  const transit=(sales||[]).filter(o=>['shipped','ready_for_pickup'].includes(o.normalized)&&(!accountFilter||o.account_id===accountFilter)).length
- const publishable=new Set(active.filter(a=>a.settings.features.publish).map(a=>a.id))
- const on=(a,k)=>!!a.settings?.enabled&&!!a.settings.features[k]
+ const publishable=new Set(active.filter(a=>a.settings.features.publish&&supportsFeature(a.settings,'publish')).map(a=>a.id))
+ const on=(a,k)=>!!a.settings?.enabled&&!!a.settings.features[k]&&supportsFeature(a.settings,k)
  const label=(k)=>NAV.flatMap(n=>n.children||[[n.key,n.label]]).find(([x])=>x===k)?.[1]
- const periodPicker=<><select className={compactClass} value={accountFilter} onChange={e=>setAccountFilter(e.target.value)}><option value="">Tous les comptes</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.login}</option>)}</select>
-  <select className={compactClass} value={range} onChange={e=>setRange(e.target.value)}><option value="today">Aujourd’hui</option><option value="7d">7 derniers jours</option><option value="30d">30 derniers jours</option></select></>
+ const periodPicker=<><select aria-label="Filtrer par compte" className={compactClass} value={accountFilter} onChange={e=>setAccountFilter(e.target.value)}><option value="">Tous les comptes</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.login}</option>)}</select>
+  <select aria-label="Période des ventes" className={compactClass} value={range} onChange={e=>setRange(e.target.value)}><option value="today">Aujourd’hui</option><option value="7d">7 derniers jours</option><option value="30d">30 derniers jours</option></select></>
 
  const sidebar=<nav aria-label="YlaVint" className="flex h-full flex-col gap-1 p-3 text-sm">
-  <div className="mb-3 flex items-center gap-2.5 px-2 py-2"><span className="relative grid h-8 w-8 place-items-center rounded-lg bg-zinc-100 text-base font-black text-zinc-900">Y<span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-blue-500"/></span><span className="text-base font-bold text-white">YlaVint</span></div>
+  <div className="mb-4 flex items-center gap-3 px-2 py-3"><span className="ylv-brand-mark grid h-10 w-10 place-items-center rounded-xl text-xl font-bold">Y</span><div><span className="text-lg font-semibold tracking-tight text-white">YlaVint<span className="text-indigo-300">.</span></span><p className="mt-0.5 text-[10px] tracking-wide text-zinc-400">L’espace de tes boutiques</p></div></div>
   {NAV.map(n=>n.children?<div key={n.label} className="mt-1">
-   <p className="flex items-center gap-2.5 px-3 py-1.5 font-semibold text-zinc-200"><span className="w-4 text-center text-zinc-400" aria-hidden="true">{n.icon}</span>{n.label}</p>
-   {n.children.map(([k,l])=><button key={k} aria-current={section===k?'page':undefined} onClick={()=>setSection(k)} className={`block w-full rounded-lg py-1.5 pl-10 pr-3 text-left ${section===k?'bg-zinc-800 font-semibold text-white':'text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-100'}`}>{l}</button>)}
-  </div>:<button key={n.key} aria-current={section===n.key?'page':undefined} onClick={()=>setSection(n.key)} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-left font-semibold ${section===n.key?'bg-zinc-800 text-white':'text-zinc-200 hover:bg-zinc-800/60'}`}>
-   <span className="w-4 text-center text-zinc-400" aria-hidden="true">{n.icon}</span>{n.label}{n.key==='messagerie'&&unread>0&&<span className="ml-auto rounded-full bg-rose-500 px-1.5 text-[11px] text-white">{unread}</span>}</button>)}
+   <p className="ylv-nav-group px-3 py-1.5">{n.label}</p>
+   {n.children.map(([k,l])=><button key={k} aria-current={section===k?'page':undefined} onClick={()=>setSection(k)} className={`ylv-nav-link flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-[13px] ${section===k?'font-semibold text-white':'text-zinc-400 hover:text-zinc-100'}`}><Icon className="h-4 w-4 opacity-70" name={({commandes:'bag',classement:'chart',dressing:'box',publication:'grid',likes:'heart',flux:'box',agent:'spark',prix:'chart',reglages:'settings',journal:'clock',extension:'grid'})[k]}/>{l}</button>)}
+  </div>:<button key={n.key} aria-current={section===n.key?'page':undefined} onClick={()=>setSection(n.key)} className={`ylv-nav-link flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] font-medium ${section===n.key?'text-white':'text-zinc-300'}`}>
+   <Icon className="h-4 w-4" name={({accueil:'grid',messagerie:'message','assistant-pc':'monitor'})[n.key]}/>{n.label}{n.key==='messagerie'&&unread>0&&<span className="ml-auto rounded-full bg-indigo-500/25 px-2 py-0.5 text-[10px] text-indigo-200">{unread}</span>}</button>)}
   <div className="mt-auto space-y-2 border-t border-zinc-800 px-2 pt-3 text-xs text-zinc-400">
-   <p><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-emerald-400"/>{online.length} Bridge{online.length>1?'s':''} connecté{online.length>1?'s':''}</p>
-   <p>{active.length-paused.length} actif{active.length-paused.length>1?'s':''}{paused.length?` · ${paused.length} en pause`:''}</p>
+   <p><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-emerald-400"/>{online.length} contact{online.length>1?'s':''} récent{online.length>1?'s':''}</p>
+   <p>{active.length-paused.length} compte{active.length-paused.length>1?'s':''} activé{active.length-paused.length>1?'s':''}{paused.length?` · ${paused.length} en pause`:''}</p>
    <button className="w-full rounded-lg border border-rose-500/40 px-2 py-1.5 text-rose-300 hover:bg-rose-500/10 disabled:opacity-40" disabled={busy||!active.length} onClick={()=>window.confirm('Mettre YlaVint en pause sur tous les comptes ?')&&act({action:'pause_all'},r=>`${r.paused} compte(s) mis en pause.`)}>Tout mettre en pause</button>
    {standalone&&<div className="flex items-center justify-between gap-2 pt-1"><a className="hover:text-zinc-100" href="/">← Stock Vinted</a>{onLogout&&<button className="hover:text-zinc-100" onClick={onLogout}>Déconnexion</button>}</div>}
   </div>
  </nav>
 
  const full=standalone?'100vh':'calc(100vh - 130px)'
- return <div className="ylv flex bg-[#0a0a0b] text-zinc-100" style={{minHeight:full}}>
-  <aside className="hidden w-60 shrink-0 border-r border-zinc-800 bg-[#111113] lg:block"><div className="sticky top-0 overflow-y-auto" style={{height:full}}>{sidebar}</div></aside>
-  {mobileNav&&<div className="fixed inset-0 z-50 bg-black/60 lg:hidden" onClick={()=>setMobileNav(false)}><aside className="h-full w-72 overflow-y-auto bg-[#111113]" onClick={e=>e.stopPropagation()}>{sidebar}</aside></div>}
-  <main className="min-w-0 flex-1 space-y-5 p-3 sm:p-6">
+ return <div className="ylv flex text-zinc-100" style={{minHeight:full}}>
+  <aside className="ylv-sidebar hidden w-60 shrink-0 lg:block"><div className="sticky top-0 overflow-y-auto" style={{height:full}}>{sidebar}</div></aside>
+  {mobileNav&&<div className="fixed inset-0 z-50 bg-black/60 lg:hidden" onClick={()=>setMobileNav(false)}><aside className="ylv-sidebar h-full w-72 overflow-y-auto" onClick={e=>e.stopPropagation()}>{sidebar}</aside></div>}
+  <main className="ylv-main min-w-0 flex-1 space-y-5">
    <div className="flex items-center justify-between gap-2 lg:hidden"><button className={buttonClass} onClick={()=>setMobileNav(true)}>☰ {label(section)}</button><button className={buttonClass} onClick={()=>setSection('messagerie')}>💬{unread>0&&<span className="rounded-full bg-rose-500 px-1.5 text-[11px]">{unread}</span>}</button></div>
    {error&&<p role="alert" className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-300">{error}</p>}
-   {(()=>{const old=accounts.filter(a=>outdated(a.extension_version));if(!old.length)return null
-    return <div role="alert" className="rounded-xl border-2 border-rose-500 bg-rose-500/15 p-5 shadow-lg shadow-rose-900/30">
-     <p className="text-xl font-black text-rose-200">⚠️ Mets à jour YlaVint sur {old.length} compte{old.length>1?'s':''}</p>
-     <p className="mt-1 text-sm text-rose-100">Dernière version : <b>v{LATEST_YLAVINT}</b>. Ces profils AdsPower tournent encore sur une ancienne version :</p>
-     <ul className="mt-3 flex flex-wrap gap-2">{old.map(a=><li key={a.id} className="rounded-lg bg-rose-500/25 px-3 py-1.5 text-sm font-semibold text-white">{a.login} <span className="font-normal text-rose-200">v{a.extension_version}</span></li>)}</ul>
-     {section!=='extension'&&<button className="mt-4 rounded-lg bg-rose-500 px-4 py-2 text-sm font-bold text-white hover:bg-rose-400" onClick={()=>setSection('extension')}>Voir comment mettre à jour →</button>}
+   {(()=>{const old=accounts.filter(a=>!isDesktop(a.settings)&&outdated(a.extension_version));if(!old.length)return null
+    return <div role="alert" className="ylv-update rounded-2xl border p-4">
+     <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-rose-200"><strong>Mise à jour disponible</strong> · {old.length} compte{old.length>1?'s':''} utilise{old.length>1?'nt':''} une ancienne extension.</p>{section!=='extension'&&<button className="text-xs font-semibold text-rose-200 hover:text-white" onClick={()=>setSection('extension')}>Passer à la v{LATEST_YLAVINT} →</button>}</div>
+     <details className="mt-2 text-xs text-zinc-400"><summary className="cursor-pointer">Voir les comptes concernés</summary><ul className="mt-3 flex flex-wrap gap-2">{old.map(a=><li key={a.id} className="rounded-lg bg-rose-500/10 px-3 py-1.5 text-zinc-200">{a.login} · v{a.extension_version}</li>)}</ul></details>
     </div>})()}
    {notice&&<p role="status" className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-3 text-sm text-blue-200">{notice}</p>}
    <Suspense fallback={<p className="text-sm text-zinc-500">Chargement…</p>}>
 
-   {section==='accueil'&&<>
-    <div className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-bold text-white">Aperçu des commandes <span className="ml-2 align-middle text-sm font-normal text-blue-400">lues par YlaVint</span></h1><div className="flex flex-wrap gap-2">{periodPicker}<button className={buttonClass} onClick={()=>{load();loadSales()}} disabled={busy}>↻ Actualiser</button></div></div>
-    {!data.ai_ready&&<p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">La clé Gemini du site est absente : l’agent IA ne pourra pas rédiger de réponses.</p>}
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-     <StatCard label="Revenu total" value={euro(revenue)} icon="€"/>
-     <StatCard label="Commandes" value={valid.length} icon="🛒"/>
-     <StatCard label="Commande moyenne" value={euro(valid.length?revenue/valid.length:0)} icon="◈"/>
-     <StatCard label="À expédier" value={toShip} icon="📦" onClick={()=>setSection('commandes')}/>
-     <StatCard label="En transit" value={transit} icon="➤" onClick={()=>setSection('commandes')}/>
-     <StatCard label="Messagerie" value={unread} sub={`${data.human_total||0} à traiter toi-même`} tone={unread?'blue':undefined} icon="💬" onClick={()=>setSection('messagerie')}/>
-    </div>
-    <div className="grid gap-4 xl:grid-cols-[2fr_1fr]">
-     <Card className="p-5"><p className="font-semibold text-white">Ventes au fil du temps</p><p className="text-xs text-zinc-500">{range==='today'?'Aujourd’hui, par heure':range==='7d'?'7 derniers jours':'30 derniers jours'}</p><SalesChart orders={valid} range={range}/></Card>
-     <Card className="p-5"><div className="flex items-start justify-between"><div><p className="font-semibold text-white">Bridges YlaVint</p><p className="text-xs text-zinc-500">Profils AdsPower signalés il y a moins de 15 min</p></div><p className="text-3xl font-bold text-white">{online.length}</p></div>
-      <ul className="mt-4 max-h-56 space-y-2 overflow-y-auto text-sm">{accounts.slice().sort((a,b)=>Date.parse(b.last_seen_at||0)-Date.parse(a.last_seen_at||0)).map(a=><li key={a.id} className="flex items-center justify-between gap-2">
-       <span className="flex min-w-0 items-center gap-2"><span className={`h-2 w-2 shrink-0 rounded-full ${bridgeOnline(a)?'bg-emerald-400':'bg-zinc-600'}`}/><span className="truncate">{a.login}</span>{a.alert&&<Pill tone="red">{ALERTS[a.alert.status]||'Alerte'}</Pill>}</span>
-       <span className="shrink-0 text-xs text-zinc-500">{ago(a.last_seen_at)}</span></li>)}</ul></Card>
-    </div>
-   </>}
+   {section==='accueil'&&<YlaVintDashboard accounts={accounts} data={data} orders={valid} revenue={revenue} toShip={toShip} transit={transit} range={range} periodPicker={periodPicker} chart={<SalesChart orders={valid} range={range}/>} onNavigate={setSection} onRefresh={()=>{load();loadSales()}} busy={busy}/>}
 
    {section==='commandes'&&<YlaVintSales request={request} accounts={accounts}/>}
 
@@ -294,16 +295,16 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
    {section==='messagerie'&&<YlaVintInbox request={request} accounts={accounts}/>}
 
    {section==='reglages'&&<>
-    <PageTitle title="Comptes & réglages" hint="Point vert : le Bridge YlaVint du profil s’est signalé il y a moins de 15 min. Commence par un compte de test, puis élargis."/>
-    <Table head={['Compte','Bridge','État','Aujourd’hui','']} empty={!accounts.length&&'Aucun compte.'}>
+    <PageTitle title="Comptes & réglages" hint="Le point vert indique un contact récent, pas un assistant forcément en marche. Pour un compte en mode PC, vérifie son état et démarre-le dans Assistant PC."/>
+    <Table head={['Compte','Dernier contact','État','Aujourd’hui','']} empty={!accounts.length&&'Aucun compte.'}>
      {accounts.map(a=>{const s=a.settings;return <tr key={a.id}>
-      <Td><p className="font-semibold text-white">{a.login}</p>{a.alert&&<Pill tone="red">{ALERTS[a.alert.status]||a.alert.title}</Pill>}</Td>
-      <Td className="whitespace-nowrap text-xs"><span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${bridgeOnline(a)?'bg-emerald-400':'bg-zinc-600'}`}/>{bridgeOnline(a)?'Connecté':a.last_seen_at?`Vu ${ago(a.last_seen_at)}`:'Jamais vu'}{a.extension_version&&<span className={outdated(a.extension_version)?'font-bold text-rose-400':''}> · v{a.extension_version}{outdated(a.extension_version)&&' ⚠️ à mettre à jour'}</span>}</Td>
-      <Td>{!s?.enabled?<Pill>Non activé</Pill>:s.paused?<Pill tone="amber">En pause</Pill>:<Pill tone="green">Actif</Pill>}{s?.paused&&s.pause_reason&&<p className="mt-1 max-w-xs text-xs text-zinc-500">{s.pause_reason}</p>}</Td>
-      <Td className="text-xs text-zinc-400">{s?.enabled?`${a.today.writes||0}/${s.limits.writes_per_day} modif.`:'—'}</Td>
+      <Td><p className="font-semibold text-white">{a.login}</p><p className="text-xs text-zinc-400">{isDesktop(s)?'Assistant PC':'Extension'}</p>{a.alert&&<Pill tone="red">{ALERTS[a.alert.status]||a.alert.title}</Pill>}</Td>
+      <Td className="whitespace-nowrap text-xs"><span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${bridgeOnline(a)?'bg-emerald-400':'bg-zinc-600'}`}/>{a.last_seen_at?`Vu ${ago(a.last_seen_at)}`:'Jamais vu'}{a.extension_version&&<span className={!isDesktop(s)&&outdated(a.extension_version)?'font-bold text-rose-400':''}> · {a.extension_version}{!isDesktop(s)&&outdated(a.extension_version)&&' ⚠️ à mettre à jour'}</span>}</Td>
+      <Td>{!s?.enabled?<Pill>Non activé</Pill>:s.paused?<Pill tone="amber">En pause</Pill>:<Pill tone="green">Activé</Pill>}{isDesktop(s)&&<button className="block text-xs text-blue-400 underline" onClick={()=>setSection('assistant-pc')}>Voir l’assistant sur ce PC</button>}{s?.paused&&s.pause_reason&&<p className="mt-1 max-w-xs text-xs text-zinc-500">{s.pause_reason}</p>}</Td>
+      <Td className="text-xs text-zinc-400">{s?.enabled?(isDesktop(s)?`${a.today.like_sent||0}/${s.limits.like_message_per_day} messages aux likes`:`${a.today.writes||0}/${s.limits.writes_per_day} modif.`):'—'}</Td>
       <Td className="whitespace-nowrap text-right">
-       {s?.enabled&&(s.paused?<button className={buttonClass+' mr-2 py-1.5'} disabled={busy||!!a.alert} onClick={()=>act({action:'resume',account_id:a.id},'YlaVint relancé.')}>Reprendre</button>:<button className={buttonClass+' mr-2 py-1.5'} disabled={busy} onClick={()=>act({action:'pause',account_id:a.id},'YlaVint mis en pause.')}>Pause</button>)}
-       {s?.enabled&&!s.paused&&<select className={compactClass+' mr-2 py-1.5'} value="" disabled={busy} onChange={e=>e.target.value&&act({action:'enqueue',account_id:a.id,kind:e.target.value},'Lecture demandée à YlaVint.')}><option value="">Lire maintenant…</option><option value="sync_inbox">La messagerie</option><option value="scan_wardrobe">Le dressing</option><option value="sync_orders">Les ventes</option><option value="scan_likes">Les likes</option></select>}
+       {s?.enabled&&(s.paused?<button className={buttonClass+' mr-2 py-1.5'} disabled={busy||!!a.alert} onClick={()=>act({action:'resume',account_id:a.id},isDesktop(s)?'Pause levée. Démarre à nouveau ce compte dans Assistant PC.':'YlaVint relancé.')}>Reprendre</button>:<button className={buttonClass+' mr-2 py-1.5'} disabled={busy} onClick={()=>act({action:'pause',account_id:a.id},'YlaVint mis en pause.')}>Pause</button>)}
+       {s?.enabled&&!s.paused&&<select className={compactClass+' mr-2 py-1.5'} value="" disabled={busy} onChange={e=>e.target.value&&act({action:'enqueue',account_id:a.id,kind:e.target.value},'Lecture demandée à YlaVint.')}><option value="">Lire maintenant…</option><option value="sync_inbox">La messagerie</option><option value="scan_wardrobe">Le dressing</option>{supportsTask(s,'sync_orders')&&<option value="sync_orders">Les ventes</option>}<option value="scan_likes">Les likes</option></select>}
        <button className="text-sm font-medium text-blue-400 hover:text-blue-300" onClick={()=>setConfigure({account:a,only:'all'})}>Configurer ↗</button>
        <button className="ml-3 text-sm font-medium text-rose-400 hover:text-rose-300" disabled={busy} onClick={()=>window.confirm(`Délier ${a.login} de YlaVint ?\n\nL’extension ne s’occupera plus de ce compte et tout ce que YlaVint a gardé pour lui sera effacé : commandes, bordereaux, messagerie, tâches et journal.\nLes ventes déjà dans ton onglet Ventes restent.`)&&act({action:'unlink',account_id:a.id},r=>r?.message||'Compte délié.')}>Délier</button></Td>
      </tr>})}
@@ -312,7 +313,7 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
      <Table head={['Compte','Délié le','']}>{data.unlinked.map(u=><tr key={u.id}><Td className="text-zinc-300">{u.login}</Td><Td className="text-xs text-zinc-500">{when(u.unlinked_at)}</Td>
       <Td className="text-right"><button className="text-sm font-medium text-blue-400 hover:text-blue-300" disabled={busy} onClick={()=>act({action:'relink',account_id:u.id},`${u.login} relié à YlaVint.`)}>Relier</button></Td></tr>)}</Table></div>}
     <p className="pt-2 text-sm font-semibold text-white">Actions connues ({data.recipes.filter(r=>r.learned_at||r.default).length}/{data.recipes.length})</p>
-    <p className="text-xs text-zinc-500">Rien à faire à la main : les lectures, les messages, l’ouverture de conversation, l’offre et la suppression d’annonce marchent dès le départ. Les autres actions s’apprennent toutes seules la première fois que tu les fais normalement sur Vinted, sur n’importe quel compte.</p>
+    <p className="text-xs text-zinc-500">Ce tableau concerne les actions du mode Extension. L’Assistant PC utilise les formulaires Vinted pour les messages et réductions ; il reste en version pilote.</p>
     <Table head={['Action','État','Détail','']}>
      {data.recipes.map(r=><tr key={r.kind}><Td className="font-medium text-white">{r.label}</Td>
       <Td>{r.learned_at?<Pill tone="green">Apprise</Pill>:r.default?<Pill tone="blue">Lecture par défaut</Pill>:<Pill tone="amber">À apprendre</Pill>}</Td>
@@ -325,7 +326,7 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
     <div className="space-y-2"><p className="font-semibold text-white">File de tâches</p>
      <Table head={['Tâche','Compte','État','Quand']} empty={!data.tasks.length&&'Aucune tâche.'}>
       {data.tasks.slice(0,80).map(t=><tr key={t.id}><Td>{data.kinds[t.kind]?.label||t.kind}{t.error&&<p className="text-xs text-rose-400">{t.error}</p>}</Td><Td className="text-blue-400">{logins.get(t.account_id)}</Td>
-       <Td><Pill tone={t.state==='done'?'green':t.state==='failed'?'red':t.state==='running'?'blue':'zinc'}>{STATES[t.state]}</Pill></Td>
+       <Td><Pill tone={t.state==='done'?'green':t.state==='failed'?'red':t.state==='running'?'blue':'zinc'}>{t.state==='queued'&&!supportsTask(accounts.find(a=>a.id===t.account_id)?.settings,t.kind)?'attend le mode Extension':STATES[t.state]}</Pill></Td>
        <Td className="whitespace-nowrap text-xs text-zinc-400">{when(t.state==='queued'?t.not_before:t.finished_at||t.started_at)}{t.state==='queued'&&<button className="ml-2 underline" disabled={busy} onClick={()=>act({action:'cancel',task_id:t.id})}>Annuler</button>}</Td></tr>)}
      </Table></div>
     <div className="space-y-2"><p className="font-semibold text-white">Journal</p>

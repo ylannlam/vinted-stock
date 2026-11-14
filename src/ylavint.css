@@ -1,0 +1,54 @@
+.ylv{--ylv-bg:#090e1c;--ylv-panel:#111a2c;--ylv-border:#24314c;--ylv-muted:#9aaac4;background:var(--ylv-bg);color:#ecf1fc;color-scheme:dark;font-feature-settings:"cv11","ss01"}
+.ylv.ylv .ylv-main{background:radial-gradient(ellipse 80% 450px at 55% -60px,#26366b45,transparent);padding:28px;max-width:1800px;margin:0 auto}
+.ylv.ylv .ylv-sidebar{background:#0d1424;border-right:1px solid #202b42}
+.ylv.ylv .ylv-brand-mark{background:linear-gradient(135deg,#7b7af8,#467dff);box-shadow:0 5px 22px #6567ef35;color:white;border:1px solid #a3b0ff50}
+.ylv.ylv .ylv-nav-link{min-height:38px;transition:background .16s,color .16s;border:1px solid transparent}
+.ylv.ylv .ylv-nav-link[aria-current=page]{background:linear-gradient(90deg,#5364e32e,#4c66bd13);color:#cbd4ff;border-color:#6d7bdb35;box-shadow:inset 3px 0 #8a93ff}
+.ylv.ylv .ylv-nav-link:hover{background-color:#18243b}
+.ylv.ylv .ylv-nav-group{font-size:10px;text-transform:uppercase;letter-spacing:.13em;color:#7789a8;margin-top:12px;font-weight:600}
+.ylv.ylv .ylv-eyebrow{font-size:10px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:#a6b3d7}
+.ylv.ylv .ylv-card,.ylv.ylv .ylv-table{background:linear-gradient(135deg,#152037,#10192a);border-color:var(--ylv-border);box-shadow:0 8px 26px #02061116}
+.ylv.ylv .ylv-table thead{background:#172239;color:#a9bad8;border-color:var(--ylv-border);font-size:11px}
+.ylv.ylv .ylv-table tbody>tr:hover{background:#22315455}
+.ylv.ylv .ylv-table td{padding-top:17px;padding-bottom:17px}
+.ylv.ylv .ylv-field{background:#0c1426;border-color:#2b3b59;min-height:40px;transition:border-color .15s,box-shadow .15s}
+.ylv.ylv .ylv-field:focus{border-color:#8c9aff;box-shadow:0 0 0 3px #8c9aff18}
+.ylv.ylv .ylv-button{background:#17233a;border-color:#30415f;min-height:40px;transition:background .15s,border-color .15s}
+.ylv.ylv .ylv-button:hover{background:#223250;border-color:#52678e}
+.ylv.ylv .ylv-primary{background:linear-gradient(115deg,#6575ed,#4976f5);box-shadow:0 4px 16px #5278ed22;min-height:40px;transition:filter .15s,box-shadow .15s}
+.ylv.ylv .ylv-primary:hover{filter:brightness(1.12);box-shadow:0 5px 22px #5278ed40}
+.ylv.ylv button:focus-visible,.ylv.ylv a:focus-visible,.ylv.ylv select:focus-visible{outline:2px solid #a7b5ff;outline-offset:3px}
+.ylv.ylv button:disabled{cursor:not-allowed}
+.ylv.ylv .ylv-stat{--accent:#879dff;background:radial-gradient(ellipse at top right,#6178e518,transparent 70%),#121d31;border-color:#293956;position:relative;overflow:hidden}
+.ylv.ylv .ylv-stat:before{content:"";position:absolute;left:0;top:25%;height:45%;width:3px;background:var(--accent);border-radius:0 4px 4px 0}
+.ylv.ylv .ylv-stat-violet{--accent:#ba9afa;background:radial-gradient(ellipse at top right,#a56fe51a,transparent 70%),#151c31}
+.ylv.ylv .ylv-stat-green{--accent:#65d9c0;background:radial-gradient(ellipse at top right,#4cceab14,transparent 70%),#111f30}
+.ylv.ylv .ylv-stat-amber{--accent:#f3c380;background:radial-gradient(ellipse at top right,#db9f3814,transparent 70%),#1c2030}
+.ylv.ylv .ylv-stat-red{--accent:#f49caf}
+.ylv.ylv .ylv-stat-icon{color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);border:1px solid color-mix(in srgb,var(--accent) 20%,transparent)}
+.ylv.ylv .ylv-interactive{transition:transform .18s,border-color .18s}
+.ylv.ylv .ylv-interactive:hover{transform:translateY(-2px);border-color:var(--accent)}
+.ylv.ylv .ylv-hero{isolation:isolate;overflow:hidden;position:relative;background:radial-gradient(ellipse at 92% -30%,#6e5de84a,transparent 60%),linear-gradient(120deg,#192c4b,#1b2241 65%,#262443);border:1px solid #3d4f775e}
+.ylv.ylv .ylv-hero:after{content:"";position:absolute;z-index:-1;width:300px;height:300px;right:-80px;top:-125px;border:1px solid #b1afff1f;border-radius:50%;box-shadow:0 0 0 45px #b1afff06,0 0 0 90px #b1afff04;pointer-events:none}
+.ylv.ylv .ylv-hero h1{font-size:clamp(24px,2.5vw,36px);line-height:1.2;letter-spacing:-.035em}
+.ylv.ylv .ylv-step-number{background:#7c8cf01c;border:1px solid #8f9af33b;color:#b6bfff}
+.ylv.ylv .ylv-update{background:#33243b55;border-color:#a7778245;box-shadow:none}
+.ylv.ylv .ylv-account-row{border-bottom:1px solid #26324b;padding:11px 0}
+.ylv.ylv .ylv-account-row:last-child{border-bottom:0}
+.ylv.ylv .ylv-avatar{background:linear-gradient(135deg,#343f6a,#29314e);color:#b9c8f6;border:1px solid #7582b72b}
+.ylv.ylv .ylv-drawer{background:#111b2e;border-color:#314263;box-shadow:-20px 0 70px #03071180}
+.ylv.ylv .ylv-drawer fieldset{border-color:#2b3b58}
+.ylv.ylv .text-zinc-500{color:#8e9eb9}.ylv.ylv .text-zinc-400{color:#a1afc9}.ylv.ylv .text-zinc-300{color:#c1cce0}
+.ylv.ylv .border-zinc-800,.ylv.ylv .border-zinc-700{border-color:#293651}
+.ylv.ylv .divide-zinc-800\/80>*+*{border-color:#283650}
+.ylv.ylv .bg-zinc-900,.ylv.ylv .bg-zinc-900\/60{background-color:#101a2b}.ylv.ylv .bg-zinc-800{background-color:#24314b}
+.ylv.ylv .bg-white{background-color:#142036}.ylv.ylv .bg-slate-50,.ylv.ylv .bg-slate-50\/60,.ylv.ylv .bg-\[\#faf8f5\]{background-color:#0d1729}
+.ylv.ylv .bg-slate-100{background-color:#263551}.ylv.ylv .bg-slate-800{background-color:#546ad2;color:#fff}
+.ylv.ylv .border-slate-100,.ylv.ylv .border-slate-200,.ylv.ylv .border-slate-300{border-color:#283852}
+.ylv.ylv .text-slate-400{color:#8fa1bf}.ylv.ylv .text-slate-500,.ylv.ylv .text-slate-600{color:#a5b4ce}
+.ylv.ylv .hover\:bg-slate-50:hover,.ylv.ylv .hover\:bg-slate-100:hover{background-color:#253652}
+.ylv.ylv .bg-\[\#08664c\]{background:linear-gradient(120deg,#526bd8,#665dbe)}
+.ylv.ylv input[type=checkbox],.ylv.ylv input[type=radio]{accent-color:#8292f7}
+.ylv.ylv .ylv-chart-bar{transition:opacity .15s;outline:none}.ylv.ylv .ylv-chart-bar:hover,.ylv.ylv .ylv-chart-bar:focus{opacity:.65}
+@media(max-width:767px){.ylv.ylv .ylv-main{padding:16px}.ylv.ylv .ylv-hero{padding:23px}.ylv.ylv .ylv-table td{padding:12px}.ylv.ylv .ylv-stat{padding:16px}.ylv.ylv .ylv-stat-icon{width:34px;height:34px}.ylv.ylv .ylv-stat-value{font-size:25px}.ylv.ylv .ylv-page-title h1{font-size:25px}}
+@media(prefers-reduced-motion:reduce){.ylv.ylv *{transition:none!important;animation:none!important}}

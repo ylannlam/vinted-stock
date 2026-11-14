@@ -1,52 +1,30 @@
-import {readFile} from 'node:fs/promises'
 import path from 'node:path'
-import {fileURLToPath} from 'node:url'
 import {taskJournal} from './ylavint-journal.mjs'
 import {VintedMessenger,review} from './ylavint-ui.mjs'
+import {VisibleVinted,PACE} from './ylavint-visible.mjs'
 
 export const DESKTOP_KINDS=['scan_wardrobe','scan_likes','sync_inbox','like_message','reply_message']
 const writes=task=>['like_message','reply_message'].includes(task?.kind)
-const BASE='https://www.vinted.fr',SITE='https://vinted-stock.vercel.app'
-const ROOT=path.dirname(fileURLToPath(import.meta.url))
+const SITE='https://vinted-stock.vercel.app'
 const wait=(ms,signal)=>new Promise(resolve=>{if(signal.aborted)return resolve();const done=()=>{clearTimeout(timer);signal.removeEventListener('abort',done);resolve()};const timer=setTimeout(done,ms);signal.addEventListener('abort',done,{once:true})})
 export async function desktopRequest(token,action,body,fetcher=fetch){
-  const r=await fetcher(SITE+'/api/collector',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...body,action,version:'pc-1.2.0'}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(30000)})
+  const r=await fetcher(SITE+'/api/collector',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...body,action,version:'pc-1.3.0'}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(30000)})
   const data=await r.json().catch(()=>null)
   if(!r.ok)throw Object.assign(Error(data?.error||'Le site ne répond pas.'),{status:r.status})
   if(!data||typeof data!=='object')throw Error('Réponse du site illisible.')
   return data
 }
 
-export async function runDesktop(binding,ads,{signal,update,dataDir,connect,request=desktopRequest,sources}={}){
+export async function runDesktop(binding,ads,{signal,update,dataDir,connect,request=desktopRequest,Reader=VisibleVinted}={}){
   let deadline=Infinity
   const check=()=>{if(signal.aborted)throw review('Assistant arrêté. Vérifie l’action en cours avant de la relancer.');if(Date.now()>deadline)throw review('Le délai de l’action est dépassé : vérifie Vinted.')}
-  let browser,worker,messenger,task,submitted=false,activeTimer
+  let browser,worker,reader,task,submitted=false,activeTimer
   const journal=taskJournal(path.join(dataDir,'ylavint',binding.account_id))
   const ownPages=[]
   const stopPages=()=>{for(const page of ownPages)void page.close().catch(()=>{})}
   signal.addEventListener('abort',stopPages,{once:true})
   const api=(action,body={})=>request(binding.token,action,{member_id:binding.member_id,profile_id:binding.profile_id,login:binding.login,...body})
-  const source=sources||{
-    read:await readFile(path.join(ROOT,'ylavint-read.js'),'utf8'),
-    agent:await readFile(path.join(ROOT,'ylavint-page.js'),'utf8')
-  }
-  async function identity(page){
-    if(![BASE,BASE.replace('www.','')].includes(new URL(page.url()).origin))throw review('La page ouverte n’est plus Vinted.')
-    await page.evaluate(source.read)
-    return page.evaluate(async()=>{
-      let who=globalThis.readVintedAccount()
-      if(who?.member_id)return who
-      const response=await fetch('/',{credentials:'include',signal:AbortSignal.timeout(10000)})
-      if(!response.ok)return null
-      const doc=new DOMParser().parseFromString(await response.text(),'text/html')
-      return globalThis.readVintedAccount(doc,'https://www.vinted.fr/')
-    })
-  }
-  const verifyIdentity=async()=>{
-    check();const who=await identity(worker)
-    if(String(who?.member_id)!==binding.member_id||who?.status!=='ok')throw review('Le profil AdsPower ne présente pas le compte attendu, ou Vinted demande une vérification.')
-    check()
-  }
+  const sleep=ms=>wait(ms,signal),control=()=>api('agent_status')
   async function acknowledge(payload){
     // Retry the report, never the Vinted interaction. If the server cannot confirm, stop.
     let last
@@ -63,9 +41,14 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
     browser=await connector(opened.address,{timeout:20000,noDefaults:true})
     const context=browser.contexts()[0];if(!context)throw review('Ce profil AdsPower est inaccessible.')
     worker=await context.newPage();ownPages.push(worker)
-    await worker.goto(BASE+'/',{waitUntil:'domcontentloaded',timeout:30000})
-    await verifyIdentity()
-    if(binding.check_only===true){update({state:'checked',message:'Compte Vinted confirmé dans ce profil. Aucun message ni aucune réduction envoyés.'});return}
+    reader=new Reader({page:worker,binding,check,sleep,update,control})
+    await reader.open('/')
+    await reader.identity(true)
+    if(binding.check_only===true){
+      update({state:'opening',message:'Vérification des lectures visibles, sans envoi'})
+      const wardrobe=await reader.wardrobe(),likes=await reader.likes(),inbox=await reader.inbox()
+      update({state:'checked',message:`Compte confirmé : ${wardrobe.items.length} annonce(s), ${likes.likes.length} favori(s) et ${inbox.conversations.length} conversation(s) lus sur les pages chargées. Aucun message ni réduction envoyés.`});return
+    }
     // Recover reports after a crash before claiming anything new; never repeat a Vinted write.
     for(const pending of await journal.pending()){
       if(pending.member!==binding.member_id)throw review('Compte différent dans le suivi local.')
@@ -76,18 +59,27 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       if(saved.paused||!payload.ok)throw review('Une action interrompue a été signalée au site. Vérifie Vinted puis reprends ce compte dans les réglages.')
     }
     task=null;submitted=false
-    messenger=await context.newPage();ownPages.push(messenger)
-    let ui
-    await worker.exposeFunction('__ylavintDesktopSend',payload=>{check();if(!ui)throw review('Aucune tâche autorisée.');return ui.send(payload)})
-    await worker.exposeFunction('__ylavintDesktopOffer',payload=>{check();if(!ui)throw review('Aucune tâche autorisée.');return ui.offer(payload)})
+    let sessionStarted=Date.now(),breakUntil=0,nextBrowse=Date.now(),browseRemaining=0
     while(!signal.aborted){
       task=null;submitted=false;deadline=Infinity
-      await verifyIdentity()
+      const status=await control()
+      if(!status.allowed){update({state:'stopped',message:'Compte désactivé, en pause ou confié à l’extension sur le site.'});return}
+      reader.pace={...PACE,...status.pace}
+      if(!status.in_window){update({state:'waiting',message:'En attente du créneau horaire réglé sur le site'});await sleep(20000);continue}
+      if(!breakUntil&&Date.now()-sessionStarted>=reader.pace.session_minutes*60000)breakUntil=Date.now()+reader.pace.pause_minutes*60000
+      if(breakUntil){if(Date.now()<breakUntil){update({state:'break',message:'Pause de navigation jusqu’à '+new Date(breakUntil).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})});await sleep(Math.min(15000,breakUntil-Date.now()));continue}breakUntil=0;sessionStarted=Date.now()}
+      await reader.identity()
       update({state:'running',message:'Lecture des actions prévues sur le site'})
       const next=await api('agent_poll')
       check()
-      if(['other_executor','unknown','disabled','paused'].includes(next.state)){update({state:'stopped',message:next.reason||next.message||'Compte désactivé ou en pause sur le site.'});return}
-      if(next.state!=='task'){update({state:'waiting',message:next.reason||'En attente des prochains favoris et messages'});await wait(Math.max(1,Math.min(120,Number(next.wait_seconds)||20))*1000,signal);continue}
+      if(['other_executor','unknown','disabled','paused','update_required'].includes(next.state)){update({state:'stopped',message:next.reason||next.message||'Compte désactivé ou en pause sur le site.'});return}
+      if(next.state!=='task'){
+        if(next.state==='idle'&&reader.pace.browse_enabled){
+          if(!browseRemaining&&Date.now()>=nextBrowse)browseRemaining=reader.pace.browse_items
+          if(browseRemaining){await reader.browseOne();browseRemaining--;if(!browseRemaining)nextBrowse=Date.now()+reader.pace.browse_every_minutes*60000;continue}
+        }else browseRemaining=0
+        update({state:'waiting',message:next.reason||'En attente des prochains favoris et messages'});await sleep(Math.max(1,Math.min(20,Number(next.wait_seconds)||20))*1000);continue
+      }
       task=next.task
       deadline=Math.min(Date.now()+175000,(Date.parse(task.lease_until)||Date.now()+180000)-5000)
       check();activeTimer=setTimeout(stopPages,Math.max(1,deadline-Date.now()))
@@ -99,15 +91,39 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
         throw review('Cette action a déjà commencé sur ce PC. Vérifie Vinted avant de la reprendre.')
       }
       if(writes(task))await journal.begin(task,binding.member_id)
-      const destination=task.kind==='scan_likes'?'/member/notifications':task.kind==='sync_inbox'?'/inbox':task.kind==='scan_wardrobe'?'/member/'+binding.member_id:'/'
-      await worker.goto(BASE+destination,{waitUntil:'domcontentloaded',timeout:30000})
-      await verifyIdentity()
-      await worker.evaluate(()=>{globalThis.__ylavintDesktopMode=true})
-      await worker.evaluate(source.agent)
-      const recheck=(conversation,options={})=>worker.evaluate(({t,conversation,options})=>globalThis.__svAgent.recheck(t,conversation,options),{t:{...task,member_id:binding.member_id},conversation,options})
-      ui=new VintedMessenger({page:messenger,identity,member:binding.member_id,journal,task,check,update,recheck})
-      const result=await worker.evaluate(t=>globalThis.__svAgent.run(t),{...task,member_id:binding.member_id,desktop:true})
-      clearTimeout(activeTimer);ui=null
+      const recheck=(conversation,options)=>reader.recheck(task,conversation,options)
+      const authorize=async()=>{check();const r=await api('agent_guard',{task_id:task.id,lease:task.lease,settings_version:task.settings_version});if(r.allowed!==true)throw review('L’envoi n’est plus autorisé par le site.');check()}
+      const ui=new VintedMessenger({page:worker,identity:()=>reader.identity(),member:binding.member_id,journal,task,check,update,recheck,authorize,thread:()=>reader.thread(),confirm:p=>reader.confirm(p),pace:reader.pace,sleep})
+      let value
+      const p=task.payload||{}
+      if(p.skip)value={skipped:p.skip}
+      else if(task.kind==='scan_likes')value=await reader.likes()
+      else if(task.kind==='scan_wardrobe')value=await reader.wardrobe()
+      else if(task.kind==='sync_inbox')value=await reader.inbox(p)
+      else{
+        if((p.message||p.body||'').length*reader.pace.typing_delay_ms+60000>deadline-Date.now())throw review('Ce texte est trop long pour la vitesse de saisie choisie. Raccourcis-le ou accélère la saisie dans les réglages.')
+        if(task.kind==='like_message'&&p.offer_requested&&!p.offer_price)throw review('Le prix de la réduction n’est pas connu. Relis d’abord le dressing.')
+        const filter=task.kind==='like_message'?await reader.memberFilter(p):null
+        if(filter)value={skipped:filter}
+        else{
+          if(task.kind==='like_message')await reader.availableItem(p.item_id)
+          const conversation=task.kind==='like_message'?await reader.openLike(p):String(p.conversation_id)
+          await ui.open(conversation)
+          const initial=await recheck(conversation)
+          if(initial.cancelled)value={skipped:initial.cancelled,conversation_id:conversation,buyer_engaged:initial.buyer_engaged===true}
+          else{
+            const body=p.message??p.body
+            const sent=body?await ui.send({task_id:task.id,conversation_id:conversation,body}):null
+            if(sent?.desktop_cancelled)value={skipped:sent.desktop_cancelled,conversation_id:conversation}
+            else{
+              const offer=p.offer_price?await ui.offer({task_id:task.id,conversation_id:conversation,price:p.offer_price}):false
+              value=offer?.desktop_cancelled&&!sent?{skipped:offer.desktop_cancelled,conversation_id:conversation}:{conversation_id:conversation,message:body||null,message_id:sent?.reply?.id||null,offer:offer===true}
+            }
+          }
+        }
+      }
+      const result={ok:true,result:value}
+      clearTimeout(activeTimer)
       // Desktop failures, including a partial message + offer, require review rather than replay.
       const payload={task_id:task.id,lease:task.lease,...result,...(!result.ok?{code:'desktop_review'}:{})}
       if(writes(task))await journal.complete(task.id,payload);submitted=true

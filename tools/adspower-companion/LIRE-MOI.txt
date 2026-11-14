@@ -1,8 +1,8 @@
 STOCK VINTED — CONNECTEUR ADSPOWER
 
-ASSISTANT YLAVINT SUR PC (version 1.2.0)
+ASSISTANT YLAVINT SUR PC (version 1.3.0)
 Cette version ajoute le pilotage des favoris et de la messagerie depuis
-https://vinted-stock.vercel.app/#ylavint/assistant-pc.
+https://vinted-stock.vercel.app/ylavint#assistant-pc.
 La mise à jour du site et de sa base doit être installée avant de choisir ce mode.
 
 Après la connexion AdsPower décrite ci-dessous :
@@ -14,7 +14,17 @@ Après la connexion AdsPower décrite ci-dessous :
    et les réponses IA dans Smart Agent. Active seulement les fonctions voulues.
 6. Clique « Démarrer cet assistant » lorsque les réglages sont prêts.
 
+Les lectures, messages et réductions passent par les pages Vinted visibles.
+Aucun appel direct aux API Vinted, ni lecture des données cachées de la page.
+Le dressing et la messagerie reflètent les pages chargées, pas nécessairement
+tout l'historique. Les dates relatives sont interprétées prudemment : un favori
+dont la date est illisible n'est pas traité automatiquement.
 Les messages sont saisis progressivement dans le formulaire Vinted.
+Dans les réglages du compte, « Rythme et navigation sur Vinted » contrôle
+la vitesse de saisie, le temps de lecture, les sessions et les pauses.
+La consultation d'annonces est facultative : ouverture et défilement uniquement,
+sans favoris automatiques, abonnement ou achat. Les tâches sont prioritaires.
+Une pause sur le site est vérifiée entre les consultations et avant tout envoi.
 Le PC doit rester éveillé. Le bouton Arrêter interrompt le travail et ferme
 uniquement les onglets de l'assistant. Le profil AdsPower reste ouvert.
 Un résultat incertain met le compte en pause : vérifie la conversation avant

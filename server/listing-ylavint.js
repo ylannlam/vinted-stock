@@ -4,6 +4,7 @@ import {effectiveSettings} from './vinted-agent-config.js'
 import {check,listingAccounts,listingMetadata,listingPayload,verifiedPhotos,dotbListingRequest} from './listing-studio-core.js'
 import {requireSelectedAccount} from './adspower-selection.js'
 import {ASSET_BUCKET} from './resources.js'
+import {isDesktop,EXTENSION_REQUIRED} from '../src/lib/ylavintExecution.js'
 
 export const publicationVersion=v=>/^\d+\.\d+\.\d+$/.test(v||'')&&(Number(v.split('.')[0])>3||Number(v.split('.')[0])===3&&Number(v.split('.')[1])>=8)
 export async function publicationStatus(db,accountId){
@@ -18,6 +19,7 @@ export async function publicationStatuses(db,ids){
 }
 function statusOf(s){
  const cfg=effectiveSettings(s),online=!!s?.last_seen_at&&Date.parse(s.last_seen_at)>Date.now()-120000
+ if(isDesktop(cfg))return {ready:false,online:false,paused:!!s?.paused,reason:EXTENSION_REQUIRED,waiting:EXTENSION_REQUIRED,limit:cfg.limits.publish_item_per_day,from_hour:cfg.limits.from_hour,to_hour:cfg.limits.to_hour}
  const reason=s?.paused?`Compte en pause : ${s.pause_reason||'vérifie son état sur Vinted.'}`:!s?.enabled?'Active YlaVint sur ce compte.':!cfg.features.publish?'Active « Publication » dans les réglages YlaVint du compte.':!publicationVersion(s?.extension_version)?'Installe YlaVint 3.8.0 pour préparer le formulaire dans ce profil AdsPower.':null
  return {ready:!reason,online,paused:!!s?.paused,reason,waiting:reason|| (s?.paused?`En pause : ${s.pause_reason||'relance YlaVint dans ce profil.'}`:!online?'En attente du profil AdsPower : ouvre Vinted et allume le Bridge YlaVint.':null),limit:cfg.limits.publish_item_per_day,from_hour:cfg.limits.from_hour,to_hour:cfg.limits.to_hour}
 }

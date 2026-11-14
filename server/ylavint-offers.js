@@ -1,6 +1,7 @@
 import {check,vid,money,enqueue} from './vinted-agent.js'
 import {inHistory} from './ylavint-history.js'
 import {acceptableOffer} from './vinted-agent-config.js'
+import {isDesktop} from '../src/lib/ylavintExecution.js'
 
 export function parseOffers(raw){
   if(!Array.isArray(raw))return []
@@ -12,7 +13,7 @@ export function parseOffers(raw){
 }
 export async function planOffers(db,account,conversations,settings,{now=Date.now()}={}){
   const config=settings?.messaging?.offers
-  if(!config?.enabled)return 0
+  if(!config?.enabled||isDesktop(settings))return 0
   let queued=0
   for(const c of conversations)for(const offer of c.offers||[]){
     if(offer.buyer_id!==c.other_id||offer.transaction_id!==c.transaction_id||!c.allow_reply||(!acceptableOffer(offer,config)||!inHistory(offer.created_at,config.history_since)))continue
