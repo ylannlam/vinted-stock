@@ -1,5 +1,6 @@
 import {AppError} from './dotb.js'
 import {check,cid,vid,money,text,BUCKET,enqueue,parseLabel} from './vinted-agent.js'
+import {visibleDeadline} from '../src/lib/ylavintOperations.js'
 
 const photo=v=>typeof v==='string'&&/^https:\/\/[a-z0-9.-]+\.vinted\.net\//.test(v)?v.slice(0,500):null
 export function parseWallet(result){
@@ -21,7 +22,7 @@ export function parseDesktopOrders(result){
   if(!id||seen.has(id)||!text(o.title,200)||!text(o.status,150))throw new AppError('Une vente visible est incomplète ou répétée.')
   seen.add(id)
   if(!['ready','waiting','unavailable'].includes(o.label_state))throw new AppError('État du bordereau inconnu.')
-  return {conversation_id:id,title:text(o.title,200),status:text(o.status,150),price:money(o.price),currency:'EUR',photo_url:photo(o.photo_url),item_id:vid(o.item_id),carrier:text(o.carrier,60)||null,deadline_text:text(o.deadline_text,150)||null,label_state:o.label_state,label_note:text(o.label_note,200)||null,detail_read:o.detail_read===true}
+  return {conversation_id:id,title:text(o.title,200),status:text(o.status,150),price:money(o.price),currency:'EUR',photo_url:photo(o.photo_url),item_id:vid(o.item_id),carrier:text(o.carrier,60)||null,deadline_text:text(o.deadline_text,150)||null,label_state:o.label_state,label_note:text(o.label_note,200)||null,detail_read:o.detail_read===true,extension_state:['available','pending','accepted','declined','unavailable'].includes(o.extension_state)?o.extension_state:'unknown'}
  })
 }
 export async function applyDesktopOrders(db,task,result,settings,now=Date.now()){
@@ -30,6 +31,9 @@ export async function applyDesktopOrders(db,task,result,settings,now=Date.now())
  const saved=rows.map(({detail_read,...o})=>{
   const before=old.get(o.conversation_id)
   return {...o,account_id:task.account_id,seen_at:at,item_id:o.item_id||before?.item_id||null,carrier:o.carrier||before?.carrier||null,deadline_text:o.deadline_text||before?.deadline_text||null,
+   ship_deadline:detail_read&&o.deadline_text?visibleDeadline(o.deadline_text,now):before?.ship_deadline||null,
+   extension_state:detail_read&&o.extension_state!=='unknown'?o.extension_state:before?.extension_state||'unknown',
+   extension_checked_at:detail_read&&o.extension_state!=='unknown'?at:before?.extension_checked_at||null,
    ...(!detail_read&&before?{label_state:before.label_state,label_note:before.label_note}:{}),...(before?.label_path?{label_state:'saved',label_note:null}:{})}
  })
  if(saved.length)check(await db.from('ylavint_desktop_orders').upsert(saved,{onConflict:'account_id,conversation_id'}))
@@ -73,7 +77,7 @@ export async function walletView(db,account){
 export async function desktopOrdersView(db,account){
  let query=db.from('ylavint_desktop_orders').select('*').order('seen_at',{ascending:false}).limit(500)
  if(account)query=query.eq('account_id',account)
- return check(await query).map(o=>({...o,source:'desktop',transaction_id:`visible:${o.account_id}:${o.conversation_id}`,item_ids:o.item_id?[o.item_id]:[],order_date:null,ship_deadline:null}))
+ return check(await query).map(o=>({...o,source:'desktop',transaction_id:`visible:${o.account_id}:${o.conversation_id}`,item_ids:o.item_id?[o.item_id]:[],order_date:null}))
 }
 export async function desktopLabelLink(db,account,conversation){
  if(!account||!cid(conversation))throw new AppError('Choisis le compte et la vente.')

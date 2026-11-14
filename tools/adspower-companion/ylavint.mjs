@@ -6,13 +6,14 @@ import {browseMemory} from './ylavint-memory.mjs'
 import {routineMemory,randomInt} from './ylavint-routine.mjs'
 import {preparePublication,PublicationForm} from './ylavint-publication.mjs'
 import {VisibleCommerce} from './ylavint-commerce.mjs'
+import {requestVisibleExtension} from './ylavint-extension.mjs'
 
-export const DESKTOP_KINDS=['scan_wardrobe','scan_likes','sync_inbox','like_message','reply_message','publish_item','scan_wallet','sync_orders','fetch_label']
-const writes=task=>['like_message','reply_message','publish_item'].includes(task?.kind)
+export const DESKTOP_KINDS=['scan_wardrobe','scan_likes','sync_inbox','like_message','reply_message','publish_item','scan_wallet','sync_orders','fetch_label','order_extension']
+const writes=task=>['like_message','reply_message','publish_item','order_extension'].includes(task?.kind)
 const SITE='https://vinted-stock.vercel.app'
 const wait=(ms,signal)=>new Promise(resolve=>{if(signal.aborted)return resolve();const done=()=>{clearTimeout(timer);signal.removeEventListener('abort',done);resolve()};const timer=setTimeout(done,ms);signal.addEventListener('abort',done,{once:true})})
 export async function desktopRequest(token,action,body,fetcher=fetch){
-  const r=await fetcher(SITE+'/api/collector',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...body,action,version:'pc-1.7.0'}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(30000)})
+  const r=await fetcher(SITE+'/api/collector',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...body,action,version:'pc-1.8.0'}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(30000)})
   const data=await r.json().catch(()=>null)
   if(!r.ok)throw Object.assign(Error(data?.error||'Le site ne répond pas.'),{status:r.status})
   if(!data||typeof data!=='object')throw Error('Réponse du site illisible.')
@@ -141,10 +142,11 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       let value
       const p=task.payload||{}
       update({state:'reading',message:task.kind==='reply_message'?'Relecture de la conversation avant la réponse':task.kind==='like_message'?'Vérification du favori, de l’article et du prix':'Lecture des pages Vinted',current_action:{kind:task.kind,id:task.id}})
-      if(p.skip)value={skipped:p.skip,context_changed:p.context_changed,review_required:p.review_required}
+      if(p.skip)value={skipped:p.skip,context_changed:p.context_changed,review_required:p.review_required,extension_state:p.extension_state}
       else if(task.kind==='scan_likes')value=await reader.likes()
       else if(task.kind==='scan_wardrobe')value=await reader.wardrobe()
       else if(task.kind==='sync_inbox')value=await reader.inbox(p)
+      else if(task.kind==='order_extension')value=await requestVisibleExtension({reader,authorize,journal,task},p)
       else if(['scan_wallet','sync_orders','fetch_label'].includes(task.kind)){
         const commerce=new VisibleCommerce({reader,authorize})
         value=await (task.kind==='scan_wallet'?commerce.wallet():task.kind==='sync_orders'?commerce.orders():commerce.label(p))
@@ -171,7 +173,7 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
             if(sent?.desktop_cancelled)value={skipped:sent.desktop_cancelled,conversation_id:conversation,context_changed:sent.context_changed,review_required:sent.review_required,buyer_engaged:sent.buyer_engaged}
             else{
               const offer=p.offer_price?await ui.offer({task_id:task.id,conversation_id:conversation,price:p.offer_price}):false
-              value=offer?.desktop_cancelled&&!sent?{skipped:offer.desktop_cancelled,conversation_id:conversation}:{conversation_id:conversation,message:body||null,message_id:sent?.reply?.id||null,offer:offer===true}
+              value=offer?.desktop_cancelled&&!sent?{skipped:offer.desktop_cancelled,conversation_id:conversation}:{conversation_id:conversation,message:body||null,message_id:sent?.reply?.id||null,offer:offer===true,...(offer===true?{offer_price:p.offer_price,expected_price:p.expected_price}:{})}
             }
           }
         }

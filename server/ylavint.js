@@ -459,7 +459,7 @@ export {queueYlavintListing as queueStudioPublish,cancelYlavintListing as cancel
 export async function ylavintPublishReady(db,accountId){return (await import('./listing-ylavint.js').then(m=>m.publicationStatus(db,accountId))).ready}
 
 // ---------- Site : vues et actions ----------
-export const YLAVINT_ACTIONS=new Set(['reply','mark_read','ai_suggest','ai_discard','ai_send','remember_reply','cancel_message','refresh_conversation','refresh_inbox','human_done','save_ai','test_ai','item_unmask','item_reprice','label_link','label_print','retry_message'])
+export const YLAVINT_ACTIONS=new Set(['reply','mark_read','ai_suggest','ai_discard','ai_send','remember_reply','cancel_message','refresh_conversation','refresh_inbox','human_done','save_ai','test_ai','item_unmask','item_reprice','label_link','label_print','retry_message','preparation_save','labels_batch','request_extension'])
 const accountOf=v=>isId(v)?v.toLowerCase():null
 const convId=v=>cid(v)
 async function logins(db){return new Map(check(await db.from('publication_accounts').select('id,login')).map(a=>[a.id,a.login]))}
@@ -479,6 +479,7 @@ export async function overviewExtras(db){
 
 export async function ylavintView(req,{db}){
   const q=req.query||{},view=q.view
+  if(['preparation','today','results'].includes(view))return (await import('./ylavint-operations.js')).operationsView(db,view,{account:accountOf(q.account_id),days:q.days})
   if(view==='wallet')return (await import('./ylavint-commerce.js')).walletView(db,accountOf(q.account_id))
   if(view==='actions')return (await import('./ylavint-actions.js')).upcomingActions(db,accountOf(q.account_id))
   if(view==='inbox'){
@@ -516,8 +517,14 @@ export async function ylavintView(req,{db}){
     const lastScan=tasks.find(t=>t.kind==='scan_wardrobe'&&t.state==='done')?.finished_at||null
     return {listings:rows.map(r=>({...r,busy:pending.has(r.item_id)})),counts,last_scan:lastScan,settings:settings?{...effectiveSettings(settings),enabled:settings.enabled,paused:settings.paused}:null}
   }
-  if(view==='sales'){
-    const account=accountOf(q.account_id)
+  if(view==='sales')return {orders:await (await import('./ylavint-operations.js')).enrichOrders(db,await ordersView(db,accountOf(q.account_id)))}
+  if(view==='ai'){
+    const config=await readAi(db)
+    return {config,defaults:AI_DEFAULTS,models:LISTING_AI_MODELS,ready:!!listingAiToken(null)}
+  }
+  throw new AppError('Vue inconnue.')
+}
+export async function ordersView(db,account=null){
     let query=db.from('vinted_agent_orders').select('transaction_id,conversation_id,account_id,status,title,price,currency,order_date,label_path,label_fetched_at,sales_order_id,item_ids,seen_at,photo_url,ship_deadline,carrier,shipment_id').order('order_date',{ascending:false,nullsFirst:false}).limit(500)
     if(account)query=query.eq('account_id',account)
     const [orders,names,desktop]=await Promise.all([query.then(check),logins(db),(await import('./ylavint-commerce.js')).desktopOrdersView(db,account)])
@@ -526,19 +533,14 @@ export async function ylavintView(req,{db}){
       const fresh=byConversation.get(`${o.account_id}:${o.conversation_id}`)
       if(!fresh)return o
       byConversation.delete(`${o.account_id}:${o.conversation_id}`)
-      return {...o,...fresh,legacy_transaction_id:o.transaction_id,order_date:o.order_date,sales_order_id:o.sales_order_id,ship_deadline:o.ship_deadline,label_path:fresh.label_path||o.label_path,...(!fresh.label_path&&o.label_path?{label_source:'extension'}:{})}
+      return {...o,...fresh,legacy_transaction_id:o.transaction_id,order_date:o.order_date||fresh.order_date,sales_order_id:o.sales_order_id,ship_deadline:fresh.ship_deadline||o.ship_deadline,label_path:fresh.label_path||o.label_path,...(!fresh.label_path&&o.label_path?{label_source:'extension'}:{})}
     })
-    return {orders:[...byConversation.values(),...merged].map(o=>({...o,login:names.get(o.account_id)||null,normalized:orderStatus(o.status)}))}
-  }
-  if(view==='ai'){
-    const config=await readAi(db)
-    return {config,defaults:AI_DEFAULTS,models:LISTING_AI_MODELS,ready:!!listingAiToken(null)}
-  }
-  throw new AppError('Vue inconnue.')
+    return [...byConversation.values(),...merged].map(o=>({...o,login:names.get(o.account_id)||null,normalized:orderStatus(o.status)}))
 }
 
 export async function handleYlavint(req,{db,user},{generate=generateReply}={}){
   const b=req.body,account=accountOf(b.account_id),conversation=convId(b.conversation_id)
+  if(['preparation_save','labels_batch','request_extension'].includes(b.action))return (await import('./ylavint-operations.js')).operationsAction(db,b,user)
   const needConv=async()=>{
     if(!account||!conversation)throw new AppError('Conversation invalide.')
     const c=check(await db.from('ylavint_conversations').select('*').eq('account_id',account).eq('conversation_id',conversation).maybeSingle())

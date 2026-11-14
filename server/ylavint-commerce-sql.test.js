@@ -13,7 +13,9 @@ test('commerce storage is private and only a recent PC with enabled functions ca
    create table listing_drafts(publication_task_id uuid,publish_provider text,state text,owner_id uuid,fields jsonb);
   `)
   await db.exec(await readFile(new URL('../supabase/migrations/20261114160002_ylavint_desktop_commerce.sql',import.meta.url),'utf8'))
-  for(const table of ['ylavint_wallets','ylavint_desktop_orders']){
+  await db.exec('create schema auth;create table auth.users(id uuid primary key);')
+  await db.exec(await readFile(new URL('../supabase/migrations/20261114162953_ylavint_operations.sql',import.meta.url),'utf8'))
+  for(const table of ['ylavint_wallets','ylavint_desktop_orders','ylavint_order_preparation']){
    const access=(await db.query(`select relrowsecurity as rls,has_table_privilege('anon',$1,'select') as anon,has_table_privilege('authenticated',$1,'select') as authenticated,has_table_privilege('service_role',$1,'select,insert,update') as server from pg_class where oid=$1::regclass`,[table])).rows[0]
    assert.deepEqual(access,{rls:true,anon:false,authenticated:false,server:true})
   }
@@ -38,5 +40,14 @@ test('commerce storage is private and only a recent PC with enabled functions ca
   await db.exec(`update vinted_agent_tasks set state='done' where state='running'`)
   assert.equal((await claim('extension')).state,'idle','the extension never gets wallet scans')
   await assert.rejects(db.query(`insert into ylavint_wallets(account_id,available,pending,withdrawal) values ($1,-1,0,'unknown')`,[account]))
+  await db.exec(`update vinted_agent_tasks set state='done';update vinted_agent_settings set messaging='{"executor":"desktop"}',extension_version='pc-1.7.0'`)
+  await db.query(`insert into vinted_agent_tasks(account_id,kind,writes,payload) values($1,'order_extension',true,'{"desktop_order":true,"conversation_id":"123","days":3}')`,[account])
+  assert.equal((await claim('desktop')).state,'idle','old PC never receives shipping requests')
+  await db.exec(`update vinted_agent_settings set extension_version='pc-1.8.0'`)
+  assert.equal((await claim('desktop')).task.kind,'order_extension')
+  await db.exec(`update vinted_agent_tasks set state='done' where state='running'`)
+  await assert.rejects(db.query(`insert into vinted_agent_tasks(account_id,kind,writes,payload) values($1,'order_extension',true,'{"desktop_order":true,"conversation_id":"123"}')`,[account]),/unique/)
+  const second=crypto.randomUUID();await db.query(`insert into vinted_agent_tasks(account_id,kind,writes,payload) values($1,'order_extension',true,'{"desktop_order":true,"conversation_id":"123"}')`,[second])
+  assert.equal((await claim('desktop')).state,'idle','another account never supplies this account’s tasks')
  }finally{await db.close()}
 })

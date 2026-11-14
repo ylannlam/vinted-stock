@@ -29,6 +29,9 @@ test('an existing label can be retrieved; cancellation, extension requests and g
  const base={url:'https://www.vinted.fr/inbox/'+id,conversation:true,system:[{text:'Article à emballer et envoyer (avant le 23 nov. 10:00)\nImprime le bordereau. Mondial Relay',controls:[control]}]}
  const r=readOrderDetail(base,row);assert.equal(r.label_state,'ready');assert.equal(r.carrier,'Mondial Relay');assert.equal(r.deadline_text,'avant le 23 nov. 10:00')
  for(const block of [{text:'En attente de réponse quant à la demande de prolongation',controls:[{text:'Annuler la demande',enabled:true}]},{text:'Commande annulée',controls:[control]},{text:'Article à emballer',controls:[{text:'Obtenir le bordereau',enabled:true}]},{text:'Article à emballer',controls:[control,control]}])assert.equal(readOrderDetail({...base,system:[block]},row).label_state,'waiting')
+ const reminder={text:'2 jours restants pour envoyer le colis (avant le 16 nov. 15:22)',controls:[{text:'Télécharger',enabled:true},{text:'Je confirme avoir bien envoyé la commande',enabled:true}]}
+ assert.equal(readOrderDetail({...base,system:[reminder]},row).labelControl.text,'Télécharger')
+ assert.equal(readOrderDetail({...base,system:[{...reminder,text:'Une pièce jointe à télécharger'}]},row).label_state,'waiting')
  assert.throws(()=>readOrderDetail({...base,url:'https://www.vinted.fr/inbox/99'},row))
 })
 test('PDF validation rejects unrelated destinations, credentials, HTML and oversized files',()=>{

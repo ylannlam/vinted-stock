@@ -72,8 +72,8 @@ function Thread({request,conv,onBack,onChanged}){
 }
 
 // Messagerie centralisée : toutes les conversations de tous les comptes, sur le site comme sur le téléphone.
-export default function YlaVintInbox({request,accounts=[]}){
- const [rows,setRows]=useState(null),[filter,setFilter]=useState('all'),[account,setAccount]=useState(''),[search,setSearch]=useState(''),[current,setCurrent]=useState(null),[error,setError]=useState(''),[ai,setAi]=useState(null)
+export default function YlaVintInbox({request,accounts=[],initialConversation=null}){
+ const [rows,setRows]=useState(null),[filter,setFilter]=useState('all'),[account,setAccount]=useState(initialConversation?.account_id||''),[search,setSearch]=useState(''),[current,setCurrent]=useState(initialConversation),[error,setError]=useState(''),[ai,setAi]=useState(null)
  const query=`&view=inbox&filter=${filter}${account?`&account_id=${account}`:''}${search.trim()?`&q=${encodeURIComponent(search.trim())}`:''}`
  const active=useRef(query),loading=useRef(null);active.current=query
  const load=async()=>{if(loading.current===query)return;loading.current=query;try{const r=await request('GET',undefined,query);if(active.current!==query)return;setRows(r.conversations);setAi(r.ai);setError('')}catch(e){if(active.current===query)setError(e.message)}finally{if(loading.current===query)loading.current=null}}

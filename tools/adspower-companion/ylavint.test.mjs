@@ -243,11 +243,13 @@ test('rehearsal only reads visible pages and the scoped plan, without task claim
  assert.equal(updates.find(x=>x.summary).summary.messages_sent,0)
 })
 
-test('resume rereads and imports context before polling; takeover leaves the owned page open',async()=>{
+test('resume rereads and imports context before polling; takeover leaves the owned page open',async t=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'ylavint-resume-'))
+ t.after(async()=>{const relative=path.relative(tmpdir(),dir);if(relative.startsWith('ylavint-resume-')&&!relative.includes(path.sep))await rm(dir,{recursive:true,force:true})})
  const actions=[],controller=new AbortController();let closed=0
  const page={close:async()=>{closed++}}
  class Reader extends FakeReader{async inbox(){actions.push('visible_inbox');return {conversations:[]}}}
- await runDesktop(binding,{start:async()=>({address:'test'})},{signal:controller.signal,dataDir:tmpdir(),Reader,update:()=>{},connect:async()=>({contexts:()=>[{newPage:async()=>page}],close:async()=>{}}),request:async(_token,action)=>{
+ await runDesktop(binding,{start:async()=>({address:'test'})},{signal:controller.signal,dataDir:dir,Reader,update:()=>{},connect:async()=>({contexts:()=>[{newPage:async()=>page}],close:async()=>{}}),request:async(_token,action)=>{
   actions.push(action)
   if(action==='agent_status')return {allowed:true,in_window:true,pace:PACE}
   if(action==='agent_preview')return {actions:[]}

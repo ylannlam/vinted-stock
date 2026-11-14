@@ -1,5 +1,5 @@
 // Keep stored extension settings intact while exposing only what this executor can run.
-export const DESKTOP_KINDS=['scan_wardrobe','scan_likes','sync_inbox','like_message','reply_message','publish_item','scan_wallet','sync_orders','fetch_label']
+export const DESKTOP_KINDS=['scan_wardrobe','scan_likes','sync_inbox','like_message','reply_message','publish_item','scan_wallet','sync_orders','fetch_label','order_extension']
 export const DESKTOP_FEATURES=['inbox','ai','dressing','likes','publish','wallet','orders','labels']
 export const isDesktop=settings=>settings?.messaging?.executor==='desktop'
 export const supportsTask=(settings,kind)=>kind==='scan_wallet'?isDesktop(settings):!isDesktop(settings)||DESKTOP_KINDS.includes(kind)

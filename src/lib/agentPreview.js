@@ -1,5 +1,6 @@
 // Données fictives de l'onglet Agent (mode démo, aucune requête réelle).
 import {DEFAULTS,RECIPES,KINDS,DEFAULT_RECIPES,normalizeSettings} from '../../server/vinted-agent-config.js'
+import {orderKey,orderIdentity,toPrepare,todayItems,resultMetrics} from './ylavintOperations.js'
 // Démo : versions simplifiées (le module serveur YlaVint n'est pas chargé dans le navigateur).
 const AI_DEFAULTS={enabled:false,mode:'suggest',instructions:'',signature:'',delay_min_seconds:60,delay_max_seconds:240,max_auto_per_conversation:3,group_seconds:45,memory_messages:40,human_keywords:'remboursement, litige, arnaque, perdu, pas reçu, abîmé, cassé, retour',model:'gemini-3.5-flash-lite'}
 const normalizeAi=(v={})=>({...AI_DEFAULTS,...v})
@@ -66,6 +67,21 @@ export async function agentPreview(method='GET',body,query=''){
   await new Promise(r=>setTimeout(r,150))
   const q=Object.fromEntries(new URLSearchParams(query.replace(/^&/,'')))
   const names=new Map(state.accounts.map(a=>[a.id,a.login]))
+  const operationOrders=()=>state.orders.map((o,i)=>({...o,order_key:orderKey(o),login:names.get(o.account_id),normalized:orderStatus(o.status),photo_url:photo(i),ship_deadline:i===0?new Date(Date.now()+20*36e5).toISOString():null,deadline_text:i===0?'À expédier demain avant 10 h':o.deadline_text,extension:o.extension||{state:i===1?'pending':'unknown'},preparation:o.preparation||{sku:['RF-38','TC-01','PM-07'][i]||'',location:i===0?'Bac A · étagère 2':'',prepared_at:null}}))
+  if(method==='GET'&&q.view==='preparation')return structuredClone({orders:operationOrders().filter(o=>toPrepare(o)&&(!q.account_id||o.account_id===q.account_id)),coverage:{as_of:new Date().toISOString()}})
+  if(method==='GET'&&q.view==='today')return structuredClone({items:todayItems(operationOrders(),convs.map(c=>({...c,login:names.get(c.account_id)})),[]).filter(i=>!q.account_id||i.account_id===q.account_id),coverage:{as_of:new Date().toISOString()}})
+  if(method==='GET'&&q.view==='results'){
+   const days=[1,7,30].includes(Number(q.days))?Number(q.days):7,now=Date.now()
+   const metric=a=>resultMetrics({messages:convs.flatMap(c=>(messages[c.conversation_id]||[]).map(m=>({...m,account_id:c.account_id,conversation_id:c.conversation_id}))).filter(m=>!a||a===m.account_id),orders:[],from:now-days*864e5,to:now})
+   return {days,totals:metric(q.account_id),accounts:state.accounts.filter(a=>!q.account_id||a.id===q.account_id).map(a=>({account_id:a.id,login:a.login,...metric(a.id)})),coverage:{as_of:new Date().toISOString()},method:'Données fictives. Messages confirmés pendant la période, réponses dans les 7 jours suivant un message. Aucune vente ne peut être attribuée à l’assistant sans date d’achat confirmée.'}
+  }
+  if(body?.action==='preparation_save'){const o=state.orders.find(o=>o.account_id===body.account_id&&orderKey(o)===body.order_key);if(!o)throw Error('Vente introuvable.');const existing=operationOrders().find(r=>orderIdentity(r)===orderIdentity(o)).preparation;o.preparation={...existing,...('sku' in body?{sku:body.sku}:{}),...('location' in body?{location:body.location}:{}),...('prepared' in body?{prepared_at:body.prepared?new Date().toISOString():null}:{})};return {saved:true,message:'Démo : préparation enregistrée.'}}
+  if(body?.action==='request_extension'){const o=state.orders.find(o=>o.account_id===body.account_id&&o.conversation_id===body.conversation_id);if(!o)throw Error('Vente introuvable.');o.extension={state:'queued',days:body.days};return {saved:true,message:'Démo : demande ajoutée à la file, aucun envoi réel.'}}
+  if(body?.action==='labels_batch'){
+   const rows=operationOrders().filter(o=>body.selection.some(s=>s.account_id===o.account_id&&s.order_key===orderKey(o)));if(!rows.length||rows.some(o=>!o.label_path))throw Error('Un bordereau manque.')
+   const {PDFDocument}=await import('pdf-lib'),pdf=await PDFDocument.create();for(const o of rows){const label=await (await import('./shippingLabelPreview.js')).shippingLabelPreview(o.title),doc=await PDFDocument.load(Uint8Array.from(atob(label.pdf),c=>c.charCodeAt(0)));pdf.addPage((await pdf.copyPages(doc,[0]))[0])}
+   return {url:URL.createObjectURL(new Blob([await pdf.save()],{type:'application/pdf'})),preview:(await (await import('./shippingLabelPreview.js')).shippingLabelPreview(rows[0].title)).preview,filename:'demo-colis-100x150.pdf',count:rows.length,manifest:rows}
+  }
   if(method==='GET'&&q.view==='wallet')return {wallets:[{account_id:ids[0],available:48.5,pending:92,currency:'EUR',withdrawal:'available',checked_at:ago(18)},{account_id:ids[1],available:0,pending:35,currency:'EUR',withdrawal:'unavailable',checked_at:ago(1600)}]}
   if(method==='POST'&&body?.action==='label_print')return (await import('./shippingLabelPreview.js')).shippingLabelPreview('Robe longue fleurie')
   if(method==='GET'&&q.view==='actions')return structuredClone({actions:state.planned.filter(a=>a.state==='queued'&&(!q.account_id||a.account_id===q.account_id))})

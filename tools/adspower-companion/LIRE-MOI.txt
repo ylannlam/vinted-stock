@@ -1,6 +1,6 @@
 STOCK VINTED — CONNECTEUR ADSPOWER
 
-ASSISTANT YLAVINT SUR PC (version 1.7.0)
+ASSISTANT YLAVINT SUR PC (version 1.8.0)
 Cette version ajoute le pilotage des favoris et de la messagerie depuis
 https://vinted-stock.vercel.app/ylavint#assistant-pc.
 La mise à jour du site et de sa base doit être installée avant de choisir ce mode.
@@ -167,3 +167,6 @@ Le programme n'est accessible que depuis ce PC et exige une autorisation
 administrateur temporaire émise par Stock Vinted. La clé AdsPower, les cookies
 ne sont pas envoyés au site. Le transfert des conversations concerne uniquement
 le mode YlaVint décrit plus haut.
+
+OPERATIONS 1.8
+Préparation des colis et résultats dans YlaVint. Demande de prolongation depuis Commandes : 3 ou 5 jours ouvrés, motif facultatif de 200 caractères. La demande passe par le formulaire visible de Vinted et attend la réponse de l’acheteur. Une tentative interrompue doit être vérifiée avant de reprendre. Aucun compte supplémentaire n’est activé par la mise à jour.

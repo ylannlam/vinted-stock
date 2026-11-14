@@ -37,6 +37,15 @@ export function readWallet(snapshot){
  return {available,pending,currency:'EUR',withdrawal:available===0?'unavailable':transfer.length===1?(transfer[0].enabled?'available':'unavailable'):'unknown'}
 }
 const normalize=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
+export function readExtensionState(snapshot){
+ for(const block of [...(snapshot.system||[])].reverse()){
+  const t=normalize(block.text)
+  if(/(?:a accepte|acceptee).*prolongation|prolongation.*acceptee/.test(t))return 'accepted'
+  if(/(?:a refuse|refusee).*prolongation|prolongation.*refusee/.test(t))return 'declined'
+  if(/attente de reponse.*prolongation/.test(t))return 'pending'
+ }
+ return (snapshot.system||[]).some(b=>b.controls?.some(c=>c.enabled&&/^prolonger le delai d.envoi$/.test(normalize(c.text))))?'available':'unknown'
+}
 export function readOrderCards(snapshot){
  const u=new URL(snapshot.url)
  if(u.origin!==BASE||u.pathname!=='/my_orders'||!snapshot.text.includes('Mes commandes'))throw review('La page des commandes n’est pas reconnue.')
@@ -54,11 +63,13 @@ export function readOrderCards(snapshot){
 export function readOrderDetail(snapshot,row){
  if(cid(new URL(snapshot.url).pathname.split('/')[2])!==row.conversation_id||!snapshot.conversation)throw review('Une autre conversation est ouverte.')
  const block=snapshot.system.at(-1),text=block?.text||'',plain=normalize(text)
- const controls=(block?.controls||[]).filter(c=>/^(Imprimer|Télécharger|Afficher) (?:le |ton )?bordereau(?: d[’']envoi)?$/i.test(c.text))
+ const reminder=/jours? restants? pour envoyer le colis/.test(plain)
+ const controls=(block?.controls||[]).filter(c=>/^(Imprimer|Télécharger|Afficher) (?:le |ton )?bordereau(?: d[’']envoi)?$/i.test(c.text)||reminder&&/^Télécharger$/i.test(c.text))
  const blocked=/attente de reponse.*prolongation|commande annulee|transaction annulee|rembourse|litige|retour|commande suspendue/.test(plain)
- const ready=!blocked&&controls.length===1&&controls[0].enabled&&/article a emballer|imprime le bordereau|telecharger.*bordereau|bordereau.*pret/i.test(plain)
+ const ready=!blocked&&controls.length===1&&controls[0].enabled&&(reminder||/article a emballer|imprime le bordereau|telecharger.*bordereau|bordereau.*pret/i.test(plain))
  const carrier=text.match(/Mondial Relay|Shop2Shop(?: by Chronopost)?|Chronopost|Colissimo|Vinted Go|Relais Colis|UPS|DHL|DPD|InPost|Bpost|PostNL/i)?.[0]||null
- return {...row,detail_read:true,label_state:ready?'ready':'waiting',label_note:ready?null:/prolongation/.test(plain)?'Réponse à la demande de prolongation en attente.':blocked?'Commande à vérifier sur Vinted.':'Bordereau pas encore accessible sur la page.',
+ const extension_state=readExtensionState(snapshot)
+ return {...row,detail_read:true,extension_state,label_state:ready?'ready':'waiting',label_note:ready?null:extension_state==='pending'?'Réponse à la demande de prolongation en attente.':blocked?'Commande à vérifier sur Vinted.':'Bordereau pas encore accessible sur la page.',
   carrier,deadline_text:text.match(/(?:avant le|expédie.*?avant le)\s+[^)\n]+/i)?.[0]||null,
   status:/article a emballer/.test(plain)?'À expédier':row.status,
   labelControl:ready?controls[0]:null}

@@ -186,6 +186,7 @@ async function taskBundle(db,task,settings){
   if(isDesktop(settings)){
     bundle.recipes={};bundle.missing=[]
     if(task.kind==='fetch_label')bundle.payload=await desktopLabelPayload(db,task)
+    if(task.kind==='order_extension')bundle.payload=await (await import('./ylavint-operations.js')).extensionPayload(db,task)
   }
   if(task.kind==='fetch_label'&&recipes.order_label&&/\/shipments\//.test(recipes.order_label.path||''))recipes.order_label={...recipes.order_label,id_from:'shipment'}
   if(task.kind==='like_message')bundle.payload=await (await import('./ylavint-flows.js')).likePayload(db,task,settings)
@@ -459,7 +460,14 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
     if(body.result?.buyer_engaged===true&&engaged)await enqueue(db,[{account_id:task.account_id,kind:'sync_inbox',priority:8,dedupe_key:`engaged:${task.account_id}:${engaged}`,payload:{conversation_ids:[engaged],force_details:true}}])
     if(['access_denied','messaging_refused'].includes(body.result?.skip_code))await likeBackoff(db,task,now,rand)
   }
-  {const flows=await import('./ylavint-flows.js');if(flows.isFlowTask(task.kind))summary=await flows.flowDone(db,task,{ok:true,result:body.result},{now})}
+  if(task.kind==='like_message'&&body.result?.offer===true){
+    const offer=money(body.result.offer_price),expected=money(body.result.expected_price)
+    summary={...summary,offer_sent:true,...(offer>0&&expected>=offer?{offer_price:offer,expected_price:expected}:{})}
+  }
+  if(task.kind==='order_extension'&&task.payload?.desktop_order===true){
+    if(desktopDriver(key)!=='desktop')throw new AppError('Demande réservée à l’Assistant PC.',403)
+    summary=await (await import('./ylavint-operations.js')).extensionResult(db,task,body.result,now)
+  }else{const flows=await import('./ylavint-flows.js');if(flows.isFlowTask(task.kind))summary=await flows.flowDone(db,task,{ok:true,result:body.result},{now})}
   await finish(db,task,'done',summary,null)
    // Un formulaire rempli n'est pas une annonce publiée : aucune confirmation de vente n'est déduite.
   if(['sync_inbox','scan_likes'].includes(task.kind)&&task.payload?.history_since&&body.result?.more_history===true){
@@ -718,7 +726,7 @@ export async function handleAgent(req,{db,user}){
   if(body.action==='cancel'){
     if(!isId(body.task_id))throw new AppError('Tâche invalide.')
     const publication=check(await db.from('vinted_agent_tasks').select('id,kind,payload,created_by').eq('id',body.task_id).maybeSingle())
-    if(['reply_message','like_message'].includes(publication?.kind))return (await import('./ylavint-actions.js')).cancelPlannedAction(db,body.task_id)
+    if(['reply_message','like_message','order_extension'].includes(publication?.kind))return (await import('./ylavint-actions.js')).cancelPlannedAction(db,body.task_id)
     if(publication?.kind==='publish_item'){const row=check(await db.from('listing_drafts').select('*').eq('publication_task_id',publication.id).eq('owner_id',user.id).maybeSingle());if(!row)throw new AppError('Fiche introuvable.',404);await cancelYlavintListing(db,row);return {cancelled:1}}
     const r=check(await db.from('vinted_agent_tasks').update({state:'cancelled',finished_at:new Date().toISOString()}).eq('id',body.task_id).eq('state','queued').select('id,kind,payload'))
     if(r?.[0]?.kind==='publish_item')await markDraft(db,r[0].payload.draft_id,{state:'draft',scheduled_at:null,message:'Publication par l’agent annulée.'})

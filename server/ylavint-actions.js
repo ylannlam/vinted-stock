@@ -6,7 +6,7 @@ import {isDesktop} from '../src/lib/ylavintExecution.js'
 import {desktopWindow} from './ylavint-desktop.js'
 
 export async function upcomingActions(db,accountId=null,{now=Date.now()}={}){
- let query=db.from('vinted_agent_tasks').select('id,account_id,kind,state,not_before,created_at,payload').in('state',['queued','running']).in('kind',['reply_message','like_message','publish_item']).order('not_before',{ascending:true}).limit(100)
+ let query=db.from('vinted_agent_tasks').select('id,account_id,kind,state,not_before,created_at,payload').in('state',['queued','running']).in('kind',['reply_message','like_message','publish_item','order_extension']).order('not_before',{ascending:true}).limit(100)
  if(accountId)query=query.eq('account_id',accountId)
  const tasks=check(await query)
  if(!tasks.length)return {actions:[]}
@@ -25,8 +25,8 @@ export async function upcomingActions(db,accountId=null,{now=Date.now()}={}){
   if(t.kind==='publish_item')return {id:t.id,account_id:t.account_id,login:names.get(t.account_id)||'Compte Vinted',kind:t.kind,state:t.state,not_before:t.not_before,created_at:t.created_at,recipient:p.listing?.submit?'Publication d’annonce':'Préparation d’annonce',item_title:p.listing?.fields?.title||'Annonce à vérifier',body:p.listing?.fields?.description||'',listing_price:p.listing?.fields?.price,photo_count:p.listing?.photos?.length||0,reason:p.listing?.submit?'Mise en ligne demandée depuis l’atelier, après les contrôles du formulaire.':'Formulaire à préparer puis à valider manuellement dans Vinted.',executor:p.listing?.execution||'extension',blocked_reason:blocked}
   return {id:t.id,account_id:t.account_id,login:names.get(t.account_id)||'Compte Vinted',kind:t.kind,state:t.state,not_before:t.not_before,created_at:t.created_at,
    conversation_id:p.conversation_id||null,item_id:p.item_id||null,recipient:p.login||c?.other_login||'Membre à confirmer sur Vinted',item_title:p.title||c?.item_title||null,
-   body:p.message??p.body??'',offer_price:p.offer_price??null,offer_requested:!!p.offer_requested,
-   reason:t.kind==='reply_message'?(p.source==='ai'?'Réponse IA aux derniers messages reçus.':'Réponse validée depuis la messagerie.') : p.followup?'Rappel après un favori, uniquement sans réponse de l’acheteur.':'Premier contact après un favori.',
+   body:p.reason??p.message??p.body??'',offer_price:p.offer_price??null,offer_requested:!!p.offer_requested,
+   reason:t.kind==='order_extension'?`Demande de prolongation de ${p.days||'quelques'} jours ouvrés. Accord de l’acheteur nécessaire.`:t.kind==='reply_message'?(p.source==='ai'?'Réponse IA aux derniers messages reçus.':'Réponse validée depuis la messagerie.') : p.followup?'Rappel après un favori, uniquement sans réponse de l’acheteur.':'Premier contact après un favori.',
    source_message_id:p.source_message_id||p.context_message_id||null,executor:isDesktop(s)?'desktop':'extension',blocked_reason:blocked}
  }))}
 }
@@ -34,14 +34,14 @@ export async function upcomingActions(db,accountId=null,{now=Date.now()}={}){
 export async function cancelPlannedAction(db,taskId,{now=Date.now()}={}){
  if(!isId(taskId))throw new AppError('Action invalide.')
  const task=check(await db.from('vinted_agent_tasks').select('id,account_id,kind,payload,state').eq('id',taskId).maybeSingle())
- if(!task||!['like_message','reply_message'].includes(task.kind))throw new AppError('Action introuvable.',404)
+ if(!task||!['like_message','reply_message','order_extension'].includes(task.kind))throw new AppError('Action introuvable.',404)
  const saved=check(await db.from('vinted_agent_tasks').update({state:'cancelled',finished_at:new Date(now).toISOString(),error:'Annulée depuis les prochaines actions.'}).eq('id',taskId).eq('state','queued').select('id'))
  if(!saved.length)throw new AppError('Cette action est déjà prise en charge. Reprends la main dans Assistant PC.',409)
  const p=task.payload||{}
  if(task.kind==='reply_message'){
   check(await db.from('ylavint_messages').update({state:'cancelled',error:'Annulé depuis les prochaines actions.'}).eq('account_id',task.account_id).eq('task_id',taskId).eq('state','queued'))
   if(p.source==='ai')check(await db.from('ylavint_conversations').update({ai_state:'skipped',ai_draft:null,ai_reason:'Réponse annulée par le vendeur.'}).eq('account_id',task.account_id).eq('conversation_id',p.conversation_id))
- }else check(await db.from('vinted_agent_contacts').update(p.followup?{followup_state:'skipped'}:{state:'skipped'}).eq('account_id',task.account_id).eq('item_id',p.item_id).eq('user_id',p.user_id))
+ }else if(task.kind==='like_message')check(await db.from('vinted_agent_contacts').update(p.followup?{followup_state:'skipped'}:{state:'skipped'}).eq('account_id',task.account_id).eq('item_id',p.item_id).eq('user_id',p.user_id))
  await agentLog(db,{account_id:task.account_id,task_id:taskId,event:'manual_cancel',message:'Action annulée avant sa prise en charge.'})
  return {cancelled:1}
 }

@@ -16,6 +16,7 @@ const YlaVintSales=lazy(()=>import('./YlaVintSales'))
 const YlaVintWallet=lazy(()=>import('./YlaVintWallet'))
 const YlaVintDesktop=lazy(()=>import('./YlaVintDesktop'))
 const YlaVintActions=lazy(()=>import('./YlaVintActions'))
+const YlaVintOperations=lazy(()=>import('./YlaVintOperations'))
 
 export const ylavintRequest=(method='GET',body,query='')=>import('../lib/api').then(m=>m.resourcesRequest(method,body,`?scope=agent${query}`))
 export const when=v=>v?new Date(v).toLocaleString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Europe/Paris'}):'—'
@@ -34,8 +35,10 @@ export const bridgeOnline=a=>!!a.last_seen_at&&Date.now()-Date.parse(a.last_seen
 // Navigation latérale (rubriques et sous-rubriques), comme un tableau de bord de gestion Vinted.
 const NAV=[
  {key:'accueil',label:'Dashboard',icon:'▦'},
+ {key:'aujourdhui',label:'À traiter aujourd’hui',icon:'◷'},
+ {key:'resultats',label:'Résultats de l’assistant',icon:'▦'},
  {key:'porte-monnaie',label:'Porte-monnaie',icon:'◉'},
- {label:'Commandes',icon:'🛒',children:[['commandes','Commandes'],['classement','Classement']]},
+ {label:'Commandes',icon:'🛒',children:[['commandes','Commandes'],['preparation','Préparation des colis'],['classement','Classement']]},
  {label:'Articles',icon:'◈',children:[['dressing','Articles Vinted'],['publication','Publications planifiées']]},
  {label:'Automatisations',icon:'⚙',children:[['likes','Likes d’articles'],['flux','Flux de commande'],['agent','Smart Agent'],['prix','Démasquage & prix']]},
  {key:'messagerie',label:'Messagerie',icon:'💬'},
@@ -191,6 +194,7 @@ function SalesChart({orders,range}){
 
 export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWatchRequest,desktopRequest,standalone=false,onLogout}){
  const [section,setSectionState]=useState(readSection)
+ const [conversationTarget,setConversationTarget]=useState(null)
  const [data,setData]=useState(null),[sales,setSales]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[notice,setNotice]=useState('')
  const [configure,setConfigure]=useState(null),[range,setRange]=useState('7d'),[accountFilter,setAccountFilter]=useState(''),[mobileNav,setMobileNav]=useState(false)
  const setSection=s=>{setSectionState(s);setMobileNav(false);const hash=standalone?`#${s}`:`#ylavint/${s}`;if(window.location.hash!==hash)history.replaceState(null,'',hash)}
@@ -254,7 +258,8 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
 
    {section==='accueil'&&<YlaVintDashboard accounts={accounts} data={data} orders={valid} revenue={revenue} toShip={toShip} transit={transit} range={range} periodPicker={periodPicker} chart={<SalesChart orders={valid} range={range}/>} onNavigate={setSection} onRefresh={()=>{load();loadSales()}} busy={busy}/>}
 
-   {section==='commandes'&&<YlaVintSales request={request} accounts={accounts}/>}
+   {section==='commandes'&&<YlaVintSales request={request} accounts={accounts} onPrepare={()=>setSection('preparation')}/>}
+   {['preparation','aujourdhui','resultats'].includes(section)&&<YlaVintOperations key={section} view={({preparation:'preparation',aujourdhui:'today',resultats:'results'})[section]} request={request} accounts={accounts} onNavigate={setSection} onConversation={c=>{setConversationTarget(c);setSection('messagerie')}}/>}
    {section==='porte-monnaie'&&<YlaVintWallet request={request} accounts={accounts} onConfigure={()=>setSection('reglages')} onOrders={()=>setSection('commandes')}/>}
 
    {section==='classement'&&<>
@@ -299,7 +304,7 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
     <AutomationTable kind="prix" accounts={accounts} data={data} busy={busy} act={act} setConfigure={setConfigure}
      chips={a=>{const s=a.settings||data.defaults;return <><Pill tone={on(a,'unmask')?'green':'zinc'} icon="◉">Démasquage {on(a,'unmask')?'Activé':'Désactivé'}</Pill><Pill tone={on(a,'pricing')?'green':'zinc'} icon="€">Prix {on(a,'pricing')?'Activé':'Désactivé'}</Pill><Pill icon="↘">−{s.unmask.price_drop} € / réparation</Pill><Pill icon="⏱">Baisse après {s.pricing.after_days} j</Pill></>}}/></>}
 
-   {section==='messagerie'&&<YlaVintInbox request={request} accounts={accounts}/>}
+   {section==='messagerie'&&<YlaVintInbox request={request} accounts={accounts} initialConversation={conversationTarget}/>}
 
    {section==='reglages'&&<>
     <PageTitle title="Comptes & réglages" hint="Le point vert indique un contact récent, pas un assistant forcément en marche. Pour un compte en mode PC, vérifie son état et démarre-le dans Assistant PC."/>

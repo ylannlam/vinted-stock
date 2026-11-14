@@ -16,7 +16,7 @@ export default function YlaVintDesktop({accounts,onConfigure,onActions,request=a
  }
  async function stop(id){setBusy(true);try{const r=await request('/ylavint/stop',{account_id:id});setState(s=>({...s,assistants:r.assistants}))}catch(e){setError(e.message)}finally{setBusy(false)}}
  async function takeover(id){setBusy(true);try{const r=await request('/ylavint/takeover',{account_id:id});setState(s=>({...s,assistants:r.assistants}))}catch(e){setError(e.message)}finally{setBusy(false)}}
- const currentVersion=state?.browse_routine===true
+ const currentVersion=state?.extension_ui===true
  const connected=!!state&&!connectionError,configured=connected&&state?.configured&&currentVersion
  const running=connected?(state?.assistants||[]).filter(active).length:0
  const ready=account&&profile&&currentVersion&&state?.ylavint&&state?.configured&&!connectionError&&account.settings?.messaging?.executor==='desktop'&&!busy&&!(state?.assistants||[]).some(active)
@@ -29,7 +29,7 @@ export default function YlaVintDesktop({accounts,onConfigure,onActions,request=a
   </div>
   <Card className="p-5 sm:p-6"><div className="mb-5 flex items-center justify-between gap-3"><h2 className="text-lg font-semibold text-white">Tout commence ici</h2><Pill tone="blue">3 étapes</Pill></div>
    <div className="grid gap-6 md:grid-cols-3">
-    <div><span className="ylv-step-number mb-3 grid h-9 w-9 place-items-center rounded-xl text-sm font-semibold">01</span><h3 className="text-sm font-semibold text-white">Relie ton ordinateur</h3><p className="mt-2 text-sm leading-relaxed text-zinc-400">Télécharge le connecteur et ouvre-le sur le PC où tourne AdsPower.</p><a className={buttonClass+' mt-4'} href="/downloads/adspower-companion.zip" download>Télécharger la version 1.7</a></div>
+    <div><span className="ylv-step-number mb-3 grid h-9 w-9 place-items-center rounded-xl text-sm font-semibold">01</span><h3 className="text-sm font-semibold text-white">Relie ton ordinateur</h3><p className="mt-2 text-sm leading-relaxed text-zinc-400">Télécharge le connecteur et ouvre-le sur le PC où tourne AdsPower.</p><a className={buttonClass+' mt-4'} href="/downloads/adspower-companion.zip" download>Télécharger la version 1.8</a></div>
     <div><span className="ylv-step-number mb-3 grid h-9 w-9 place-items-center rounded-xl text-sm font-semibold">02</span><h3 className="text-sm font-semibold text-white">Connecte AdsPower</h3><p className="mt-2 text-sm leading-relaxed text-zinc-400">Renseigne la connexion locale pour retrouver tes profils dans YlaVint.</p><a className={buttonClass+' mt-4'} href="http://127.0.0.1:17442/setup" target="_blank" rel="noreferrer">Configurer AdsPower<Icon name="arrow"/></a></div>
     <div><span className="ylv-step-number mb-3 grid h-9 w-9 place-items-center rounded-xl text-sm font-semibold">03</span><h3 className="text-sm font-semibold text-white">Choisis et vérifie ton compte</h3><p className="mt-2 text-sm leading-relaxed text-zinc-400">Associe le bon profil ci-dessous, active le mode Assistant PC et lance la vérification.</p><p className="mt-4 text-xs text-indigo-300">L’identité Vinted est vérifiée avant toute action.</p></div>
    </div>
@@ -57,7 +57,7 @@ export default function YlaVintDesktop({accounts,onConfigure,onActions,request=a
    <p>Les textes, réductions et délais restent ceux des rubriques <strong>Likes d’articles</strong> et <strong>Smart Agent</strong>. Les lectures, la saisie et les clics passent par les pages Vinted ouvertes.</p>
    <p>Dans les réglages du compte, <strong>Rythme et navigation sur Vinted</strong> permet de régler la saisie, les pauses et les consultations. La routine robes 20–50 € ajoute des favoris occasionnels selon tes critères et peut fermer l’onglet de l’assistant pendant cinq minutes.</p>
    <p>Garde ce PC, AdsPower et le connecteur ouverts, avec la fenêtre du profil non réduite. Arrête Scalency ou Dotb sur le compte choisi avant de démarrer. L’extension YlaVint cède la place lorsque tu choisis « Assistant PC ».</p>
-   <p>Le dressing et la messagerie sont lus sur les pages chargées : l’historique complet n’est pas garanti. Les annonces se préparent et se publient depuis l’atelier avec le connecteur 1.7. Le porte-monnaie est relevé deux fois par jour ; les ventes et bordereaux sont lus depuis les pages visibles. Après un redémarrage du connecteur, démarre à nouveau tes assistants depuis cette page.</p>
+   <p>Le dressing et la messagerie sont lus sur les pages chargées : l’historique complet n’est pas garanti. Les annonces se préparent et se publient depuis l’atelier avec le connecteur 1.8. Le porte-monnaie est relevé deux fois par jour ; les ventes et bordereaux sont lus depuis les pages visibles. Après un redémarrage du connecteur, démarre à nouveau tes assistants depuis cette page.</p>
   </div></details></Card>
  </div>
 }

@@ -1,0 +1,11 @@
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
+const image=v=>typeof v==='string'&&/^https:\/\/[a-z0-9.-]+\//i.test(v)?`<img src="${esc(v)}" alt="">`:''
+export function pickingHtml(rows){
+ return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Liste de préparation YlaVint</title><style>@page{size:A4;margin:12mm}body{font:13px Arial,sans-serif;color:#172337}h1{font-size:24px}small{color:#637086}article{display:flex;gap:14px;border:1px solid #d3dbe5;border-radius:8px;padding:12px;margin:10px 0;break-inside:avoid}img{width:65px;height:80px;object-fit:contain}h2{font-size:15px;margin:0 0 6px}p{margin:5px 0}b{color:#111}.number{font-size:22px;min-width:28px}section{flex:1}</style></head><body><h1>Préparation des colis</h1><p>${rows.length} colis · ordre identique aux étiquettes du lot</p><small>Cocher après préparation. Cette liste ne confirme aucun envoi sur Vinted.</small>${rows.map((o,i)=>`<article><div class="number">${i+1}<br>□</div>${image(o.photo_url)}<section><h2>${esc(o.title)}</h2><p>${esc(o.carrier||'Transporteur non lu')} · ${esc(o.login)}</p><p><b>Référence :</b> ${esc(o.preparation?.sku||'À renseigner')} &nbsp; <b>Emplacement :</b> ${esc(o.preparation?.location||'À renseigner')}</p>${(o.picking_items?.length>1?o.picking_items:[]).map(l=>`<p>${esc(l.title)} · ${esc(l.sku)} · ${esc(l.location)}</p>`).join('')}<small>${esc(o.order_key||o.conversation_id)}</small></section></article>`).join('')}</body></html>`
+}
+export async function printPicking(rows){
+ const frame=document.createElement('iframe');frame.title='Liste de préparation à imprimer';frame.style.cssText='position:fixed;width:1px;height:1px;left:-10000px;border:0'
+ const ready=new Promise(resolve=>{frame.onload=resolve});frame.srcdoc=pickingHtml(rows);document.body.append(frame);await ready
+ await Promise.race([Promise.all([...frame.contentDocument.images].map(img=>img.complete?Promise.resolve():new Promise(r=>{img.onload=r;img.onerror=r}))),new Promise(r=>setTimeout(r,8000))])
+ frame.contentWindow.addEventListener('afterprint',()=>frame.remove(),{once:true});frame.contentWindow.focus();frame.contentWindow.print();setTimeout(()=>frame.remove(),60000)
+}
