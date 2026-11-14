@@ -459,7 +459,7 @@ export {queueYlavintListing as queueStudioPublish,cancelYlavintListing as cancel
 export async function ylavintPublishReady(db,accountId){return (await import('./listing-ylavint.js').then(m=>m.publicationStatus(db,accountId))).ready}
 
 // ---------- Site : vues et actions ----------
-export const YLAVINT_ACTIONS=new Set(['reply','mark_read','ai_suggest','ai_discard','ai_send','remember_reply','cancel_message','refresh_conversation','refresh_inbox','human_done','save_ai','test_ai','item_unmask','item_reprice','label_link','retry_message'])
+export const YLAVINT_ACTIONS=new Set(['reply','mark_read','ai_suggest','ai_discard','ai_send','remember_reply','cancel_message','refresh_conversation','refresh_inbox','human_done','save_ai','test_ai','item_unmask','item_reprice','label_link','label_print','retry_message'])
 const accountOf=v=>isId(v)?v.toLowerCase():null
 const convId=v=>cid(v)
 async function logins(db){return new Map(check(await db.from('publication_accounts').select('id,login')).map(a=>[a.id,a.login]))}
@@ -479,6 +479,7 @@ export async function overviewExtras(db){
 
 export async function ylavintView(req,{db}){
   const q=req.query||{},view=q.view
+  if(view==='wallet')return (await import('./ylavint-commerce.js')).walletView(db,accountOf(q.account_id))
   if(view==='actions')return (await import('./ylavint-actions.js')).upcomingActions(db,accountOf(q.account_id))
   if(view==='inbox'){
     const account=accountOf(q.account_id),filter=['all','unread','human','ai'].includes(q.filter)?q.filter:'all'
@@ -517,10 +518,17 @@ export async function ylavintView(req,{db}){
   }
   if(view==='sales'){
     const account=accountOf(q.account_id)
-    let query=db.from('vinted_agent_orders').select('transaction_id,account_id,status,title,price,currency,order_date,label_path,label_fetched_at,sales_order_id,item_ids,seen_at,photo_url,ship_deadline,carrier,shipment_id').order('order_date',{ascending:false,nullsFirst:false}).limit(500)
+    let query=db.from('vinted_agent_orders').select('transaction_id,conversation_id,account_id,status,title,price,currency,order_date,label_path,label_fetched_at,sales_order_id,item_ids,seen_at,photo_url,ship_deadline,carrier,shipment_id').order('order_date',{ascending:false,nullsFirst:false}).limit(500)
     if(account)query=query.eq('account_id',account)
-    const [orders,names]=await Promise.all([query.then(check),logins(db)])
-    return {orders:orders.map(o=>({...o,login:names.get(o.account_id)||null,normalized:orderStatus(o.status)}))}
+    const [orders,names,desktop]=await Promise.all([query.then(check),logins(db),(await import('./ylavint-commerce.js')).desktopOrdersView(db,account)])
+    const byConversation=new Map(desktop.map(o=>[`${o.account_id}:${o.conversation_id}`,o]))
+    const merged=orders.map(o=>{
+      const fresh=byConversation.get(`${o.account_id}:${o.conversation_id}`)
+      if(!fresh)return o
+      byConversation.delete(`${o.account_id}:${o.conversation_id}`)
+      return {...o,...fresh,legacy_transaction_id:o.transaction_id,order_date:o.order_date,sales_order_id:o.sales_order_id,ship_deadline:o.ship_deadline,label_path:fresh.label_path||o.label_path,...(!fresh.label_path&&o.label_path?{label_source:'extension'}:{})}
+    })
+    return {orders:[...byConversation.values(),...merged].map(o=>({...o,login:names.get(o.account_id)||null,normalized:orderStatus(o.status)}))}
   }
   if(view==='ai'){
     const config=await readAi(db)
@@ -609,7 +617,9 @@ export async function handleYlavint(req,{db,user},{generate=generateReply}={}){
       const n=await enqueue(db,[{account_id:account,kind,priority:3,dedupe_key:`${kind==='unmask_item'?'unmask':'reprice'}:${row.item_id}`,payload:{item_id:row.item_id,price,new_price:newPrice,drop:Math.max(0,Math.round((price-newPrice)*100)/100),manual:true},created_by:user.id}])
       return {queued:n,message:n?`${kind==='unmask_item'?'Démasquage':'Changement de prix'} confié à YlaVint (${newPrice} €), dans les plafonds du compte.`:'Une action est déjà prévue pour cette annonce.'}
     }
+    case 'label_print':return (await import('./ylavint-thermal.js')).desktopLabelPrint(db,account,conversation)
     case 'label_link':{
+      if(b.source==='desktop')return (await import('./ylavint-commerce.js')).desktopLabelLink(db,account,conversation)
       const tid=vid(b.transaction_id);if(!tid)throw new AppError('Vente invalide.')
       const o=check(await db.from('vinted_agent_orders').select('label_path').eq('transaction_id',tid).maybeSingle())
       if(!o?.label_path)throw new AppError('Bordereau pas encore récupéré.',404)

@@ -26,8 +26,8 @@ test('PC runtime preserves extension preferences but cannot plan unsupported act
  const stored=normalizeSettings({features:{likes:true,inbox:true,dressing:true,orders:true,unmask:true,pricing:true,publish:true},messaging:{executor:'desktop',offers:{enabled:true}},order_flow:{confirm:{enabled:true}}})
  const before=structuredClone(stored),runtime=executionSettings(stored)
  assert.deepEqual(stored,before)
- for(const k of ['likes','inbox','dressing','publish'])assert.equal(runtime.features[k],true)
- for(const k of ['orders','unmask','pricing'])assert.equal(runtime.features[k],false)
+ for(const k of ['likes','inbox','dressing','publish','orders'])assert.equal(runtime.features[k],true)
+ for(const k of ['unmask','pricing'])assert.equal(runtime.features[k],false)
  assert.equal(runtime.messaging.offers.enabled,false);assert.equal(runtime.order_flow.confirm.enabled,false)
 })
 

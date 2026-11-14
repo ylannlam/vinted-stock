@@ -1,6 +1,6 @@
 STOCK VINTED — CONNECTEUR ADSPOWER
 
-ASSISTANT YLAVINT SUR PC (version 1.5.0)
+ASSISTANT YLAVINT SUR PC (version 1.6.0)
 Cette version ajoute le pilotage des favoris et de la messagerie depuis
 https://vinted-stock.vercel.app/ylavint#assistant-pc.
 La mise à jour du site et de sa base doit être installée avant de choisir ce mode.
@@ -31,6 +31,18 @@ Un résultat incertain met le compte en pause : vérifie la conversation avant
 de reprendre. L'assistant ne renvoie jamais un message simplement parce que
 sa confirmation manque. Après redémarrage, il faut le relancer depuis le site.
 Ne saisis pas toi-même de texte dans les onglets utilisés par l'assistant.
+
+PORTE-MONNAIE ET BORDEREAUX 1.6
+- Active Porte-monnaie et règle ses deux horaires (9 h et 18 h par défaut,
+  heure de Paris). Chaque lecture remonte le disponible, l'attente et l'heure
+  du contrôle. Aucun transfert d'argent n'est effectué.
+- Active Lecture des ventes et Bordereau automatique pour consulter les ventes
+  et enregistrer les PDF déjà accessibles via leur bouton Vinted.
+- Les documents sont disponibles dans YlaVint > Commandes. Une prolongation,
+  un bordereau à générer ou un choix de transport attend ton intervention.
+  Aucun envoi, annulation de vente, demande de prolongation ni impression physique.
+- Le suivi respecte le planning, les pauses et l'arrêt depuis le site.
+  Un seul profil actif par PC ; aucun passage si le connecteur est fermé.
 
 PUBLICATION VISIBLE 1.5
 - Active Publication dans les réglages du compte en mode Assistant PC.
@@ -63,9 +75,13 @@ Un seul assistant pilote un profil à la fois sur ce PC. Les identifiants des
 300 dernières annonces consultées au maximum sont conservés localement, par
 compte, pendant 8 jours. Les exemples de style retenus restent dans le site.
 
-Ce mode reprend les favoris, réductions, relances et réponses. Les ventes,
-bordereaux et changements d'annonces restent en attente jusqu'au
-retour au mode Extension. La frappe progressive ne garantit pas qu'une
+Ce mode reprend les favoris, réductions, relances et réponses, les annonces,
+le porte-monnaie, les ventes visibles et les bordereaux. Les documents reconnus
+sont préparés en 100 x 150 mm avec le titre de l'article, sans toucher à l'original.
+L'onglet Commandes permet de vérifier l'aperçu, télécharger ou imprimer le PDF.
+Les formats inconnus restent à vérifier, avec l'original disponible.
+Les autres modifications d'annonces et le transfert des ventes au stock restent
+en mode Extension. La frappe progressive ne garantit pas qu'une
 automatisation est indétectable.
 
 Les cookies et la clé AdsPower restent sur ce PC. Le site reçoit les favoris,

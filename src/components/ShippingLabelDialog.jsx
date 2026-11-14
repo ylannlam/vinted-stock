@@ -3,7 +3,7 @@ import ResourceDialog from './ResourceDialog'
 import {ErrorNotice,buttonClass,primaryClass} from './WorkspaceUI'
 import {safeUrl} from '../lib/fulfillment'
 
-export default function ShippingLabelDialog({line,request,onClose}) {
+export default function ShippingLabelDialog({line,request,onClose,onOriginal}) {
   const [label,setLabel]=useState(null),[error,setError]=useState(''),[attempt,setAttempt]=useState(0),[ready,setReady]=useState(false)
   const frame=useRef(null)
   useEffect(()=>{
@@ -27,6 +27,7 @@ export default function ShippingLabelDialog({line,request,onClose}) {
       <div><p className="font-medium">{line.source?.title||'Étiquette d’envoi'}</p><p className="text-sm text-slate-500 mt-1">{line.order?.account_login} · Imprimante thermique</p></div>
       {!label&&!error&&<div role="status" className="rounded-xl bg-teal-50 text-teal-900 p-6 flex items-center gap-3"><span className="h-5 w-5 shrink-0 rounded-full border-2 border-teal-200 border-t-teal-700 animate-spin" aria-hidden="true"/>Récupération et découpe du bordereau…</div>}
       <ErrorNotice error={error}/>
+      {onOriginal&&<button type="button" className={buttonClass} onClick={onOriginal}>Ouvrir le bordereau original</button>}
       {error&&<div className="flex flex-wrap gap-2"><button type="button" className={primaryClass} onClick={()=>setAttempt(n=>n+1)}>Réessayer</button>{safeUrl(line.order?.label_url)&&<a href={safeUrl(line.order.label_url)} target="_blank" rel="noreferrer" className={buttonClass}>Voir l’original dans Dotb</a>}</div>}
       {label&&<>
         <div className="rounded-xl bg-teal-50 p-4 text-teal-900"><p className="font-semibold">Prêt à imprimer · {label.format}</p><p className="text-sm mt-1">{label.carrier} · Une étiquette, déjà découpée et orientée, avec le titre de l’article en bas.</p></div>

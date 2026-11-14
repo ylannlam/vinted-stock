@@ -6,7 +6,7 @@ import {fileURLToPath} from 'node:url'
 
 export const LABEL_SIZE = [100 * 72 / 25.4, 150 * 72 / 25.4]
 const pdfOptions={useSystemFonts:false,isEvalSupported:false,standardFontDataUrl:fileURLToPath(new URL('../node_modules/pdfjs-dist/standard_fonts/',import.meta.url)).replaceAll('\\','/')}
-const unknown = () => new AppError('Ce format de bordereau n’est pas encore reconnu. Le document original reste disponible dans Dotb.', 422)
+const unknown = () => new AppError('Ce format de bordereau n’est pas encore reconnu. Le document original reste disponible.', 422)
 const multiply = (a,b) => [a[0]*b[0]+a[2]*b[1],a[1]*b[0]+a[3]*b[1],a[0]*b[2]+a[2]*b[3],a[1]*b[2]+a[3]*b[3],a[0]*b[4]+a[2]*b[5]+a[4],a[1]*b[4]+a[3]*b[5]+a[5]]
 
 // Read the carrier's actual label frame, including transforms in embedded forms.
@@ -90,16 +90,16 @@ export async function thermalLabel(bytes,{preview=false,note=''}={}) {
     output.catalog.getOrCreateViewerPreferences().setPrintScaling(PrintScaling.None)
     output.setTitle('Bordereau 100 x 150 mm')
     const prepared=await output.save()
-    let image
-    if(preview){
-      const printable=await getDocument({data:new Uint8Array(prepared),...pdfOptions}).promise
-      try{
-        const sheet=await printable.getPage(1),viewport=sheet.getViewport({scale:1.5}),canvas=createCanvas(Math.ceil(viewport.width),Math.ceil(viewport.height))
-        await sheet.render({canvasContext:canvas.getContext('2d'),viewport}).promise
-        image=canvas.toBuffer('image/png')
-      }finally{await printable.destroy()}
-    }
+    const image=preview?await renderLabelPreview(prepared):undefined
     return {bytes:prepared,carrier:crop.carrier,preview:image}
-  }catch(error){if(error instanceof AppError)throw error;throw new AppError('Le bordereau reçu ne peut pas être préparé pour l’impression. Réessaie depuis Dotb.',422)}
+  }catch(error){if(error instanceof AppError)throw error;throw new AppError('Le bordereau reçu ne peut pas être préparé pour l’impression. Le document original reste disponible.',422)}
   finally{await parsed?.destroy()}
+}
+export async function renderLabelPreview(bytes){
+ const printable=await getDocument({data:new Uint8Array(bytes),...pdfOptions}).promise
+ try{
+  const sheet=await printable.getPage(1),viewport=sheet.getViewport({scale:1.5}),canvas=createCanvas(Math.ceil(viewport.width),Math.ceil(viewport.height))
+  await sheet.render({canvasContext:canvas.getContext('2d'),viewport}).promise
+  return canvas.toBuffer('image/png')
+ }finally{await printable.destroy()}
 }

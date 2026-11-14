@@ -35,8 +35,9 @@ const state={
     {id:1,account_id:null,level:'info',event:'learned',message:'Recette apprise : Dressing (GET /api/v2/wardrobe/{id}/items).',created_at:ago(300)},
   ],
   orders:[
-    {transaction_id:'90001',account_id:ids[0],status:'À expédier',title:'Robe longue fleurie',price:18,order_date:ago(90),label_path:'agent-labels/x.pdf'},
-    {transaction_id:'90002',account_id:ids[0],status:'Payée',title:'Top côtelé noir',price:9,order_date:ago(30),label_path:null},
+    {transaction_id:'visible:demo:90001',conversation_id:'90001',account_id:ids[0],source:'desktop',status:'À expédier',title:'Robe longue fleurie',price:18,seen_at:ago(18),carrier:'Mondial Relay',deadline_text:'avant le 18 nov. 10:00',label_state:'saved',label_path:'agent-labels/x.pdf'},
+    {transaction_id:'visible:demo:90002',conversation_id:'90002',account_id:ids[0],source:'desktop',status:'À expédier',title:'Top côtelé noir',price:9,seen_at:ago(18),carrier:'Shop2Shop by Chronopost',label_state:'waiting',label_note:'Réponse à la demande de prolongation en attente.',label_path:null},
+    {transaction_id:'visible:demo:90003',conversation_id:'90003',account_id:ids[1],source:'desktop',status:'À expédier',title:'Pull maille beige',price:12,seen_at:ago(30),label_state:'ready',label_path:null},
   ],
   hidden:[
     {account_id:ids[0],item_id:'5001',title:'Jean taille haute',price:14,state:'hidden',hidden_since:ago(600),repairs:0,total_drop:0},
@@ -65,6 +66,8 @@ export async function agentPreview(method='GET',body,query=''){
   await new Promise(r=>setTimeout(r,150))
   const q=Object.fromEntries(new URLSearchParams(query.replace(/^&/,'')))
   const names=new Map(state.accounts.map(a=>[a.id,a.login]))
+  if(method==='GET'&&q.view==='wallet')return {wallets:[{account_id:ids[0],available:48.5,pending:92,currency:'EUR',withdrawal:'available',checked_at:ago(18)},{account_id:ids[1],available:0,pending:35,currency:'EUR',withdrawal:'unavailable',checked_at:ago(1600)}]}
+  if(method==='POST'&&body?.action==='label_print')return (await import('./shippingLabelPreview.js')).shippingLabelPreview('Robe longue fleurie')
   if(method==='GET'&&q.view==='actions')return structuredClone({actions:state.planned.filter(a=>a.state==='queued'&&(!q.account_id||a.account_id===q.account_id))})
   if(method==='GET'&&q.view==='inbox'){
     let list=convs.filter(c=>!q.account_id||c.account_id===q.account_id).map(c=>({...c,login:names.get(c.account_id),unseen:!c.last_from_me&&!c.site_read_at}))
@@ -74,7 +77,7 @@ export async function agentPreview(method='GET',body,query=''){
   if(method==='GET'&&q.view==='thread'){const c=convs.find(c=>c.conversation_id===q.conversation_id);if(q.read!=='0')c.site_read_at=new Date().toISOString();return structuredClone({conversation:{...c,login:names.get(c.account_id)},messages:messages[c.conversation_id]||[],agent:{enabled:true,paused:false}})}
   if(method==='GET'&&q.view==='ai')return structuredClone({config:ai,defaults:AI_DEFAULTS,models:LISTING_AI_MODELS,ready:true})
   if(method==='GET'&&q.view==='wardrobe'){const counts={};for(const l of wardrobe)counts[l.state]=(counts[l.state]||0)+1;const a=state.accounts.find(x=>x.id===q.account_id);return structuredClone({listings:wardrobe,counts,last_scan:ago(40),settings:a?.settings||null})}
-  if(method==='GET'&&q.view==='sales')return structuredClone({orders:state.orders.map(o=>({...o,login:names.get(o.account_id),normalized:orderStatus(o.status),sales_order_id:o.label_path?'x':null}))})
+  if(method==='GET'&&q.view==='sales')return structuredClone({orders:state.orders.filter(o=>!q.account_id||o.account_id===q.account_id).map(o=>({...o,login:names.get(o.account_id),normalized:orderStatus(o.status),sales_order_id:null}))})
   if(body?.action==='reply'||body?.action==='ai_send'){const c=convs.find(c=>c.conversation_id===body.conversation_id);const m={id:Date.now(),message_id:'local:'+Date.now(),from_me:true,body:body.body||c.ai_draft,kind:'message',sent_at:new Date().toISOString(),state:'queued',source:'site'};(messages[c.conversation_id]||=[]).push(m);Object.assign(c,{last_message:m.body,last_message_at:m.sent_at,last_from_me:true,ai_state:'none',ai_draft:null,needs_human:false});return {message:'Message envoyé à YlaVint : il part dès que le profil AdsPower est ouvert.'}}
   if(body?.action==='ai_suggest'){const c=convs.find(c=>c.conversation_id===body.conversation_id);Object.assign(c,{ai_state:'drafted',ai_draft:'Bonjour ! Oui elle est toujours disponible 😊'});return {state:'drafted',reply:c.ai_draft,message:'Proposition prête.'}}
   if(body?.action==='remember_reply'){const c=convs.find(c=>c.conversation_id===body.conversation_id),a=state.accounts.find(a=>a.id===body.account_id);a.settings.messaging.reply_examples=[...(a.settings.messaging.reply_examples||[]),{before:c.ai_draft,after:body.body}].slice(-3);a.settings.version++;return {saved:true,message:'Correction retenue pour ce compte. Aucun message envoyé.'}}

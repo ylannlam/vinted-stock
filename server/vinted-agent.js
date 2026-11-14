@@ -9,6 +9,8 @@ import {copiedSettings,COPY_GROUPS} from './ylavint-settings-copy.js'
 import {AppError,isId} from './dotb.js'
 import {desktopDriver,desktopWindow,DESKTOP_KINDS} from './ylavint-desktop.js'
 import {executionSettings,isDesktop,supportsTask,EXTENSION_REQUIRED} from '../src/lib/ylavintExecution.js'
+import {walletDue} from '../src/lib/ylavintWallet.js'
+import {applyWallet,applyDesktopOrders,applyDesktopLabel,desktopLabelPayload} from './ylavint-commerce.js'
 
 export const BUCKET='creative-assets'
 export const check=r=>{if(r.error)throw r.error;return r.data}
@@ -39,9 +41,11 @@ export function dueScans(settings,last={},now=Date.now()){
   const every={scan_wardrobe:120,sync_orders:30,scan_likes:2,sync_inbox:(settings.messaging?.sync_seconds||20)/60}
   const o=settings.order_flow||{},flow=!!(o.confirm?.enabled||o.extension?.enabled||o.cancel?.enabled||o.pickup?.enabled||o.review?.enabled||o.delete_sold)
   const want={scan_wardrobe:f.unmask||f.pricing||f.dressing||f.likes,sync_orders:f.orders||f.labels||f.sales||flow,scan_likes:f.likes,sync_inbox:f.inbox||f.ai||settings.messaging?.offers?.enabled}
-  return Object.entries(want).filter(([kind,on])=>on&&(!last[kind]||Date.parse(last[kind])<now-minutes(every[kind]))).map(([kind])=>kind)
+  const due=Object.entries(want).filter(([kind,on])=>on&&(!last[kind]||Date.parse(last[kind])<now-minutes(every[kind]))).map(([kind])=>kind)
+  if(isDesktop(settings)&&f.wallet&&walletDue(last.scan_wallet,now,settings.messaging.desktop.wallet_hours))due.push('scan_wallet')
+  return due
 }
-export const SCANS=['scan_wardrobe','sync_orders','scan_likes','sync_inbox']
+export const SCANS=['scan_wardrobe','sync_orders','scan_likes','sync_inbox','scan_wallet']
 
 // Démasquage : mêmes photos renvoyées, un point dans la description, baisse de prix bornée.
 export function unmaskPlan(listing,cfg,now=Date.now()){
@@ -179,6 +183,10 @@ async function taskBundle(db,task,settings){
   for(const k of [...KINDS[task.kind].needs,...uses,...(OPTIONAL[task.kind]||[])])if(!recipes[k]&&DEFAULT_RECIPES[k])recipes[k]=DEFAULT_RECIPES[k]
   const missing=KINDS[task.kind].needs.filter(k=>!recipes[k])
   const bundle={id:task.id,lease:task.lease,kind:task.kind,payload:task.payload,recipes,missing}
+  if(isDesktop(settings)){
+    bundle.recipes={};bundle.missing=[]
+    if(task.kind==='fetch_label')bundle.payload=await desktopLabelPayload(db,task)
+  }
   if(task.kind==='fetch_label'&&recipes.order_label&&/\/shipments\//.test(recipes.order_label.path||''))recipes.order_label={...recipes.order_label,id_from:'shipment'}
   if(task.kind==='like_message')bundle.payload=await (await import('./ylavint-flows.js')).likePayload(db,task,settings)
   if(task.kind==='reply_message'&&task.payload?.source==='ai'&&!inHistory(task.payload.source_message_at,settings.messaging.history_since))bundle.payload={...task.payload,skip:'Message antérieur à la période choisie.'}
@@ -209,7 +217,7 @@ export async function agentPoll(db,key,body,now=Date.now()){
   const version=text(body.version,20)
   const row=check(await db.from('vinted_agent_settings').select('*').eq('account_id',account.id).maybeSingle())
   const driver=desktopDriver(key)
-  if(driver==='desktop'&&!/^pc-1\.(?:[4-9]|[1-9]\d)\./.test(version))return {state:'update_required',message:'Mets à jour le connecteur 1.4 pour utiliser les lectures visibles.',wait_seconds:600}
+  if(driver==='desktop'&&!/^pc-1\.(?:[6-9]|[1-9]\d)\./.test(version))return {state:'update_required',message:'Mets à jour le connecteur 1.6 pour utiliser le porte-monnaie et les bordereaux.',wait_seconds:600}
   if((row?.messaging?.executor||'extension')!==driver)return {state:'other_executor',message:driver==='extension'?'Ce compte est confié à l’assistant PC.':'Ce compte est confié à l’extension.',wait_seconds:60}
   const claim=()=>db.rpc('claim_vinted_agent_task',driver==='desktop'?{p_account:account.id,p_driver:driver}:{p_account:account.id})
   // YlaVint coupé sur ce compte : simple signal de présence (Bridge connecté), nouvel appel dans 10 min.
@@ -243,10 +251,11 @@ export async function agentPoll(db,key,body,now=Date.now()){
   const settings=executionSettings(effectiveSettings(row))
   if(driver==='desktop'&&!desktopWindow(settings.limits,now,settings.messaging.desktop))return {state:'idle',reason:'Compte en dehors de son planning ou en absence.',wait_seconds:20}
   if(!row.paused){
-    const recent=check(await db.from('vinted_agent_tasks').select('kind,created_at').eq('account_id',account.id).in('kind',SCANS).neq('state','cancelled').order('created_at',{ascending:false}).limit(40))
-    const last={};for(const t of recent)last[t.kind]??=t.created_at
-    const can=await learned(db),due=dueScans(settings,last,now).filter(kind=>ready(kind,can)&&(driver!=='desktop'||DESKTOP_KINDS.includes(kind)))
-    if(due.length)await enqueue(db,due.map(kind=>({account_id:account.id,kind,priority:kind==='sync_inbox'?4:0,dedupe_key:`${kind}:${account.id}`})))
+    // Frequent inbox reads must not hide the last daily wallet check.
+    const recent=(await Promise.all(SCANS.map(kind=>db.from('vinted_agent_tasks').select('kind,created_at,finished_at').eq('account_id',account.id).eq('kind',kind).neq('state','cancelled').order('created_at',{ascending:false}).limit(1).then(check)))).flat()
+    const last={};for(const t of recent)last[t.kind]??=t.kind==='scan_wallet'?(t.finished_at||t.created_at):t.created_at
+    const can=await learned(db),due=dueScans(settings,last,now).filter(kind=>(driver==='desktop'?DESKTOP_KINDS.includes(kind):ready(kind,can)&&kind!=='scan_wallet'))
+    if(due.length)await enqueue(db,due.map(kind=>({account_id:account.id,kind,priority:kind==='scan_wallet'?6:driver==='desktop'&&kind==='sync_orders'?5:kind==='sync_inbox'?4:0,dedupe_key:`${kind}:${account.id}`})))
     await dropStaleLikes(db,account.id,settings,now)
   }
   let claimed=check(await claim())
@@ -414,8 +423,12 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
   const settings=executionSettings(effectiveSettings(check(await db.from('vinted_agent_settings').select('*').eq('account_id',task.account_id).maybeSingle())))
   let summary={}
   if(task.kind==='scan_wardrobe')summary=await applyWardrobe(db,task,parseWardrobe(body.result),settings,{now,rand})
-  if(task.kind==='sync_orders')summary=await applyOrders(db,task,parseOrders(body.result),settings,{rand})
-  if(task.kind==='fetch_label')summary=await applyLabel(db,task,parseLabel(body.result),body.result||{})
+  if(task.kind==='scan_wallet'){
+    if(desktopDriver(key)!=='desktop')throw new AppError('Lecture réservée à l’Assistant PC.',403)
+    summary=await applyWallet(db,task,body.result,now)
+  }
+  if(task.kind==='sync_orders')summary=desktopDriver(key)==='desktop'?await applyDesktopOrders(db,task,body.result,settings,now):await applyOrders(db,task,parseOrders(body.result),settings,{rand})
+  if(task.kind==='fetch_label')summary=desktopDriver(key)==='desktop'?body.result?.skipped?{message:body.result.skipped}:await applyDesktopLabel(db,task,body.result,now):await applyLabel(db,task,parseLabel(body.result),body.result||{})
   if(task.kind==='scan_likes')summary=await (await import('./ylavint-flows.js')).planLikes(db,task,parseLikes(body.result),settings,{now,rand,can:await learned(db)})
   if(task.kind==='scan_likes'&&!summary.likes&&Number.isSafeInteger(body.result?.notifications)){
     const n=body.result.notifications
@@ -620,7 +633,7 @@ export async function handleAgent(req,{db,user}){
     const keep=new Set(check(await db.from('listing_drafts').select('publication_task_id').not('publication_task_id','is',null)).map(d=>d.publication_task_id))
     const tasks=check(await db.from('vinted_agent_tasks').select('id').eq('account_id',account)).map(t=>t.id).filter(id=>!keep.has(id))
     for(let i=0;i<tasks.length;i+=200)check(await db.from('vinted_agent_tasks').delete().in('id',tasks.slice(i,i+200)))
-    for(const t of ['ylavint_messages','ylavint_conversations','vinted_agent_contacts','vinted_agent_listings','vinted_agent_orders','vinted_agent_log','vinted_agent_settings','account_health_alerts'])
+    for(const t of ['ylavint_wallets','ylavint_desktop_orders','ylavint_messages','ylavint_conversations','vinted_agent_contacts','vinted_agent_listings','vinted_agent_orders','vinted_agent_log','vinted_agent_settings','account_health_alerts'])
       check(await db.from(t).delete().eq('account_id',account))
     return {saved:true,message:`${exists.login} délié de YlaVint.`}
   }
@@ -699,7 +712,7 @@ export async function handleAgent(req,{db,user}){
     if(!account||!SCANS.includes(body.kind))throw new AppError('Lecture inconnue.')
     const settings=check(await db.from('vinted_agent_settings').select('messaging').eq('account_id',account).maybeSingle())
     if(!supportsTask(settings,body.kind))throw new AppError(EXTENSION_REQUIRED,409)
-    const added=await enqueue(db,[{account_id:account,kind:body.kind,dedupe_key:`${body.kind}:${account}`,created_by:user.id,priority:3}])
+    const added=await enqueue(db,[{account_id:account,kind:body.kind,dedupe_key:`${body.kind}:${account}`,created_by:user.id,priority:body.kind==='scan_wallet'?6:3,...(body.kind==='scan_wallet'?{payload:{manual:true}}:{})}])
     return {queued:added}
   }
   if(body.action==='cancel'){

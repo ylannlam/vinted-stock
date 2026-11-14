@@ -4,13 +4,14 @@ import {VintedMessenger,review} from './ylavint-ui.mjs'
 import {VisibleVinted,PACE} from './ylavint-visible.mjs'
 import {browseMemory} from './ylavint-memory.mjs'
 import {preparePublication,PublicationForm} from './ylavint-publication.mjs'
+import {VisibleCommerce} from './ylavint-commerce.mjs'
 
-export const DESKTOP_KINDS=['scan_wardrobe','scan_likes','sync_inbox','like_message','reply_message','publish_item']
+export const DESKTOP_KINDS=['scan_wardrobe','scan_likes','sync_inbox','like_message','reply_message','publish_item','scan_wallet','sync_orders','fetch_label']
 const writes=task=>['like_message','reply_message','publish_item'].includes(task?.kind)
 const SITE='https://vinted-stock.vercel.app'
 const wait=(ms,signal)=>new Promise(resolve=>{if(signal.aborted)return resolve();const done=()=>{clearTimeout(timer);signal.removeEventListener('abort',done);resolve()};const timer=setTimeout(done,ms);signal.addEventListener('abort',done,{once:true})})
 export async function desktopRequest(token,action,body,fetcher=fetch){
-  const r=await fetcher(SITE+'/api/collector',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...body,action,version:'pc-1.5.0'}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(30000)})
+  const r=await fetcher(SITE+'/api/collector',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...body,action,version:'pc-1.6.0'}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(30000)})
   const data=await r.json().catch(()=>null)
   if(!r.ok)throw Object.assign(Error(data?.error||'Le site ne répond pas.'),{status:r.status})
   if(!data||typeof data!=='object')throw Error('Réponse du site illisible.')
@@ -21,7 +22,7 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
   let deadline=Infinity
   const check=()=>{if(signal.aborted)throw review('Assistant arrêté. Vérifie l’action en cours avant de la relancer.');if(Date.now()>deadline)throw review('Le délai de l’action est dépassé : vérifie Vinted.')}
   let browser,worker,reader,task,submitted=false,activeTimer,keepPage=false
-  const summary={conversations_read:0,articles_read:0,likes_read:0,messages_sent:0,offers_sent:0,actions_cancelled:0,articles_browsed:0,photos_opened:0}
+  const summary={conversations_read:0,articles_read:0,likes_read:0,messages_sent:0,offers_sent:0,actions_cancelled:0,articles_browsed:0,photos_opened:0,wallets_read:0,orders_read:0,labels_saved:0}
   const publishSummary=()=>update({summary:{...summary,articles_browsed:reader?.browseCount||0,photos_opened:reader?.photoCount||0}})
   const journal=taskJournal(path.join(dataDir,'ylavint',binding.account_id))
   const ownPages=[]
@@ -106,7 +107,7 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       }
       if(writes(task))await journal.begin(task,binding.member_id)
       const recheck=(conversation,options)=>reader.recheck(task,conversation,options)
-      const authorize=async()=>{check();const r=await api('agent_guard',{task_id:task.id,lease:task.lease,settings_version:task.settings_version});if(r.allowed!==true)throw review('L’envoi n’est plus autorisé par le site.');check()}
+      const authorize=async()=>{check();const r=await api('agent_guard',{task_id:task.id,lease:task.lease,settings_version:task.settings_version});if(r.allowed!==true)throw review('Cette action n’est plus autorisée par le site.');check()}
       const ui=new VintedMessenger({page:worker,identity:()=>reader.identity(),member:binding.member_id,journal,task,check,update,recheck,authorize,thread:()=>reader.thread(),confirm:p=>reader.confirm(p),pace:reader.pace,sleep})
       let value
       const p=task.payload||{}
@@ -115,6 +116,10 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       else if(task.kind==='scan_likes')value=await reader.likes()
       else if(task.kind==='scan_wardrobe')value=await reader.wardrobe()
       else if(task.kind==='sync_inbox')value=await reader.inbox(p)
+      else if(['scan_wallet','sync_orders','fetch_label'].includes(task.kind)){
+        const commerce=new VisibleCommerce({reader,authorize})
+        value=await (task.kind==='scan_wallet'?commerce.wallet():task.kind==='sync_orders'?commerce.orders():commerce.label(p))
+      }
       else if(task.kind==='publish_item'){
         const form=new PublicationForm({page:worker,reader,task,journal,check,authorize,update,pace:reader.pace,sleep,progress:progress=>api('agent_progress',{task_id:task.id,lease:task.lease,progress})})
         value=await preparePublication(task,form)
@@ -147,6 +152,8 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       else if(task.kind==='sync_inbox')summary.conversations_read+=value.conversations?.length||0
       else if(task.kind==='scan_wardrobe')summary.articles_read+=value.items?.length||0
       else if(task.kind==='scan_likes')summary.likes_read+=value.likes?.length||0
+      else if(task.kind==='scan_wallet')summary.wallets_read++
+      else if(task.kind==='sync_orders')summary.orders_read+=value.orders?.length||0
       else{if(value?.message_id)summary.messages_sent++;if(value?.offer===true)summary.offers_sent++}
       publishSummary()
       clearTimeout(activeTimer)
@@ -154,6 +161,7 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       const payload={task_id:task.id,lease:task.lease,...result,...(!result.ok?{code:'desktop_review'}:{})}
       if(writes(task))await journal.complete(task.id,payload);submitted=true
       const saved=await acknowledge(payload)
+      if(task.kind==='fetch_label'&&value?.pdf_base64){summary.labels_saved++;publishSummary()}
       if(!result.ok||saved.paused)throw review(result.error||'Vérifie ce compte sur Vinted avant de reprendre.')
       update({state:'waiting',message:saved.message||'Action terminée',current_action:null})
       if(task.kind==='publish_item'&&value.prepared){update({state:'manual',message:'Formulaire prêt dans Vinted. Tu as la main pour vérifier et publier ; aucune reprise automatique.',current_action:null});task=null;return}

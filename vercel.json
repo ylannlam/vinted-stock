@@ -7,7 +7,10 @@
       "includeFiles": "node_modules/pdfjs-dist/{standard_fonts/**,legacy/build/pdf.worker.mjs}"
     },
     "api/resources.js": {
-      "includeFiles": "extensions/ylavint/**"
+      "includeFiles": "{extensions/ylavint/**,node_modules/pdfjs-dist/standard_fonts/**,node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs}"
+    },
+    "api/collector.js": {
+      "includeFiles": "node_modules/pdfjs-dist/{standard_fonts/**,legacy/build/pdf.worker.mjs}"
     }
   },
   "rewrites": [

@@ -4,6 +4,7 @@ import {DESKTOP_DEFAULTS,DESKTOP_BOUNDS,DESKTOP_LABELS} from '../src/lib/ylavint
 
 // Tâches. « needs » : recettes indispensables, apprises sur le vrai site. « uses » : lectures qui ont une recette par défaut.
 export const KINDS={
+  scan_wallet:{writes:false,label:'Lecture du porte-monnaie',needs:[]},
   scan_wardrobe:{writes:false,label:'Lecture du dressing',needs:[],uses:['wardrobe']},
   sync_orders:{writes:false,label:'Lecture des ventes',needs:[],uses:['orders_list','order_detail']},
   fetch_label:{writes:false,label:'Bordereau',needs:['order_label'],uses:['order_detail']},
@@ -71,7 +72,7 @@ export const RECIPES={
 }
 // Valeurs prudentes par défaut : on monte progressivement en observant la santé des comptes.
 export const DEFAULTS={
-  features:{inbox:false,ai:false,orders:false,sales:false,labels:false,dressing:false,unmask:false,pricing:false,publish:false,likes:false},
+  features:{inbox:false,ai:false,orders:false,sales:false,labels:false,dressing:false,unmask:false,pricing:false,publish:false,likes:false,wallet:false},
   limits:{writes_per_day:15,unmask_item_per_day:5,reprice_item_per_day:5,publish_item_per_day:5,like_message_per_day:10,
     order_message_per_day:30,order_extension_per_day:10,order_cancel_per_day:5,order_review_per_day:20,item_delete_per_day:10,min_gap_minutes:12,from_hour:0,to_hour:0},
   unmask:{price_drop:1,max_drop:2,floor:2,max_repairs:3,wait_hours:24},
@@ -116,6 +117,10 @@ export function normalizeSettings(input={}){
   out.messaging.executor=input.messaging?.executor||'extension'
   const desktop=input.messaging?.desktop??{}
   if(!desktop||typeof desktop!=='object'||Array.isArray(desktop))throw new AppError('Réglages de rythme invalides.')
+  if(desktop.wallet_hours!==undefined){
+    if(!Array.isArray(desktop.wallet_hours)||desktop.wallet_hours.length!==2||desktop.wallet_hours.some(h=>!Number.isInteger(h)||h<0||h>23)||new Set(desktop.wallet_hours).size!==2)throw new AppError('Choisis deux heures différentes pour le porte-monnaie (0 à 23 h).')
+    out.messaging.desktop.wallet_hours=[...desktop.wallet_hours].sort((a,b)=>a-b)
+  }
   if(desktop.browse_enabled!==undefined&&typeof desktop.browse_enabled!=='boolean')throw new AppError('Consultation des annonces : choix invalide.')
   out.messaging.desktop.browse_enabled=desktop.browse_enabled===true
   if(desktop.browse_photos!==undefined&&typeof desktop.browse_photos!=='boolean')throw new AppError('Consultation des photos : choix invalide.')

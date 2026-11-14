@@ -13,6 +13,7 @@ const YlaVintInbox=lazy(()=>import('./YlaVintInbox'))
 const YlaVintAi=lazy(()=>import('./YlaVintAi'))
 const YlaVintWardrobe=lazy(()=>import('./YlaVintWardrobe'))
 const YlaVintSales=lazy(()=>import('./YlaVintSales'))
+const YlaVintWallet=lazy(()=>import('./YlaVintWallet'))
 const YlaVintDesktop=lazy(()=>import('./YlaVintDesktop'))
 const YlaVintActions=lazy(()=>import('./YlaVintActions'))
 
@@ -21,7 +22,7 @@ export const when=v=>v?new Date(v).toLocaleString('fr-FR',{day:'2-digit',month:'
 export {compactClass}
 const ago=v=>{if(!v)return '—';const m=Math.round((Date.now()-Date.parse(v))/60000);if(m<1)return 'à l’instant';if(m<60)return `il y a ${m} min`;if(m<1440)return `il y a ${Math.round(m/60)} h`;const d=Math.round(m/1440);return d===1?'hier':d===2?'avant-hier':`il y a ${d} jours`}
 const euro=n=>`${(Number(n)||0).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})} €`
-export const FEATURES=[['inbox','Messagerie centralisée'],['ai','Agent IA'],['orders','Lecture des ventes'],['sales','Ventes → onglet Ventes'],['labels','Bordereau automatique'],['dressing','Dressing'],['unmask','Démasquage'],['pricing','Prix & cycle de vie'],['publish','Publication'],['likes','Messages aux likes']]
+export const FEATURES=[['inbox','Messagerie centralisée'],['ai','Agent IA'],['orders','Lecture des ventes'],['sales','Ventes → onglet Ventes'],['labels','Bordereau automatique'],['wallet','Porte-monnaie'],['dressing','Dressing'],['unmask','Démasquage'],['pricing','Prix & cycle de vie'],['publish','Publication'],['likes','Messages aux likes']]
 const STATES={queued:'en attente',running:'en cours',done:'terminée',failed:'échec',cancelled:'annulée'}
 const ALERTS={temporary:'Bloqué temporairement',restricted:'Restreint',permanent:'Bloqué définitivement',blocked:'Bloqué'}
 // Dernière version d'YlaVint = celle du dépôt. Un compte qui remonte une version plus ancienne doit être mis à jour.
@@ -33,6 +34,7 @@ export const bridgeOnline=a=>!!a.last_seen_at&&Date.now()-Date.parse(a.last_seen
 // Navigation latérale (rubriques et sous-rubriques), comme un tableau de bord de gestion Vinted.
 const NAV=[
  {key:'accueil',label:'Dashboard',icon:'▦'},
+ {key:'porte-monnaie',label:'Porte-monnaie',icon:'◉'},
  {label:'Commandes',icon:'🛒',children:[['commandes','Commandes'],['classement','Classement']]},
  {label:'Articles',icon:'◈',children:[['dressing','Articles Vinted'],['publication','Publications planifiées']]},
  {label:'Automatisations',icon:'⚙',children:[['likes','Likes d’articles'],['flux','Flux de commande'],['agent','Smart Agent'],['prix','Démasquage & prix']]},
@@ -68,7 +70,7 @@ function AccountSettings({account,defaults,onSave,busy,only}){
  const setPace=(key,value)=>set('messaging','desktop',{...pace,[key]:value})
  return <div className="space-y-4">
   <label className="flex items-center gap-2 text-sm font-medium text-white"><input type="checkbox" className="accent-blue-500" checked={form.enabled} onChange={e=>setForm({...form,enabled:e.target.checked})}/> YlaVint actif sur ce compte</label>
-  <label className="block text-sm">Exécution<select className={fieldClass+' mt-2'} value={form.messaging.executor||'extension'} onChange={e=>set('messaging','executor',e.target.value)}><option value="extension">Extension — toutes les fonctions</option><option value="desktop">Assistant PC — messages et annonces</option></select></label>
+  <label className="block text-sm">Exécution<select className={fieldClass+' mt-2'} value={form.messaging.executor||'extension'} onChange={e=>set('messaging','executor',e.target.value)}><option value="extension">Extension</option><option value="desktop">Assistant PC — messages, annonces, solde et bordereaux</option></select></label>
   {form.messaging.executor==='desktop'&&<p className="text-xs text-zinc-400">L’extension attend pendant que l’assistant PC gère ce compte. Les autres fonctions reprendront en repassant au mode Extension.</p>}
   {desktop&&<fieldset className="space-y-3 rounded-xl border border-zinc-700 p-4"><Legend>Rythme et navigation sur Vinted</Legend>
    <p className="text-xs text-zinc-400">L’assistant utilise les pages visibles pour lire et agir. Ces réglages contrôlent son rythme ; ils ne garantissent pas qu’une automatisation soit indétectable.</p>
@@ -79,7 +81,7 @@ function AccountSettings({account,defaults,onSave,busy,only}){
   </fieldset>}
   {show('messaging')&&<YlaVintRoutineSettings messaging={form.messaging} desktop={desktop} onChange={(k,v)=>set('messaging',k,v)}/>}
   <fieldset><Legend>Fonctions</Legend>
-   <div className="mt-2 grid gap-2 sm:grid-cols-2">{feats.map(([k,l])=><label key={k} className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-sm text-zinc-200"><input type="checkbox" className="accent-blue-500" disabled={!supportsFeature(form,k)} checked={!!form.features[k]} onChange={e=>set('features',k,e.target.checked)}/>{l}{!supportsFeature(form,k)&&<span className="text-xs text-amber-300">Mode Extension requis</span>}</label>)}</div>
+   <div className="mt-2 grid gap-2 sm:grid-cols-2">{feats.map(([k,l])=><label key={k} className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-sm text-zinc-200"><input type="checkbox" className="accent-blue-500" disabled={!supportsFeature(form,k)} checked={!!form.features[k]} onChange={e=>set('features',k,e.target.checked)}/>{l}{!supportsFeature(form,k)&&<span className="text-xs text-amber-300">{k==='wallet'?'Assistant PC requis':'Mode Extension requis'}</span>}</label>)}</div>
    {feats.some(([k])=>k==='sales')&&<p className="mt-2 text-xs text-zinc-500">« Ventes → onglet Ventes » remplace le webhook Dotb pour ce compte : coupe d’abord Dotb sur ce compte. Une vente déjà reçue de Dotb n’est jamais dupliquée.</p>}
   </fieldset>
   {show('messaging')&&<fieldset className="grid grid-cols-2 gap-3 sm:grid-cols-3"><Legend>Messagerie</Legend>
@@ -99,7 +101,7 @@ function AccountSettings({account,defaults,onSave,busy,only}){
   {(show('likes')||show('messaging'))&&<fieldset className="grid grid-cols-2 gap-3"><Legend>Horaires et plafonds d’envoi</Legend>
    <Num label="Début des envois (heure de Paris)" value={form.limits.from_hour} max={23} suffix="h" onChange={v=>set('limits','from_hour',v)}/>
    <Num label="Fin des envois (heure de Paris)" value={form.limits.to_hour} max={23} suffix="h" onChange={v=>set('limits','to_hour',v)}/>
-   <p className="col-span-full text-xs text-zinc-400">Deux heures identiques autorisent les envois toute la journée. Ces horaires s’appliquent aux messages et aux publications de l’Assistant PC.</p>
+   <p className="col-span-full text-xs text-zinc-400">Deux heures identiques autorisent l’activité toute la journée. Ces horaires s’appliquent aussi aux publications, au porte-monnaie et aux bordereaux de l’Assistant PC.</p>
    {show('likes')&&<Num label="Messages aux likes / jour (relances incluses)" value={form.limits.like_message_per_day} max={1000000} onChange={v=>set('limits','like_message_per_day',v)}/>}
   </fieldset>}
   {show('messaging')&&<fieldset disabled={desktop} className="space-y-3"><Legend>Acceptation automatique des offres</Legend>
@@ -226,7 +228,7 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
    <p className="ylv-nav-group px-3 py-1.5">{n.label}</p>
    {n.children.map(([k,l])=><button key={k} aria-current={section===k?'page':undefined} onClick={()=>setSection(k)} className={`ylv-nav-link flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-[13px] ${section===k?'font-semibold text-white':'text-zinc-400 hover:text-zinc-100'}`}><Icon className="h-4 w-4 opacity-70" name={({commandes:'bag',classement:'chart',dressing:'box',publication:'grid',likes:'heart',flux:'box',agent:'spark',prix:'chart',reglages:'settings',journal:'clock',extension:'grid'})[k]}/>{l}</button>)}
   </div>:<button key={n.key} aria-current={section===n.key?'page':undefined} onClick={()=>setSection(n.key)} className={`ylv-nav-link flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] font-medium ${section===n.key?'text-white':'text-zinc-300'}`}>
-   <Icon className="h-4 w-4" name={({accueil:'grid',messagerie:'message','assistant-pc':'monitor',actions:'clock'})[n.key]}/>{n.label}{n.key==='messagerie'&&unread>0&&<span className="ml-auto rounded-full bg-indigo-500/25 px-2 py-0.5 text-[10px] text-indigo-200">{unread}</span>}</button>)}
+   <Icon className="h-4 w-4" name={({accueil:'grid','porte-monnaie':'chart',messagerie:'message','assistant-pc':'monitor',actions:'clock'})[n.key]}/>{n.label}{n.key==='messagerie'&&unread>0&&<span className="ml-auto rounded-full bg-indigo-500/25 px-2 py-0.5 text-[10px] text-indigo-200">{unread}</span>}</button>)}
   <div className="mt-auto space-y-2 border-t border-zinc-800 px-2 pt-3 text-xs text-zinc-400">
    <p><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-emerald-400"/>{online.length} contact{online.length>1?'s':''} récent{online.length>1?'s':''}</p>
    <p>{active.length-paused.length} compte{active.length-paused.length>1?'s':''} activé{active.length-paused.length>1?'s':''}{paused.length?` · ${paused.length} en pause`:''}</p>
@@ -253,6 +255,7 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
    {section==='accueil'&&<YlaVintDashboard accounts={accounts} data={data} orders={valid} revenue={revenue} toShip={toShip} transit={transit} range={range} periodPicker={periodPicker} chart={<SalesChart orders={valid} range={range}/>} onNavigate={setSection} onRefresh={()=>{load();loadSales()}} busy={busy}/>}
 
    {section==='commandes'&&<YlaVintSales request={request} accounts={accounts}/>}
+   {section==='porte-monnaie'&&<YlaVintWallet request={request} accounts={accounts} onConfigure={()=>setSection('reglages')} onOrders={()=>setSection('commandes')}/>}
 
    {section==='classement'&&<>
     <PageTitle title="Classement des comptes" hint="Ventes lues par YlaVint sur la période (annulations et retours exclus)." aside={periodPicker}/>

@@ -7,6 +7,11 @@ const localDate=v=>v?new Date(Date.parse(v)-new Date(v).getTimezoneOffset()*6000
 export default function YlaVintRoutineSettings({messaging,onChange,desktop}){
  const pace={...DESKTOP_DEFAULTS,...messaging.desktop},setPace=(k,v)=>onChange('desktop',{...pace,[k]:v})
  return <>
+  {desktop&&<fieldset className="space-y-3 rounded-xl border border-zinc-700 p-4"><legend className="text-sm font-semibold">Porte-monnaie · deux passages par jour</legend>
+   <p className="text-xs text-zinc-400">Active « Porte-monnaie » dans les fonctions du compte. L’agent ouvre le solde, lit les deux montants et actualise ton tableau de bord. Le retrait reste manuel.</p>
+   <div className="grid gap-3 sm:grid-cols-2">{pace.wallet_hours.map((hour,index)=><label key={index} className="block text-xs text-zinc-400">{index===0?'Premier passage':'Second passage'} · heure de Paris<select className={fieldClass+' mt-1'} value={hour} onChange={e=>setPace('wallet_hours',pace.wallet_hours.map((h,i)=>i===index?Number(e.target.value):h))}>{Array.from({length:24},(_,h)=><option key={h} value={h}>{String(h).padStart(2,'0')} h</option>)}</select></label>)}</div>
+   <p className="text-xs text-zinc-400">Choisis deux heures différentes dans ton créneau d’activité. Les pauses et les actions en cours peuvent décaler la lecture ; les anciennes plages ne sont pas rattrapées en rafale.</p>
+  </fieldset>}
   {desktop&&<YlaVintPublicationSettings pace={pace} onChange={setPace}/>}
   {desktop&&<fieldset className="space-y-4 rounded-xl border border-zinc-700 p-4"><legend className="text-sm font-semibold">Planning et reprise</legend>
    <p className="text-xs text-zinc-400">Heure de Paris pour les créneaux. Après une pause ou un redémarrage, les conversations sont relues avant les actions en attente.</p>
