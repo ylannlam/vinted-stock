@@ -26,15 +26,15 @@ test('PC runtime preserves extension preferences but cannot plan unsupported act
  const stored=normalizeSettings({features:{likes:true,inbox:true,dressing:true,orders:true,unmask:true,pricing:true,publish:true},messaging:{executor:'desktop',offers:{enabled:true}},order_flow:{confirm:{enabled:true}}})
  const before=structuredClone(stored),runtime=executionSettings(stored)
  assert.deepEqual(stored,before)
- for(const k of ['likes','inbox','dressing'])assert.equal(runtime.features[k],true)
- for(const k of ['orders','unmask','pricing','publish'])assert.equal(runtime.features[k],false)
+ for(const k of ['likes','inbox','dressing','publish'])assert.equal(runtime.features[k],true)
+ for(const k of ['orders','unmask','pricing'])assert.equal(runtime.features[k],false)
  assert.equal(runtime.messaging.offers.enabled,false);assert.equal(runtime.order_flow.confirm.enabled,false)
 })
 
 test('desktop pacing validates every limit and keeps consultation opt-in',()=>{
  assert.equal(normalizeSettings().messaging.desktop.browse_enabled,false)
  assert.equal(normalizeSettings({messaging:{desktop:{typing_delay_ms:90,browse_enabled:true}}}).messaging.desktop.typing_delay_ms,90)
- for(const desktop of [{typing_delay_ms:0},{session_minutes:0},{pause_minutes:100},{browse_items:100},{browse_scrolls:-1},{browse_enabled:'yes'}])assert.throws(()=>normalizeSettings({messaging:{desktop}}))
+ for(const desktop of [{typing_delay_ms:0},{session_minutes:0},{pause_minutes:100},{browse_items:100},{browse_scrolls:-1},{browse_enabled:'yes'},{publication_corrections:'yes'},{publication_typing_ms:10},{publication_review_seconds:0}])assert.throws(()=>normalizeSettings({messaging:{desktop}}))
 })
 
 test('desktop status shares settings and Paris hours without claiming tasks',async()=>{
@@ -72,4 +72,16 @@ test('routine settings preserve a valid calendar and reject invalid filters and 
  const saved=normalizeSettings({messaging:{desktop:{active_days:[5,1,1],absent_until:'2026-12-01T10:00:00+01:00',browse_price_min:10,browse_price_max:30},reply_notes:'Envoi mardi',reply_examples:[{before:'Salut',after:'Bonjour'}]}})
  assert.deepEqual(saved.messaging.desktop.active_days,[1,5]);assert.equal(saved.messaging.desktop.absent_until,'2026-12-01T09:00:00.000Z')
  for(const desktop of [{active_days:[0]},{active_days:'1'},{absent_until:'bad'},{browse_price_min:40,browse_price_max:30},{browse_photos:'yes'},{reply_max_age_hours:0}])assert.throws(()=>normalizeSettings({messaging:{desktop}}))
+})
+
+test('publication guard requires the frozen draft, account, task and enabled feature',async()=>{
+ const key={desktop_account_id:account.id},body={task_id:crypto.randomUUID(),lease:crypto.randomUUID(),settings_version:2},owner=crypto.randomUUID()
+ const payload={execution:'desktop',submit:true,fields:{account_id:account.id,title:'Robe'}}
+ const task={id:body.task_id,account_id:account.id,created_by:owner,lease:body.lease,kind:'publish_item',state:'running',lease_until:new Date(Date.now()+60000).toISOString(),payload:{draft_id:crypto.randomUUID(),listing:payload}}
+ const settings={account_id:account.id,enabled:true,paused:false,version:2,messaging:{executor:'desktop'},limits:{from_hour:0,to_hour:0},features:{publish:true}}
+ const draft={id:task.payload.draft_id,owner_id:owner,publication_task_id:task.id,state:'preparing',fields:{account_id:account.id},payload:structuredClone(payload)}
+ const db={from(table){const row={vinted_agent_tasks:task,vinted_agent_settings:settings,listing_drafts:draft}[table],filters=[];const q={select:()=>q,eq(k,v){filters.push(()=>row[k]===v);return q},maybeSingle:async()=>({data:filters.every(f=>f())?row:null})};return q}}
+ assert.equal((await guardDesktop(db,key,body)).allowed,true)
+ for(const patch of [{owner_id:crypto.randomUUID()},{publication_task_id:crypto.randomUUID()},{state:'attention'},{payload:{...payload,submit:false}}]){const old={...draft};Object.assign(draft,patch);await assert.rejects(guardDesktop(db,key,body),/correspond plus/);Object.assign(draft,old)}
+ settings.features.publish=false;await assert.rejects(guardDesktop(db,key,body),/non autorisée/)
 })

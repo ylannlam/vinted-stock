@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 $sourceDir = Join-Path $PSScriptRoot 'adspower-companion'
 $archivePath = Join-Path $repoRoot 'public/downloads/adspower-companion.zip'
-$names = @('package.json','package-lock.json','adspower.mjs','authorization.mjs','companion.mjs','dotb.mjs','factory.mjs','factory-journal.mjs','dotb-ui.mjs','lookback.mjs','monitor.mjs','queue.mjs','storage.mjs','run.bat','LIRE-MOI.txt','ylavint.mjs','ylavint-ui.mjs','ylavint-journal.mjs','ylavint-visible.mjs','ylavint-memory.mjs')
+$names = @('package.json','package-lock.json','adspower.mjs','authorization.mjs','companion.mjs','dotb.mjs','factory.mjs','factory-journal.mjs','dotb-ui.mjs','lookback.mjs','monitor.mjs','queue.mjs','storage.mjs','run.bat','LIRE-MOI.txt','ylavint.mjs','ylavint-ui.mjs','ylavint-journal.mjs','ylavint-visible.mjs','ylavint-memory.mjs','ylavint-typing.mjs','ylavint-publication.mjs')
 $files = $names | ForEach-Object { Join-Path $sourceDir $_ }
 Compress-Archive -LiteralPath $files -DestinationPath $archivePath -Force
 Add-Type -AssemblyName System.IO.Compression.FileSystem

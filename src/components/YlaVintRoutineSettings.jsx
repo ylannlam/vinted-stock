@@ -1,11 +1,13 @@
 import {fieldClass,buttonClass} from './YlaVintUI'
 import {DESKTOP_DEFAULTS} from '../lib/ylavintExecution'
+import YlaVintPublicationSettings from './YlaVintPublicationSettings'
 
 const days=[[1,'Lundi'],[2,'Mardi'],[3,'Mercredi'],[4,'Jeudi'],[5,'Vendredi'],[6,'Samedi'],[7,'Dimanche']]
 const localDate=v=>v?new Date(Date.parse(v)-new Date(v).getTimezoneOffset()*60000).toISOString().slice(0,16):''
 export default function YlaVintRoutineSettings({messaging,onChange,desktop}){
  const pace={...DESKTOP_DEFAULTS,...messaging.desktop},setPace=(k,v)=>onChange('desktop',{...pace,[k]:v})
  return <>
+  {desktop&&<YlaVintPublicationSettings pace={pace} onChange={setPace}/>}
   {desktop&&<fieldset className="space-y-4 rounded-xl border border-zinc-700 p-4"><legend className="text-sm font-semibold">Planning et reprise</legend>
    <p className="text-xs text-zinc-400">Heure de Paris pour les créneaux. Après une pause ou un redémarrage, les conversations sont relues avant les actions en attente.</p>
    <div className="flex flex-wrap gap-2">{days.map(([n,label])=><label key={n} className="flex items-center gap-2 rounded-lg border border-zinc-700 px-2.5 py-2 text-xs"><input type="checkbox" checked={pace.active_days.includes(n)} onChange={e=>setPace('active_days',e.target.checked?[...pace.active_days,n].sort():pace.active_days.filter(d=>d!==n))}/>{label}</label>)}</div>

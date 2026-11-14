@@ -6,7 +6,7 @@ import {isDesktop} from '../src/lib/ylavintExecution.js'
 import {desktopWindow} from './ylavint-desktop.js'
 
 export async function upcomingActions(db,accountId=null,{now=Date.now()}={}){
- let query=db.from('vinted_agent_tasks').select('id,account_id,kind,state,not_before,created_at,payload').in('state',['queued','running']).in('kind',['reply_message','like_message']).order('not_before',{ascending:true}).limit(100)
+ let query=db.from('vinted_agent_tasks').select('id,account_id,kind,state,not_before,created_at,payload').in('state',['queued','running']).in('kind',['reply_message','like_message','publish_item']).order('not_before',{ascending:true}).limit(100)
  if(accountId)query=query.eq('account_id',accountId)
  const tasks=check(await query)
  if(!tasks.length)return {actions:[]}
@@ -22,6 +22,7 @@ export async function upcomingActions(db,accountId=null,{now=Date.now()}={}){
   const c=conversations.find(c=>c.account_id===t.account_id&&c.conversation_id===p.conversation_id)
   const stale=isDesktop(s)&&t.kind==='reply_message'&&now-Date.parse(t.created_at)>s.messaging.desktop.reply_max_age_hours*3600000
   const blocked=p.skip||(!row?.enabled?'Compte non activé.':row.paused?'Compte en pause.':isDesktop(s)&&!desktopWindow(s.limits,now,s.messaging.desktop)?'En dehors du planning ou en absence.':stale?'Réponse ancienne : relecture et validation nécessaires.':null)
+  if(t.kind==='publish_item')return {id:t.id,account_id:t.account_id,login:names.get(t.account_id)||'Compte Vinted',kind:t.kind,state:t.state,not_before:t.not_before,created_at:t.created_at,recipient:p.listing?.submit?'Publication d’annonce':'Préparation d’annonce',item_title:p.listing?.fields?.title||'Annonce à vérifier',body:p.listing?.fields?.description||'',listing_price:p.listing?.fields?.price,photo_count:p.listing?.photos?.length||0,reason:p.listing?.submit?'Mise en ligne demandée depuis l’atelier, après les contrôles du formulaire.':'Formulaire à préparer puis à valider manuellement dans Vinted.',executor:p.listing?.execution||'extension',blocked_reason:blocked}
   return {id:t.id,account_id:t.account_id,login:names.get(t.account_id)||'Compte Vinted',kind:t.kind,state:t.state,not_before:t.not_before,created_at:t.created_at,
    conversation_id:p.conversation_id||null,item_id:p.item_id||null,recipient:p.login||c?.other_login||'Membre à confirmer sur Vinted',item_title:p.title||c?.item_title||null,
    body:p.message??p.body??'',offer_price:p.offer_price??null,offer_requested:!!p.offer_requested,

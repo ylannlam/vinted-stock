@@ -1,6 +1,6 @@
 STOCK VINTED — CONNECTEUR ADSPOWER
 
-ASSISTANT YLAVINT SUR PC (version 1.4.0)
+ASSISTANT YLAVINT SUR PC (version 1.5.0)
 Cette version ajoute le pilotage des favoris et de la messagerie depuis
 https://vinted-stock.vercel.app/ylavint#assistant-pc.
 La mise à jour du site et de sa base doit être installée avant de choisir ce mode.
@@ -32,7 +32,22 @@ de reprendre. L'assistant ne renvoie jamais un message simplement parce que
 sa confirmation manque. Après redémarrage, il faut le relancer depuis le site.
 Ne saisis pas toi-même de texte dans les onglets utilisés par l'assistant.
 
-NOUVEAUX CONTRÔLES 1.4
+PUBLICATION VISIBLE 1.5
+- Active Publication dans les réglages du compte en mode Assistant PC.
+- Dans Publication à l’écran, règle la vitesse du clavier (environ 3 à 5
+  caractères/seconde), les pauses et la relecture. Les petites fautes corrigées
+  sont facultatives et limitées au titre et à la description non publiés.
+- Depuis l’atelier, prépare une fiche et choisis pour CETTE annonce soit
+  « Préparer le formulaire », soit « Publier après les contrôles ».
+- La préparation seule laisse l’onglet ouvert et te rend la main.
+- Photos, menus et texte passent par le formulaire Vinted. Aucun envoi direct
+  aux API Vinted. Une modification ou perte de focus arrête la saisie.
+- Une mise en ligne n’est confirmée qu’après lecture de sa page d’annonce.
+  En cas de doute, vérifie le dressing : aucun second clic automatique.
+- Le planning et les plafonds du compte s’appliquent aux publications.
+- Le suivi affiche les étapes confirmées dans l’atelier et l’Assistant PC.
+
+CONTRÔLES 1.4
 - Planning : jours actifs, absence et durée maximale d'attente d'une réponse.
 - Reprise : relecture des conversations avant les actions ; les réponses trop
   anciennes sont rendues au vendeur pour validation.
@@ -49,7 +64,7 @@ Un seul assistant pilote un profil à la fois sur ce PC. Les identifiants des
 compte, pendant 8 jours. Les exemples de style retenus restent dans le site.
 
 Ce mode reprend les favoris, réductions, relances et réponses. Les ventes,
-bordereaux, publications et changements d'annonces restent en attente jusqu'au
+bordereaux et changements d'annonces restent en attente jusqu'au
 retour au mode Extension. La frappe progressive ne garantit pas qu'une
 automatisation est indétectable.
 

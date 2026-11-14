@@ -57,6 +57,22 @@ const ACC='11111111-1111-4111-8111-111111111111'
 const base=()=>({publication_accounts:[{id:ACC,login:'compte_demo',vinted_id:'3206068112'}],vinted_agent_settings:[],vinted_agent_tasks:[],vinted_agent_log:[],vinted_agent_recipes:[],vinted_agent_listings:[],vinted_agent_orders:[],vinted_agent_contacts:[],listing_drafts:[]})
 const recipe=(kind,extra={})=>({kind,recipe:{method:'POST',path:'/api/v2/x',body:'none',...extra}})
 
+test('the studio can enable PC publication without changing its executor or pairing',async()=>{
+ const state=base(),db=fakeDb(state)
+ state.vinted_agent_settings.push({account_id:ACC,enabled:true,paused:false,version:1,features:{publish:false},messaging:{executor:'desktop'}})
+ await handleAgent({method:'POST',body:{action:'enable_publish',account_id:ACC}},{db,user:{id:crypto.randomUUID()}})
+ assert.equal(state.vinted_agent_settings[0].features.publish,true)
+ assert.equal(state.vinted_agent_settings[0].messaging.executor,'desktop');assert.equal(state.vinted_agent_tasks.length,0)
+})
+
+test('an unconfirmed desktop publication pauses the account and cannot become a prepared form',async()=>{
+ const state=base(),db=fakeDb(state),id=crypto.randomUUID(),lease=crypto.randomUUID()
+ state.vinted_agent_settings.push({account_id:ACC,enabled:true,paused:false,messaging:{executor:'desktop'}})
+ state.vinted_agent_tasks.push({id,lease,account_id:ACC,kind:'publish_item',writes:true,state:'running',payload:{listing:{assisted:true,execution:'desktop',submit:true}}})
+ const result=await agentResult(db,{desktop_account_id:ACC},{member_id:'3206068112',task_id:id,lease,ok:true,result:{prepared:true,missing:[]}})
+ assert.equal(result.paused,true);assert.equal(state.vinted_agent_tasks[0].state,'failed');assert.equal(state.vinted_agent_settings[0].paused,true)
+})
+
 test('desktop ownership prevents extension claims and does not auto-resume a review pause',async()=>{
  const state=base(),db=fakeDb(state)
  state.vinted_agent_settings.push({account_id:ACC,enabled:true,paused:true,pause_reason:'Assistant PC : vérifie la dernière action sur Vinted avant de reprendre.',messaging:{executor:'desktop'}})

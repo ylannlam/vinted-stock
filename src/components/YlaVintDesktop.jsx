@@ -16,12 +16,12 @@ export default function YlaVintDesktop({accounts,onConfigure,onActions,request=a
  }
  async function stop(id){setBusy(true);try{const r=await request('/ylavint/stop',{account_id:id});setState(s=>({...s,assistants:r.assistants}))}catch(e){setError(e.message)}finally{setBusy(false)}}
  async function takeover(id){setBusy(true);try{const r=await request('/ylavint/takeover',{account_id:id});setState(s=>({...s,assistants:r.assistants}))}catch(e){setError(e.message)}finally{setBusy(false)}}
- const currentVersion=state?.rhythm_controls===true
+ const currentVersion=state?.publication_ui===true
  const connected=!!state&&!connectionError,configured=connected&&state?.configured&&currentVersion
  const running=connected?(state?.assistants||[]).filter(active).length:0
  const ready=account&&profile&&currentVersion&&state?.ylavint&&state?.configured&&!connectionError&&account.settings?.messaging?.executor==='desktop'&&!busy&&!(state?.assistants||[]).some(active)
  return <div className="space-y-5">
-  <PageTitle title="Assistant PC" hint="Tes conversations, pilotées depuis les pages Vinted ouvertes dans AdsPower." aside={<><button className={buttonClass} onClick={onActions}><Icon name="clock"/>Prochaines actions</button><button className={buttonClass} onClick={()=>load(true)}>↻ Actualiser</button></>}/>
+  <PageTitle title="Assistant PC" hint="Tes conversations et annonces, pilotées depuis les pages Vinted ouvertes dans AdsPower." aside={<><button className={buttonClass} onClick={onActions}><Icon name="clock"/>Prochaines actions</button><button className={buttonClass} onClick={()=>load(true)}>↻ Actualiser</button></>}/>
   <div className="grid gap-4 sm:grid-cols-3">
    <StatCard label="Connecteur" value={connected?'Connecté':'Hors ligne'} tone={connected?'green':'amber'} icon={<Icon name="monitor"/>} sub={configured?'Prêt pour les pages visibles':connected?'Configuration à terminer':'Ouvre le connecteur sur ce PC'}/>
    <StatCard label="Assistants sur ce PC" value={connected?running:'—'} tone="violet" icon={<Icon name="spark"/>} sub="Sessions ouvertes, pauses comprises"/>
@@ -29,11 +29,11 @@ export default function YlaVintDesktop({accounts,onConfigure,onActions,request=a
   </div>
   <Card className="p-5 sm:p-6"><div className="mb-5 flex items-center justify-between gap-3"><h2 className="text-lg font-semibold text-white">Tout commence ici</h2><Pill tone="blue">3 étapes</Pill></div>
    <div className="grid gap-6 md:grid-cols-3">
-    <div><span className="ylv-step-number mb-3 grid h-9 w-9 place-items-center rounded-xl text-sm font-semibold">01</span><h3 className="text-sm font-semibold text-white">Relie ton ordinateur</h3><p className="mt-2 text-sm leading-relaxed text-zinc-400">Télécharge le connecteur et ouvre-le sur le PC où tourne AdsPower.</p><a className={buttonClass+' mt-4'} href="/downloads/adspower-companion.zip" download>Télécharger la version 1.4</a></div>
+    <div><span className="ylv-step-number mb-3 grid h-9 w-9 place-items-center rounded-xl text-sm font-semibold">01</span><h3 className="text-sm font-semibold text-white">Relie ton ordinateur</h3><p className="mt-2 text-sm leading-relaxed text-zinc-400">Télécharge le connecteur et ouvre-le sur le PC où tourne AdsPower.</p><a className={buttonClass+' mt-4'} href="/downloads/adspower-companion.zip" download>Télécharger la version 1.5</a></div>
     <div><span className="ylv-step-number mb-3 grid h-9 w-9 place-items-center rounded-xl text-sm font-semibold">02</span><h3 className="text-sm font-semibold text-white">Connecte AdsPower</h3><p className="mt-2 text-sm leading-relaxed text-zinc-400">Renseigne la connexion locale pour retrouver tes profils dans YlaVint.</p><a className={buttonClass+' mt-4'} href="http://127.0.0.1:17442/setup" target="_blank" rel="noreferrer">Configurer AdsPower<Icon name="arrow"/></a></div>
     <div><span className="ylv-step-number mb-3 grid h-9 w-9 place-items-center rounded-xl text-sm font-semibold">03</span><h3 className="text-sm font-semibold text-white">Choisis et vérifie ton compte</h3><p className="mt-2 text-sm leading-relaxed text-zinc-400">Associe le bon profil ci-dessous, active le mode Assistant PC et lance la vérification.</p><p className="mt-4 text-xs text-indigo-300">L’identité Vinted est vérifiée avant toute action.</p></div>
    </div>
-   {state&&!currentVersion&&<p role="status" className="mt-5 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-200">Mets à jour le connecteur avec cette archive, puis relance run.bat pour utiliser le planning, la répétition et la reprise en main.</p>}
+   {state&&!currentVersion&&<p role="status" className="mt-5 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-200">Mets à jour le connecteur avec cette archive, puis relance run.bat pour utiliser la publication visible, le planning et la reprise en main.</p>}
   </Card>
   {(connectionError||error)&&<p role="alert" className="rounded-lg bg-rose-950 p-3 text-sm text-rose-200">{connectionError||error}</p>}
   <Card className="p-5 sm:p-6"><div className="mb-5 flex items-center gap-3"><span className="ylv-avatar grid h-10 w-10 place-items-center rounded-xl"><Icon name="monitor"/></span><div><h2 className="font-semibold text-white">Piloter un assistant</h2><p className="mt-1 text-xs text-zinc-400">Un compte Vinted, son profil AdsPower et tes réglages.</p></div></div><div className="grid gap-4 sm:grid-cols-2">
@@ -57,7 +57,7 @@ export default function YlaVintDesktop({accounts,onConfigure,onActions,request=a
    <p>Les textes, réductions et délais restent ceux des rubriques <strong>Likes d’articles</strong> et <strong>Smart Agent</strong>. Les lectures, la saisie et les clics passent par les pages Vinted ouvertes.</p>
    <p>Dans les réglages du compte, <strong>Rythme et navigation sur Vinted</strong> permet de régler la saisie, les pauses et la consultation d’annonces avec défilement. Aucun favori automatique.</p>
    <p>Garde ce PC, AdsPower et le connecteur ouverts, avec la fenêtre du profil non réduite. Arrête Scalency ou Dotb sur le compte choisi avant de démarrer. L’extension YlaVint cède la place lorsque tu choisis « Assistant PC ».</p>
-   <p>Le dressing et la messagerie sont lus sur les pages chargées : l’historique complet n’est pas garanti. Les publications, ventes et bordereaux utilisent le mode Extension. Après un redémarrage du connecteur, démarre à nouveau tes assistants depuis cette page.</p>
+   <p>Le dressing et la messagerie sont lus sur les pages chargées : l’historique complet n’est pas garanti. Les annonces se préparent et se publient depuis l’atelier avec le connecteur 1.5. Les ventes et bordereaux utilisent le mode Extension. Après un redémarrage du connecteur, démarre à nouveau tes assistants depuis cette page.</p>
   </div></details></Card>
  </div>
 }

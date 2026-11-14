@@ -68,7 +68,7 @@ function AccountSettings({account,defaults,onSave,busy,only}){
  const setPace=(key,value)=>set('messaging','desktop',{...pace,[key]:value})
  return <div className="space-y-4">
   <label className="flex items-center gap-2 text-sm font-medium text-white"><input type="checkbox" className="accent-blue-500" checked={form.enabled} onChange={e=>setForm({...form,enabled:e.target.checked})}/> YlaVint actif sur ce compte</label>
-  <label className="block text-sm">Exécution<select className={fieldClass+' mt-2'} value={form.messaging.executor||'extension'} onChange={e=>set('messaging','executor',e.target.value)}><option value="extension">Extension — toutes les fonctions</option><option value="desktop">Assistant PC — favoris et réponses IA</option></select></label>
+  <label className="block text-sm">Exécution<select className={fieldClass+' mt-2'} value={form.messaging.executor||'extension'} onChange={e=>set('messaging','executor',e.target.value)}><option value="extension">Extension — toutes les fonctions</option><option value="desktop">Assistant PC — messages et annonces</option></select></label>
   {form.messaging.executor==='desktop'&&<p className="text-xs text-zinc-400">L’extension attend pendant que l’assistant PC gère ce compte. Les autres fonctions reprendront en repassant au mode Extension.</p>}
   {desktop&&<fieldset className="space-y-3 rounded-xl border border-zinc-700 p-4"><Legend>Rythme et navigation sur Vinted</Legend>
    <p className="text-xs text-zinc-400">L’assistant utilise les pages visibles pour lire et agir. Ces réglages contrôlent son rythme ; ils ne garantissent pas qu’une automatisation soit indétectable.</p>
@@ -99,7 +99,7 @@ function AccountSettings({account,defaults,onSave,busy,only}){
   {(show('likes')||show('messaging'))&&<fieldset className="grid grid-cols-2 gap-3"><Legend>Horaires et plafonds d’envoi</Legend>
    <Num label="Début des envois (heure de Paris)" value={form.limits.from_hour} max={23} suffix="h" onChange={v=>set('limits','from_hour',v)}/>
    <Num label="Fin des envois (heure de Paris)" value={form.limits.to_hour} max={23} suffix="h" onChange={v=>set('limits','to_hour',v)}/>
-   <p className="col-span-full text-xs text-zinc-400">Deux heures identiques autorisent les envois toute la journée. Ces horaires s’appliquent aux messages de ce compte.</p>
+   <p className="col-span-full text-xs text-zinc-400">Deux heures identiques autorisent les envois toute la journée. Ces horaires s’appliquent aux messages et aux publications de l’Assistant PC.</p>
    {show('likes')&&<Num label="Messages aux likes / jour (relances incluses)" value={form.limits.like_message_per_day} max={1000000} onChange={v=>set('limits','like_message_per_day',v)}/>}
   </fieldset>}
   {show('messaging')&&<fieldset disabled={desktop} className="space-y-3"><Legend>Acceptation automatique des offres</Legend>
@@ -317,7 +317,7 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
      <Table head={['Compte','Délié le','']}>{data.unlinked.map(u=><tr key={u.id}><Td className="text-zinc-300">{u.login}</Td><Td className="text-xs text-zinc-500">{when(u.unlinked_at)}</Td>
       <Td className="text-right"><button className="text-sm font-medium text-blue-400 hover:text-blue-300" disabled={busy} onClick={()=>act({action:'relink',account_id:u.id},`${u.login} relié à YlaVint.`)}>Relier</button></Td></tr>)}</Table></div>}
     <p className="pt-2 text-sm font-semibold text-white">Actions connues ({data.recipes.filter(r=>r.learned_at||r.default).length}/{data.recipes.length})</p>
-    <p className="text-xs text-zinc-500">Ce tableau concerne les actions du mode Extension. L’Assistant PC utilise les formulaires Vinted pour les messages et réductions ; il reste en version pilote.</p>
+    <p className="text-xs text-zinc-500">Ce tableau concerne les actions du mode Extension. L’Assistant PC utilise les formulaires Vinted pour les messages, réductions et publications ; il reste en version pilote.</p>
     <Table head={['Action','État','Détail','']}>
      {data.recipes.map(r=><tr key={r.kind}><Td className="font-medium text-white">{r.label}</Td>
       <Td>{r.learned_at?<Pill tone="green">Apprise</Pill>:r.default?<Pill tone="blue">Lecture par défaut</Pill>:<Pill tone="amber">À apprendre</Pill>}</Td>

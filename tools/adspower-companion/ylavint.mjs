@@ -3,13 +3,14 @@ import {taskJournal} from './ylavint-journal.mjs'
 import {VintedMessenger,review} from './ylavint-ui.mjs'
 import {VisibleVinted,PACE} from './ylavint-visible.mjs'
 import {browseMemory} from './ylavint-memory.mjs'
+import {preparePublication,PublicationForm} from './ylavint-publication.mjs'
 
-export const DESKTOP_KINDS=['scan_wardrobe','scan_likes','sync_inbox','like_message','reply_message']
-const writes=task=>['like_message','reply_message'].includes(task?.kind)
+export const DESKTOP_KINDS=['scan_wardrobe','scan_likes','sync_inbox','like_message','reply_message','publish_item']
+const writes=task=>['like_message','reply_message','publish_item'].includes(task?.kind)
 const SITE='https://vinted-stock.vercel.app'
 const wait=(ms,signal)=>new Promise(resolve=>{if(signal.aborted)return resolve();const done=()=>{clearTimeout(timer);signal.removeEventListener('abort',done);resolve()};const timer=setTimeout(done,ms);signal.addEventListener('abort',done,{once:true})})
 export async function desktopRequest(token,action,body,fetcher=fetch){
-  const r=await fetcher(SITE+'/api/collector',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...body,action,version:'pc-1.4.0'}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(30000)})
+  const r=await fetcher(SITE+'/api/collector',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...body,action,version:'pc-1.5.0'}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(30000)})
   const data=await r.json().catch(()=>null)
   if(!r.ok)throw Object.assign(Error(data?.error||'Le site ne répond pas.'),{status:r.status})
   if(!data||typeof data!=='object')throw Error('Réponse du site illisible.')
@@ -24,7 +25,7 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
   const publishSummary=()=>update({summary:{...summary,articles_browsed:reader?.browseCount||0,photos_opened:reader?.photoCount||0}})
   const journal=taskJournal(path.join(dataDir,'ylavint',binding.account_id))
   const ownPages=[]
-  const stopPages=()=>{if(signal.reason?.takeover){keepPage=true;return}for(const page of ownPages)void page.close().catch(()=>{})}
+  const stopPages=()=>{if(signal.reason?.takeover||task?.kind==='publish_item'){keepPage=true;return}for(const page of ownPages)void page.close().catch(()=>{})}
   signal.addEventListener('abort',stopPages,{once:true})
   const api=(action,body={})=>request(binding.token,action,{member_id:binding.member_id,profile_id:binding.profile_id,login:binding.login,...body})
   const sleep=ms=>wait(ms,signal),control=()=>api('agent_status')
@@ -94,7 +95,7 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
         update({state:'waiting',message:next.reason||'En attente des prochains favoris et messages'});await sleep(Math.max(1,Math.min(20,Number(next.wait_seconds)||20))*1000);continue
       }
       task=next.task
-      deadline=Math.min(Date.now()+175000,(Date.parse(task.lease_until)||Date.now()+180000)-5000)
+      deadline=Math.min(Date.now()+(task.kind==='publish_item'?25*60000:175000),(Date.parse(task.lease_until)||Date.now()+180000)-5000)
       check();activeTimer=setTimeout(stopPages,Math.max(1,deadline-Date.now()))
       if(!DESKTOP_KINDS.includes(task?.kind))throw review('Cette fonction attend encore son adaptation à l’assistant PC.')
       const before=writes(task)?await journal.read(task.id):null
@@ -114,6 +115,11 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       else if(task.kind==='scan_likes')value=await reader.likes()
       else if(task.kind==='scan_wardrobe')value=await reader.wardrobe()
       else if(task.kind==='sync_inbox')value=await reader.inbox(p)
+      else if(task.kind==='publish_item'){
+        const form=new PublicationForm({page:worker,reader,task,journal,check,authorize,update,pace:reader.pace,sleep,progress:progress=>api('agent_progress',{task_id:task.id,lease:task.lease,progress})})
+        value=await preparePublication(task,form)
+        if(value.prepared)keepPage=true
+      }
       else{
         if((p.message||p.body||'').length*reader.pace.typing_delay_ms+60000>deadline-Date.now())throw review('Ce texte est trop long pour la vitesse de saisie choisie. Raccourcis-le ou accélère la saisie dans les réglages.')
         if(task.kind==='like_message'&&p.offer_requested&&!p.offer_price)throw review('Le prix de la réduction n’est pas connu. Relis d’abord le dressing.')
@@ -150,13 +156,14 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       const saved=await acknowledge(payload)
       if(!result.ok||saved.paused)throw review(result.error||'Vérifie ce compte sur Vinted avant de reprendre.')
       update({state:'waiting',message:saved.message||'Action terminée',current_action:null})
+      if(task.kind==='publish_item'&&value.prepared){update({state:'manual',message:'Formulaire prêt dans Vinted. Tu as la main pour vérifier et publier ; aucune reprise automatique.',current_action:null});task=null;return}
       task=null
       await wait(1500,signal)
     }
   }catch(e){
-    if(e.keep_page)keepPage=true
+    if(e.keep_page||task?.kind==='publish_item')keepPage=true
     if(task&&!submitted){
-      const payload={task_id:task.id,lease:task.lease,ok:false,code:'desktop_review',error:'Action interrompue ou non confirmée : vérifie Vinted avant de reprendre.'}
+      const payload={task_id:task.id,lease:task.lease,ok:false,code:'desktop_review',error:e.code==='desktop_review'?e.message.slice(0,300):'Action interrompue ou non confirmée : vérifie Vinted avant de reprendre.'}
       // Keep the result if reporting fails. No write will be replayed by this worker.
       if(writes(task))await journal.complete(task.id,payload).catch(()=>{})
       await acknowledge(payload).catch(()=>{})

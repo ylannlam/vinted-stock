@@ -251,7 +251,7 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
   if(row.state!=='draft')throw new AppError('Cette annonce a déjà été transmise. Consulte son suivi.',409)
   if(body.confirmation_account_id!==row.fields.account_id)throw new AppError('Vérifie le compte ciblé avant de publier.')
   const {queueStudioPublish}=await import('./ylavint.js')
-  return {draft:await expose(db,await queueStudioPublish(db,user,row,{mode:body.mode,read,settings}))}
+  return {draft:await expose(db,await queueStudioPublish(db,user,row,{mode:body.mode,desktopSubmit:body.desktop_submit===true,read,settings}))}
  }
  if(action==='unschedule'){
   if(body.version!==row.version||pending(row))throw new AppError('Cette annonce a changé. Actualise la liste.',409)

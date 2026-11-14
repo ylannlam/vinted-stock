@@ -8,7 +8,7 @@ const check=r=>{if(r.error)throw r.error;return r.data}
 // A desktop key is bound to one account. The PC never receives the admin session.
 export async function authorizeDesktop(db,key,body){
   if(!key.desktop_account_id)return
-  if(!['agent_poll','agent_result','agent_guard','agent_status','agent_preview','agent_context'].includes(body?.action))throw new AppError('Cette connexion est réservée à l’assistant de ce compte.',403)
+  if(!['agent_poll','agent_result','agent_guard','agent_status','agent_preview','agent_context','agent_progress'].includes(body?.action))throw new AppError('Cette connexion est réservée à l’assistant de ce compte.',403)
   if(body.profile_id!==key.desktop_profile_id)throw new AppError('Cette connexion appartient à un autre profil AdsPower.',403)
   const account=check(await db.from('publication_accounts').select('id,vinted_id,ylavint_unlinked_at').eq('id',key.desktop_account_id).maybeSingle())
   if(!account||account.ylavint_unlinked_at||String(account.vinted_id)!==String(body.member_id))throw new AppError('Le compte ouvert ne correspond pas au compte relié.',403)
@@ -46,13 +46,18 @@ export async function statusDesktop(db,key,now=Date.now()){
 export async function guardDesktop(db,key,body,now=Date.now()){
   if(!key.desktop_account_id)throw new AppError('Contrôle réservé à l’assistant PC.',403)
   if(!isId(body.task_id)||!isId(body.lease))throw new AppError('Tâche invalide.')
-  const task=check(await db.from('vinted_agent_tasks').select('id,account_id,kind,state,lease,lease_until').eq('id',body.task_id).eq('account_id',key.desktop_account_id).eq('lease',body.lease).maybeSingle())
-  if(!task||task.state!=='running'||Date.parse(task.lease_until)<=now||!Number.isFinite(Date.parse(task.lease_until))||!['like_message','reply_message'].includes(task.kind))throw new AppError('Cette action a expiré ou a été annulée sur le site.',409)
-  const settings=check(await db.from('vinted_agent_settings').select('enabled,paused,messaging,limits,version').eq('account_id',key.desktop_account_id).maybeSingle())
+  const task=check(await db.from('vinted_agent_tasks').select('id,account_id,kind,state,lease,lease_until,payload,created_by').eq('id',body.task_id).eq('account_id',key.desktop_account_id).eq('lease',body.lease).maybeSingle())
+  if(!task||task.state!=='running'||Date.parse(task.lease_until)<=now||!Number.isFinite(Date.parse(task.lease_until))||!['like_message','reply_message','publish_item'].includes(task.kind))throw new AppError('Cette action a expiré ou a été annulée sur le site.',409)
+  const settings=check(await db.from('vinted_agent_settings').select('enabled,paused,messaging,limits,version,features').eq('account_id',key.desktop_account_id).maybeSingle())
   if(!settings?.enabled||settings.paused||settings.messaging?.executor!=='desktop')throw new AppError('L’assistant a été arrêté, mis en pause ou confié à l’extension sur le site.',409)
   if(settings.version!==body.settings_version)throw new AppError('Les réglages ont changé pendant cette action. Vérifie le compte avant de reprendre.',409)
   const effective=effectiveSettings(settings)
   if(!desktopWindow(effective.limits,now,effective.messaging.desktop))throw new AppError('Le compte est en dehors de son planning ou en absence.',409)
+  if(task.kind==='publish_item'){
+   if(!effective.features.publish||task.payload?.listing?.execution!=='desktop')throw new AppError('Publication non autorisée pour cet assistant.',409)
+   const draft=check(await db.from('listing_drafts').select('id,owner_id,publication_task_id,state,fields,payload').eq('id',task.payload.draft_id).maybeSingle())
+   if(!draft||draft.owner_id!==task.created_by||draft.publication_task_id!==task.id||draft.state!=='preparing'||draft.fields.account_id!==task.account_id||JSON.stringify(draft.payload)!==JSON.stringify(task.payload.listing))throw new AppError('La fiche ne correspond plus à la demande de publication.',409)
+  }
   return {allowed:true}
 }
 

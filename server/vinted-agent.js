@@ -423,7 +423,15 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
   }
   if(task.kind==='unmask_item'||task.kind==='reprice_item')summary=await applyEdit(db,task,body.result,now)
   if(task.kind==='publish_item'){
-    try{summary=publicationResult(task,body.result)}catch(e){await finish(db,task,'failed',null,e.message);await log('error','publication_unconfirmed',e.message);return {saved:true,message:e.message}}
+    try{
+      if(task.payload?.listing?.execution==='desktop'&&desktopDriver(key)!=='desktop')throw new AppError('Cette publication appartient à l’Assistant PC.',409)
+      summary=publicationResult(task,body.result)
+    }catch(e){
+      await finish(db,task,'failed',null,e.message);await log('error','publication_unconfirmed',e.message)
+      const paused=desktopDriver(key)==='desktop'
+      if(paused)await pauseAccount(db,task.account_id,'Publication non confirmée : vérifie le dressing avant de reprendre.',{event:'desktop_review'})
+      return {saved:true,paused,message:e.message}
+    }
   }
   if(task.kind==='sync_inbox')summary=await (await import('./ylavint.js')).applyInbox(db,task,body.result,{member,settings,now})
   if(task.kind==='reply_message')summary=await (await import('./ylavint.js')).applyReply(db,task,body.result,{now})
@@ -641,7 +649,6 @@ export async function handleAgent(req,{db,user}){
     const exists=check(await db.from('publication_accounts').select('id').eq('id',account).maybeSingle());if(!exists)throw new AppError('Compte introuvable.',404)
     const current=check(await db.from('vinted_agent_settings').select('*').eq('account_id',account).maybeSingle())
     const settings=effectiveSettings(current)
-    if(isDesktop(settings))throw new AppError(EXTENSION_REQUIRED,409)
     settings.features.publish=true
     const row={enabled:true,features:settings.features,updated_at:new Date().toISOString(),updated_by:user?.id||null,version:(current?.version||0)+1}
     if(current){const saved=check(await db.from('vinted_agent_settings').update(row).eq('account_id',account).eq('version',current.version).select('account_id'));if(!saved.length)throw new AppError('Réglages modifiés entre-temps : réessaie.',409)}

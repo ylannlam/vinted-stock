@@ -52,11 +52,25 @@ test('publication availability reports old extensions and waiting profiles witho
  settings.extension_version='3.10.0';settings.paused=true;settings.pause_reason='Vérification du compte';assert.match((await publicationStatus(db,account)).waiting,/Vérification/)
 })
 
-test('PC mode refuses publication even when a recent extension was previously connected',async()=>{
+test('PC publication requires its own compatible connector even with a recent extension',async()=>{
  const {db,settings,d,read}=fixture();settings.messaging={executor:'desktop'}
- const state=await publicationStatus(db,account);assert.equal(state.ready,false);assert.match(state.reason,/mode Extension/)
- await assert.rejects(queueYlavintListing(db,{id:owner},d,{read}),/mode Extension/)
+ const state=await publicationStatus(db,account);assert.equal(state.ready,false);assert.match(state.reason,/connecteur 1.5/)
+ await assert.rejects(queueYlavintListing(db,{id:owner},d,{read}),/connecteur 1.5/)
  assert.equal(db.calls.length,0)
+})
+
+test('PC mode prepares by default; only explicit per-listing authorization freezes a publish request',async()=>{
+ for(const submit of [false,true]){
+  const {db,settings,d,read}=fixture();settings.messaging={executor:'desktop'};settings.extension_version='pc-1.5.0'
+  assert.equal((await publicationStatus(db,account)).executor,'desktop')
+  await queueYlavintListing(db,{id:owner},d,{read,...(submit?{desktopSubmit:true}:{})})
+  const snap=db.calls.find(c=>c.name==='queue_ylavint_listing').p.p_payload
+  assert.equal(snap.execution,'desktop');assert.equal(snap.submit,submit)
+ }
+ const t={payload:{listing:{assisted:true,execution:'desktop',submit:true}}}
+ assert.throws(()=>publicationResult(t,{prepared:true,missing:[]}),/pas confirmée/)
+ assert.equal(publicationResult(t,{confirmed:true,vinted_id:'123'}).vinted_id,'123')
+ assert.throws(()=>publicationResult({...t,payload:{listing:{...t.payload.listing,submit:false}}},{confirmed:true,vinted_id:'123'}),/pas été confirmée/)
 })
 
 test('only a prepared form can be marked published by an explicit user action with a Vinted link',async()=>{

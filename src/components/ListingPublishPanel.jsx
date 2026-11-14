@@ -1,5 +1,6 @@
 import ListingPublisher,{YlavintTransfer} from './ListingPublisher'
 import {listingStateLabels} from '../lib/listingStudio'
+import {useState} from 'react'
 
 const button='rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50'
 const primary='rounded-xl bg-teal-700 px-5 py-3 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50'
@@ -14,20 +15,24 @@ export function ListingChecklist({issues,onFix,busy}){
 
 export default function ListingPublishPanel({account,issues,busy,dirty,error,notice,onFix,onPublish,onSave,onConnection,onAccounts,provider='dotb',mode='live',dotb=true}){
  const ylavint=provider==='ylavint',available=ylavint?account?.ylavint?.ready:dotb
+ const desktop=ylavint&&account?.ylavint?.executor==='desktop'
+ const [confirmedAccount,setConfirmedAccount]=useState(null)
+ const submit=desktop&&confirmedAccount===account?.id
  return <section aria-label="Vérification avant publication" className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 space-y-5">
   <div><p className="text-xs font-semibold uppercase tracking-widest text-teal-700">Dernière vérification</p><h2 className="mt-2 text-xl font-bold">Prêt à mettre ton article en vente ?</h2><p className="mt-2 text-sm text-slate-600">La fiche reste privée sur Stock Vinted jusqu’à l’envoi. L’outil et le mode se changent dans les Réglages des annonces (tous les comptes).</p></div>
   <div className="rounded-xl bg-teal-50 p-4"><p className="text-xs text-teal-800">Compte de destination</p><p className="mt-1 text-lg font-bold text-teal-950">{account?`#${account.profile_number||'—'} · ${account.login}`:'Compte à choisir'}</p></div>
   <ListingPublisher value={provider} mode={mode} disabled={!!busy} ylavint={account?.ylavint} dotb={dotb} accountId={account?.id} onEnabled={onConnection}/>
+  {desktop&&<fieldset disabled={!!busy} className="space-y-3 rounded-xl border border-violet-200 bg-violet-50 p-4"><legend className="px-1 text-sm font-semibold text-violet-900">Après la saisie dans Vinted</legend><label className="flex gap-2 text-sm"><input type="radio" name="desktop-publication" checked={!submit} onChange={()=>setConfirmedAccount(null)}/> Préparer le formulaire, je valide sur Vinted</label><label className="flex gap-2 text-sm"><input type="radio" name="desktop-publication" checked={submit} onChange={()=>setConfirmedAccount(account.id)}/> Publier après les contrôles</label><p className="text-xs text-violet-900">{submit?`Le bouton ci-dessous autorise la mise en ligne de cette annonce sur ${account.login}, après vérification du formulaire.`:'L’assistant laissera l’onglet ouvert et te rendra la main, sans publier.'}</p></fieldset>}
   {!!issues.length&&<ListingChecklist issues={issues} onFix={onFix} busy={!!busy}/>}
   {!issues.length&&<p className="rounded-xl bg-teal-50 p-4 font-medium text-teal-900">✓ Les informations obligatoires sont complètes.</p>}
-  {ylavint?<p className="text-sm text-slate-600">Un onglet Vinted sera ouvert dans le profil ciblé. Les photos et champs seront préparés ; tu vérifieras puis valideras toi-même. <button type="button" className="underline" disabled={!!busy} onClick={onConnection}>Vérifier la connexion</button></p>:<div className="rounded-xl border p-4 space-y-3">
+  {ylavint?<p className="text-sm text-slate-600">{desktop?'L’Assistant PC ajoutera les photos, sélectionnera les détails puis tapera le texte au rythme choisi. Garde le profil et le connecteur ouverts.':'Un onglet Vinted sera ouvert dans le profil ciblé. Les photos et champs seront préparés ; tu vérifieras puis valideras toi-même.'} <button type="button" className="underline" disabled={!!busy} onClick={onConnection}>Vérifier la connexion</button></p>:<div className="rounded-xl border p-4 space-y-3">
    <p className="text-sm font-semibold">{account?.connected?'✓ Bridge Dotb connecté':'Connexion du compte à vérifier'}</p>
    {!account?.connected&&<p className="text-sm text-slate-600">Ouvre ce profil dans AdsPower et active son Bridge Dotb. Reviens ensuite vérifier la connexion.</p>}
    <div className="flex flex-wrap gap-3"><button type="button" className="text-sm font-semibold text-teal-800 underline" disabled={!!busy} onClick={onConnection}>Vérifier la connexion</button>{onAccounts&&<button type="button" className="text-sm text-teal-800 underline" disabled={!!busy} onClick={onAccounts}>Ouvrir AdsPower</button>}</div>
   </div>}
   {error&&<p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{error}</p>}
   {notice&&<p role="status" className="rounded-xl bg-teal-50 p-3 text-sm text-teal-900">{notice}</p>}
-  <button type="button" className={`${primary} w-full`} disabled={!!busy||(!available&&!issues.length)} onClick={issues.length?()=>onFix(issues[0]):()=>onPublish(mode)}>{busy||(issues.length?'Compléter la fiche →':`${ylavint?'Préparer le formulaire':mode==='draft'?'Brouillon avec Dotb':'Publier avec Dotb'} sur ${account?.login||'le compte choisi'}`)}</button>
+  <button type="button" className={`${primary} w-full`} disabled={!!busy||(!available&&!issues.length)} onClick={issues.length?()=>onFix(issues[0]):()=>onPublish(submit?'live':mode,submit)}>{busy||(issues.length?'Compléter la fiche →':`${ylavint?(submit?'Publier avec l’Assistant PC':'Préparer le formulaire'):mode==='draft'?'Brouillon avec Dotb':'Publier avec Dotb'} sur ${account?.login||'le compte choisi'}`)}</button>
   <button type="button" className={`${button} w-full`} disabled={!!busy} onClick={onSave}>Enregistrer le brouillon</button>
   <p className="text-xs leading-relaxed text-slate-500">{dirty?'Modifications à enregistrer.':'Brouillon enregistré sur Stock Vinted.'} L’enregistrement ne publie rien sur Vinted.</p>
  </section>

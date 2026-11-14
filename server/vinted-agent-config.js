@@ -120,6 +120,8 @@ export function normalizeSettings(input={}){
   out.messaging.desktop.browse_enabled=desktop.browse_enabled===true
   if(desktop.browse_photos!==undefined&&typeof desktop.browse_photos!=='boolean')throw new AppError('Consultation des photos : choix invalide.')
   out.messaging.desktop.browse_photos=desktop.browse_photos===true
+  if(desktop.publication_corrections!==undefined&&typeof desktop.publication_corrections!=='boolean')throw new AppError('Corrections de saisie : choix invalide.')
+  out.messaging.desktop.publication_corrections=desktop.publication_corrections===true
   if(desktop.active_days!==undefined){
     if(!Array.isArray(desktop.active_days)||desktop.active_days.length>7||desktop.active_days.some(d=>!Number.isInteger(d)||d<1||d>7))throw new AppError('Jours d’activité invalides.')
     out.messaging.desktop.active_days=[...new Set(desktop.active_days)].sort()
