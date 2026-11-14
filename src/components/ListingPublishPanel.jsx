@@ -1,4 +1,4 @@
-import ListingPublisher,{YlavintTransfer} from './ListingPublisher'
+import ListingPublisher,{YlavintTransfer,ListingAgentControls} from './ListingPublisher'
 import {listingStateLabels} from '../lib/listingStudio'
 import {useState} from 'react'
 
@@ -16,13 +16,14 @@ export function ListingChecklist({issues,onFix,busy}){
 export default function ListingPublishPanel({account,issues,busy,dirty,error,notice,onFix,onPublish,onSave,onConnection,onAccounts,provider='dotb',mode='live',dotb=true}){
  const ylavint=provider==='ylavint',available=ylavint?account?.ylavint?.ready:dotb
  const desktop=ylavint&&account?.ylavint?.executor==='desktop'
- const [confirmedAccount,setConfirmedAccount]=useState(null)
- const submit=desktop&&confirmedAccount===account?.id
+ const [intent,setIntent]=useState(null),intentKey=`${account?.id}|${mode}`
+ const action=intent?.key===intentKey?intent.action:mode==='draft'?'prepare':'publish'
+ const submit=desktop&&action==='publish'
  return <section aria-label="Vérification avant publication" className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 space-y-5">
   <div><p className="text-xs font-semibold uppercase tracking-widest text-teal-700">Dernière vérification</p><h2 className="mt-2 text-xl font-bold">Prêt à mettre ton article en vente ?</h2><p className="mt-2 text-sm text-slate-600">La fiche reste privée sur Stock Vinted jusqu’à l’envoi. L’outil et le mode se changent dans les Réglages des annonces (tous les comptes).</p></div>
   <div className="rounded-xl bg-teal-50 p-4"><p className="text-xs text-teal-800">Compte de destination</p><p className="mt-1 text-lg font-bold text-teal-950">{account?`#${account.profile_number||'—'} · ${account.login}`:'Compte à choisir'}</p></div>
-  <ListingPublisher value={provider} mode={mode} disabled={!!busy} ylavint={account?.ylavint} dotb={dotb} accountId={account?.id} onEnabled={onConnection}/>
-  {desktop&&<fieldset disabled={!!busy} className="space-y-3 rounded-xl border border-violet-200 bg-violet-50 p-4"><legend className="px-1 text-sm font-semibold text-violet-900">Après la saisie dans Vinted</legend><label className="flex gap-2 text-sm"><input type="radio" name="desktop-publication" checked={!submit} onChange={()=>setConfirmedAccount(null)}/> Préparer le formulaire, je valide sur Vinted</label><label className="flex gap-2 text-sm"><input type="radio" name="desktop-publication" checked={submit} onChange={()=>setConfirmedAccount(account.id)}/> Publier après les contrôles</label><p className="text-xs text-violet-900">{submit?`Le bouton ci-dessous autorise la mise en ligne de cette annonce sur ${account.login}, après vérification du formulaire.`:'L’assistant laissera l’onglet ouvert et te rendra la main, sans publier.'}</p></fieldset>}
+  <ListingPublisher value={provider} mode={mode} disabled={!!busy} ylavint={account?.ylavint} dotb={dotb} accountId={account?.id} profileId={account?.profile_id} onEnabled={onConnection}/>
+  {desktop&&<ListingAgentControls account={account} action={action} disabled={!!busy} onChange={action=>setIntent({key:intentKey,action})}/>}
   {!!issues.length&&<ListingChecklist issues={issues} onFix={onFix} busy={!!busy}/>}
   {!issues.length&&<p className="rounded-xl bg-teal-50 p-4 font-medium text-teal-900">✓ Les informations obligatoires sont complètes.</p>}
   {ylavint?<p className="text-sm text-slate-600">{desktop?'L’Assistant PC ajoutera les photos, sélectionnera les détails puis tapera le texte au rythme choisi. Garde le profil et le connecteur ouverts.':'Un onglet Vinted sera ouvert dans le profil ciblé. Les photos et champs seront préparés ; tu vérifieras puis valideras toi-même.'} <button type="button" className="underline" disabled={!!busy} onClick={onConnection}>Vérifier la connexion</button></p>:<div className="rounded-xl border p-4 space-y-3">

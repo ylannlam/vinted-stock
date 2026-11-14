@@ -1,4 +1,4 @@
-import ListingPublisher,{YlavintTransfer} from './ListingPublisher'
+import ListingPublisher,{YlavintTransfer,ListingAgentControls} from './ListingPublisher'
 import {syncListingStatuses} from '../lib/listingStatusSync'
 import ListingSheinHint from './ListingSheinHint'
 import {useEffect,useMemo,useRef,useState} from 'react'
@@ -54,6 +54,10 @@ export default function ListingSession({request,upload,account,meta,initialSku='
  const [ylavint,setYlavint]=useState(false),[settings,setSettings]=useState(null),[dotb,setDotb]=useState(false),[serverDotb,setServerDotb]=useState(!!meta.dotb_publish_enabled)
  // Outil (YlaVint ou Dotb) et mode (en ligne ou brouillon) : un seul choix pour tous les comptes, dans Réglages.
  const provider=settings?.effective?.publisher==='dotb'?'dotb':'ylavint',mode=settings?.effective?.publish_mode==='draft'?'draft':'live'
+ const desktop=provider==='ylavint'&&publisher?.executor==='desktop'
+ const [publicationIntent,setPublicationIntent]=useState(null),intentKey=`${account.id}|${mode}`
+ const publicationAction=publicationIntent?.key===intentKey?publicationIntent.action:mode==='draft'?'prepare':'publish'
+ const desktopSubmit=desktop&&publicationAction==='publish'
  const [loading,setLoading]=useState(true),[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(initialSku?`SKU ${initialSku} prêt : ajoute les photos de l’article, il sera repris sur la fiche avec ses mesures Shein.`:'')
  const [dropped,setDropped]=useState(null),[showSettings,setShowSettings]=useState(false)
  const [selected,setSelected]=useState(null),[filter,setFilter]=useState('all'),[dragging,setDragging]=useState(false),[zone,setZone]=useState(null),[photoIndex,setPhotoIndex]=useState(0)
@@ -248,13 +252,26 @@ export default function ListingSession({request,upload,account,meta,initialSku='
   if(!target)throw Error('Ce compte ne fait plus partie de ta sélection AdsPower.')
   if(!target.connected)throw Error('Ouvre ce compte dans AdsPower et active son Bridge Dotb, puis réessaie.')
  }
- // YlaVint : la fiche part dans la file du Bridge YlaVint du compte (plafonds et plage horaire du compte).
- async function sendYlavintCard(card,mode='live'){
+ // Each request is bound to this account. The agent serializes its own queue.
+ async function sendYlavintCard(card,mode='live',submit=false){
   const issues=listingIssues(card.fields,card.photos,optionsFor(card.fields.catalog_id))
   if(issues.length)throw Error(`Complète ${issues.map(i=>i.label).join(', ')}.`)
-  const {draft}=await request('POST',{action:'ylavint_publish',id:card.id,version:card.row.version,confirmation_account_id:account.id,mode});accept(card,draft)
+  const {draft}=await request('POST',{action:'ylavint_publish',id:card.id,version:card.row.version,confirmation_account_id:account.id,mode:submit?'live':mode,desktop_submit:submit,expected_executor:desktop?'desktop':'extension'});accept(card,draft)
  }
- const sendYlavint=(card,mode)=>act(card,'Ouverture du formulaire…',()=>sendYlavintCard(card,mode)).catch(()=>{})
+ const sendYlavint=(card,mode)=>act(card,desktopSubmit?'Transmission à l’assistant…':'Ouverture du formulaire…',()=>sendYlavintCard(card,mode,desktopSubmit)).catch(()=>{})
+ async function sendAllToAssistant(){
+  if(!desktop||!desktopSubmit||!ylavint)throw Error('Choisis la publication avec l’Assistant PC avant de transmettre ces annonces.')
+  const ready=list().filter(c=>cardStage(c,optionsFor(c.fields.catalog_id))==='ready')
+  if(!ready.length)throw Error('Aucune annonce complète à transmettre.')
+  let done=0
+  for(const card of ready){
+   if(!alive.current)break
+   setBusy(`Transmission à l’assistant ${done+1} sur ${ready.length}…`)
+   try{await act(card,'Transmission à l’assistant…',()=>sendYlavintCard(card,'live',true));done++}
+   catch(e){setNotice(`${done} annonce(s) confiée(s) à l’assistant de ${account.login}. Les suivantes restent dans tes brouillons.`);throw e}
+  }
+  setNotice(`${done} annonce(s) confiée(s) à l’assistant de ${account.login}. Il les publiera une par une, selon les horaires, pauses et limites de ce compte. Le suivi continue même si tu quittes cette page.`)
+ }
  const cancelYlavint=card=>act(card,'Annulation…',async()=>{const {draft}=await request('POST',{action:'ylavint_cancel',id:card.id,version:card.row.version});accept(card,draft)}).catch(()=>{})
  const sendOne=(card,mode)=>withBusy('Vérification du Bridge…',async()=>{await bridgeReady();await act(card,'Envoi à Dotb…',()=>sendDotb(card,mode))})
  async function sendAll(mode){
@@ -421,7 +438,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
     {stage==='prepare'&&<button className={solid} disabled={locked||!!busy} onClick={()=>prepareOne(card)}>{card.busy||'Rédiger avec l’IA'}</button>}
     {stage==='loading'&&<span className="text-xs text-[#79756f]">Chargement des options…</span>}
     {stage==='review'&&<><span className="text-xs text-amber-900">{issues.length} choix à faire : {issues.map(i=>i.label).join(', ')}</span><button className={solid} disabled>Publier</button></>}
-    {stage==='ready'&&<button className={solid} disabled={locked||!!busy||!(provider==='ylavint'?ylavint:dotb)} onClick={()=>provider==='ylavint'?sendYlavint(card,mode):sendOne(card,mode)}>{provider==='ylavint'?'Préparer sur Vinted':`${mode==='draft'?'Brouillon':'Publier'} avec Dotb`}</button>}
+    {stage==='ready'&&<button className={solid} disabled={locked||!!busy||!(provider==='ylavint'?ylavint:dotb)} onClick={()=>provider==='ylavint'?sendYlavint(card,mode):sendOne(card,mode)}>{provider==='ylavint'?(desktopSubmit?'Publier avec l’assistant':'Préparer sur Vinted'):`${mode==='draft'?'Brouillon':'Publier'} avec Dotb`}</button>}
     {(stage==='dotb'||stage==='published')&&next&&<button className={ghost} onClick={()=>select(next)}>Article suivant</button>}
    </div>
   </div>
@@ -462,7 +479,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
   <header className="flex flex-wrap items-end justify-between gap-4">
    <div className="min-w-0"><button className={quiet} disabled={working} onClick={()=>withBusy('Enregistrement…',async()=>{await saveAll();onBack()})}>← Changer de compte</button>
     <h1 className="mt-2 flex flex-wrap items-baseline gap-x-3 text-[28px] font-semibold leading-tight tracking-[-0.02em] text-[#323630]"><span className="tabular-nums text-[#087f5b]">#{account.profile_number||'—'}</span><span className="break-all">{account.login}</span></h1>
-    <p className="mt-1.5 text-sm text-[#79756f]">{provider==='ylavint'?'Préparation du formulaire dans le profil choisi, puis validation par toi sur Vinted.':`Envoi avec Dotb, ${mode==='draft'?'en brouillon Vinted':'en ligne'}${presets?.spacing_minutes?`, avec un écart de ${presets.spacing_minutes} min`:''}.`}{presets&&<> Réglages {presets.custom?'propres à ce compte':'communs'} : {[presets.no_brand&&'sans marque',presets.condition.toLocaleLowerCase('fr'),`colis ${presets.package.toLocaleLowerCase('fr')}`].filter(Boolean).join(', ')}.</>}</p></div>
+    <p className="mt-1.5 text-sm text-[#79756f]">{provider==='ylavint'?(desktopSubmit?'Ton assistant remplit et vérifie chaque annonce dans Vinted, puis la publie sur ce compte.':'Préparation du formulaire dans le profil choisi, puis validation par toi sur Vinted.'):`Envoi avec Dotb, ${mode==='draft'?'en brouillon Vinted':'en ligne'}${presets?.spacing_minutes?`, avec un écart de ${presets.spacing_minutes} min`:''}.`}{presets&&<> Réglages {presets.custom?'propres à ce compte':'communs'} : {[presets.no_brand&&'sans marque',presets.condition.toLocaleLowerCase('fr'),`colis ${presets.package.toLocaleLowerCase('fr')}`].filter(Boolean).join(', ')}.</>}</p></div>
    <div className="flex flex-wrap items-center gap-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#e3ded6] bg-white px-3 py-2 text-sm" title="L’IA écrit chaque article dès qu’il a ses photos et sa taille"><input type="checkbox" checked={autoWrite} onChange={e=>{setAutoWrite(e.target.checked);try{localStorage.setItem('listing-auto-write',e.target.checked?'on':'off')}catch{}}}/>Rédaction automatique</label><button className={ghost} aria-expanded={showSettings} disabled={!settings} onClick={()=>setShowSettings(true)}>Réglages</button><button className={ghost} disabled={working||loading} onClick={()=>withBusy('Actualisation…',load)}>Actualiser</button></div>
   </header>
 
@@ -487,7 +504,9 @@ export default function ListingSession({request,upload,account,meta,initialSku='
       {sizes.map(n=><button key={n} className={ghost} onClick={()=>withBusy('Ajout des articles…',()=>addArticles(groupFiles(dropped,n)))}>{dropped.length/n} articles de {n} photos</button>)}
       <button className={ghost} onClick={()=>withBusy('Ajout des articles…',()=>addArticles(groupFiles(dropped,1)))}>{dropped.length} articles (1 photo chacun)</button></div>
      <div className="flex items-center justify-between"><p className="text-xs text-[#79756f]">Regroupées dans l’ordre des noms de fichiers.</p><button className={quiet+' !text-xs'} onClick={()=>setDropped(null)}>Annuler</button></div></div>}
-    <ListingPublisher compact value={provider} mode={mode} onEdit={settings?()=>setShowSettings(true):undefined} disabled={!!busy} ylavint={publisher} dotb={dotb} accountId={account.id} onEnabled={()=>load().catch(e=>setError(e.message))}/>
+    <ListingPublisher compact value={provider} mode={mode} onEdit={settings?()=>setShowSettings(true):undefined} disabled={!!busy} ylavint={publisher} dotb={dotb} accountId={account.id} profileId={account.profile_id} onEnabled={()=>load().catch(e=>setError(e.message))}/>
+    {desktop&&<ListingAgentControls account={account} action={publicationAction} disabled={working} onChange={action=>setPublicationIntent({key:intentKey,action})}/>}
+    {desktopSubmit&&ylavint&&counts.ready>1&&<button className={solid+' w-full'} disabled={working} onClick={()=>withBusy('Transmission à l’assistant…',sendAllToAssistant)}>Confier les {counts.ready} annonces à l’assistant</button>}
     {(toPrepare>0||((provider==='ylavint'?ylavint:dotb)&&counts.ready>0))&&<div className="grid gap-1.5">
      {toPrepare>0&&<button className={solid} disabled={!!busy} onClick={()=>withBusy('Rédaction…',prepareAll)}>Rédiger les {toPrepare} article{toPrepare>1?'s':''} avec l’IA</button>}
      {provider==='dotb'&&dotb&&counts.ready>0&&<button className={ghost} disabled={!!busy} onClick={()=>withBusy('Envoi des annonces…',()=>sendAll(mode))}>{mode==='draft'?'Tout en brouillon':'Tout publier'} avec {provider==='ylavint'?'YlaVint':'Dotb'} ({counts.ready})</button>}

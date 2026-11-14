@@ -105,7 +105,7 @@ export default function ListingStudio({request=defaultRequest,upload=defaultUplo
   const row=await save()
   const selected=await connection()
   if(!selected)throw Error('Ce compte ne fait plus partie de ta sélection. Choisis un compte dans « Mes comptes » AdsPower.')
-  if(provider==='ylavint'){if(!selected.ylavint?.ready)throw Error(selected.ylavint?.reason||'Active la publication YlaVint dans ce profil.');accept((await request('POST',{action:'ylavint_publish',id:row.id,version:row.version,confirmation_account_id:row.fields.account_id,mode,desktop_submit:desktopSubmit})).draft);setStep('publish');return}
+  if(provider==='ylavint'){if(!selected.ylavint?.ready)throw Error(selected.ylavint?.reason||'Active la publication YlaVint dans ce profil.');accept((await request('POST',{action:'ylavint_publish',id:row.id,version:row.version,confirmation_account_id:row.fields.account_id,mode,desktop_submit:desktopSubmit,expected_executor:account?.ylavint?.executor||'extension'})).draft);setStep('publish');return}
   if(!selected.connected)throw Error('Le Bridge est déconnecté. Ouvre le profil AdsPower et active son Bridge Dotb, puis réessaie.')
   setNotice('');accept((await request('POST',{action:'publish',id:row.id,version:row.version,confirmation_account_id:row.fields.account_id})).draft);setStep('publish')
  }

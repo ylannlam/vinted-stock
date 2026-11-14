@@ -21,18 +21,19 @@ export async function publicationStatuses(db,ids){
 function statusOf(s){
  const cfg=effectiveSettings(s),online=!!s?.last_seen_at&&Date.parse(s.last_seen_at)>Date.now()-120000
  if(isDesktop(cfg)){
-  const reason=s?.paused?`Compte en pause : ${s.pause_reason||'vérifie Vinted.'}`:!s?.enabled?'Active YlaVint sur ce compte.':!cfg.features.publish?'Active « Publication » dans les réglages YlaVint du compte.':!desktopPublicationVersion(s?.extension_version)?'Installe le connecteur 1.5 puis démarre cet Assistant PC avant de préparer une annonce.':null
+  const reason=s?.paused?`Compte en pause : ${s.pause_reason||'vérifie Vinted.'}`:!s?.enabled?'Active YlaVint sur ce compte.':!cfg.features.publish?'Active « Publication » dans les réglages YlaVint du compte.':!desktopPublicationVersion(s?.extension_version)?'Installe le connecteur à jour puis démarre cet Assistant PC avant de transmettre une annonce.':null
   return {executor:'desktop',ready:!reason,online,paused:!!s?.paused,reason,waiting:reason||(!online?'En attente de l’Assistant PC sur ce compte.':null),limit:cfg.limits.publish_item_per_day,from_hour:cfg.limits.from_hour,to_hour:cfg.limits.to_hour}
  }
  const reason=s?.paused?`Compte en pause : ${s.pause_reason||'vérifie son état sur Vinted.'}`:!s?.enabled?'Active YlaVint sur ce compte.':!cfg.features.publish?'Active « Publication » dans les réglages YlaVint du compte.':!publicationVersion(s?.extension_version)?'Installe YlaVint 3.8.0 pour préparer le formulaire dans ce profil AdsPower.':null
  return {ready:!reason,online,paused:!!s?.paused,reason,waiting:reason|| (s?.paused?`En pause : ${s.pause_reason||'relance YlaVint dans ce profil.'}`:!online?'En attente du profil AdsPower : ouvre Vinted et allume le Bridge YlaVint.':null),limit:cfg.limits.publish_item_per_day,from_hour:cfg.limits.from_hour,to_hour:cfg.limits.to_hour}
 }
 
-export async function queueYlavintListing(db,user,row,{mode='live',desktopSubmit=false,notBefore=null,read=dotbListingRequest,accounts=null}={}){
+export async function queueYlavintListing(db,user,row,{mode='live',desktopSubmit=false,expectedExecutor,notBefore=null,read=dotbListingRequest,accounts=null}={}){
  if(notBefore)throw new AppError('Le formulaire YlaVint se prépare à ta demande. Termine la publication toi-même dans l’onglet Vinted ; la programmation automatique reste disponible avec Dotb.',409)
  if(!['live','draft'].includes(mode))throw new AppError('Choisis « en ligne » ou « brouillon Vinted ».')
  if(row.owner_id!==user.id||row.state!=='draft'||row.dotb_item_id||row.publication_task_id)throw new AppError('Cette fiche est déjà transmise ou doit être vérifiée. Aucun nouvel envoi.',409)
  const status=await publicationStatus(db,row.fields.account_id)
+ if(expectedExecutor!==undefined&&(!['desktop','extension'].includes(expectedExecutor)||expectedExecutor!==(status.executor||'extension')))throw new AppError('Le mode d’exécution de ce compte a changé. Actualise sa connexion avant de transmettre l’annonce.',409)
  if(!status.ready)throw new AppError(status.reason,409)
  const account=await requireSelectedAccount(db,user.id,row.fields.account_id,accounts||listingAccounts(await read('accounts')))
  const [options,colors,catalogs,photos]=await Promise.all([listingMetadata(`catalogs/${row.fields.catalog_id}/options?country=FR&locale=fr`,read),listingMetadata('colors?country=FR',read),listingMetadata('catalogs?country=FR&depth=6',read),verifiedPhotos(db,user.id,row.photos)])

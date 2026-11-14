@@ -11,6 +11,46 @@ const options={catalog:{id:10},conditions:[{id:2,title:'Très bon état'}],size_
 const fields={...emptyListing(),account_id:account.id,sku:'SKU-TEST',size_text:'M',price:'15',title:'Combinaison noire M',description:'Combinaison noire à manches longues.',catalog_id:10,brand_id:1,size_id:4,status_id:2,package_size_id:1}
 const base=()=>({id:'draft-a',version:1,state:'draft',fields:{...fields},photos:[{path:'test/photo.png',url:'https://example.test/photo.png'}],uploaded:0,created_at:new Date().toISOString(),updated_at:new Date().toISOString()})
 
+test('full listing editor keeps the visible desktop intent, including preparation and an executor change',async()=>{
+ const require=createRequire(import.meta.url),React=require('react'),{act}=React
+ const compiled=await build({entryPoints:[fileURLToPath(new URL('../src/components/ListingStudio.jsx',import.meta.url))],bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',packages:'external',external:['../lib/api']})
+ const mod=new Module(fileURLToPath(import.meta.url));mod.paths=Module._nodeModulePaths(fileURLToPath(new URL('..',import.meta.url)));mod._compile(compiled.outputFiles[0].text,fileURLToPath(import.meta.url))
+ for(const scenario of [{mode:'live',submit:true},{mode:'live',prepare:true,submit:false},{mode:'draft',submit:false},{mode:'live',changed:true,submit:true}]){
+  const {window}=parseHTML('<html><body><div id="app"></div></body></html>')
+  globalThis.window=window;globalThis.document=window.document;globalThis.IS_REACT_ACT_ENVIRONMENT=true
+  const {createRoot}=require('react-dom/client'),root=createRoot(document.getElementById('app')),calls=[];let row=base()
+  const request=async(method,body,query='')=>{
+   const action=body?.action||new URLSearchParams(query).get('action')
+   if(action==='metadata'||action==='accounts')return {accounts:[{...account,ylavint:{ready:true,executor:action==='accounts'&&scenario.changed?'extension':'desktop'}}],catalogs:[{id:10,title:'Combinaisons'}],colors:[]}
+   if(action==='picker')return {accounts:{}}
+   if(action==='settings')return {effective:{publisher:'ylavint',publish_mode:scenario.mode}}
+   if(action==='options')return options
+   if(action==='list')return {drafts:[structuredClone(row)],count:1}
+   if(action==='ylavint_publish'){
+    calls.push(structuredClone(body))
+    if(scenario.changed)throw Error('Le mode d’exécution de ce compte a changé. Actualise sa connexion avant de transmettre l’annonce.')
+    row={...row,state:'scheduled',publish_provider:'ylavint',execution:'desktop',desktop_submit:body.desktop_submit,version:row.version+1}
+   }
+   return {draft:structuredClone(row)}
+  }
+  const click=async text=>{const b=[...document.querySelectorAll('button')].find(n=>n.textContent===text);assert.ok(b,text);assert.equal(b.disabled,false);await act(async()=>b.click())}
+  try{
+   await act(async()=>root.render(React.createElement(mod.exports.default,{request})))
+   await act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Combinaison noire M')).click())
+   await click('3. Publication')
+   if(scenario.prepare){const radio=[...document.querySelectorAll('input[type="radio"]')].find(n=>n.closest('label').textContent.includes('Préparer, je valide'));await act(async()=>radio[Object.keys(radio).find(k=>k.startsWith('__reactProps$'))].onChange())}
+   await click(`${scenario.submit?'Publier avec l’Assistant PC':'Préparer le formulaire'} sur compte-test`)
+   assert.equal(calls.length,1)
+   assert.equal(calls[0].desktop_submit,scenario.submit)
+   assert.equal(calls[0].expected_executor,'desktop','the intent matches the displayed account, not a refreshed executor')
+   assert.equal(calls[0].confirmation_account_id,account.id)
+   assert.equal(calls[0].mode,scenario.mode)
+   assert.equal(row.state,scenario.changed?'draft':'scheduled')
+   if(scenario.changed)assert.ok(document.body.textContent.includes('Le mode d’exécution de ce compte a changé'))
+  }finally{await act(async()=>root.unmount());delete globalThis.window;delete globalThis.document;delete globalThis.IS_REACT_ACT_ENVIRONMENT}
+ }
+})
+
 test('incomplete and stale choices point to a visible field; Gemini has a separate input checklist',()=>{
  const missing=listingIssues({...fields,status_id:null},base().photos,options)
  assert.deepEqual(missing,[{key:'condition',label:'l’état réel de l’article',step:'review'}])

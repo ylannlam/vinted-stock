@@ -30,7 +30,7 @@ async function expose(db,row){
  const paths=row.photos.map(p=>p.path),signed=paths.length?check(await db.storage.from(ASSET_BUCKET).createSignedUrls(paths,3600)):[]
  const urls=new Map(signed.map(x=>[x.path,x.signedUrl]))
  const task=row.publish_provider==='ylavint'&&row.publication_task_id?check(await db.from('vinted_agent_tasks').select('result').eq('id',row.publication_task_id).eq('created_by',row.owner_id).eq('account_id',row.fields.account_id).maybeSingle()):null
- return {progress:task?.result?.progress||null,id:row.id,version:row.version,state:row.state,fields:row.fields,photos:row.photos.map(p=>({...p,url:urls.get(p.path)||null})),uploaded:row.uploaded,publish_provider:row.publish_provider|| (row.dotb_item_id?'dotb':null),publication_task_id:row.publication_task_id||null,assisted:row.payload?.assisted===true,form_ready:row.payload?.form_ready===true,can_cancel:row.publish_provider==='ylavint'&&row.state==='scheduled',dotb_item_id:row.dotb_item_id,dotb_publish:row.dotb_publish!==false,message:row.message,last_error:row.last_error,created_at:row.created_at,updated_at:row.updated_at,ai_updated_at:row.ai_updated_at,published_at:row.published_at,checked_at:row.checked_at,planned_at:row.planned_at||null,scheduled_at:row.scheduled_at||null,busy:!!pending(row),manual_recoverable:row.state==='preparing'&&!row.dotb_item_id&&!row.inflight,url:row.state==='published'&&/^\d{1,18}$/.test(row.vinted_id||'')?`https://www.vinted.fr/items/${row.vinted_id}`:null}
+ return {execution:row.payload?.execution||null,desktop_submit:row.payload?.execution==='desktop'&&row.payload?.submit===true,progress:task?.result?.progress||null,id:row.id,version:row.version,state:row.state,fields:row.fields,photos:row.photos.map(p=>({...p,url:urls.get(p.path)||null})),uploaded:row.uploaded,publish_provider:row.publish_provider|| (row.dotb_item_id?'dotb':null),publication_task_id:row.publication_task_id||null,assisted:row.payload?.assisted===true,form_ready:row.payload?.form_ready===true,can_cancel:row.publish_provider==='ylavint'&&row.state==='scheduled',dotb_item_id:row.dotb_item_id,dotb_publish:row.dotb_publish!==false,message:row.message,last_error:row.last_error,created_at:row.created_at,updated_at:row.updated_at,ai_updated_at:row.ai_updated_at,published_at:row.published_at,checked_at:row.checked_at,planned_at:row.planned_at||null,scheduled_at:row.scheduled_at||null,busy:!!pending(row),manual_recoverable:row.state==='preparing'&&!row.dotb_item_id&&!row.inflight,url:row.state==='published'&&/^\d{1,18}$/.test(row.vinted_id||'')?`https://www.vinted.fr/items/${row.vinted_id}`:null}
 }
 async function findSchedule(read,row){
  let cursor=''
@@ -251,7 +251,7 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
   if(row.state!=='draft')throw new AppError('Cette annonce a déjà été transmise. Consulte son suivi.',409)
   if(body.confirmation_account_id!==row.fields.account_id)throw new AppError('Vérifie le compte ciblé avant de publier.')
   const {queueStudioPublish}=await import('./ylavint.js')
-  return {draft:await expose(db,await queueStudioPublish(db,user,row,{mode:body.mode,desktopSubmit:body.desktop_submit===true,read,settings}))}
+  return {draft:await expose(db,await queueStudioPublish(db,user,row,{mode:body.mode,desktopSubmit:body.desktop_submit===true,expectedExecutor:body.expected_executor,read,settings}))}
  }
  if(action==='unschedule'){
   if(body.version!==row.version||pending(row))throw new AppError('Cette annonce a changé. Actualise la liste.',409)

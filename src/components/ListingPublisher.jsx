@@ -1,7 +1,18 @@
-import {useState} from 'react'
+import {useId,useState} from 'react'
 import {listingStateLabels} from '../lib/listingStudio'
 
-export default function ListingPublisher({value,onChange,disabled=false,ylavint,dotb,compact=false,accountId,onEnabled,mode,onEdit}){
+export const assistantListingLink=(accountId,profileId)=>`/ylavint?${new URLSearchParams({...(accountId?{account:accountId}:{}),...(profileId?{profile:profileId}:{})})}#assistant-pc`
+
+export function ListingAgentControls({account,action,onChange,disabled=false}){
+ const name=useId()
+ return <fieldset disabled={disabled} className="space-y-3 rounded-xl border border-teal-200 bg-teal-50 p-4"><legend className="px-1 text-sm font-semibold text-teal-900">Ce que fera ton assistant</legend>
+  <label className="flex items-start gap-2 text-sm"><input className="mt-1 accent-teal-700" type="radio" name={name} checked={action==='publish'} onChange={()=>onChange('publish')}/><span><strong className="block">Publier après les contrôles</strong><span className="text-xs text-slate-600">Photos, détails, saisie du texte, relecture puis mise en ligne.</span></span></label>
+  <label className="flex items-start gap-2 text-sm"><input className="mt-1 accent-teal-700" type="radio" name={name} checked={action==='prepare'} onChange={()=>onChange('prepare')}/><span><strong className="block">Préparer, je valide sur Vinted</strong><span className="text-xs text-slate-600">L’assistant remplit le formulaire et te rend la main.</span></span></label>
+  <p className="text-xs text-teal-950">{action==='publish'?`Le bouton de publication confie la mise en ligne à l’assistant de ${account.login}. Chaque annonce attend son tour et respecte les horaires et limites de ce compte.`:'Aucune mise en ligne automatique avec ce choix.'}</p>
+ </fieldset>
+}
+
+export default function ListingPublisher({value,onChange,disabled=false,ylavint,dotb,compact=false,accountId,profileId,onEnabled,mode,onEdit}){
  const name=`publisher-${compact?'compact':'full'}`
  const [enabling,setEnabling]=useState(false),[enableError,setEnableError]=useState('')
  // YlaVint ou la publication coupés sur ce compte : on les allume d'ici, sans passer par les réglages.
@@ -9,13 +20,14 @@ export default function ListingPublisher({value,onChange,disabled=false,ylavint,
  const enable=async()=>{setEnabling(true);setEnableError('');try{await (await import('../lib/api')).resourcesRequest('POST',{action:'enable_publish',account_id:accountId},'?scope=agent');await onEnabled?.()}catch(e){setEnableError(e.message)}finally{setEnabling(false)}}
  return <fieldset disabled={disabled} className="space-y-2">
   {onChange?<><legend className="mb-2 text-sm font-semibold">Publier avec</legend>
-  <div className="grid gap-2 sm:grid-cols-2">{[['ylavint','YlaVint','Formulaire prérempli ; tu valides sur Vinted.'],['dotb','Dotb','Le parcours Dotb reste disponible.']].map(([id,label,hint])=><label key={id} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm ${value===id?'border-teal-600 bg-teal-50':'border-slate-200 bg-white'}`}>
+  <div className="grid gap-2 sm:grid-cols-2">{[['ylavint','YlaVint','Ton assistant saisit les annonces dans le profil Vinted choisi.'],['dotb','Dotb','Le parcours Dotb reste disponible.']].map(([id,label,hint])=><label key={id} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm ${value===id?'border-teal-600 bg-teal-50':'border-slate-200 bg-white'}`}>
    <input type="radio" name={name} value={id} checked={value===id} onChange={()=>onChange(id)} className="mt-1 accent-teal-700"/>
    <span><strong className="block">{label}</strong><span className="mt-1 block text-xs text-slate-600">{hint}</span></span>
   </label>)}</div></>
   :<div className="flex items-center justify-between gap-2 rounded-xl border border-teal-200 bg-teal-50 px-3 py-2.5 text-sm"><span><strong>{value==='ylavint'?'YlaVint':'Dotb'}</strong> · {value==='ylavint'?(ylavint?.executor==='desktop'?'Assistant PC · saisie visible':'formulaire à valider'):mode==='draft'?'brouillon Vinted':'en ligne'}</span>{onEdit&&<button type="button" className="text-xs font-medium text-teal-800 underline underline-offset-4" onClick={onEdit}>Modifier</button>}</div>}
   {value==='ylavint'&&ylavint&&<p role="status" className="text-xs text-slate-600">{ylavint.waiting||ylavint.reason||(ylavint.executor==='desktop'?'Assistant PC prêt.':'Bridge YlaVint présent.')} {ylavint.ready&&ylavint.executor!=='desktop'&&'Tu termineras la publication dans l’onglet Vinted.'} {!ylavint.ready&&<a href="/ylavint" target="_blank" rel="noreferrer" className="underline">Ouvrir les réglages YlaVint ↗</a>}</p>}
   {canEnable&&<button type="button" className="w-full rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50" disabled={enabling} onClick={enable}>{enabling?'Activation…':'Activer la publication YlaVint sur ce compte'}</button>}
+  {value==='ylavint'&&accountId&&<a href={assistantListingLink(accountId,profileId)} target="_blank" rel="noreferrer" className="inline-flex rounded-xl border border-teal-200 bg-white px-3 py-2 text-sm font-semibold text-teal-800 hover:bg-teal-50">{ylavint?.executor==='desktop'?'Ouvrir l’assistant de ce compte ↗':'Connecter ce compte à l’Assistant PC ↗'}</a>}
   {enableError&&<p role="alert" className="text-xs text-red-700">{enableError}</p>}
   {value==='dotb'&&dotb===false&&<p className="text-xs text-amber-800">Dotb est désactivé pour ce compte ou sur le site. Tes réglages Dotb sont conservés pour le réutiliser plus tard.</p>}
  </fieldset>
@@ -25,7 +37,8 @@ export function YlavintTransfer({draft,busy,onRefresh,onCancel,onMarkPublished})
  const [url,setUrl]=useState(''),[error,setError]=useState('')
  const record=async e=>{e.preventDefault();setError('');try{await onMarkPublished(url)}catch(e){setError(e.message)}}
  return <section aria-label="Suivi YlaVint" className="space-y-3 rounded-2xl border border-teal-200 bg-white p-4 sm:p-5">
-  <h2 className="font-semibold text-teal-900">YlaVint · {listingStateLabels[draft.state]}</h2>
+  <h2 className="font-semibold text-teal-900">{draft.execution==='desktop'?'Assistant PC':'YlaVint'} · {listingStateLabels[draft.state]}</h2>
+  {draft.execution==='desktop'&&draft.state==='scheduled'&&<p className="text-xs text-slate-600">{draft.desktop_submit?'Mise en ligne confiée à l’assistant.':'Préparation uniquement : tu valideras sur Vinted.'} Garde le connecteur et le profil ouverts. Les horaires, pauses et plafonds de ce compte s’appliquent.</p>}
   <p role="status" className={`rounded-xl p-3 text-sm ${draft.state==='attention'?'bg-amber-50 text-amber-950':'bg-teal-50 text-teal-950'}`}>{draft.message||draft.last_error||'En attente du profil AdsPower.'}</p>
   {draft.progress?.steps?.length>0&&<div className="space-y-2">
    <p className="text-sm font-medium">{draft.progress.steps.filter(s=>s.status==='done').length} étape(s) confirmée(s)</p>

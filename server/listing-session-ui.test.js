@@ -29,12 +29,12 @@ async function mount(){
 }
 
 // Fake server: the same actions as /api/resources?scope=listings, nothing remote.
-function server({dotb=false,ylavint=false,slow=0,publisher='ylavint',mode='live'}={}){
+function server({dotb=false,ylavint=false,slow=0,publisher='ylavint',mode='live',executor='extension',failAt=0}={}){
  const rows=new Map(),calls=[],live={now:0,max:0},settings={global:null,account:null,effective:{...DEFAULT_LISTING_SETTINGS,dotb,spacing_minutes:30,custom:false,publisher,publish_mode:mode}}
  const expose=row=>structuredClone({...row,photos:row.photos.map(p=>({...p,url:`https://example.test/${p.path}`}))})
  const request=async(method,body,query='')=>{
   const q=new URLSearchParams(query),action=body?.action||q.get('action');calls.push({action,body:structuredClone(body)})
-  if(action==='session')return {account_id:q.get('account_id'),settings,dotb,ylavint,publisher:{ready:ylavint,online:true,limit:5,from_hour:9,to_hour:22},dotb_publish_enabled:dotb,drafts:[...rows.values()].reverse().map(expose)}
+  if(action==='session')return {account_id:q.get('account_id'),settings,dotb,ylavint,publisher:{executor,ready:ylavint,online:true,limit:5,from_hour:9,to_hour:22},dotb_publish_enabled:dotb,drafts:[...rows.values()].reverse().map(expose)}
   if(action==='options')return options
   if(action==='accounts')return {accounts:[account]}
   if(action==='settings'&&method==='GET')return settings
@@ -45,7 +45,7 @@ function server({dotb=false,ylavint=false,slow=0,publisher='ylavint',mode='live'
   if(action==='save'){row.fields={...body.fields,price:String(body.fields.price).replace(',','.')};row.photos=body.photos;row.version++}
   if(action==='generate'){live.now++;live.max=Math.max(live.max,live.now);if(slow)await wait(slow);live.now--;row.fields=applyListingPresets({...row.fields,title:`Body noir effet cuir décolleté V manches longues moulant soirée Y2K taille ${row.fields.size_text}`,description:'Body noir effet cuir.\n– Décolleté V',catalog_id:10,color_ids:[1]},options,settings.effective);row.ai_updated_at=new Date().toISOString();row.version++}
   if(action==='mark_published'){row.state='published';row.vinted_id='42';row.url='https://www.vinted.fr/items/42';row.published_at=new Date().toISOString();row.version++}
-  if(action==='ylavint_publish'){row.state='scheduled';row.publish_provider='ylavint';row.can_cancel=true;row.publication_task_id='task';row.dotb_publish=body.mode!=='draft';row.message='Annonce confiée à YlaVint.';row.version++}
+  if(action==='ylavint_publish'){if(failAt&&calls.filter(c=>c.action==='ylavint_publish').length===failAt)throw Error('Connexion à vérifier avant de continuer.');row.state='scheduled';row.execution=executor;row.desktop_submit=body.desktop_submit===true;row.publish_provider='ylavint';row.can_cancel=true;row.publication_task_id='task';row.dotb_publish=body.mode!=='draft';row.message='Annonce confiée à YlaVint.';row.version++}
   if(action==='ylavint_cancel'){row.state='draft';row.publish_provider=null;row.publication_task_id=null;row.version++}
   if(action==='publish'){row.state='preparing';row.uploaded=0;row.dotb_publish=body.mode!=='draft';row.dotb_item_id='remote';row.version++}
   if(action==='step'){row.uploaded++;if(row.uploaded>=row.photos.length){row.state='scheduled';row.scheduled_at=new Date(Date.now()+3600000).toISOString();row.message='Annonce planifiée.'}row.version++}
@@ -322,3 +322,49 @@ for(const mode of ['live','draft'])test(`YlaVint ${mode}: the shared choice prep
   await ui.click('Annuler avant l’envoi');assert.equal([...s.rows.values()].filter(r=>r.state==='draft').length,2)
  }finally{await ui.unmount()}
 })
+
+test('the account session sends a desktop publication intent and links to the matching assistant',async()=>{
+ const ui=await mount(),s=server({ylavint:true,executor:'desktop'});seedDesktopCards(s,2)
+ try{
+  await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request:s.request,upload:s.upload,account,meta,onBack(){},onOpenDraft(){}})))
+  await ui.act(()=>wait(25));await ui.click('Publier avec l’assistant')
+  const sent=s.calls.filter(c=>c.action==='ylavint_publish');assert.equal(sent.length,1)
+  assert.equal(sent[0].body.desktop_submit,true);assert.equal(sent[0].body.expected_executor,'desktop');assert.equal(sent[0].body.confirmation_account_id,account.id)
+  assert.match(document.body.textContent,/Assistant PC · En attente de publication/)
+  const link=[...document.querySelectorAll('a')].find(a=>a.textContent.includes('Ouvrir l’assistant de ce compte'))
+  const url=new URL(link.getAttribute('href'),'https://site.test');assert.equal(url.searchParams.get('account'),account.id);assert.equal(url.searchParams.get('profile'),account.profile_id);assert.equal(url.hash,'#assistant-pc')
+  assert.equal(s.calls.some(c=>['publish','step'].includes(c.action)),false)
+ }finally{await ui.unmount()}
+})
+
+test('preparation-only disables batch publication and never grants submit permission',async()=>{
+ const ui=await mount(),s=server({ylavint:true,executor:'desktop'});seedDesktopCards(s,2)
+ try{
+  await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request:s.request,upload:s.upload,account,meta,onBack(){},onOpenDraft(){}})))
+  await ui.act(()=>wait(25))
+  const radio=[...document.querySelectorAll('input[type="radio"]')].find(e=>e.closest('label')?.textContent.includes('Préparer, je valide'))
+  await ui.act(()=>ui.props(radio).onChange());assert.equal(ui.button('Confier les 2 annonces à l’assistant'),undefined)
+  await ui.click('Préparer sur Vinted')
+  assert.equal(s.calls.find(c=>c.action==='ylavint_publish').body.desktop_submit,false)
+ }finally{await ui.unmount()}
+})
+
+for(const failAt of [0,2])test(`desktop batch queues ready listings individually and stops safely on failure (${failAt})`,async()=>{
+ const ui=await mount(),s=server({ylavint:true,executor:'desktop',failAt});seedDesktopCards(s,3)
+ const id=crypto.randomUUID();s.rows.set(id,{id,version:1,state:'draft',fields:{...emptyListing(),account_id:account.id},photos:[]})
+ try{
+  await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request:s.request,upload:s.upload,account,meta,onBack(){},onOpenDraft(){}})))
+  await ui.act(()=>wait(25));await ui.click('Confier les 3 annonces à l’assistant')
+  const sent=s.calls.filter(c=>c.action==='ylavint_publish');assert.equal(sent.length,failAt||3)
+  assert.equal(new Set(sent.map(c=>c.body.id)).size,sent.length)
+  assert.ok(sent.every(c=>c.body.desktop_submit===true&&c.body.expected_executor==='desktop'&&c.body.mode==='live'&&c.body.confirmation_account_id===account.id))
+  assert.equal([...s.rows.values()].filter(r=>r.state==='scheduled').length,failAt?1:3)
+  assert.equal(s.rows.get(id).state,'draft');assert.equal(s.calls.some(c=>['publish','step'].includes(c.action)),false)
+  if(failAt)assert.match(document.body.textContent,/Les suivantes restent dans tes brouillons/)
+ }finally{await ui.unmount()}
+})
+
+function seedDesktopCards(s,count){
+ const fields={...emptyListing(),account_id:account.id,sku:'test',size_text:'M',price:'19.90',title:'Robe noire courte taille M',description:'Robe noire.',catalog_id:10,brand_id:1,brand_title:'Sans marque',size_id:4,status_id:2,package_size_id:1,color_ids:[1]}
+ for(let i=0;i<count;i++){const id=crypto.randomUUID();s.rows.set(id,{id,version:1,state:'draft',fields:{...fields,sku:'article-'+i},photos:[{path:'owner/'+id+'.png'}]})}
+}

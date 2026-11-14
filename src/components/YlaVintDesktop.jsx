@@ -5,7 +5,8 @@ import {buttonClass,primaryClass,fieldClass,Card,PageTitle,Icon,Pill,StatCard} f
 
 const active=s=>['opening','reading','typing','preparing','running','waiting','browsing','break','stopping'].includes(s?.state)
 export default function YlaVintDesktop({accounts,onConfigure,onActions,request=adsPowerRequest,pair=vintedWatchRequest}){
- const [state,setState]=useState(null),[profiles,setProfiles]=useState([]),[selected,setSelected]=useState(''),[profile,setProfile]=useState(''),[error,setError]=useState(''),[connectionError,setConnectionError]=useState(''),[busy,setBusy]=useState(false)
+ const [destination]=useState(()=>new URLSearchParams(window.location?.search||''))
+ const [state,setState]=useState(null),[profiles,setProfiles]=useState([]),[selected,setSelected]=useState(()=>destination.get('account')||''),[profile,setProfile]=useState(()=>destination.get('profile')||''),[error,setError]=useState(''),[connectionError,setConnectionError]=useState(''),[busy,setBusy]=useState(false)
  const account=accounts.find(a=>a.id===selected)
  const load=useCallback(async(list=false)=>{try{const r=await request('/state');setState(r);if(list&&r.configured){const p=await request('/profiles');setProfiles(p.profiles)}setConnectionError('')}catch(e){setConnectionError(e.message)}},[request])
  useEffect(()=>{load(true);const timer=setInterval(()=>{if(document.visibilityState==='visible')load()},5000);return()=>clearInterval(timer)},[load])
@@ -19,7 +20,7 @@ export default function YlaVintDesktop({accounts,onConfigure,onActions,request=a
  const currentVersion=state?.extension_ui===true
  const connected=!!state&&!connectionError,configured=connected&&state?.configured&&currentVersion
  const running=connected?(state?.assistants||[]).filter(active).length:0
- const ready=account&&profile&&currentVersion&&state?.ylavint&&state?.configured&&!connectionError&&account.settings?.messaging?.executor==='desktop'&&!busy&&!(state?.assistants||[]).some(active)
+ const ready=account&&profiles.some(p=>p.id===profile)&&currentVersion&&state?.ylavint&&state?.configured&&!connectionError&&account.settings?.messaging?.executor==='desktop'&&!busy&&!(state?.assistants||[]).some(active)
  return <div className="space-y-5">
   <PageTitle title="Assistant PC" hint="Tes messages, annonces, montants et bordereaux, pilotés depuis les pages Vinted ouvertes dans AdsPower." aside={<><button className={buttonClass} onClick={onActions}><Icon name="clock"/>Prochaines actions</button><button className={buttonClass} onClick={()=>load(true)}>↻ Actualiser</button></>}/>
   <div className="grid gap-4 sm:grid-cols-3">
