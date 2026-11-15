@@ -21,8 +21,11 @@ export async function publicationStatuses(db,ids){
 function statusOf(s){
  const cfg=effectiveSettings(s),online=!!s?.last_seen_at&&Date.parse(s.last_seen_at)>Date.now()-120000
  if(isDesktop(cfg)){
-  const reason=s?.paused?`Compte en pause : ${s.pause_reason||'vérifie Vinted.'}`:!s?.enabled?'Active YlaVint sur ce compte.':!cfg.features.publish?'Active « Publication » dans les réglages YlaVint du compte.':!desktopPublicationVersion(s?.extension_version)?'Installe le connecteur à jour puis démarre cet Assistant PC avant de transmettre une annonce.':null
-  return {executor:'desktop',ready:!reason,online,paused:!!s?.paused,reason,waiting:reason||(!online?'En attente de l’Assistant PC sur ce compte.':null),limit:cfg.limits.publish_item_per_day,from_hour:cfg.limits.from_hour,to_hour:cfg.limits.to_hour}
+  // Queuing a validated listing is independent of the worker being online.
+  // Claiming/executing it still checks pause, connector version, account and limits.
+  const reason=!s?.enabled?'Active YlaVint sur ce compte.':!cfg.features.publish?'Active « Publication » dans les réglages YlaVint du compte.':null
+  const waiting=reason||(s?.paused?`Tu peux confier cette annonce à la file. Compte en pause : ${s.pause_reason||'reprends son assistant.'} Aucune publication avant la reprise.`:!desktopPublicationVersion(s?.extension_version)?'Tu peux confier l’annonce à la file. Démarre ensuite l’Assistant PC de ce compte avec le connecteur à jour.':!online?'Tu peux confier l’annonce à la file, puis démarrer l’Assistant PC de ce compte.':null)
+  return {executor:'desktop',ready:!reason,online:online&&desktopPublicationVersion(s?.extension_version),paused:!!s?.paused,reason,waiting,limit:cfg.limits.publish_item_per_day,from_hour:cfg.limits.from_hour,to_hour:cfg.limits.to_hour}
  }
  const reason=s?.paused?`Compte en pause : ${s.pause_reason||'vérifie son état sur Vinted.'}`:!s?.enabled?'Active YlaVint sur ce compte.':!cfg.features.publish?'Active « Publication » dans les réglages YlaVint du compte.':!publicationVersion(s?.extension_version)?'Installe YlaVint 3.8.0 pour préparer le formulaire dans ce profil AdsPower.':null
  return {ready:!reason,online,paused:!!s?.paused,reason,waiting:reason|| (s?.paused?`En pause : ${s.pause_reason||'relance YlaVint dans ce profil.'}`:!online?'En attente du profil AdsPower : ouvre Vinted et allume le Bridge YlaVint.':null),limit:cfg.limits.publish_item_per_day,from_hour:cfg.limits.from_hour,to_hour:cfg.limits.to_hour}

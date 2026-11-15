@@ -13,10 +13,11 @@ import {createPresence,mayRetryInterrupted} from './ylavint-presence.mjs'
 
 export const DESKTOP_KINDS=['scan_wardrobe','scan_likes','sync_inbox','like_message','reply_message','accept_offer','publish_item','scan_wallet','sync_orders','fetch_label','order_extension']
 const writes=task=>['like_message','reply_message','accept_offer','publish_item','order_extension'].includes(task?.kind)
+export const retryableReadTimeout=(task,error)=>['scan_likes','scan_wardrobe','sync_inbox','sync_orders','scan_wallet'].includes(task?.kind)&&error?.name==='TimeoutError'
 const SITE='https://vinted-stock.vercel.app'
 const wait=(ms,signal)=>new Promise(resolve=>{if(signal.aborted)return resolve();const done=()=>{clearTimeout(timer);signal.removeEventListener('abort',done);resolve()};const timer=setTimeout(done,ms);signal.addEventListener('abort',done,{once:true})})
 export async function desktopRequest(token,action,body,fetcher=fetch){
-  const r=await fetcher(SITE+'/api/collector',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...body,action,version:'pc-1.8.12'}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(30000)})
+  const r=await fetcher(SITE+'/api/collector',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...body,action,version:'pc-1.8.13'}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(30000)})
   const data=await r.json().catch(()=>null)
   if(!r.ok)throw Object.assign(Error(data?.error||'Le site ne répond pas.'),{status:r.status})
   if(!data||typeof data!=='object')throw Error('Réponse du site illisible.')
@@ -245,6 +246,13 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       update({state:'waiting',message:`${outcomeMessage} · pause de ${pauseMs/1000} s`,resume_at:new Date(now()+pauseMs).toISOString()})
       await sleep(pauseMs);check();update({resume_at:null})
       }catch(e){
+        if(!signal.aborted&&!submitted&&retryableReadTimeout(task,e)){
+          clearTimeout(activeTimer);deadline=Infinity
+          const saved=await acknowledge({task_id:task.id,lease:task.lease,ok:false,code:'desktop_read_timeout',error:'La lecture a dépassé son délai. Aucun envoi effectué.'})
+          if(!saved.retrying&&!saved.read_failed)throw review('La lecture interrompue n’a pas pu être mise de côté. Vérifie le suivi avant de reprendre.')
+          update({state:'waiting',current_action:null,message:saved.retrying?'Lecture trop lente · nouvel essai prévu plus tard. Les autres tâches continuent.':'Lecture non terminée après trois essais. Les autres tâches continuent.',last_action:{id:task.id,kind:task.kind,outcome:'read_deferred',at:new Date(now()).toISOString(),message:'Lecture différée · aucun envoi effectué'}})
+          task=null;await sleep(10000);continue
+        }
         const row=task&&writes(task)?await journal.read(task.id):null
         // Only a positively detected takeover before any submission can resume.
         // A sent/uncertain message and an edited publication keep the review path.

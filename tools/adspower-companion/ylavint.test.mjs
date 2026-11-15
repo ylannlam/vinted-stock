@@ -4,7 +4,7 @@ import {mkdtemp,readFile,rm,mkdir,writeFile} from 'node:fs/promises'
 import path from 'node:path'
 import {tmpdir} from 'node:os'
 import {taskJournal} from './ylavint-journal.mjs'
-import {DesktopAssistants,desktopRequest,runDesktop,desktopFailure} from './ylavint.mjs'
+import {DesktopAssistants,desktopRequest,runDesktop,desktopFailure,retryableReadTimeout} from './ylavint.mjs'
 import {VintedMessenger,conversationUrl} from './ylavint-ui.mjs'
 import {VisibleVinted,PACE,renderedPage,readLikes,readThread,visibleDate,euros} from './ylavint-visible.mjs'
 import {parseHTML} from 'linkedom'
@@ -12,6 +12,24 @@ import {parseHTML} from 'linkedom'
 const task={id:'00000000-0000-4000-8000-000000000001',lease:'00000000-0000-4000-8000-000000000002',kind:'like_message',payload:{message:'Bonjour !',user_id:'44',offer_price:8}}
 const binding={token:'svwk_00000000-0000-4000-8000-000000000003.'+'a'.repeat(43),profile_id:'abc123',account_id:task.id,member_id:'123',login:'demo'}
 class FakeReader {async open(){}async identity(){return {member_id:'123',status:'ok'}}async wardrobe(){return {items:[]}}async likes(){return {likes:[]}}async inbox(){return {conversations:[]}}}
+
+test('a timed-out scan cannot block the next queued action; writes and verification failures never use this recovery',async t=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'ylavint-timeout-'))
+ t.after(async()=>{if(path.dirname(dir)===tmpdir()&&path.basename(dir).startsWith('ylavint-timeout-'))await rm(dir,{recursive:true,force:true})})
+ const error=Object.assign(Error('locator timeout'),{name:'TimeoutError'}),reports=[];let polls=0,clock=1000
+ for(const kind of ['publish_item','reply_message','like_message','accept_offer','fetch_label'])assert.equal(retryableReadTimeout({kind},error),false)
+ assert.equal(retryableReadTimeout({kind:'scan_likes'},Error('Vinted demande une vérification')),false)
+ class Reader extends FakeReader{async likes(){throw error}}
+ await runDesktop(binding,{start:async()=>({address:'test'})},{signal:new AbortController().signal,dataDir:dir,Reader,now:()=>clock,waitFor:async ms=>{clock+=ms},update:()=>{},connect:async()=>({contexts:()=>[{newPage:async()=>({close:async()=>{}})}],close:async()=>{}}),request:async(_token,action,body)=>{
+  if(action==='agent_status')return {allowed:true,in_window:true,pace:PACE}
+  if(action==='agent_preview')return {actions:[]}
+  if(action==='agent_context')return {saved:true}
+  if(action==='agent_poll')return ++polls<3?{state:'task',task:{...task,id:crypto.randomUUID(),kind:polls===1?'scan_likes':'scan_wardrobe',payload:{},lease_until:new Date(clock+180000).toISOString()}}:{state:'paused'}
+  if(action==='agent_result'){reports.push(body);return {saved:true,...(body.code==='desktop_read_timeout'?{retrying:true}:{})}}
+  assert.fail(action)
+ }})
+ assert.equal(reports.length,2);assert.equal(reports[0].code,'desktop_read_timeout');assert.equal(reports[1].ok,true)
+})
 
 test('desktop jobs deduplicate profile/account, never expose the token, and stop before restarting',async()=>{
  let runs=0

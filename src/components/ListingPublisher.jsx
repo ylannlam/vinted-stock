@@ -12,7 +12,7 @@ export function ListingAgentControls({account,action,onChange,disabled=false}){
  </fieldset>
 }
 
-export default function ListingPublisher({value,onChange,disabled=false,ylavint,dotb,compact=false,accountId,profileId,onEnabled,mode,onEdit}){
+export default function ListingPublisher({value,onChange,disabled=false,ylavint,dotb,compact=false,accountId,profileId,onEnabled,onRefresh,mode,onEdit}){
  const name=`publisher-${compact?'compact':'full'}`
  const [enabling,setEnabling]=useState(false),[enableError,setEnableError]=useState('')
  // YlaVint ou la publication coupés sur ce compte : on les allume d'ici, sans passer par les réglages.
@@ -28,6 +28,7 @@ export default function ListingPublisher({value,onChange,disabled=false,ylavint,
   {value==='ylavint'&&ylavint&&<p role="status" className="text-xs text-slate-600">{ylavint.waiting||ylavint.reason||(ylavint.executor==='desktop'?'Assistant PC prêt.':'Bridge YlaVint présent.')} {ylavint.ready&&ylavint.executor!=='desktop'&&'Tu termineras la publication dans l’onglet Vinted.'} {!ylavint.ready&&<a href="/ylavint" target="_blank" rel="noreferrer" className="underline">Ouvrir les réglages YlaVint ↗</a>}</p>}
   {canEnable&&<button type="button" className="w-full rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50" disabled={enabling} onClick={enable}>{enabling?'Activation…':'Activer la publication YlaVint sur ce compte'}</button>}
   {value==='ylavint'&&accountId&&<a href={assistantListingLink(accountId,profileId)} target="_blank" rel="noreferrer" className="inline-flex rounded-xl border border-teal-200 bg-white px-3 py-2 text-sm font-semibold text-teal-800 hover:bg-teal-50">{ylavint?.executor==='desktop'?'Ouvrir l’assistant de ce compte ↗':'Connecter ce compte à l’Assistant PC ↗'}</a>}
+  {value==='ylavint'&&onRefresh&&<button type="button" className="block text-xs text-teal-800 underline underline-offset-4 disabled:opacity-50" disabled={enabling} onClick={async()=>{setEnabling(true);setEnableError('');try{await onRefresh()}catch(e){setEnableError(e.message)}finally{setEnabling(false)}}}>Actualiser l’état de l’assistant</button>}
   {enableError&&<p role="alert" className="text-xs text-red-700">{enableError}</p>}
   {value==='dotb'&&dotb===false&&<p className="text-xs text-amber-800">Dotb est désactivé pour ce compte ou sur le site. Tes réglages Dotb sont conservés pour le réutiliser plus tard.</p>}
  </fieldset>

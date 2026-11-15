@@ -52,11 +52,20 @@ test('publication availability reports old extensions and waiting profiles witho
  settings.extension_version='3.10.0';settings.paused=true;settings.pause_reason='Vérification du compte';assert.match((await publicationStatus(db,account)).waiting,/Vérification/)
 })
 
-test('PC publication requires its own compatible connector even with a recent extension',async()=>{
- const {db,settings,d,read}=fixture();settings.messaging={executor:'desktop'}
- const state=await publicationStatus(db,account);assert.equal(state.ready,false);assert.match(state.reason,/connecteur à jour/)
- await assert.rejects(queueYlavintListing(db,{id:owner},d,{read}),/connecteur à jour/)
- assert.equal(db.calls.length,0)
+test('PC publication queues before first connector contact and while paused without starting the account',async()=>{
+ for(const paused of [false,true])for(const version of [null,'3.8.0','pc-1.8.12']){
+  const {db,settings,d,read}=fixture();Object.assign(settings,{messaging:{executor:'desktop'},paused,extension_version:version})
+  const state=await publicationStatus(db,account);assert.equal(state.ready,true);assert.equal(state.online,false);assert.match(state.waiting,/file/)
+  await queueYlavintListing(db,{id:owner},d,{read,desktopSubmit:true,expectedExecutor:'desktop'})
+  assert.equal(settings.paused,paused);assert.equal(db.calls.filter(c=>c.name==='queue_ylavint_listing').length,1)
+ }
+})
+test('disabled publication remains blocked and publisher refresh only reads the selected account status',async()=>{
+ const {db,settings,d,read}=fixture();settings.messaging={executor:'desktop'};settings.features.publish=false
+ assert.equal((await publicationStatus(db,account)).ready,false)
+ await assert.rejects(queueYlavintListing(db,{id:owner},d,{read}),/Active/)
+ const result=await handleListingStudio({method:'GET',query:{action:'publisher_status',account_id:account}},{db,user:{id:owner}},{read:()=>assert.fail('no external call')})
+ assert.equal(result.account_id,account);assert.equal(result.publisher.ready,false);assert.equal(db.calls.length,0)
 })
 
 test('PC mode prepares by default; only explicit per-listing authorization freezes a publish request',async()=>{

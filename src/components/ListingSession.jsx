@@ -51,6 +51,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
  const cards=useRef(new Map()),optionCache=useRef(new Map()),alive=useRef(true),settingsRef=useRef(null),dragDepth=useRef(0)
  const [order,setOrder]=useState([]),[,setTick]=useState(0)
  const [publisher,setPublisher]=useState(null)
+ const publisherSync=useRef({at:0,pending:false}),[publisherError,setPublisherError]=useState('')
  const [ylavint,setYlavint]=useState(false),[settings,setSettings]=useState(null),[dotb,setDotb]=useState(false),[serverDotb,setServerDotb]=useState(!!meta.dotb_publish_enabled)
  // Outil (YlaVint ou Dotb) et mode (en ligne ou brouillon) : un seul choix pour tous les comptes, dans Réglages.
  const provider=settings?.effective?.publisher==='dotb'?'dotb':'ylavint',mode=settings?.effective?.publish_mode==='draft'?'draft':'live'
@@ -128,6 +129,15 @@ export default function ListingSession({request,upload,account,meta,initialSku='
   await syncStatuses(result.drafts.map(row=>cards.current.get(row.id)))
  }
  useEffect(()=>{setLoading(true);load().catch(e=>setError(e.message)).finally(()=>{if(alive.current)setLoading(false)})},[account.id])
+ async function refreshPublisher(force=false){
+  if(publisherSync.current.pending||!force&&Date.now()-publisherSync.current.at<15000)return
+  publisherSync.current.pending=true;publisherSync.current.at=Date.now()
+  try{
+   const result=await request('GET',undefined,`action=publisher_status&account_id=${account.id}`)
+   if(alive.current&&result.account_id===account.id){setPublisher(result.publisher);setYlavint(!!result.publisher?.ready);setPublisherError('')}
+  }catch{if(alive.current)setPublisherError('État de l’assistant non actualisé. Le compte sera revérifié avant de confier l’annonce.')}
+  finally{publisherSync.current.pending=false}
+ }
  // Vérifie dès l'ouverture, au retour sur la page et périodiquement, sans renvoyer d'annonce.
  async function syncStatuses(targets=list()){
   if(statusSync.current)return
@@ -139,12 +149,13 @@ export default function ListingSession({request,upload,account,meta,initialSku='
      onError:(row,e)=>{const card=cards.current.get(row.id);if(card){card.error='Statut non vérifié : '+e.message;render()}}})
   }finally{statusSync.current=false}
  }
- syncLatest.current=()=>syncStatuses()
+ syncLatest.current=force=>{void syncStatuses();void refreshPublisher(force)}
  useEffect(()=>{
   const check=()=>{if(document.visibilityState!=='hidden')syncLatest.current?.()}
+  const returned=()=>{if(document.visibilityState!=='hidden')syncLatest.current?.(true)}
   const timer=setInterval(check,5000)
-  window.addEventListener('focus',check);document.addEventListener('visibilitychange',check)
-  return()=>{clearInterval(timer);window.removeEventListener('focus',check);document.removeEventListener('visibilitychange',check)}
+  window.addEventListener('focus',returned);document.addEventListener('visibilitychange',returned)
+  return()=>{clearInterval(timer);window.removeEventListener('focus',returned);document.removeEventListener('visibilitychange',returned)}
  },[])
 
  useEffect(()=>{const warn=e=>{if(list().some(c=>c.dirty||c.busy)||busy){e.preventDefault();e.returnValue=''}};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn)})
@@ -504,7 +515,8 @@ export default function ListingSession({request,upload,account,meta,initialSku='
       {sizes.map(n=><button key={n} className={ghost} onClick={()=>withBusy('Ajout des articles…',()=>addArticles(groupFiles(dropped,n)))}>{dropped.length/n} articles de {n} photos</button>)}
       <button className={ghost} onClick={()=>withBusy('Ajout des articles…',()=>addArticles(groupFiles(dropped,1)))}>{dropped.length} articles (1 photo chacun)</button></div>
      <div className="flex items-center justify-between"><p className="text-xs text-[#79756f]">Regroupées dans l’ordre des noms de fichiers.</p><button className={quiet+' !text-xs'} onClick={()=>setDropped(null)}>Annuler</button></div></div>}
-    <ListingPublisher compact value={provider} mode={mode} onEdit={settings?()=>setShowSettings(true):undefined} disabled={!!busy} ylavint={publisher} dotb={dotb} accountId={account.id} profileId={account.profile_id} onEnabled={()=>load().catch(e=>setError(e.message))}/>
+    <ListingPublisher compact value={provider} mode={mode} onEdit={settings?()=>setShowSettings(true):undefined} disabled={!!busy} ylavint={publisher} dotb={dotb} accountId={account.id} profileId={account.profile_id} onEnabled={()=>load().catch(e=>setError(e.message))} onRefresh={()=>refreshPublisher(true)}/>
+    {publisherError&&<p role="status" className="text-xs text-amber-800">{publisherError}</p>}
     {desktop&&<ListingAgentControls account={account} action={publicationAction} disabled={working} onChange={action=>setPublicationIntent({key:intentKey,action})}/>}
     {desktopSubmit&&ylavint&&counts.ready>1&&<button className={solid+' w-full'} disabled={working} onClick={()=>withBusy('Transmission à l’assistant…',sendAllToAssistant)}>Confier les {counts.ready} annonces à l’assistant</button>}
     {(toPrepare>0||((provider==='ylavint'?ylavint:dotb)&&counts.ready>0))&&<div className="grid gap-1.5">

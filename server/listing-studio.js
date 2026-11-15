@@ -161,6 +161,10 @@ export async function handleListingStudio(req,{db,user},{read=dotbListingRequest
  // Dotb publie seulement si le serveur l'autorise ET si l'interrupteur du compte est allumé.
  const dotbFor=async accountId=>allowDotb&&(await settings(db,accountId)).effective.dotb===true
  if(req.method==='GET'){
+  if(action==='publisher_status'){
+   if(!isId(req.query.account_id))throw new AppError('Compte invalide.')
+   return {account_id:req.query.account_id,publisher:await publicationStatus(db,req.query.account_id)}
+  }
   if(action==='accounts'){
    const selected=await selectedListingAccounts(db,user.id,listingAccounts(await read('accounts')))
    const publishers=await publicationStatuses(db,selected.accounts.map(a=>a.id))

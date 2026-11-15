@@ -35,6 +35,7 @@ function server({dotb=false,ylavint=false,slow=0,publisher='ylavint',mode='live'
  const request=async(method,body,query='')=>{
   const q=new URLSearchParams(query),action=body?.action||q.get('action');calls.push({action,body:structuredClone(body)})
   if(action==='session')return {account_id:q.get('account_id'),settings,dotb,ylavint,publisher:{executor,ready:ylavint,online:true,limit:5,from_hour:9,to_hour:22},dotb_publish_enabled:dotb,drafts:[...rows.values()].reverse().map(expose)}
+  if(action==='publisher_status')return {account_id:q.get('account_id'),publisher:{executor,ready:ylavint,online:true}}
   if(action==='options')return options
   if(action==='accounts')return {accounts:[account]}
   if(action==='settings'&&method==='GET')return settings
@@ -334,6 +335,23 @@ test('the account session sends a desktop publication intent and links to the ma
   const link=[...document.querySelectorAll('a')].find(a=>a.textContent.includes('Ouvrir l’assistant de ce compte'))
   const url=new URL(link.getAttribute('href'),'https://site.test');assert.equal(url.searchParams.get('account'),account.id);assert.equal(url.searchParams.get('profile'),account.profile_id);assert.equal(url.hash,'#assistant-pc')
   assert.equal(s.calls.some(c=>['publish','step'].includes(c.action)),false)
+ }finally{await ui.unmount()}
+})
+
+test('returning from assistant settings refreshes the disabled publish button without replacing edits',async()=>{
+ const ui=await mount(),s=server({ylavint:false,executor:'desktop'});seedDesktopCards(s,1)
+ let ready=false
+ const request=async(method,body,query)=>new URLSearchParams(query).get('action')==='publisher_status'?{account_id:account.id,publisher:{executor:'desktop',ready,paused:true,waiting:'Compte en pause · annonce ajoutable à la file'}}:s.request(method,body,query)
+ try{
+  await ui.act(async()=>ui.root.render(ui.React.createElement(ui.Session,{request,upload:s.upload,account,meta,onBack(){},onOpenDraft(){}})))
+  await ui.act(()=>wait(25));assert.equal(ui.button('Publier avec l’assistant').disabled,true)
+  await fill(ui,{sku:'édition conservée'})
+  ready=true;await ui.act(async()=>{window.dispatchEvent(new window.Event('focus'));await wait(25)})
+  assert.equal(ui.button('Publier avec l’assistant').disabled,false);assert.equal(field('sz…').value,'édition conservée')
+  assert.match(document.body.textContent,/Compte en pause/)
+  assert.equal(s.calls.filter(c=>c.action==='session').length,1,'only the status is refreshed')
+  assert.equal(s.calls.filter(c=>c.action==='ylavint_publish').length,0)
+  await ui.click('Publier avec l’assistant');assert.equal(s.calls.filter(c=>c.action==='ylavint_publish').length,1)
  }finally{await ui.unmount()}
 })
 

@@ -369,6 +369,7 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
     if(desktopDriver(key)==='desktop'){
       const previous=check(await db.from('vinted_agent_tasks').select('id,account_id,state,result').eq('id',body.task_id).maybeSingle())
       if(previous?.account_id===key.desktop_account_id&&previous.state==='queued'&&previous.result?.interrupted_lease===body.lease&&body.code==='desktop_interrupted')return {saved:true,requeued:true}
+      if(previous?.account_id===key.desktop_account_id&&['queued','failed'].includes(previous.state)&&previous.result?.read_timeout_lease===body.lease&&body.code==='desktop_read_timeout')return {saved:true,retrying:previous.state==='queued',read_failed:previous.state==='failed'}
       if(previous?.account_id===key.desktop_account_id&&['done','failed','cancelled'].includes(previous.state))return {saved:true,paused:previous.state!=='done'}
     }
     const previous=check(await db.from('vinted_agent_tasks').select('*').eq('id',body.task_id).eq('kind','publish_item').maybeSingle())
@@ -383,6 +384,13 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
   if(body.ok!==true){
     const code=typeof body.code==='string'?body.code:'failed',detail=text(body.error,300)
     if(desktopDriver(key)==='desktop'){
+      if(code==='desktop_read_timeout'&&!task.writes&&['scan_likes','scan_wardrobe','sync_inbox','sync_orders','scan_wallet'].includes(task.kind)){
+        const retrying=(task.attempts||1)<3
+        await finish(db,task,retrying?'queued':'failed',{read_timeout_lease:task.lease},'Lecture trop lente · aucun envoi effectué.')
+        if(retrying)check(await db.from('vinted_agent_tasks').update({not_before:new Date(now+60000*Math.max(1,task.attempts||1)).toISOString()}).eq('id',task.id).eq('state','queued'))
+        await log('warn','desktop_read_timeout',`${label} : ${retrying?'nouvel essai prévu plus tard':'trois essais sans résultat'}. Les autres tâches continuent.`,{kind:task.kind,attempts:task.attempts||1})
+        return {saved:true,retrying,read_failed:!retrying}
+      }
       if(code==='desktop_interrupted'&&body.before_submission===true&&task.kind!=='publish_item'){
         await finish(db,task,'queued',{interrupted_lease:task.lease},'Intervention manuelle · reprise automatique après inactivité.')
         await requeue(db,task,now,60)
