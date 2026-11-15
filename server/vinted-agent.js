@@ -736,7 +736,7 @@ export async function handleAgent(req,{db,user}){
   if(body.action==='cancel'){
     if(!isId(body.task_id))throw new AppError('Tâche invalide.')
     const publication=check(await db.from('vinted_agent_tasks').select('id,kind,payload,created_by').eq('id',body.task_id).maybeSingle())
-    if(['reply_message','like_message','order_extension'].includes(publication?.kind))return (await import('./ylavint-actions.js')).cancelPlannedAction(db,body.task_id)
+    if(['reply_message','like_message','accept_offer','order_extension'].includes(publication?.kind))return (await import('./ylavint-actions.js')).cancelPlannedAction(db,body.task_id)
     if(publication?.kind==='publish_item'){const row=check(await db.from('listing_drafts').select('*').eq('publication_task_id',publication.id).eq('owner_id',user.id).maybeSingle());if(!row)throw new AppError('Fiche introuvable.',404);await cancelYlavintListing(db,row);return {cancelled:1}}
     const r=check(await db.from('vinted_agent_tasks').update({state:'cancelled',finished_at:new Date().toISOString()}).eq('id',body.task_id).eq('state','queued').select('id,kind,payload'))
     if(r?.[0]?.kind==='publish_item')await markDraft(db,r[0].payload.draft_id,{state:'draft',scheduled_at:null,message:'Publication par l’agent annulée.'})

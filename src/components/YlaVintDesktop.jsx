@@ -6,7 +6,7 @@ import {ASSISTANT_SECTIONS,sectionStatus} from '../lib/assistantSettings'
 import {HOME_KEY,readHome,profileFor,managedAccounts,sessionActive,launchBlock,launchAssistant,companionCurrent} from '../lib/assistantHome'
 
 const time=value=>value?new Date(value).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Paris'}):''
-const actionNames={scan_wallet:'Lecture du porte-monnaie',sync_orders:'Lecture des ventes',fetch_label:'Récupération du bordereau',scan_wardrobe:'Lecture du dressing',scan_likes:'Lecture des favoris',sync_inbox:'Lecture des messages',like_message:'Message au favori et réduction',reply_message:'Réponse à un message',publish_item:'Publication de l’annonce',order_extension:'Demande de délai d’envoi'}
+const actionNames={scan_wallet:'Lecture du porte-monnaie',sync_orders:'Lecture des ventes',fetch_label:'Récupération du bordereau',scan_wardrobe:'Lecture du dressing',scan_likes:'Lecture des favoris',sync_inbox:'Lecture des messages',like_message:'Message au favori et réduction',reply_message:'Réponse à un message',publish_item:'Publication de l’annonce',accept_offer:'Acceptation d’une offre reçue',order_extension:'Demande de délai d’envoi'}
 export default function YlaVintDesktop({accounts,tasks=[],compact=false,onConfigure,onActions,onAccountAction,request=adsPowerRequest,pair=vintedWatchRequest}){
  const [saved]=useState(()=>readHome(window.localStorage))
  const [ids,setIds]=useState(saved?.ids||[]),[bindings,setBindings]=useState(saved?.bindings||{}),[selected,setSelected]=useState(saved?.selected||new URLSearchParams(window.location.search).get('account')||'')
@@ -45,7 +45,7 @@ export default function YlaVintDesktop({accounts,tasks=[],compact=false,onConfig
   <div className="grid gap-4 2xl:grid-cols-2">{shown.map(a=>{
    const s=sessions.find(s=>s.account_id===a.id),running=sessionActive(s),profile=profileFor(a.id,bindings,sessions),p=profiles.find(p=>p.id===profile)
    const blocked=launchBlock(a,profile,profiles,sessions,configured),failure=s?.state==='review',paused=a.settings?.paused
-   const recent=tasks.filter(t=>t.account_id===a.id&&['like_message','reply_message'].includes(t.kind)),pending=recent.filter(t=>t.state==='queued').length,failed=recent.filter(t=>t.state==='failed').length
+   const recent=tasks.filter(t=>t.account_id===a.id&&['like_message','reply_message','accept_offer'].includes(t.kind)),pending=recent.filter(t=>t.state==='queued').length,failed=recent.filter(t=>t.state==='failed').length
    const label=running?(s.state==='break'?'Pause programmée':s.state==='waiting'?'En attente':s.state==='stopping'?'Arrêt en cours':'En cours'):failure?'À reprendre':paused?'En pause':'Arrêté'
    return <Card key={a.id} className={'overflow-hidden '+(selected===a.id?'ring-1 ring-indigo-400/40':'')}>
     <div className="ylv-hero p-5"><div className="flex items-center gap-3"><span className="ylv-avatar grid h-11 w-11 shrink-0 place-items-center rounded-xl font-semibold">{a.login.slice(0,2).toUpperCase()}</span><div className="min-w-0 flex-1"><h3 className="truncate text-xl font-semibold text-white">{a.login}</h3><button className="mt-1 text-xs text-indigo-200 underline decoration-indigo-400/30 underline-offset-4" onClick={()=>{setProfileEditor(profileEditor===a.id?'':a.id);setProfileSearch('')}}>{p?`Profil AdsPower #${p.number} · Modifier`:profile?'Profil enregistré · Modifier':'Associer son profil AdsPower'}</button></div><Pill tone={failure?'red':paused||s?.state==='break'?'amber':running?'green':'zinc'}>{label}</Pill></div>
