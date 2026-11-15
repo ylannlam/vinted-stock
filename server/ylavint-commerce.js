@@ -29,12 +29,14 @@ export async function applyDesktopOrders(db,task,result,settings,now=Date.now())
  const rows=parseDesktopOrders(result),at=new Date(now).toISOString(),ids=rows.map(o=>o.conversation_id)
  const old=new Map((ids.length?check(await db.from('ylavint_desktop_orders').select('*').eq('account_id',task.account_id).in('conversation_id',ids)):[]).map(o=>[o.conversation_id,o]))
  const saved=rows.map(({detail_read,...o})=>{
-  const before=old.get(o.conversation_id)
+  const before=old.get(o.conversation_id),closed=/annul|rembours|termin|finalis|livr|colis envoy|en transit/.test(o.status.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase())
   return {...o,account_id:task.account_id,seen_at:at,item_id:o.item_id||before?.item_id||null,carrier:o.carrier||before?.carrier||null,deadline_text:o.deadline_text||before?.deadline_text||null,
    ship_deadline:detail_read&&o.deadline_text?visibleDeadline(o.deadline_text,now):before?.ship_deadline||null,
    extension_state:detail_read&&o.extension_state!=='unknown'?o.extension_state:before?.extension_state||'unknown',
    extension_checked_at:detail_read&&o.extension_state!=='unknown'?at:before?.extension_checked_at||null,
-   ...(!detail_read&&before?{label_state:before.label_state,label_note:before.label_note}:{}),...(before?.label_path?{label_state:'saved',label_note:null}:{})}
+   ...(!detail_read&&before?{label_state:before.label_state,label_note:before.label_note}:{}),
+   ...(closed?{label_state:'unavailable',label_note:null,extension_state:'unavailable',extension_checked_at:at}:{}),
+   ...(before?.label_path?{label_state:'saved',label_note:null}:{})}
  })
  if(saved.length)check(await db.from('ylavint_desktop_orders').upsert(saved,{onConflict:'account_id,conversation_id'}))
  const ready=saved.filter(o=>o.label_state==='ready'&&!old.get(o.conversation_id)?.label_path&&!(Date.parse(old.get(o.conversation_id)?.label_checked_at)>now-2*3600000)&&!settings.order_flow.labels.ignore_carriers.some(c=>(o.carrier||'').toLowerCase().includes(c)))

@@ -8,13 +8,14 @@ import {routineMemory,randomInt} from './ylavint-routine.mjs'
 import {preparePublication,PublicationForm} from './ylavint-publication.mjs'
 import {VisibleCommerce} from './ylavint-commerce.mjs'
 import {requestVisibleExtension} from './ylavint-extension.mjs'
+import {acceptVisibleOffer} from './ylavint-offers.mjs'
 
-export const DESKTOP_KINDS=['scan_wardrobe','scan_likes','sync_inbox','like_message','reply_message','publish_item','scan_wallet','sync_orders','fetch_label','order_extension']
-const writes=task=>['like_message','reply_message','publish_item','order_extension'].includes(task?.kind)
+export const DESKTOP_KINDS=['scan_wardrobe','scan_likes','sync_inbox','like_message','reply_message','accept_offer','publish_item','scan_wallet','sync_orders','fetch_label','order_extension']
+const writes=task=>['like_message','reply_message','accept_offer','publish_item','order_extension'].includes(task?.kind)
 const SITE='https://vinted-stock.vercel.app'
 const wait=(ms,signal)=>new Promise(resolve=>{if(signal.aborted)return resolve();const done=()=>{clearTimeout(timer);signal.removeEventListener('abort',done);resolve()};const timer=setTimeout(done,ms);signal.addEventListener('abort',done,{once:true})})
 export async function desktopRequest(token,action,body,fetcher=fetch){
-  const r=await fetcher(SITE+'/api/collector',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...body,action,version:'pc-1.8.0'}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(30000)})
+  const r=await fetcher(SITE+'/api/collector',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...body,action,version:'pc-1.8.7'}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(30000)})
   const data=await r.json().catch(()=>null)
   if(!r.ok)throw Object.assign(Error(data?.error||'Le site ne répond pas.'),{status:r.status})
   if(!data||typeof data!=='object')throw Error('Réponse du site illisible.')
@@ -78,7 +79,7 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       // Rehearse the actual startup path, including saving the read context.
       // Never poll/claim work, type in Vinted, or submit messages in this mode.
       const inbox=binding.rehearse===true?await refreshInbox():await reader.inbox()
-      summary.conversations_read=inbox.conversations.length;publishSummary()
+      summary.conversations_read=inbox.conversations.length;summary.offers_read=inbox.conversations.reduce((n,c)=>n+(c.offers?.length||0),0);publishSummary()
       if(likes.likes.length&&reader.verifyFavourite){
         update({state:'reading',message:'Vérification de l’ouverture d’un favori et de la fermeture du formulaire vide, sans saisie ni envoi'})
         await reader.verifyFavourite(likes.likes[0]);summary.favourite_form_checked=true;publishSummary()
@@ -167,6 +168,7 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
         value=startupInbox&&now()-startupInboxAt<120000&&!p.conversation_ids?.length&&!p.force_details?startupInbox:await reader.inbox(p)
         startupInbox=null
       }
+      else if(task.kind==='accept_offer')value=await acceptVisibleOffer({reader,ui,authorize,journal,task},p)
       else if(task.kind==='order_extension')value=await requestVisibleExtension({reader,authorize,journal,task},p)
       else if(['scan_wallet','sync_orders','fetch_label'].includes(task.kind)){
         const commerce=new VisibleCommerce({reader,authorize})
@@ -206,7 +208,7 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       else if(task.kind==='scan_likes')summary.likes_read+=value.likes?.length||0
       else if(task.kind==='scan_wallet')summary.wallets_read++
       else if(task.kind==='sync_orders')summary.orders_read+=value.orders?.length||0
-      else{if(value?.message_id)summary.messages_sent++;if(value?.offer===true)summary.offers_sent++}
+      else{if(value?.message_id)summary.messages_sent++;if(value?.offer===true||value?.accepted===true)summary.offers_sent++}
       publishSummary()
       clearTimeout(activeTimer)
       // Desktop failures, including a partial message + offer, require review rather than replay.

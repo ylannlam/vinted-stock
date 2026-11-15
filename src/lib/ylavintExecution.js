@@ -1,5 +1,5 @@
 // Keep stored extension settings intact while exposing only what this executor can run.
-export const DESKTOP_KINDS=['scan_wardrobe','scan_likes','sync_inbox','like_message','reply_message','publish_item','scan_wallet','sync_orders','fetch_label','order_extension']
+export const DESKTOP_KINDS=['scan_wardrobe','scan_likes','sync_inbox','like_message','reply_message','accept_offer','publish_item','scan_wallet','sync_orders','fetch_label','order_extension']
 export const DESKTOP_FEATURES=['inbox','ai','dressing','likes','publish','wallet','orders','labels']
 export const isDesktop=settings=>settings?.messaging?.executor==='desktop'
 export const supportsTask=(settings,kind)=>kind==='scan_wallet'?isDesktop(settings):!isDesktop(settings)||DESKTOP_KINDS.includes(kind)
@@ -23,6 +23,6 @@ export function executionSettings(settings){
  if(!isDesktop(settings))return settings
  return {...settings,
   features:Object.fromEntries(Object.entries(settings.features||{}).map(([key,value])=>[key,value&&DESKTOP_FEATURES.includes(key)])),
-  messaging:{...settings.messaging,sync_seconds:Math.max(120,Number(settings.messaging?.sync_seconds)||120),offers:{...settings.messaging.offers,enabled:false}},
+  messaging:{...settings.messaging,sync_seconds:Math.max(120,Number(settings.messaging?.sync_seconds)||120)},
   order_flow:Object.fromEntries(Object.entries(settings.order_flow||{}).map(([key,value])=>[key,key==='delete_sold'?false:value&&typeof value==='object'?{...value,enabled:false}:value]))}
 }

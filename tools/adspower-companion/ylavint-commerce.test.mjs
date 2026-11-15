@@ -2,10 +2,14 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {EventEmitter} from 'node:events'
 import {parseHTML} from 'linkedom'
-import {commercePage,readWallet,readOrderCards,readOrderDetail,validLabelUrl,validatePdf,VisibleCommerce} from './ylavint-commerce.mjs'
+import {commercePage,readWallet,readOrderCards,readOrderDetail,needsShippingDetail,validLabelUrl,validatePdf,VisibleCommerce} from './ylavint-commerce.mjs'
 
 const id='01a1babe-a720-7963-879d-eb437fc23e79'
 const pdf=Buffer.from('%PDF-1.7\n'+'x'.repeat(130)),wallet={url:'https://www.vinted.fr/wallet/balance',available:'0,00 €\nMontant disponible',pending:'Montant en attente\n92,00 €',controls:[{text:'Transférer',enabled:false}]}
+test('shipping scans skip finalized and refunded sales but keep orders that still need shipment',()=>{
+ for(const status of ["Commande finalisée - l'acheteur a validé la commande",'Remboursement effectué','Commande annulée','Livrée','Colis envoyé','En transit'])assert.equal(needsShippingDetail(status),false,status)
+ for(const status of ['À expédier','Article à emballer','Bordereau envoyé au vendeur','Paiement reçu'])assert.equal(needsShippingDetail(status),true,status)
+})
 test('wallet separates the two rendered labels, preserves zero and refuses ambiguous or missing numbers',()=>{
  assert.deepEqual(readWallet(wallet),{available:0,pending:92,currency:'EUR',withdrawal:'unavailable'})
  assert.deepEqual(readWallet({...wallet,available:'1 234,56 €\nMontant disponible',controls:[{text:'Transférer',enabled:true}]}),{available:1234.56,pending:92,currency:'EUR',withdrawal:'available'})

@@ -15,6 +15,7 @@ test('commerce storage is private and only a recent PC with enabled functions ca
   await db.exec(await readFile(new URL('../supabase/migrations/20261114160002_ylavint_desktop_commerce.sql',import.meta.url),'utf8'))
   await db.exec('create schema auth;create table auth.users(id uuid primary key);')
   await db.exec(await readFile(new URL('../supabase/migrations/20261114162953_ylavint_operations.sql',import.meta.url),'utf8'))
+  await db.exec(await readFile(new URL('../supabase/migrations/20261115112948_ylavint_visible_offers.sql',import.meta.url),'utf8'))
   for(const table of ['ylavint_wallets','ylavint_desktop_orders','ylavint_order_preparation']){
    const access=(await db.query(`select relrowsecurity as rls,has_table_privilege('anon',$1,'select') as anon,has_table_privilege('authenticated',$1,'select') as authenticated,has_table_privilege('service_role',$1,'select,insert,update') as server from pg_class where oid=$1::regclass`,[table])).rows[0]
    assert.deepEqual(access,{rls:true,anon:false,authenticated:false,server:true})
@@ -49,5 +50,13 @@ test('commerce storage is private and only a recent PC with enabled functions ca
   await assert.rejects(db.query(`insert into vinted_agent_tasks(account_id,kind,writes,payload) values($1,'order_extension',true,'{"desktop_order":true,"conversation_id":"123"}')`,[account]),/unique/)
   const second=crypto.randomUUID();await db.query(`insert into vinted_agent_tasks(account_id,kind,writes,payload) values($1,'order_extension',true,'{"desktop_order":true,"conversation_id":"123"}')`,[second])
   assert.equal((await claim('desktop')).state,'idle','another account never supplies this account’s tasks')
+  await db.exec(`update vinted_agent_settings set messaging='{"executor":"desktop","offers":{"enabled":true,"max_per_buyer":1,"period_days":1}}',extension_version='pc-1.8.6'`)
+  await db.query(`insert into vinted_agent_tasks(account_id,kind,writes,payload) values($1,'accept_offer',true,'{"desktop_offer":true,"offer":{"buyer_id":"44"}}'),($1,'accept_offer',true,'{"offer":{"buyer_id":"45"}}')`,[account])
+  assert.equal((await claim('desktop')).state,'idle','old connectors never receive accept-offer tasks')
+  await db.exec(`update vinted_agent_settings set extension_version='pc-1.8.7'`)
+  const acceptance=(await claim('desktop')).task;assert.equal(acceptance.kind,'accept_offer');assert.equal(acceptance.payload.desktop_offer,true)
+  await db.exec(`update vinted_agent_tasks set state='done' where state='running'`)
+  await db.query(`insert into vinted_agent_tasks(account_id,kind,writes,payload) values($1,'accept_offer',true,'{"desktop_offer":true,"offer":{"buyer_id":"44"}}')`,[account])
+  assert.equal((await claim('desktop')).state,'idle','buyer cap and legacy offer isolation still apply')
  }finally{await db.close()}
 })

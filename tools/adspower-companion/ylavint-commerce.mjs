@@ -37,6 +37,7 @@ export function readWallet(snapshot){
  return {available,pending,currency:'EUR',withdrawal:available===0?'unavailable':transfer.length===1?(transfer[0].enabled?'available':'unavailable'):'unknown'}
 }
 const normalize=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
+export const needsShippingDetail=status=>!/annul|rembours|termin|finalis|livr|colis envoy|en transit/.test(normalize(status))
 export function readExtensionState(snapshot){
  for(const block of [...(snapshot.system||[])].reverse()){
   const t=normalize(block.text)
@@ -113,7 +114,7 @@ export class VisibleCommerce{
    this.reader.check();await this.page.mouse.wheel(0,380);await this.reader.sleep(this.reader.pace.page_wait_seconds*1000)
    snapshot=await this.snapshot();rows=[...new Map([...rows,...readOrderCards(snapshot)].map(o=>[o.conversation_id,o])).values()]
   }
-  const offset=(this.reader.orderOffset||0)%Math.max(1,rows.length),chosen=[...rows.slice(offset),...rows.slice(0,offset)].filter(o=>!/annul|rembours|termin|livr|colis envoy|en transit/i.test(o.status)).slice(0,4)
+  const offset=(this.reader.orderOffset||0)%Math.max(1,rows.length),chosen=[...rows.slice(offset),...rows.slice(0,offset)].filter(o=>needsShippingDetail(o.status)).slice(0,4)
   this.reader.orderOffset=(offset+Math.max(1,chosen.length))%Math.max(1,rows.length)
   for(const row of chosen){
    await this.authorize();await this.reader.open(conversationUrl(row.conversation_id));await this.reader.identity()

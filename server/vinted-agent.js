@@ -199,7 +199,7 @@ async function taskBundle(db,task,settings){
     const last=check(await db.from('vinted_agent_tasks').select('started_at').eq('account_id',task.account_id).eq('kind','scan_likes').eq('state','done').order('finished_at',{ascending:false}).limit(1))[0]
     if(last?.started_at)bundle.payload={...task.payload,since:new Date(Date.parse(last.started_at)-30*60000).toISOString()}
   }
-  if(task.kind==='accept_offer')bundle.payload={...task.payload,offer_settings:settings.messaging.offers}
+  if(task.kind==='accept_offer')bundle.payload={...task.payload,offer_settings:settings.messaging.offers,...(task.payload.desktop_offer?{message:(await import('./ylavint-offers.js')).acceptedOfferText(settings.messaging.offers,task.payload)}:{})}
   if(task.kind==='sync_orders'){
     const known=check(await db.from('vinted_agent_orders').select('transaction_id,item_ids,shipment_id,carrier,photo_url,status').eq('account_id',task.account_id).order('first_seen_at',{ascending:false}).limit(60))
     // Vente « détaillée » : articles, photo et envoi connus, ou vente close. Les autres sont relues (8 au plus par passage).
@@ -457,7 +457,8 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
   }
   if(task.kind==='accept_offer'){
     if(!body.result?.skipped&&(body.result?.accepted!==true||String(body.result.offer_id)!==String(task.payload.offer?.id)))throw new AppError('Résultat d’offre invalide.')
-    summary={message:body.result.skipped?`Offre non acceptée : ${text(body.result.skipped,150)}`:`Offre acceptée à ${Number(task.payload.offer.price).toFixed(2).replace('.',',')} €.`}
+    if(task.payload.desktop_offer&&!body.result.skipped)await (await import('./ylavint-offers.js')).recordAcceptedOffer(db,task,body.result,now)
+    summary={accepted:body.result.accepted===true,message_sent:!!body.result.message_id,message_error:body.result.message_error||null,message:body.result.skipped?`Offre non acceptée : ${text(body.result.skipped,150)}`:`Offre acceptée à ${Number(task.payload.offer.price).toFixed(2).replace('.',',')} €.${body.result.message_error?' Message à vérifier dans la messagerie.':''}`}
   }
   if(task.kind==='like_message'){
     summary=await (await import('./ylavint-flows.js')).likeDone(db,task,body.result,settings,{now,rand})
@@ -612,7 +613,7 @@ export async function agentOverview(db,user=null){
     db.from('vinted_agent_contacts').select('account_id').gte('sent_at',since),
   ]);[accounts,settings,tasks,today,log,recipes,orders,listings,alerts,drafts,sent].forEach(check)
   const counts={},of=id=>counts[id]||(counts[id]={writes:0,like_sent:0})
-  for(const t of today.data){const c=of(t.account_id);if(t.state==='done'){c[t.kind]=(c[t.kind]||0)+1;if(t.result?.message_sent===true)c.messages_confirmed=(c.messages_confirmed||0)+1;if(t.result?.offer_sent===true)c.offers_confirmed=(c.offers_confirmed||0)+1}if(t.writes)c.writes++}
+  for(const t of today.data){const c=of(t.account_id);if(t.state==='done'){c[t.kind]=(c[t.kind]||0)+1;if(t.result?.message_sent===true)c.messages_confirmed=(c.messages_confirmed||0)+1;if(t.result?.offer_sent===true||t.result?.accepted===true)c.offers_confirmed=(c.offers_confirmed||0)+1}if(t.writes)c.writes++}
   for(const r of sent.data)of(r.account_id).like_sent++
   const byAccount=new Map(settings.data.map(s=>[s.account_id,s])),alert=new Map(alerts.data.map(a=>[a.account_id,a]))
   return {

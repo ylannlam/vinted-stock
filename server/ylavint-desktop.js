@@ -47,11 +47,12 @@ export async function guardDesktop(db,key,body,now=Date.now()){
   if(!key.desktop_account_id)throw new AppError('Contrôle réservé à l’assistant PC.',403)
   if(!isId(body.task_id)||!isId(body.lease))throw new AppError('Tâche invalide.')
   const task=check(await db.from('vinted_agent_tasks').select('id,account_id,kind,state,lease,lease_until,payload,created_by').eq('id',body.task_id).eq('account_id',key.desktop_account_id).eq('lease',body.lease).maybeSingle())
-  if(!task||task.state!=='running'||Date.parse(task.lease_until)<=now||!Number.isFinite(Date.parse(task.lease_until))||!['like_message','reply_message','publish_item','scan_wallet','sync_orders','fetch_label','order_extension'].includes(task.kind))throw new AppError('Cette action a expiré ou a été annulée sur le site.',409)
+  if(!task||task.state!=='running'||Date.parse(task.lease_until)<=now||!Number.isFinite(Date.parse(task.lease_until))||!['like_message','reply_message','accept_offer','publish_item','scan_wallet','sync_orders','fetch_label','order_extension'].includes(task.kind))throw new AppError('Cette action a expiré ou a été annulée sur le site.',409)
   const settings=check(await db.from('vinted_agent_settings').select('enabled,paused,messaging,limits,version,features').eq('account_id',key.desktop_account_id).maybeSingle())
   if(!settings?.enabled||settings.paused||settings.messaging?.executor!=='desktop')throw new AppError('L’assistant a été arrêté, mis en pause ou confié à l’extension sur le site.',409)
   if(settings.version!==body.settings_version)throw new AppError('Les réglages ont changé pendant cette action. Vérifie le compte avant de reprendre.',409)
   const effective=effectiveSettings(settings)
+  if(task.kind==='accept_offer'&&(task.payload?.desktop_offer!==true||!(await import('./vinted-agent-config.js')).acceptableOffer(task.payload.offer,effective.messaging.offers)))throw new AppError('Cette offre n’est plus autorisée par tes réglages.',409)
   if(!desktopWindow(effective.limits,now,effective.messaging.desktop))throw new AppError('Le compte est en dehors de son planning ou en absence.',409)
   if(task.kind==='scan_wallet'&&!effective.features.wallet||task.kind==='sync_orders'&&!effective.features.orders&&!effective.features.labels||task.kind==='fetch_label'&&!effective.features.labels)throw new AppError('Cette fonction a été désactivée dans les réglages.',409)
   if(task.kind==='order_extension'){

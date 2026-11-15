@@ -44,7 +44,10 @@ export function renderedPage(){
      const t=holder.querySelector('time[datetime]');if(t){when=t.getAttribute('datetime');break}
      const prev=holder.previousElementSibling,s=txt(prev);if(s.length<100&&/il y a /i.test(s)){when=s;break}
    }
-   return {body,from_me:fromMe,kind:price?'offer':label?'message':b.querySelector('img')?'photo':'unknown',price:txt(price),when,intro:introductions.some(e=>e.contains(b))||!label&&/^Bonjour, je suis /i.test(body)}
+   const offerRoot=b.closest('[class*="conversation-message-container"]')||b
+   const accept=price?all('button,[role="button"]',offerRoot).filter(e=>/^Accepter l[’']offre$/i.test(txt(e))&&!e.disabled&&e.getAttribute('aria-disabled')!=='true'):[]
+   const amounts=body.match(/\d[\d\s.,\u00a0\u202f]*\s*€/g)||[]
+   return {body,from_me:fromMe,kind:price?'offer':label?'message':b.querySelector('img')?'photo':'unknown',price:txt(price),offer_original:price&&amounts.length===2?amounts[1]:null,offer_pending:!fromMe&&accept.length===1,offer_accepted:price&&/\bAcceptée\b/i.test(body),when,intro:introductions.some(e=>e.contains(b))||!label&&/^Bonjour, je suis /i.test(body)}
  }).filter(m=>!m.intro)
  const user=document.querySelector('[data-testid="user-menu-button"] img')
  const links=all('a[href]').map(link)
@@ -84,10 +87,12 @@ export function readThread(snapshot,now=Date.now()){
    const signature=JSON.stringify([m.from_me,m.kind,m.body]),n=(counts.get(signature)||0)+1;counts.set(signature,n)
    return {...m,id:uiMessageId(id,m,n),sent_at:visibleDate(m.when,now)}
  })
+ const itemId=item&&new URL(item.href).pathname.match(/^\/items\/(\d+)/)?.[1]
+ const offers=uniqueOther.length===1&&itemId?messages.filter(m=>m.kind==='offer'&&m.offer_pending&&!m.from_me&&euros(m.price)!=null&&euros(m.offer_original)!=null).map(m=>({id:m.id,desktop:true,pending:true,buyer_id:uniqueOther[0][0],item_id:itemId,is_bundle:false,currency:'EUR',price:euros(m.price),original_price:euros(m.offer_original),created_at:m.sent_at})):[]
  return {id,other:uniqueOther.length===1?{id:uniqueOther[0][0],login:uniqueOther[0][1].text}:null,
    item:item&&new URL(item.href).pathname.match(/^\/items\/(\d+)/)?{id:new URL(item.href).pathname.match(/^\/items\/(\d+)/)[1],title:item.title||item.alt||item.text.split('\n')[0],price:euros(item.text),photo:item.image}:null,
    messages,allow_reply:snapshot.allow_reply,composer_unknown:snapshot.composer_unknown===true,unread:false,updated_at:messages.at(-1)?.sent_at||null,preview:messages.at(-1)?.body||null,
-   uncertain:messages.some(m=>m.kind==='unknown')||[...counts.values()].some(n=>n>1),history_start:snapshot.history_start===true,offers:[],complete:false}
+   uncertain:messages.some(m=>m.kind==='unknown')||[...counts.values()].some(n=>n>1),history_start:snapshot.history_start===true,pending_offer:messages.some(m=>m.offer_pending),offers,complete:false}
 }
 
 export function browseCandidates(cards,pace,visited=new Map(),now=Date.now()){

@@ -64,3 +64,15 @@ test('an unavailable document waits two hours and does not start a generation or
  assert.equal(db.state.vinted_agent_tasks.length,2)
  assert.ok(db.state.vinted_agent_tasks.every(t=>t.kind==='fetch_label'))
 })
+
+test('finished sales clear stale waiting labels without losing saved documents or queueing downloads',async()=>{
+ for(const label_path of [null,'saved.pdf']){
+  const db=fakeDb(),task={account_id:account}
+  db.state.ylavint_desktop_orders=[{account_id:account,conversation_id:conversation,label_state:'waiting',label_note:'Pas encore accessible',label_path,extension_state:'available'}]
+  await applyDesktopOrders(db,task,{orders:[{conversation_id:conversation,title:'Robe',status:"Commande finalisée - l'acheteur a validé la commande",label_state:'unavailable',detail_read:false}]},settings,now)
+  const saved=db.state.ylavint_desktop_orders[0]
+  assert.equal(saved.label_state,label_path?'saved':'unavailable');assert.equal(saved.label_note,null)
+  assert.equal(saved.extension_state,'unavailable');assert.equal(saved.label_path,label_path)
+  assert.equal(db.state.vinted_agent_tasks?.length||0,0)
+ }
+})

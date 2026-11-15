@@ -50,7 +50,7 @@ export function parseInbox(result){
       item_id:vid(c.item?.id),item_title:text(c.item?.title,200)||null,item_photo:safePhoto(c.item?.photo),item_price:money(c.item?.price),
       transaction_id:vid(c.transaction?.id),transaction_status:text(c.transaction?.status,80)||null,
       unread:c.unread===true,allow_reply:c.allow_reply!==false,updated_at:typeof c.updated_at==='string'?c.updated_at.slice(0,40):c.updated_at!=null?String(c.updated_at).slice(0,40):null,
-      preview:clean(c.preview,500)||null,messages,offers:parseOffers(c.offers)})
+      preview:clean(c.preview,500)||null,messages,pending_offer:c.pending_offer===true,offers:parseOffers(c.offers)})
   }
   return out
 }
@@ -121,17 +121,16 @@ export async function applyInbox(db,task,result,{settings,now=Date.now()}={}){
   }
 
   const offersQueued=await planOffers(db,account,detailed,settings,{now})
+  for(const c of detailed.filter(c=>c.pending_offer||c.offers.length)){
+    if(!settings.messaging.offers.enabled||!c.offers.some(o=>acceptableOffer(o,settings.messaging.offers)&&inHistory(o.created_at,settings.messaging.offers.history_since)))
+      check(await db.from('ylavint_conversations').update({ai_state:'human',needs_human:true,ai_reason:'Offre reçue à vérifier : hors des règles actives, de l’historique choisi ou montants non confirmés.'}).eq('account_id',account).eq('conversation_id',c.id))
+  }
   // Agent IA : une conversation dont le dernier message vient de l'acheteur (récent, jamais traité) attend une réponse.
   let pending=0
   const ai=settings?.features?.ai?await readAi(db):null
   if(ai?.enabled)for(const c of detailed){
     const old=before.get(c.id),last=c.messages[c.messages.length-1]
-    if(c.offers?.length){
-      // Pas de fausse promesse d’acceptation : les offres hors automatisation sont signalées au vendeur.
-      if(!settings.messaging.offers.enabled||!c.offers.some(o=>acceptableOffer(o,settings.messaging.offers)))
-        check(await db.from('ylavint_conversations').update({ai_state:'human',needs_human:true,ai_reason:'Offre en attente : à accepter ou négocier sur Vinted.'}).eq('account_id',account).eq('conversation_id',c.id))
-      continue
-    }
+    if(c.pending_offer||c.offers?.length)continue
     if(!last||last.from_me||last.kind!=='message'||!c.allow_reply)continue
     if(old?.ai_handled_message_id===last.id||old?.needs_human||['queued','drafting'].includes(old?.ai_state))continue
     if(!last.sent_at||!inHistory(last.sent_at,settings.messaging.history_since||nowIso(now-48*3600000)))continue

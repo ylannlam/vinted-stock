@@ -28,7 +28,7 @@ test('PC runtime preserves extension preferences but cannot plan unsupported act
  assert.deepEqual(stored,before)
  for(const k of ['likes','inbox','dressing','publish','orders'])assert.equal(runtime.features[k],true)
  for(const k of ['unmask','pricing'])assert.equal(runtime.features[k],false)
- assert.equal(runtime.messaging.offers.enabled,false);assert.equal(runtime.order_flow.confirm.enabled,false)
+ assert.equal(runtime.messaging.offers.enabled,true);assert.equal(runtime.order_flow.confirm.enabled,false)
 })
 
 test('desktop pacing validates every limit and keeps consultation opt-in',()=>{
@@ -74,6 +74,17 @@ test('weekly planning handles overnight windows, empty days and absence in Paris
  assert.equal(desktopWindow(limits,Date.parse('2026-11-14T22:00:00Z'),pace),false)
  assert.equal(desktopWindow({from_hour:0,to_hour:0},Date.now(),{active_days:[]}),false)
  assert.equal(desktopWindow(limits,Date.parse('2026-11-13T22:00:00Z'),{...pace,absent_until:'2026-11-14T05:00:00Z'}),false)
+})
+
+test('received offer guard rechecks current activation percentage and visible origin before the click',async()=>{
+ const key={desktop_account_id:account.id},body={task_id:account.id,lease:'00000000-0000-4000-8000-000000000002',settings_version:2}
+ const task={id:body.task_id,account_id:account.id,lease:body.lease,kind:'accept_offer',state:'running',lease_until:new Date(Date.now()+60000).toISOString(),payload:{desktop_offer:true,offer:{price:40.3,original_price:44.8,currency:'EUR',is_bundle:false}}}
+ const settings={account_id:account.id,enabled:true,paused:false,version:2,messaging:{executor:'desktop',offers:{enabled:true,single_discount:15}},limits:{from_hour:0,to_hour:0}}
+ const d={from(table){const q={select:()=>q,eq:()=>q,maybeSingle:async()=>({data:table==='vinted_agent_tasks'?task:settings})};return q}}
+ assert.equal((await guardDesktop(d,key,body)).allowed,true)
+ settings.messaging.offers.single_discount=5;await assert.rejects(guardDesktop(d,key,body),/plus autorisée/)
+ settings.messaging.offers.single_discount=15;settings.messaging.offers.enabled=false;await assert.rejects(guardDesktop(d,key,body),/plus autorisée/)
+ settings.messaging.offers.enabled=true;task.payload.desktop_offer=false;await assert.rejects(guardDesktop(d,key,body),/plus autorisée/)
 })
 
 test('routine settings preserve a valid calendar and reject invalid filters and memories',()=>{

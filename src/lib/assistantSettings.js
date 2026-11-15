@@ -3,6 +3,7 @@ import {DESKTOP_DEFAULTS} from './ylavintExecution.js'
 export const ASSISTANT_SECTIONS=[
  {id:'general',title:'Activation & horaires',hint:'Compte, jours et plages d’activité',icon:'monitor',tone:'blue'},
  {id:'likes',title:'Favoris & réductions',hint:'Message après un favori, offre et filtres',icon:'heart',tone:'red'},
+ {id:'offers',title:'Offres reçues',hint:'Pourcentage accepté et message après acceptation',icon:'chart',tone:'green'},
  {id:'messages',title:'Réponses IA',hint:'Réponses aux acheteurs et ton de la boutique',icon:'message',tone:'violet'},
  {id:'followups',title:'Relances',hint:'Délai, texte et réduction de rappel',icon:'clock',tone:'amber'},
  {id:'publication',title:'Publication',hint:'Annonces, saisie et plafonds',icon:'box',tone:'blue'},
@@ -27,6 +28,7 @@ export function sectionStatus(id,settings){
  if(id==='general')return settings?.paused?'En pause':settings?.enabled?'Autorisé':'Arrêté'
  if(id==='followups')return settings?.likes?.messages?.some(m=>m.followup?.enabled)?'Réglées':'Désactivées'
  if(id==='navigation')return pace.browse_enabled?'Consultations actives':'Pauses & clavier'
+ if(id==='offers')return settings?.messaging?.offers?.enabled?'Activées':'Désactivées'
  const feature=({likes:'likes',messages:'ai',publication:'publish',orders:'orders',wallet:'wallet'})[id]
  return f[feature]?'Activé':'Désactivé'
 }

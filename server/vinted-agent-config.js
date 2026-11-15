@@ -85,7 +85,7 @@ export const DEFAULTS={
     pickup:{enabled:false,first_days:1,first:'Bonjour @username, ton colis est arrivé au point relais :)',second_days:3,second:''},
     review:{enabled:false,after_days:1,text:'Parfait, merci !',end_message:''},delete_sold:false},
   messaging:{sync_seconds:20,sync_minutes:1,reply_unlimited:true,history_hours:0,history_since:null,reply_per_day:80,reply_gap_seconds:40,action_gap_min:30,action_gap_max:45,desktop:{...DESKTOP_DEFAULTS},reply_notes:'',reply_examples:[],
-    offers:{enabled:false,history_hours:0,history_since:null,single_discount:20,bundle_discount:20,max_per_buyer:5,period_days:1}},
+    offers:{enabled:false,message:'',history_hours:0,history_since:null,single_discount:20,bundle_discount:20,max_per_buyer:5,period_days:1}},
 }
 const BOUNDS={
   limits:{writes_per_day:[0,200],unmask_item_per_day:[0,100],reprice_item_per_day:[0,100],publish_item_per_day:[0,100],like_message_per_day:[0,1000000],
@@ -182,7 +182,7 @@ export function normalizeOffers(input={}){
   const d=DEFAULTS.messaging.offers
   if(!input||typeof input!=='object'||Array.isArray(input))throw new AppError('Réglages des offres invalides.')
   if(input.enabled!==undefined&&typeof input.enabled!=='boolean')throw new AppError('Activation des offres invalide.')
-  return {enabled:input.enabled===true,history_hours:num(input.history_hours,0,720,'l’historique (heures)',0),history_since:historyDate(input.history_since),
+  return {enabled:input.enabled===true,message:str(input.message,500,'le message après acceptation'),history_hours:num(input.history_hours,0,720,'l’historique (heures)',0),history_since:historyDate(input.history_since),
     single_discount:num(input.single_discount,0,80,'la remise article seul (%)',d.single_discount,{round:false}),
     bundle_discount:num(input.bundle_discount,0,80,'la remise lot (%)',d.bundle_discount,{round:false}),
     max_per_buyer:num(input.max_per_buyer,1,100,'les offres par acheteur',d.max_per_buyer),
