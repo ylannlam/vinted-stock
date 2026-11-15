@@ -37,7 +37,8 @@ export function renderedPage(){
  const bubbles=content?all('[class*="Bubble__bubble"]',content):[]
  const introductions=content?all('[class*="conversation-message"][class*="intro"]',content):[]
  const messages=bubbles.map(b=>{
-   const price=b.querySelector('[data-testid="offer-current-price-label"]'),label=b.querySelector('[aria-label^="Message from "]')
+   // Received requests use a different visible price label from sent offers.
+   const price=b.querySelector('[data-testid="offer-current-price-label"],[data-testid="offer-request-current-price-label"]'),label=b.querySelector('[aria-label^="Message from "]')
    const body=txt(label||b),fromMe=label?/^Message from me(?::|$)/.test(label.getAttribute('aria-label')):b.className.includes('Bubble__inverse')
    let holder=b,when=null
    for(let i=0;i<5&&holder&&holder!==content;i++,holder=holder.parentElement){
