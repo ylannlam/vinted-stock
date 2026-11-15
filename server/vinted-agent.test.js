@@ -117,6 +117,29 @@ test('settings are bounded and keep careful defaults',()=>{
   assert.throws(()=>normalizeSettings({likes:{message:'x'}}),/2 caractères minimum/)
   assert.deepEqual(effectiveSettings(null),normalizeSettings({}))
 })
+
+test('desktop human intervention requeues an unsubmitted task idempotently without unpausing a manual pause',async()=>{
+ for(const kind of ['scan_likes','reply_message','like_message','accept_offer'])for(const paused of [false,true]){
+  const state=base(),db=fakeDb(state),id=crypto.randomUUID(),lease=crypto.randomUUID(),now=Date.now()
+  state.vinted_agent_settings.push({account_id:ACC,enabled:true,paused,messaging:{executor:'desktop'}})
+  state.vinted_agent_tasks.push({id,lease,account_id:ACC,kind,writes:kind!=='scan_likes',state:'running',attempts:1,payload:{}})
+  const report={task_id:id,lease,member_id:'3206068112',ok:false,code:'desktop_interrupted',before_submission:true}
+  assert.deepEqual(await agentResult(db,{desktop_account_id:ACC},report,{now}),{saved:true,requeued:true})
+  assert.deepEqual(await agentResult(db,{desktop_account_id:ACC},report,{now}),{saved:true,requeued:true})
+  assert.equal(state.vinted_agent_settings[0].paused,paused)
+  const task=state.vinted_agent_tasks[0];assert.equal(task.state,'queued');assert.equal(task.attempts,0);assert.equal(Date.parse(task.not_before),now+60000)
+ }
+})
+
+test('an interruption cannot requeue a publication or a write without a before-submission report',async()=>{
+ for(const [kind,before_submission] of [['publish_item',true],['like_message',false]]){
+  const state=base(),db=fakeDb(state),id=crypto.randomUUID(),lease=crypto.randomUUID()
+  state.vinted_agent_settings.push({account_id:ACC,enabled:true,paused:false,messaging:{executor:'desktop'}})
+  state.vinted_agent_tasks.push({id,lease,account_id:ACC,kind,writes:true,state:'running',payload:{}})
+  const result=await agentResult(db,{desktop_account_id:ACC},{task_id:id,lease,member_id:'3206068112',ok:false,code:'desktop_interrupted',before_submission})
+  assert.equal(result.paused,true);assert.equal(state.vinted_agent_tasks[0].state,'failed')
+ }
+})
 test('unmask: same price drop as Baz Hub (1 €, 2 € max, never under 2 €), spaced repairs',()=>{
   const cfg=DEFAULTS.unmask,now=Date.parse('2026-11-07T12:00:00Z')
   assert.deepEqual(unmaskPlan({state:'hidden',price:10,total_drop:0,repairs:0},cfg,now),{new_price:9,drop:1})

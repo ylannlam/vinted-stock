@@ -1,5 +1,6 @@
 import {mkdir,readFile,readdir,open,rename} from 'node:fs/promises'
 import path from 'node:path'
+import {mayRetryInterrupted} from './ylavint-presence.mjs'
 const id=v=>typeof v==='string'&&/^[a-f0-9-]{36}$/i.test(v)
 
 // A crash after clicking Send must never cause another click on the next launch.
@@ -19,9 +20,9 @@ export function taskJournal(dir){
     return rows.filter(r=>r&&r.state!=='acknowledged')
   },async begin(task,member){
     const before=await read(task.id)
-    if(before){if(before.member!==member)throw Error('Compte différent dans le suivi local.');return before}
+    if(before){if(before.member!==member)throw Error('Compte différent dans le suivi local.');if(!(before.state==='acknowledged'&&before.payload?.code==='desktop_interrupted'&&before.lease!==task.lease&&mayRetryInterrupted(task,before)))return before}
     const row={task_id:task.id,lease:task.lease,member,kind:task.kind,state:'started',steps:{},at:new Date().toISOString()}
-    await write(task.id,row,true);return row
+    await write(task.id,{...row,...(before?{resumed_after_interruption:true}:{} )},!before);return row
   },async step(task,name,state,evidence){
     const row=await read(task);if(!row)throw Error('Suivi local indisponible.')
     await write(task,{...row,steps:{...row.steps,[name]:state},...(state==='confirmed'&&evidence?{confirmed:{...row.confirmed,[name]:{...evidence,at:new Date().toISOString()}}}:{})})

@@ -9,23 +9,24 @@ import {preparePublication,PublicationForm} from './ylavint-publication.mjs'
 import {VisibleCommerce} from './ylavint-commerce.mjs'
 import {requestVisibleExtension} from './ylavint-extension.mjs'
 import {acceptVisibleOffer} from './ylavint-offers.mjs'
+import {createPresence,mayRetryInterrupted} from './ylavint-presence.mjs'
 
 export const DESKTOP_KINDS=['scan_wardrobe','scan_likes','sync_inbox','like_message','reply_message','accept_offer','publish_item','scan_wallet','sync_orders','fetch_label','order_extension']
 const writes=task=>['like_message','reply_message','accept_offer','publish_item','order_extension'].includes(task?.kind)
 const SITE='https://vinted-stock.vercel.app'
 const wait=(ms,signal)=>new Promise(resolve=>{if(signal.aborted)return resolve();const done=()=>{clearTimeout(timer);signal.removeEventListener('abort',done);resolve()};const timer=setTimeout(done,ms);signal.addEventListener('abort',done,{once:true})})
 export async function desktopRequest(token,action,body,fetcher=fetch){
-  const r=await fetcher(SITE+'/api/collector',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...body,action,version:'pc-1.8.11'}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(30000)})
+  const r=await fetcher(SITE+'/api/collector',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...body,action,version:'pc-1.8.12'}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(30000)})
   const data=await r.json().catch(()=>null)
   if(!r.ok)throw Object.assign(Error(data?.error||'Le site ne répond pas.'),{status:r.status})
   if(!data||typeof data!=='object')throw Error('Réponse du site illisible.')
   return data
 }
 
-export async function runDesktop(binding,ads,{signal,update,dataDir,connect,request=desktopRequest,Reader=VisibleVinted,now=Date.now,random=Math.random,resumeBreak=()=>false,waitFor=ms=>wait(ms,signal)}={}){
+export async function runDesktop(binding,ads,{signal,update,dataDir,connect,request=desktopRequest,Reader=VisibleVinted,presenceFactory=createPresence,now=Date.now,random=Math.random,resumeBreak=()=>false,waitFor=ms=>wait(ms,signal)}={}){
   let deadline=Infinity
   const check=()=>{if(signal.aborted)throw review('Assistant arrêté. Vérifie l’action en cours avant de la relancer.');if(now()>deadline)throw review('Le délai de l’action est dépassé : vérifie Vinted.')}
-  let browser,worker,reader,task,submitted=false,activeTimer,keepPage=false
+  let browser,worker,reader,presence,task,submitted=false,activeTimer,keepPage=false
   const summary={conversations_read:0,articles_read:0,likes_read:0,messages_sent:0,offers_sent:0,actions_cancelled:0,articles_browsed:0,photos_opened:0,favourites_added:0,feed_scrolls:0,tabs_reopened:0,wallets_read:0,orders_read:0,labels_saved:0}
   const publishSummary=()=>update({summary:{...summary,articles_browsed:reader?.browseCount||0,photos_opened:reader?.photoCount||0,favourites_added:reader?.favouriteCount||0,feed_scrolls:reader?.feedScrollCount||0}})
   const journal=taskJournal(path.join(dataDir,'ylavint',binding.account_id))
@@ -49,6 +50,7 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
     check();const connector=connect||((address,options)=>import('playwright-core').then(({chromium})=>chromium.connectOverCDP(address,options)))
     browser=await connector(opened.address,{timeout:20000,noDefaults:true})
     const context=browser.contexts()[0];if(!context)throw review('Ce profil AdsPower est inaccessible.')
+    presence=await presenceFactory(context,{now})
     const memory=await browseMemory(path.join(dataDir,'ylavint',binding.account_id))
     const routine=await routineMemory(path.join(dataDir,'ylavint',binding.account_id),{now,random})
     reader=new Reader({binding,check,sleep,update,control,memory,routine,now,random})
@@ -56,7 +58,7 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       check()
       if(worker?.isClosed?.())throw review('L’onglet de l’assistant a été fermé. Reprends-le depuis le site pour continuer.')
       if(worker)return
-      worker=await context.newPage();ownPages.push(worker);reader.page=worker;reader.verified=false
+      const page=await context.newPage();ownPages.push(page);worker=presence?await presence.page(page):page;reader.page=worker;reader.verified=false
       await reader.open('/');await reader.identity(true)
       if(ownPages.length>1){summary.tabs_reopened++;publishSummary()}
     }
@@ -94,7 +96,7 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       const payload=pending.payload||{task_id:task.id,lease:task.lease,ok:false,code:'desktop_review',error:'Assistant interrompu pendant un envoi : vérifie la conversation sur Vinted.'}
       if(!pending.payload)await journal.complete(task.id,payload)
       const saved=await acknowledge(payload)
-      if(saved.paused||!payload.ok)throw review('Une action interrompue a été signalée au site. Vérifie Vinted puis reprends ce compte dans les réglages.')
+      if(saved.paused||!payload.ok&&!saved.requeued)throw review('Une action interrompue a été signalée au site. Vérifie Vinted puis reprends ce compte dans les réglages.')
     }
     task=null;submitted=false
     let initialized=false,lastContextRefresh=0
@@ -113,8 +115,10 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
     }
     while(!signal.aborted){
       task=null;submitted=false;deadline=Infinity
+      try{
       const status=await control()
       if(!status.allowed){update({state:'stopped',message:'Compte désactivé ou en pause sur le site.'});return}
+      await presence?.guard()
       reader.pace={...PACE,...status.pace}
       const responsePriority=reader.pace.response_priority!==false
       if(responsePriority){
@@ -161,7 +165,8 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       check();activeTimer=setTimeout(stopPages,Math.max(1,deadline-now()))
       if(!DESKTOP_KINDS.includes(task?.kind))throw review('Cette fonction attend encore son adaptation à l’assistant PC.')
       const before=writes(task)?await journal.read(task.id):null
-      if(before){
+      const safelyYielded=before?.state==='acknowledged'&&before.payload?.code==='desktop_interrupted'&&before.lease!==task.lease&&mayRetryInterrupted(task,before)
+      if(before&&!safelyYielded){
         if(before.member!==binding.member_id)throw review('Compte différent dans le suivi local.')
         if(before.payload){await acknowledge({...before.payload,lease:task.lease});clearTimeout(activeTimer);continue}
         throw review('Cette action a déjà commencé sur ce PC. Vérifie Vinted avant de la reprendre.')
@@ -239,6 +244,24 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       const pauseMs=Math.max(10,Number(reader.pace.action_pause_seconds)||20)*1000
       update({state:'waiting',message:`${outcomeMessage} · pause de ${pauseMs/1000} s`,resume_at:new Date(now()+pauseMs).toISOString()})
       await sleep(pauseMs);check();update({resume_at:null})
+      }catch(e){
+        const row=task&&writes(task)?await journal.read(task.id):null
+        // Only a positively detected takeover before any submission can resume.
+        // A sent/uncertain message and an edited publication keep the review path.
+        if(signal.aborted||!presence||e.code!=='desktop_interrupted')throw e
+        if(!mayRetryInterrupted(task,row))throw review(task?.kind==='publish_item'?'Tu as repris la main pendant une publication. Vérifie le formulaire ou le dressing avant de relancer pour éviter une annonce en double.':'Tu as repris la main pendant un envoi. Vérifie la conversation avant de relancer pour éviter un doublon.')
+        clearTimeout(activeTimer);deadline=Infinity;keepPage=true
+        if(task&&!submitted){
+          const payload={task_id:task.id,lease:task.lease,ok:false,code:'desktop_interrupted',before_submission:true,error:'Intervention manuelle · action conservée pour la reprise.'}
+          if(writes(task))await journal.complete(task.id,payload)
+          const saved=await acknowledge(payload)
+          if(!saved.requeued)throw review('La mise en attente de cette action n’a pas été confirmée. Vérifie le compte avant de reprendre.')
+        }
+        task=null;submitted=false;startupInbox=null;lastContextRefresh=0;reader.verified=false
+        if(!await presence.wait({signal,sleep,control,update})){
+          update({state:'stopped',message:'Assistant arrêté ou compte mis en pause.'});return
+        }
+      }
     }
   }catch(e){
     // Preserve the failing page for inspection instead of making the interruption
@@ -256,6 +279,7 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
     if(!signal.aborted)throw e
   }finally{
     clearTimeout(activeTimer);signal.removeEventListener('abort',stopPages)
+    await presence?.dispose()
     if(!keepPage)for(const page of ownPages)await page.close().catch(()=>{})
     if(browser)await browser.close().catch(()=>{}) // CDP disconnect; the AdsPower profile stays open.
   }

@@ -3,6 +3,7 @@ import {createHash} from 'node:crypto'
 import {review,conversationUrl} from './ylavint-ui.mjs'
 import {PUBLICATION_PACE} from './ylavint-typing.mjs'
 import {randomInt,varied} from './ylavint-routine.mjs'
+import {interrupted} from './ylavint-presence.mjs'
 import {renderedListing,visibleDraft,favouriteMatches} from './ylavint-browsing.mjs'
 export const BASE='https://www.vinted.fr'
 export const PACE={response_priority:true,typing_delay_ms:70,page_wait_seconds:3,session_minutes:25,pause_minutes:5,browse_enabled:false,browse_every_minutes:30,browse_items:3,browse_item_seconds:8,browse_scrolls:2,active_days:[1,2,3,4,5,6,7],absent_until:null,browse_keywords:'',browse_price_min:0,browse_price_max:0,browse_photos:false,browse_memory_hours:24,reply_max_age_hours:24,...PUBLICATION_PACE,wallet_hours:[9,18],browse_variety:true,browse_between_actions:true,browse_after_actions_min:3,browse_after_actions_max:7,browse_like_enabled:false,browse_like_keywords:'robe',browse_like_price_min:20,browse_like_price_max:50,browse_like_per_day:5,browse_like_percent:25,pause_close_percent:0}
@@ -298,7 +299,7 @@ export class VisibleVinted{
  }
  async assertNoDraft(){
    this.check()
-   if(await this.page.evaluate(visibleDraft))throw Object.assign(review('Un brouillon est présent dans l’onglet de l’assistant. Termine-le puis reprends ; l’onglet reste ouvert.'),{keep_page:true})
+   if(await this.page.evaluate(visibleDraft))throw interrupted()
  }
  async browseAllowed(){
    this.check();const state=await this.control();this.check()

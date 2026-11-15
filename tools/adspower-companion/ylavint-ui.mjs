@@ -1,4 +1,5 @@
 // All writes use the visible Vinted form. No API-send fallback after a UI failure.
+import {interrupted} from './ylavint-presence.mjs'
 const ID=/^(?:[1-9]\d{0,17}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i
 export const review=message=>Object.assign(Error(message),{code:'desktop_review',status:409})
 export function conversationUrl(id){if(!ID.test(String(id)))throw review('Conversation inconnue.');return 'https://www.vinted.fr/inbox/'+id}
@@ -23,7 +24,7 @@ export class VintedMessenger{
     if(!this.navigate)await this.sleep(this.pace.page_wait_seconds*1000)
   }
   async type(locator,value,inspect=async()=>null){
-    if((await locator.inputValue()).trim())throw review('Un brouillon est déjà saisi : traite-le avant de relancer.')
+    if((await locator.inputValue()).trim())throw interrupted()
     let typed=''
     // Fixed readable cadence, punctuation pauses; never insert typos or conceal automation.
     for(const part of value.match(/[^.!?\n]+[.!?\n]*|[.!?\n]+/g)||[]){
@@ -33,8 +34,8 @@ export class VintedMessenger{
         if(i){await locator.press('Shift+Enter');typed+='\n'}
         for(let start=0;start<lines[i].length;start+=12){
           this.check()
-          if(await locator.inputValue()!==typed)throw Object.assign(review('Le brouillon a été modifié : tu gardes la main.'),{keep_page:true})
-          if(typed&&locator.evaluate&&!await locator.evaluate(e=>document.activeElement===e&&document.hasFocus()))throw Object.assign(review('La fenêtre ou le champ a perdu le focus. Reprends la main puis relance si nécessaire.'),{keep_page:true})
+          if(await locator.inputValue()!==typed)throw interrupted()
+          if(typed&&locator.evaluate&&!await locator.evaluate(e=>document.activeElement===e&&document.hasFocus()))throw Object.assign(interrupted(),{message:'Le champ a perdu le focus. Ton brouillon reste protégé pendant ton intervention.'})
           const chunk=lines[i].slice(start,start+12)
           await locator.pressSequentially(chunk,{delay:this.pace.typing_delay_ms,timeout:15000});typed+=chunk
           const current=await inspect()
@@ -43,7 +44,7 @@ export class VintedMessenger{
       }
       if(/[.!?\n]$/.test(part))await this.sleep(250)
     }
-    if(await locator.inputValue()!==value)throw Object.assign(review('Le texte saisi a changé. Vérifie le brouillon avant l’envoi.'),{keep_page:true})
+    if(await locator.inputValue()!==value)throw interrupted()
     return null
   }
   async send({task_id,conversation_id,body}){

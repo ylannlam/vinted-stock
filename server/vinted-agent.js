@@ -367,7 +367,8 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
   const task=check(await db.from('vinted_agent_tasks').select('*').eq('id',body.task_id).eq('lease',body.lease).eq('state','running').maybeSingle())
   if(!task){
     if(desktopDriver(key)==='desktop'){
-      const previous=check(await db.from('vinted_agent_tasks').select('id,account_id,state').eq('id',body.task_id).maybeSingle())
+      const previous=check(await db.from('vinted_agent_tasks').select('id,account_id,state,result').eq('id',body.task_id).maybeSingle())
+      if(previous?.account_id===key.desktop_account_id&&previous.state==='queued'&&previous.result?.interrupted_lease===body.lease&&body.code==='desktop_interrupted')return {saved:true,requeued:true}
       if(previous?.account_id===key.desktop_account_id&&['done','failed','cancelled'].includes(previous.state))return {saved:true,paused:previous.state!=='done'}
     }
     const previous=check(await db.from('vinted_agent_tasks').select('*').eq('id',body.task_id).eq('kind','publish_item').maybeSingle())
@@ -382,6 +383,12 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
   if(body.ok!==true){
     const code=typeof body.code==='string'?body.code:'failed',detail=text(body.error,300)
     if(desktopDriver(key)==='desktop'){
+      if(code==='desktop_interrupted'&&body.before_submission===true&&task.kind!=='publish_item'){
+        await finish(db,task,'queued',{interrupted_lease:task.lease},'Intervention manuelle · reprise automatique après inactivité.')
+        await requeue(db,task,now,60)
+        await log('info','desktop_interrupted',`${label} en attente pendant ton intervention.`,{kind:task.kind})
+        return {saved:true,requeued:true}
+      }
       await finish(db,task,'failed',null,detail||'Action à vérifier sur Vinted.')
       await pauseAccount(db,task.account_id,detail||'Assistant PC : vérifie la dernière action sur Vinted avant de reprendre.',{event:'desktop_review',details:{kind:task.kind,detail}})
       if(task.kind==='reply_message')await (await import('./ylavint.js')).replyFailed(db,task,detail||'Envoi à vérifier sur Vinted.')
