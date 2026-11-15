@@ -254,6 +254,18 @@ export function aiInstructions(config,login){
 }
 const plainText=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase()
 export const humanKeyword=(config,message)=>{const t=plainText(message);return String(config.human_keywords||'').split(',').map(k=>plainText(k).trim()).filter(k=>k.length>=3).find(k=>t.includes(k))||null}
+// Do not rely on the model's needs_human flag for a shipping promise. Only
+// seller-provided instructions can ground dates; buyer messages cannot.
+export function ungroundedShipping(config,context,reply){
+ const normalize=s=>plainText(s).replace(/[’]/g,"'")
+ const shipping=/\b(?:envo\w*|exped\w*|depos\w*|colis)\b/
+ const dates=s=>normalize(s).match(/apres[- ]demain|aujourd'hui|demain|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|(?:cette|la semaine|semaine) prochaine|(?:\d+(?:\s*(?:a|-)\s*\d+)?|un|une|deux|trois|quatre|cinq)\s*(?:h(?:eures?)?|j(?:ours?)?|semaines?)(?:\s+ouvres?)?\b/g)||[]
+ const claimed=dates(reply)
+ if(!claimed.length||!shipping.test(normalize(reply)))return false
+ const source=[context.informations_du_vendeur,config.instructions].filter(Boolean).join('\n')
+ const stated=source.split(/[.!?\n]/).filter(s=>shipping.test(normalize(s))&&!/\b(?:jamais|inconnu|aucun|interdit)\b/.test(normalize(s))).flatMap(dates)
+ return claimed.some(date=>!stated.includes(date))
+}
 export async function generateReply(config,context,{fetcher=fetch,token=listingAiToken(null)}={}){
   if(!token)throw new AppError('La clé Gemini du site est absente : l’agent IA ne peut pas rédiger.',503)
   const schema={type:'object',additionalProperties:false,properties:{reply:{type:'string'},needs_human:{type:'boolean'},reason:{type:'string'}},required:['reply','needs_human','reason']}
@@ -268,6 +280,7 @@ export async function generateReply(config,context,{fetcher=fetch,token=listingA
   let reply=clean(result?.reply,1000),needs=result?.needs_human===true,reason=text(result?.reason,200)
   // Filet de sécurité : jamais de lien, d'e-mail ni de numéro de téléphone dans une réponse automatique.
   if(/https?:\/\/|www\.|@[a-z0-9-]+\.[a-z]|(?:\+33|0)[1-9](?:[ .-]?\d{2}){4}/i.test(reply)){needs=true;reason='La réponse contenait un lien ou un contact : à vérifier.'}
+  if(ungroundedShipping(config,context,reply)){needs=true;reason='Date ou délai d’expédition non renseigné par le vendeur : proposition à corriger avant envoi.'}
   if(reply.length<2){needs=true;reason=reason||'Pas de réponse proposée.'}
   return {reply,needs_human:needs,reason,usage:body?.usage?{model:config.model,input_tokens:Number(body.usage.prompt_tokens)||0,output_tokens:Number(body.usage.completion_tokens)||0}:null}
 }

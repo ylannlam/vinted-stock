@@ -230,6 +230,17 @@ test('AI replies never carry links or phone numbers; the prompt keeps everything
   assert.equal(likeText('Merci pour ton like sur {article} à {prix} {inconnu}!',{title:'Robe',price:20}),'Merci pour ton like sur Robe à 20 € !')
 })
 
+test('AI cannot auto-send a shipping date invented without seller instructions',async()=>{
+ const answer=async(reply,notes='',instructions='')=>generateReply(normalizeAi({instructions}),{informations_du_vendeur:notes,conversation:[{auteur:'acheteur',texte:'Pouvez-vous envoyer demain ?'}]},{token:'test',fetcher:async()=>new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({reply,needs_human:false,reason:'Envoi rapide supposé.'})}}]}),{status:200})})
+ for(const reply of ["Bonjour, je peux l'envoyer dès demain si vous commandez aujourd'hui.",'Je peux expédier sous 2 jours ouvrés.','Le colis sera déposé lundi.']){
+  const result=await answer(reply);assert.equal(result.needs_human,true);assert.match(result.reason,/non renseigné/)
+ }
+ assert.equal((await answer('Je peux envoyer mardi.','Envoi réel le mardi.')).needs_human,false)
+ assert.equal((await answer('Je peux envoyer demain.','Envoi réel après-demain.')).needs_human,true)
+ assert.equal((await answer('Je peux envoyer demain.','','Ne promets jamais un envoi demain.')).needs_human,true)
+ assert.equal((await answer("Oui, c'est toujours disponible !")).needs_human,false)
+})
+
 test('AI waits for a quiet conversation and answers successive buyer messages together',async()=>{
   const now=Date.now(),db=fakeDb(base());enableAi(db,{mode:'auto'})
   const first={id:'burst1',from_me:false,body:'Bonjour, quelle taille ?',sent_at:new Date(now-5000).toISOString()}
