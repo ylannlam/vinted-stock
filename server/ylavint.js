@@ -44,7 +44,10 @@ export function parseInbox(result){
         if(!body&&kind==='message')continue
         messages.push({id:mid,from_me:m.from_me===true,body:body||null,kind,sent_at:iso(m.sent_at)})
       }
-      messages.sort((a,b)=>(Date.parse(a.sent_at||0)||0)-(Date.parse(b.sent_at||0)||0))
+      // Visible bubbles already follow the thread order. Vinted groups dates,
+      // so a newly sent bubble can have no individual timestamp; sorting it
+      // before older buyer messages would falsely mark the thread unanswered.
+      if(!messages.every(m=>/^ui:[a-f0-9]{48}$/.test(m.id)))messages.sort((a,b)=>(Date.parse(a.sent_at||0)||0)-(Date.parse(b.sent_at||0)||0))
     }
     out.push({id,other_id:vid(c.other?.id),other_login:text(c.other?.login,80)||null,other_photo:safePhoto(c.other?.photo),
       item_id:vid(c.item?.id),item_title:text(c.item?.title,200)||null,item_photo:safePhoto(c.item?.photo),item_price:money(c.item?.price),

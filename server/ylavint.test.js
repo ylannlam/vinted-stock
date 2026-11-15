@@ -230,6 +230,13 @@ test('AI replies never carry links or phone numbers; the prompt keeps everything
   assert.equal(likeText('Merci pour ton like sur {article} à {prix} {inconnu}!',{title:'Robe',price:20}),'Merci pour ton like sur Robe à 20 € !')
 })
 
+test('visible thread order survives grouped dates after an actual reply',async()=>{
+ const db=fakeDb(base()),incoming={id:'ui:'+'a'.repeat(48),from_me:false,body:'Une question',kind:'message',sent_at:recent()},outgoing={id:'ui:'+'b'.repeat(48),from_me:true,body:'Une réponse',kind:'message',sent_at:null}
+ await applyInbox(db,{account_id:ACC},{conversations:[convo({messages:[incoming,outgoing]})]},{settings:settings(db)})
+ const row=db.state.ylavint_conversations[0]
+ assert.equal(row.last_from_me,true);assert.equal(row.last_message,'Une réponse');assert.notEqual(row.ai_state,'pending')
+})
+
 test('AI cannot auto-send a shipping date invented without seller instructions',async()=>{
  const answer=async(reply,notes='',instructions='')=>generateReply(normalizeAi({instructions}),{informations_du_vendeur:notes,conversation:[{auteur:'acheteur',texte:'Pouvez-vous envoyer demain ?'}]},{token:'test',fetcher:async()=>new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({reply,needs_human:false,reason:'Envoi rapide supposé.'})}}]}),{status:200})})
  for(const reply of ["Bonjour, je peux l'envoyer dès demain si vous commandez aujourd'hui.",'Je peux expédier sous 2 jours ouvrés.','Le colis sera déposé lundi.']){
