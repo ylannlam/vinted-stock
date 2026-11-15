@@ -1,4 +1,5 @@
 import {DESKTOP_DEFAULTS} from './ylavintExecution.js'
+import {priorityResponses} from './responsePriority.js'
 
 export const ASSISTANT_SECTIONS=[
  {id:'general',title:'Activation & horaires',hint:'Compte, jours et plages d’activité',icon:'monitor',tone:'blue'},
@@ -27,7 +28,7 @@ export function sectionStatus(id,settings){
  const f=settings?.features||{},pace=settings?.messaging?.desktop||{}
  if(id==='general')return settings?.paused?'En pause':settings?.enabled?'Autorisé':'Arrêté'
  if(id==='followups')return settings?.likes?.messages?.some(m=>m.followup?.enabled)?'Réglées':'Désactivées'
- if(id==='navigation')return pace.browse_enabled?'Consultations actives':'Pauses & clavier'
+ if(id==='navigation')return priorityResponses(settings)?'Priorité aux acheteurs':pace.browse_enabled?'Consultations actives':'Pauses & clavier'
  if(id==='offers')return settings?.messaging?.offers?.enabled?'Activées':'Désactivées'
  const feature=({likes:'likes',messages:'ai',publication:'publish',orders:'orders',wallet:'wallet'})[id]
  return f[feature]?'Activé':'Désactivé'
