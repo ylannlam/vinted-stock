@@ -187,10 +187,20 @@ export class VisibleVinted{
    const s=await this.open('/inbox');await this.identity()
    const found=[...(s.inboxRows||[]).map(r=>cid(r.id)),...s.links.map(l=>cid(new URL(l.href).pathname.match(/^\/inbox\/([^/?]+)/)?.[1]))].filter(Boolean)
    const pool=[...new Set(found)],offset=(this.inboxOffset||0)%Math.max(1,pool.length)
-   const ids=[...new Set(payload.conversation_ids?.length?payload.conversation_ids:[...pool.slice(offset),...pool.slice(0,offset)])].slice(0,4),conversations=[]
-   if(!payload.conversation_ids?.length)this.inboxOffset=(offset+ids.length)%Math.max(1,pool.length)
+   // A rotating batch alone leaves new replies waiting behind old threads.
+   // Recheck recent threads every scan, prioritize changed visible previews,
+   // and reserve the remaining places for the older conversations.
+   this.inboxPreviews??=new Map()
+   const preview=r=>String(r.text||'').replace(/(?:il y a|dans)\s+(?:\d+|une?|quelques)\s+(?:secondes?|minutes?|heures?|jours?|semaines?|mois|ans?)/gi,'').replace(/\s+/g,' ').trim()
+   const previews=new Map((s.inboxRows||[]).map(r=>[r.id,preview(r)]))
+   const changed=pool.filter(id=>this.inboxPreviews.has(id)&&previews.has(id)&&this.inboxPreviews.get(id)!==previews.get(id))
+   const priority=[...new Set([...changed,...pool.slice(0,2)])].slice(0,3)
+   const rotated=[...pool.slice(offset),...pool.slice(0,offset)].filter(id=>!priority.includes(id))
+   const explicit=payload.conversation_ids?.length>0
+   const ids=[...new Set(explicit?payload.conversation_ids:[...priority,...rotated])].slice(0,4),conversations=[]
+   if(!explicit){const lastRotated=ids.filter(id=>!priority.includes(id)).at(-1);if(lastRotated)this.inboxOffset=(pool.indexOf(lastRotated)+1)%Math.max(1,pool.length)}
    if(!ids.length&&!/aucun message|pas encore de (message|conversation)/i.test(s.text))throw review('La liste des conversations visibles n’est pas reconnue.')
-   for(const id of ids){await this.open(conversationUrl(id));const c=await this.thread();if(c.uncertain)c.allow_reply=false;conversations.push(c)}
+   for(const id of ids){await this.open(conversationUrl(id));const c=await this.thread();if(c.uncertain)c.allow_reply=false;conversations.push(c);if(previews.has(id))this.inboxPreviews.set(id,previews.get(id))}
    return {conversations,complete:false,more_history:false}
  }
  async openLike(payload){

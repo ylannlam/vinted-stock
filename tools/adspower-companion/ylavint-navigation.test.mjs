@@ -55,6 +55,28 @@ test('a conversation button switches the loaded inbox without direct navigation'
  f.page.locator=selector=>{assert.match(selector,/inbox-list-item-66/);return {count:async()=>1,click:async()=>{clicks++;f.url=BASE+'/inbox/66'}}}
  await f.reader.open('/inbox/66');assert.equal(clicks,1);assert.equal(f.visits.length,1)
 })
+
+test('new replies are prioritized without waiting for a full inbox rotation',async()=>{
+ const reader=new VisibleVinted({}),opened=[]
+ let rows=Array.from({length:10},(_,i)=>({id:String(i+1),text:`buyer ${i+1}\nil y a 5 minutes\nAncien message ${i+1}`}))
+ reader.identity=async()=>{}
+ reader.open=async path=>{if(path==='/inbox')return {inboxRows:rows,links:[],text:'Messages'};opened.push(path.split('/').at(-1))}
+ reader.thread=async()=>({id:opened.at(-1)})
+ const scan=async()=>(await reader.inbox()).conversations.map(c=>c.id)
+ assert.deepEqual(await scan(),['1','2','3','4'])
+ // Time labels alone do not steal priority from older threads.
+ rows=rows.map(r=>({...r,text:r.text.replace('5 minutes','6 minutes')}))
+ assert.deepEqual(await scan(),['1','2','5','6'])
+ rows[3]={...rows[3],text:'buyer 4\nil y a 1 minute\nNouvelle question'}
+ assert.deepEqual(await scan(),['4','1','2','7'])
+ assert.deepEqual(await scan(),['1','2','8','9'])
+ // Newly received threads at the head are checked on the next scan too.
+ rows.unshift({id:'11',text:'nouvel acheteur\nil y a 1 minute\nBonjour'})
+ assert.deepEqual(await scan(),['11','1','9','10'])
+ const before=reader.inboxOffset
+ assert.deepEqual((await reader.inbox({conversation_ids:['6']})).conversations.map(c=>c.id),['6'])
+ assert.equal(reader.inboxOffset,before)
+})
 test('an unreadable page stops after bounded waiting instead of a refresh loop',async()=>{
  const f=fixture();f.loading=100
  await assert.rejects(f.reader.open('/inbox/55'),/stabilisée/)
