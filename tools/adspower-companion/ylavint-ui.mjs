@@ -6,7 +6,7 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms))
 async function unique(locator,label){await locator.first().waitFor({state:'visible',timeout:15000});if(await locator.count()!==1)throw review(`${label} ambigu : vérifie la conversation.`);return locator}
 
 export class VintedMessenger{
-  constructor({page,identity,member,journal,task,check,update,recheck,authorize,thread,confirm,pace={typing_delay_ms:70,page_wait_seconds:3},sleep=pause}){Object.assign(this,{page,identity,member,journal,task,check,update,recheck,authorize,thread,confirm,pace,sleep});this.opened=null}
+  constructor({page,identity,member,journal,task,check,update,recheck,authorize,thread,confirm,navigate,pace={typing_delay_ms:70,page_wait_seconds:3},sleep=pause}){Object.assign(this,{page,identity,member,journal,task,check,update,recheck,authorize,thread,confirm,navigate,pace,sleep});this.opened=null}
   async guard(){
     this.check()
     const who=await this.identity(this.page)
@@ -15,11 +15,12 @@ export class VintedMessenger{
   }
   async open(conversation){
     const url=conversationUrl(conversation)
-    if(new URL(this.page.url()).pathname!==new URL(url).pathname)await this.page.goto(url,{waitUntil:'domcontentloaded',timeout:30000})
+    if(this.navigate)await this.navigate(url)
+    else if(new URL(this.page.url()).pathname!==new URL(url).pathname){await this.page.goto(url,{waitUntil:'domcontentloaded',timeout:30000});await this.sleep(this.pace.page_wait_seconds*1000)}
     await this.guard()
     if(new URL(this.page.url()).pathname!==new URL(url).pathname)throw review('La conversation attendue ne s’est pas ouverte.')
     await this.page.bringToFront()
-    await this.sleep(this.pace.page_wait_seconds*1000)
+    if(!this.navigate)await this.sleep(this.pace.page_wait_seconds*1000)
   }
   async type(locator,value,inspect=async()=>null){
     if((await locator.inputValue()).trim())throw review('Un brouillon est déjà saisi : traite-le avant de relancer.')

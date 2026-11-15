@@ -22,7 +22,7 @@ export default function YlaVintDesktop({accounts,onConfigure,onActions,request=a
  async function takeover(id){setBusy(true);try{const r=await request('/ylavint/takeover',{account_id:id});setState(s=>({...s,assistants:r.assistants}))}catch(e){setError(e.message)}finally{setBusy(false)}}
  const currentVersion=state?.extension_ui===true
  const [major,minor,patch]=String(state?.version||'0.0.0').split('.').map(Number)
- const setupUpdate=!!state&&(major<1||major===1&&(minor<8||minor===8&&patch<2))
+ const setupUpdate=!!state&&(major<1||major===1&&(minor<8||minor===8&&patch<3))
  const connected=!!state&&!connectionError,configured=connected&&state?.configured&&currentVersion
  const running=connected?(state?.assistants||[]).filter(active).length:0
  const filteredAccounts=accounts.filter(a=>a.login.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))
@@ -38,11 +38,11 @@ export default function YlaVintDesktop({accounts,onConfigure,onActions,request=a
   </div>
   <Card className="p-5 sm:p-6"><details open={!configured||setupUpdate||undefined}><summary className="cursor-pointer text-sm font-semibold text-white">Connexion du PC · installation et aide</summary><div className="mt-5">
    <div className="grid gap-6 md:grid-cols-3">
-    <div><span className="ylv-step-number mb-3 grid h-9 w-9 place-items-center rounded-xl text-sm font-semibold">01</span><h3 className="text-sm font-semibold text-white">Relie ton ordinateur</h3><p className="mt-2 text-sm leading-relaxed text-zinc-400">Télécharge le connecteur et ouvre-le sur le PC où tourne AdsPower.</p><a className={buttonClass+' mt-4'} href="/downloads/adspower-companion.zip" download>Télécharger la version 1.8.2</a></div>
+    <div><span className="ylv-step-number mb-3 grid h-9 w-9 place-items-center rounded-xl text-sm font-semibold">01</span><h3 className="text-sm font-semibold text-white">Relie ton ordinateur</h3><p className="mt-2 text-sm leading-relaxed text-zinc-400">Télécharge le connecteur et ouvre-le sur le PC où tourne AdsPower.</p><a className={buttonClass+' mt-4'} href="/downloads/adspower-companion.zip" download>Télécharger la version 1.8.3</a></div>
     <div><span className="ylv-step-number mb-3 grid h-9 w-9 place-items-center rounded-xl text-sm font-semibold">02</span><h3 className="text-sm font-semibold text-white">Connecte AdsPower</h3><p className="mt-2 text-sm leading-relaxed text-zinc-400">Si tu as déjà connecté AdsPower sur ce PC, la même connexion est utilisée. Sinon, configure-la une seule fois.</p><a className={buttonClass+' mt-4'} href="http://127.0.0.1:17442/setup" target="_blank" rel="noreferrer">Configurer AdsPower<Icon name="arrow"/></a></div>
     <div><span className="ylv-step-number mb-3 grid h-9 w-9 place-items-center rounded-xl text-sm font-semibold">03</span><h3 className="text-sm font-semibold text-white">Choisis et vérifie ton compte</h3><p className="mt-2 text-sm leading-relaxed text-zinc-400">Choisis ton compte, associe son profil ci-dessous et lance la vérification.</p><p className="mt-4 text-xs text-indigo-300">L’identité Vinted est vérifiée avant toute action.</p></div>
    </div>
-   {setupUpdate&&<p role="status" className="mt-5 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-200">Le connecteur 1.8.2 garde Vinted ouvert en cas d’erreur et vérifie aussi l’enregistrement des conversations lors de la répétition. Mets à jour le connecteur puis relance run.bat. Ta connexion AdsPower est conservée.</p>}
+   {setupUpdate&&<p role="status" className="mt-5 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-200">Le connecteur 1.8.3 espace les changements de page, réutilise la messagerie ouverte et vérifie la fermeture du formulaire d’offre. Mets à jour le connecteur puis relance run.bat. Ta connexion AdsPower est conservée.</p>}
    {state&&!currentVersion&&<p role="status" className="mt-5 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-200">Mets à jour le connecteur avec cette archive, puis relance run.bat pour utiliser les consultations entre les tâches, les favoris et la fermeture pendant les pauses.</p>}
   </div></details></Card>
   {(connectionError||error)&&<p role="alert" className="rounded-lg bg-rose-950 p-3 text-sm text-rose-200">{connectionError||error}</p>}

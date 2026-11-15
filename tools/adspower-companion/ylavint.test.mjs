@@ -141,6 +141,13 @@ test('unknown bubbles disable automatic context validation instead of guessing',
  const c=readThread(domSnapshot(pageHtml.replace('aria-label="Message from acheteuse: Bonjour"','')))
  assert.equal(c.uncertain,true)
 })
+test('visible inbox button rows are read in order, including non-selected conversations',async()=>{
+ const s=domSnapshot(pageHtml+'<div data-testid="conversation-list"><div role="button" data-testid="inbox-list-item-55">Buyer A</div><div role="button" data-testid="inbox-list-item-66">Buyer B</div><div role="button" data-testid="inbox-list-item-77" hidden>Hidden</div></div>')
+ assert.deepEqual(s.inboxRows.map(r=>r.id),['55','66'])
+ const opened=[],reader=new VisibleVinted({});reader.identity=async()=>{}
+ reader.open=async url=>{opened.push(url);return s};reader.thread=async()=>({id:opened.at(-1).split('/').at(-1)})
+ assert.deepEqual((await reader.inbox()).conversations.map(c=>c.id),['55','66'])
+})
 test('visible identity requires the own-profile menu, not a profile visited on screen',async()=>{
  let clicked=0
  const reader=new VisibleVinted({page:{locator:()=>({click:async()=>{clicked++}})},binding,check:()=>{},sleep:async()=>{}})
@@ -276,6 +283,22 @@ test('manual takeover blocks automatic restart and keeps a distinct session stat
  assert.throws(()=>manager.start({...binding,account_id:task.lease,profile_id:'another'}),/déjà/)
  manager.stop(binding.account_id,true);await new Promise(setImmediate)
  assert.equal(manager.active,false);assert.equal(manager.snapshot()[0].state,'manual');await manager.close()
+})
+
+test('the first scheduled inbox scan reuses startup context and pauses before the next task',async t=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'ylavint-cadence-'))
+ t.after(async()=>{if(path.dirname(dir)===tmpdir()&&path.basename(dir).startsWith('ylavint-cadence-'))await rm(dir,{recursive:true,force:true})})
+ let clock=1000,reads=0,polls=0;const waits=[],results=[]
+ class Reader extends FakeReader{async inbox(){reads++;return {conversations:[]}}}
+ await runDesktop(binding,{start:async()=>({address:'test'})},{signal:new AbortController().signal,dataDir:dir,Reader,now:()=>clock,waitFor:async ms=>{waits.push(ms);clock+=ms},update:()=>{},connect:async()=>({contexts:()=>[{newPage:async()=>({close:async()=>{}})}],close:async()=>{}}),request:async(_token,action,body)=>{
+  if(action==='agent_status')return {allowed:true,in_window:true,pace:PACE}
+  if(action==='agent_preview')return {actions:[]}
+  if(action==='agent_context')return {saved:true}
+  if(action==='agent_poll')return ++polls===1?{state:'task',task:{...task,kind:'sync_inbox',payload:{},lease_until:new Date(clock+180000).toISOString()}}:{state:'paused'}
+  if(action==='agent_result'){results.push(body);return {saved:true}}
+  assert.fail(action)
+ }})
+ assert.equal(reads,1);assert.equal(results.length,1);assert.equal(results[0].ok,true);assert.deepEqual(waits,[20000])
 })
 
 test('a failed read leaves the visible page open, disconnects and never claims a task',async()=>{

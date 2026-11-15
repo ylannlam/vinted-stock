@@ -59,12 +59,14 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       await reader.open('/');await reader.identity(true)
       if(ownPages.length>1){summary.tabs_reopened++;publishSummary()}
     }
+    let startupInbox=null,startupInboxAt=0
     const refreshInbox=async()=>{
       update({state:'reading',message:'Lecture des conversations avant les actions en attente'})
       const preview=await api('agent_preview');update({actions_preview:preview.actions})
       const inbox=await reader.inbox({conversation_ids:[...new Set((preview.actions||[]).filter(a=>a.kind==='reply_message').map(a=>a.conversation_id).filter(Boolean))].slice(0,4)})
       update({state:'reading',message:'Enregistrement des conversations lues sur le site'})
       await api('agent_context',{result:inbox})
+      startupInbox=inbox;startupInboxAt=now()
       summary.conversations_read+=inbox.conversations.length;publishSummary()
       return inbox
     }
@@ -77,8 +79,12 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       // Never poll/claim work, type in Vinted, or submit messages in this mode.
       const inbox=binding.rehearse===true?await refreshInbox():await reader.inbox()
       summary.conversations_read=inbox.conversations.length;publishSummary()
+      if(likes.likes.length&&reader.verifyFavourite){
+        update({state:'reading',message:'Vérification de l’ouverture d’un favori et de la fermeture du formulaire vide, sans saisie ni envoi'})
+        await reader.verifyFavourite(likes.likes[0]);summary.favourite_form_checked=true;publishSummary()
+      }
       if(binding.rehearse===true){update({state:'rehearsed',message:'Répétition terminée : conversations lues et enregistrées sur le site, actions vérifiées. Aucun brouillon saisi, aucune tâche prise, aucun envoi.'});return}
-      update({state:'checked',message:`Compte confirmé : ${wardrobe.items.length} annonce(s), ${likes.likes.length} favori(s) et ${inbox.conversations.length} conversation(s) lus sur les pages chargées. Aucun message ni réduction envoyés.`});return
+      update({state:'checked',message:`Compte confirmé : ${wardrobe.items.length} annonce(s), ${likes.likes.length} favori(s) et ${inbox.conversations.length} conversation(s) lus sur les pages chargées. ${summary.favourite_form_checked?'Ouverture du favori et fermeture du formulaire vérifiées. ':''}Aucun message ni réduction envoyés.`});return
     }
     // Recover reports after a crash before claiming anything new; never repeat a Vinted write.
     for(const pending of await journal.pending()){
@@ -122,7 +128,7 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
         await routine.finishBreak(reader.pace);lastContextRefresh=0;update({resume_at:null})
       }
       await ensureWorker()
-      if(!lastContextRefresh||now()-lastContextRefresh>15*60000){
+      if(!lastContextRefresh){
         await refreshInbox();lastContextRefresh=now()
         continue
       }
@@ -149,14 +155,17 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       if(writes(task))await journal.begin(task,binding.member_id)
       const recheck=(conversation,options)=>reader.recheck(task,conversation,options)
       const authorize=async()=>{check();const r=await api('agent_guard',{task_id:task.id,lease:task.lease,settings_version:task.settings_version});if(r.allowed!==true)throw review('Cette action n’est plus autorisée par le site.');check()}
-      const ui=new VintedMessenger({page:worker,identity:()=>reader.identity(),member:binding.member_id,journal,task,check,update,recheck,authorize,thread:()=>reader.thread(),confirm:p=>reader.confirm(p),pace:reader.pace,sleep})
+      const ui=new VintedMessenger({page:worker,identity:()=>reader.identity(),member:binding.member_id,journal,task,check,update,recheck,authorize,thread:()=>reader.thread(),confirm:p=>reader.confirm(p),navigate:url=>reader.open(url),pace:reader.pace,sleep})
       let value
       const p=task.payload||{}
       update({state:'reading',message:task.kind==='reply_message'?'Relecture de la conversation avant la réponse':task.kind==='like_message'?'Vérification du favori, de l’article et du prix':'Lecture des pages Vinted',current_action:{kind:task.kind,id:task.id}})
       if(p.skip)value={skipped:p.skip,context_changed:p.context_changed,review_required:p.review_required,extension_state:p.extension_state}
       else if(task.kind==='scan_likes')value=await reader.likes()
       else if(task.kind==='scan_wardrobe')value=await reader.wardrobe()
-      else if(task.kind==='sync_inbox')value=await reader.inbox(p)
+      else if(task.kind==='sync_inbox'){
+        value=startupInbox&&now()-startupInboxAt<120000&&!p.conversation_ids?.length&&!p.force_details?startupInbox:await reader.inbox(p)
+        startupInbox=null
+      }
       else if(task.kind==='order_extension')value=await requestVisibleExtension({reader,authorize,journal,task},p)
       else if(['scan_wallet','sync_orders','fetch_label'].includes(task.kind)){
         const commerce=new VisibleCommerce({reader,authorize})
@@ -209,7 +218,10 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       if(task.kind==='publish_item'&&value.prepared){update({state:'manual',message:'Formulaire prêt dans Vinted. Tu as la main pour vérifier et publier ; aucune reprise automatique.',current_action:null});task=null;return}
       await routine.completed()
       task=null
-      await sleep(1500)
+      deadline=Infinity
+      const pauseMs=Math.max(10,Number(reader.pace.action_pause_seconds)||20)*1000
+      update({state:'waiting',message:`Action terminée · pause de ${pauseMs/1000} s avant la suivante`,resume_at:new Date(now()+pauseMs).toISOString()})
+      await sleep(pauseMs);check();update({resume_at:null})
     }
   }catch(e){
     // Preserve the failing page for inspection instead of making the interruption

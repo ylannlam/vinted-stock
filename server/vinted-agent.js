@@ -39,6 +39,7 @@ export function dueScans(settings,last={},now=Date.now()){
   settings=executionSettings(settings)
   const f=settings.features
   const every={scan_wardrobe:120,sync_orders:30,scan_likes:2,sync_inbox:(settings.messaging?.sync_seconds||20)/60}
+  if(isDesktop(settings)){every.sync_inbox=Math.max(2,every.sync_inbox);every.scan_likes=3}
   const o=settings.order_flow||{},flow=!!(o.confirm?.enabled||o.extension?.enabled||o.cancel?.enabled||o.pickup?.enabled||o.review?.enabled||o.delete_sold)
   const want={scan_wardrobe:f.unmask||f.pricing||f.dressing||f.likes,sync_orders:f.orders||f.labels||f.sales||flow,scan_likes:f.likes,sync_inbox:f.inbox||f.ai||settings.messaging?.offers?.enabled}
   const due=Object.entries(want).filter(([kind,on])=>on&&(!last[kind]||Date.parse(last[kind])<now-minutes(every[kind]))).map(([kind])=>kind)
@@ -254,7 +255,7 @@ export async function agentPoll(db,key,body,now=Date.now()){
   if(!row.paused){
     // Frequent inbox reads must not hide the last daily wallet check.
     const recent=(await Promise.all(SCANS.map(kind=>db.from('vinted_agent_tasks').select('kind,created_at,finished_at').eq('account_id',account.id).eq('kind',kind).neq('state','cancelled').order('created_at',{ascending:false}).limit(1).then(check)))).flat()
-    const last={};for(const t of recent)last[t.kind]??=t.kind==='scan_wallet'?(t.finished_at||t.created_at):t.created_at
+    const last={};for(const t of recent)last[t.kind]??=driver==='desktop'||t.kind==='scan_wallet'?(t.finished_at||t.created_at):t.created_at
     const can=await learned(db),due=dueScans(settings,last,now).filter(kind=>(driver==='desktop'?DESKTOP_KINDS.includes(kind):ready(kind,can)&&kind!=='scan_wallet'))
     if(due.length)await enqueue(db,due.map(kind=>({account_id:account.id,kind,priority:kind==='scan_wallet'?6:driver==='desktop'&&kind==='sync_orders'?5:kind==='sync_inbox'?4:0,dedupe_key:`${kind}:${account.id}`})))
     await dropStaleLikes(db,account.id,settings,now)
