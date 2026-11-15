@@ -7,7 +7,7 @@ function fixture(){
  let clock=0,url='about:blank',loading=0
  const visits=[],waits=[],clicks=[],updates=[]
  const snapshot=()=>({url,login:loading-->0?null:'demo',text:'Messages',conversation:true,links:[],cards:[],messages:[],notices:[]})
- const page={url:()=>url,goto:async to=>{visits.push({url:to,at:clock});url=to},bringToFront:async()=>{},evaluate:async()=>snapshot()}
+ const page={url:()=>url,goto:async to=>{visits.push({url:to,at:clock});url=to},bringToFront:async()=>{},evaluate:async fn=>fn.name==='visibleDraft'?false:snapshot()}
  const reader=new VisibleVinted({page,binding:{login:'demo'},pace:PACE,check:()=>{},update:x=>updates.push(x),sleep:async ms=>{waits.push(ms);clock+=ms},now:()=>clock})
  return {reader,page,visits,waits,clicks,updates,get clock(){return clock},set loading(n){loading=n},set url(v){url=v}}
 }
@@ -32,11 +32,21 @@ test('hydration is awaited by reading DOM without retrying navigation',async()=>
  const f=fixture();f.loading=5;await f.reader.open('/inbox/55')
  assert.equal(f.visits.length,1);assert.ok(f.waits.filter(x=>x===500).length>=5)
 })
-test('a page left open for minutes gets one refresh, never repeated refreshes',async()=>{
+test('only an explicit scan may refresh a stale page; actions keep the loaded conversation',async()=>{
  const f=fixture();let refreshes=0;f.page.reload=async()=>{refreshes++}
  await f.reader.open('/member/notifications');await f.reader.sleep(180001)
- await f.reader.open('/member/notifications');await f.reader.open('/member/notifications')
+ await f.reader.open('/member/notifications');assert.equal(refreshes,0)
+ await f.reader.open('/member/notifications',{refresh:true});await f.reader.open('/member/notifications',{refresh:true})
  assert.equal(refreshes,1);assert.equal(f.visits.length,1)
+})
+test('neither navigation nor an explicit refresh discards a visible draft',async()=>{
+ const f=fixture();let refreshes=0;f.page.reload=async()=>{refreshes++}
+ await f.reader.open('/inbox/55');await f.reader.sleep(180001)
+ f.reader.assertNoDraft=async()=>{throw Error('brouillon présent')}
+ await f.reader.open('/inbox/55')
+ await assert.rejects(f.reader.open('/inbox/55',{refresh:true}),/brouillon/)
+ await assert.rejects(f.reader.open('/inbox/66'),/brouillon/)
+ assert.equal(refreshes,0);assert.equal(f.visits.length,1)
 })
 test('the notifications bell is followed through its visible View all link',async()=>{
  const f=fixture();await f.reader.open('/')

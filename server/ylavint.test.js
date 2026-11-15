@@ -111,6 +111,18 @@ test('continuous read tasks do not starve a pending AI reply',async()=>{
  assert.equal(result.ai,'queued')
  assert.equal(db.state.vinted_agent_tasks.filter(t=>t.kind==='reply_message').length,1)
 })
+test('desktop generates a pending buyer reply before claiming a favourite',async()=>{
+ const db=fakeDb(base()),now=Date.now()+60000;enableAi(db,{mode:'auto',delay_min:0,delay_max:0})
+ db.state.vinted_agent_settings[0].messaging={executor:'desktop',ai_delay_min:0,ai_delay_max:0}
+ await applyInbox(db,{account_id:ACC},{conversations:[convo()]},{settings:settings(db),now:now-60000})
+ db.state.vinted_agent_tasks.push({id:crypto.randomUUID(),account_id:ACC,kind:'like_message',state:'queued',writes:true,priority:3,created_at:recent(0),payload:{}})
+ let generatedBeforeClaim=false
+ const original=db.rpc
+ db.rpc=async(fn,args)=>{if(fn==='claim_vinted_agent_task')assert.ok(generatedBeforeClaim);return original(fn,args)}
+ const result=await agentPoll(db,{desktop_account_id:ACC},{member_id:'3206068112',version:'pc-1.8.10'},now,{generate:async()=>{generatedBeforeClaim=true;return fakeAi()()}})
+ assert.equal(result.ai,'queued');assert.ok(generatedBeforeClaim)
+ assert.equal(db.state.vinted_agent_tasks.filter(t=>t.kind==='reply_message').length,1)
+})
 
 test('inbox results are revalidated: ids, bodies, photos, order',()=>{
   const [c]=parseInbox({conversations:[convo(),{id:'abc'},convo()]})

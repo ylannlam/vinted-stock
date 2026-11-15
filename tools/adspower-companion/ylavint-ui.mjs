@@ -69,9 +69,10 @@ export class VintedMessenger{
     this.check()
     const before=(await this.thread()).messages
     await send.click({timeout:5000})
+    this.update({state:'confirming',message:'Vérification du message envoyé dans la conversation'})
     const message=await this.confirm({kind:'message',body,before})
     if(!message?.id)throw review('Envoi non confirmé dans la conversation visible : vérifie Vinted.')
-    await this.journal.step(task_id,'message','confirmed')
+    await this.journal.step(task_id,'message','confirmed',{conversation_id,message_id:String(message.id)})
     this.messageConfirmed=true
     return {reply:{id:String(message.id)}}
   }
@@ -106,8 +107,9 @@ export class VintedMessenger{
     this.check()
     const before=(await this.thread()).messages
     await submit.click({timeout:5000})
+    this.update({state:'confirming',message:'Vérification de la réduction dans la conversation'})
     if(!await this.confirm({kind:'offer',price,before}))throw review('Réduction non confirmée dans la conversation visible : vérifie Vinted.')
-    await this.journal.step(task_id,'offer','confirmed')
+    await this.journal.step(task_id,'offer','confirmed',{conversation_id,price})
     return true
   }
 }

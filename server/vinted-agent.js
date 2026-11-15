@@ -260,6 +260,14 @@ export async function agentPoll(db,key,body,now=Date.now(),{generate}={}){
     if(due.length)await enqueue(db,due.map(kind=>({account_id:account.id,kind,priority:kind==='scan_wallet'?6:driver==='desktop'&&kind==='sync_orders'?5:kind==='sync_inbox'?4:0,dedupe_key:`${kind}:${account.id}`})))
     await dropStaleLikes(db,account.id,settings,now)
   }
+  // Desktop replies must be ready before selecting a favourite or a read task.
+  // An already queued reply needs no extra model call on its critical path.
+  let extra={}
+  const extras=options=>(import('./ylavint.js').then(m=>m.pollExtras(db,account,settings,{paused:row.paused,generate,now,...options}))).catch(e=>{console.error('ylavint_poll_extra_failed',{code:e.code||e.status||'unknown'});return {}})
+  if(driver==='desktop'){
+    const readyReplies=check(await db.from('vinted_agent_tasks').select('id').eq('account_id',account.id).eq('kind','reply_message').eq('state','queued').lt('not_before',new Date(now+1).toISOString()).limit(1))
+    extra=await extras({draft:!readyReplies.length})
+  }
   let claimed=check(await claim())
   // Message après like à écarter d'office (article vendu, like hors période) : réglé ici, sans passer par Vinted
   // ni consommer l'écart entre deux envois, puis on prend la tâche suivante.
@@ -273,7 +281,7 @@ export async function agentPoll(db,key,body,now=Date.now(),{generate}={}){
   }
   // Continuous read tasks must not starve replies. Prepare one reply alongside
   // a read; an already claimed write still takes precedence over generation.
-  const extra=await (await import('./ylavint.js')).pollExtras(db,account,settings,{paused:row.paused,draft:claimed?.state!=='task'||claimed.task.writes===false,generate,now}).catch(e=>{console.error('ylavint_poll_extra_failed',{code:e.code||e.status||'unknown'});return {}})
+  if(driver!=='desktop')extra=await extras({draft:claimed?.state!=='task'||claimed.task.writes===false})
   if(claimed?.state==='idle'&&extra.ai==='queued')claimed=check(await claim())
   // Des messages attendent l'écart entre deux envois : on repasse vite pour tenir le délai réglé (30 à 45 s par défaut).
   const nextMessage=claimed?.state==='idle'?check(await db.from('vinted_agent_tasks').select('not_before').eq('account_id',account.id).eq('state','queued').in('kind',MESSAGE_KINDS.filter(kind=>supportsTask(settings,kind))).order('not_before',{ascending:true}).limit(1))[0]:null
@@ -374,7 +382,7 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
     const code=typeof body.code==='string'?body.code:'failed',detail=text(body.error,300)
     if(desktopDriver(key)==='desktop'){
       await finish(db,task,'failed',null,detail||'Action à vérifier sur Vinted.')
-      await pauseAccount(db,task.account_id,'Assistant PC : vérifie la dernière action sur Vinted avant de reprendre.',{event:'desktop_review',details:{kind:task.kind,detail}})
+      await pauseAccount(db,task.account_id,detail||'Assistant PC : vérifie la dernière action sur Vinted avant de reprendre.',{event:'desktop_review',details:{kind:task.kind,detail}})
       if(task.kind==='reply_message')await (await import('./ylavint.js')).replyFailed(db,task,detail||'Envoi à vérifier sur Vinted.')
       if(task.kind==='like_message')check(await db.from('vinted_agent_contacts').update(task.payload.followup?{followup_state:'failed'}:{state:'failed'}).eq('account_id',task.account_id).eq('item_id',task.payload.item_id).eq('user_id',task.payload.user_id))
       return {saved:true,paused:true}

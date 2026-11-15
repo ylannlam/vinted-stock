@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {mkdtemp,readFile,rm} from 'node:fs/promises'
+import {mkdtemp,readFile,rm,mkdir,writeFile} from 'node:fs/promises'
 import path from 'node:path'
 import {tmpdir} from 'node:os'
 import {taskJournal} from './ylavint-journal.mjs'
@@ -25,9 +25,10 @@ test('desktop jobs deduplicate profile/account, never expose the token, and stop
 test('durable task journal preserves partial sends across restart',async()=>{
  const dir=await mkdtemp(path.join(tmpdir(),'ylavint-journal-'))
  try{
-  const j=taskJournal(dir);await j.begin(task,'123');await j.step(task.id,'message','confirmed')
+  const j=taskJournal(dir);await j.begin(task,'123');await j.step(task.id,'message','confirmed',{message_id:'ui:sent',conversation_id:'55'})
   const restarted=taskJournal(dir),before=await restarted.begin({...task,lease:'another'},'123')
   assert.equal(before.lease,task.lease);assert.equal(before.steps.message,'confirmed');assert.equal(before.state,'started')
+  assert.equal(before.confirmed.message.message_id,'ui:sent')
   assert.equal((await restarted.pending()).length,1)
   await assert.rejects(restarted.begin(task,'999'),/Compte différent/)
   await j.complete(task.id,{task_id:task.id,ok:false});await j.acknowledge(task.id)
@@ -320,6 +321,25 @@ test('the first scheduled inbox scan reuses startup context and pauses before th
   assert.fail(action)
  }})
  assert.equal(reads,1);assert.equal(results.length,1);assert.equal(results[0].ok,true);assert.deepEqual(waits,[20000])
+})
+
+test('due optional browsing waits until the server has no ready task',async t=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'ylavint-priority-'))
+ t.after(async()=>{if(path.dirname(dir)===tmpdir()&&path.basename(dir).startsWith('ylavint-priority-'))await rm(dir,{recursive:true,force:true})})
+ // Make a browsing round due before the first task poll.
+ const folder=path.join(dir,'ylavint',binding.account_id);await mkdir(folder,{recursive:true})
+ await writeFile(path.join(folder,'routine.json'),JSON.stringify({version:1,likes:[],break_until:0,close_for_break:false,next_browse_at:1,next_pause_at:9999999,tasks:10,target:3}))
+ let clock=100000,polls=0,browsed=0;const events=[]
+ class Reader extends FakeReader{async browseOne(){browsed++;assert.ok(polls>=2);events.push('browse');return false}}
+ await runDesktop(binding,{start:async()=>({address:'test'})},{signal:new AbortController().signal,dataDir:dir,Reader,now:()=>clock,waitFor:async ms=>{clock+=ms},update:()=>{},connect:async()=>({contexts:()=>[{newPage:async()=>({close:async()=>{}})}],close:async()=>{}}),request:async(_token,action)=>{
+  if(action==='agent_status')return {allowed:true,in_window:true,pace:{...PACE,browse_enabled:true,browse_variety:false,browse_minutes:30}}
+  if(action==='agent_preview')return {actions:[]}
+  if(action==='agent_context')return {saved:true}
+  if(action==='agent_poll'){events.push('poll');return ++polls===1?{state:'task',task:{...task,kind:'scan_likes',payload:{},lease_until:new Date(clock+180000).toISOString()}}:polls===2?{state:'idle'}:{state:'paused'}}
+  if(action==='agent_result'){events.push('result');return {saved:true}}
+  assert.fail(action)
+ }})
+ assert.equal(browsed,1);assert.deepEqual(events,['poll','result','poll','browse','poll'])
 })
 
 test('a failed read leaves the visible page open, disconnects and never claims a task',async()=>{

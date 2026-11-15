@@ -133,19 +133,21 @@ export class VisibleVinted{
    }
    throw review('La page Vinted ne s’est pas stabilisée. L’onglet reste ouvert pour vérification.')
  }
- async open(path){
+ async open(path,{refresh=false}={}){
    this.check();const u=new URL(path,BASE);if(u.origin!==BASE)throw review('Destination non autorisée.')
    const current=new URL(this.page.url())
    const same=current.origin===BASE&&(sameVintedRoute(current.href,u.href)&&(current.search===u.search||!!cid(u.pathname.split('/')[2])&&u.pathname.startsWith('/inbox/'))||u.pathname==='/inbox'&&!!cid(current.pathname.split('/')[2]))
    // Reuse the live DOM, including the inbox sidebar. Never reload an already
    // open route just because another task wants to read it.
    if(same){
-     if(this.loadedAt==null||this.now()-this.loadedAt<180000)return this.snapshot()
+     if(!refresh||this.loadedAt==null||this.now()-this.loadedAt<180000)return this.snapshot()
      // A page left open for several minutes may not receive live updates.
      // One deliberate refresh is allowed; never retry it in a tight loop.
-     await this.beforeNavigation();await this.page.reload({waitUntil:'domcontentloaded',timeout:30000});return this.settle(current.href)
+     await this.assertNoDraft();await this.beforeNavigation();await this.assertNoDraft();await this.page.reload({waitUntil:'domcontentloaded',timeout:30000});return this.settle(current.href)
    }
+   if(current.origin===BASE)await this.assertNoDraft()
    await this.beforeNavigation()
+   if(current.origin===BASE)await this.assertNoDraft()
    const s=current.origin===BASE?await this.snapshot():null
    const link=s?.links.find(l=>{const v=new URL(l.href,BASE);return sameVintedRoute(v.href,u.href)&&v.search===u.search})
    const threadId=u.pathname.startsWith('/inbox/')&&cid(u.pathname.split('/')[2])
@@ -175,7 +177,7 @@ export class VisibleVinted{
    return {status:'ok',member_id:this.binding.member_id}
  }
  async thread(){return readThread(await this.snapshot())}
- async likes(){const s=await this.open('/member/notifications');await this.identity();if(!/Notifications/i.test(s.text))throw review('La liste des notifications ne s’est pas ouverte.');return readLikes(s)}
+ async likes(){const s=await this.open('/member/notifications',{refresh:true});await this.identity();if(!/Notifications/i.test(s.text))throw review('La liste des notifications ne s’est pas ouverte.');return readLikes(s)}
  async wardrobe(){
    const s=await this.open('/member/'+this.binding.member_id);await this.identity()
    const items=[],seen=new Set()
@@ -184,7 +186,7 @@ export class VisibleVinted{
    return {items,complete:false}
  }
  async inbox(payload={}){
-   const s=await this.open('/inbox');await this.identity()
+   const s=await this.open('/inbox',{refresh:true});await this.identity()
    const found=[...(s.inboxRows||[]).map(r=>cid(r.id)),...s.links.map(l=>cid(new URL(l.href).pathname.match(/^\/inbox\/([^/?]+)/)?.[1]))].filter(Boolean)
    const pool=[...new Set(found)],offset=(this.inboxOffset||0)%Math.max(1,pool.length)
    // A rotating batch alone leaves new replies waiting behind old threads.

@@ -22,9 +22,9 @@ export function taskJournal(dir){
     if(before){if(before.member!==member)throw Error('Compte différent dans le suivi local.');return before}
     const row={task_id:task.id,lease:task.lease,member,kind:task.kind,state:'started',steps:{},at:new Date().toISOString()}
     await write(task.id,row,true);return row
-  },async step(task,name,state){
+  },async step(task,name,state,evidence){
     const row=await read(task);if(!row)throw Error('Suivi local indisponible.')
-    await write(task,{...row,steps:{...row.steps,[name]:state}})
+    await write(task,{...row,steps:{...row.steps,[name]:state},...(state==='confirmed'&&evidence?{confirmed:{...row.confirmed,[name]:{...evidence,at:new Date().toISOString()}}}:{})})
   },async complete(task,payload){
     const row=await read(task);await write(task,{...row,state:'result',payload})
   },async acknowledge(task){const row=await read(task);await write(task,{...row,state:'acknowledged'})}}

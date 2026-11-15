@@ -181,8 +181,8 @@ test('the home resume button ends a programmed break but still verifies identity
  assert.ok(r.events.findIndex(e=>e[0]==='inbox')<r.events.findIndex(e=>e[0]==='agent_poll'))
 })
 
-test('consultation occurs between acknowledged tasks even without an idle poll',async t=>{
+test('the next task poll takes precedence over optional browsing between actions',async t=>{
  const r=await runtimeFixture(t,{between:true})
- assert.equal(r.polls,1);assert.ok(r.events.findIndex(e=>e[0]==='browse')>r.events.findIndex(e=>e[0]==='ack'))
+ assert.equal(r.polls,2);assert.equal(r.events.some(e=>e[0]==='browse'),false)
  assert.equal(r.paused,false)
 })

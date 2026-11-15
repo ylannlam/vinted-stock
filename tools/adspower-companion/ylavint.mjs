@@ -15,7 +15,7 @@ const writes=task=>['like_message','reply_message','accept_offer','publish_item'
 const SITE='https://vinted-stock.vercel.app'
 const wait=(ms,signal)=>new Promise(resolve=>{if(signal.aborted)return resolve();const done=()=>{clearTimeout(timer);signal.removeEventListener('abort',done);resolve()};const timer=setTimeout(done,ms);signal.addEventListener('abort',done,{once:true})})
 export async function desktopRequest(token,action,body,fetcher=fetch){
-  const r=await fetcher(SITE+'/api/collector',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...body,action,version:'pc-1.8.9'}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(30000)})
+  const r=await fetcher(SITE+'/api/collector',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...body,action,version:'pc-1.8.10'}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(30000)})
   const data=await r.json().catch(()=>null)
   if(!r.ok)throw Object.assign(Error(data?.error||'Le site ne répond pas.'),{status:r.status})
   if(!data||typeof data!=='object')throw Error('Réponse du site illisible.')
@@ -30,7 +30,7 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
   const publishSummary=()=>update({summary:{...summary,articles_browsed:reader?.browseCount||0,photos_opened:reader?.photoCount||0,favourites_added:reader?.favouriteCount||0,feed_scrolls:reader?.feedScrollCount||0}})
   const journal=taskJournal(path.join(dataDir,'ylavint',binding.account_id))
   const ownPages=[]
-  const stopPages=()=>{if(signal.reason?.takeover||task?.kind==='publish_item'){keepPage=true;return}for(const page of ownPages)void page.close().catch(()=>{})}
+  const stopPages=()=>{if(!signal.aborted||signal.reason?.takeover||writes(task)){keepPage=true;return}for(const page of ownPages)void page.close().catch(()=>{})}
   signal.addEventListener('abort',stopPages,{once:true})
   const api=(action,body={})=>request(binding.token,action,{member_id:binding.member_id,profile_id:binding.profile_id,login:binding.login,...body})
   const sleep=waitFor,control=()=>api('agent_status')
@@ -102,6 +102,10 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       const pace=reader.pace,total=pace.browse_variety?randomInt(1,pace.browse_items,random):pace.browse_items,started=now()
       await routine.browsed(pace)
       for(let i=0;i<total&&now()-started<120000;i++){
+        if(i){
+          const preview=await api('agent_preview');update({actions_preview:preview.actions})
+          if(preview.actions?.some(a=>a.state==='queued'&&!a.blocked_reason&&Date.parse(a.not_before)<=now()))break
+        }
         if(!await reader.browseOne())break
         publishSummary()
       }
@@ -134,15 +138,16 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
         await refreshInbox();lastContextRefresh=now()
         continue
       }
-      if(routine.due(reader.pace)){await browseRound();continue}
       await reader.identity()
       update({state:'running',message:'Lecture des actions prévues sur le site'})
       const next=await api('agent_poll')
       check()
       if(['other_executor','unknown','disabled','paused','update_required'].includes(next.state)){update({state:'stopped',message:next.reason||next.message||'Compte désactivé ou en pause sur le site.'});return}
       if(next.state!=='task'){
+        // Optional browsing never takes precedence over work already ready.
         if(next.state==='idle'&&routine.due(reader.pace,{idle:true})){await browseRound();continue}
-        update({state:'waiting',message:next.reason||'En attente des prochains favoris et messages'});await sleep(Math.max(1,Math.min(20,Number(next.wait_seconds)||20))*1000);continue
+        const waitMs=Math.max(1,Math.min(20,Number(next.wait_seconds)||20))*1000
+        update({state:'waiting',message:next.reason||'En attente des prochains favoris et messages',current_action:null,next_check_at:new Date(now()+waitMs).toISOString()});await sleep(waitMs);update({next_check_at:null});continue
       }
       task=next.task
       deadline=Math.min(now()+(task.kind==='publish_item'?25*60000:175000),(Date.parse(task.lease_until)||now()+180000)-5000)
@@ -217,13 +222,15 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       const saved=await acknowledge(payload)
       if(task.kind==='fetch_label'&&value?.pdf_base64){summary.labels_saved++;publishSummary()}
       if(!result.ok||saved.paused)throw review(result.error||'Vérifie ce compte sur Vinted avant de reprendre.')
-      update({state:'waiting',message:saved.message||'Action terminée',current_action:null})
+      const outcome=value?.skipped?'skipped':writes(task)?value?.prepared?'prepared':'confirmed':'read'
+      const outcomeMessage=value?.skipped?`Action écartée : ${value.skipped}`:value?.prepared?'Formulaire prêt à vérifier':writes(task)?'Action confirmée dans Vinted':'Lecture terminée · aucun envoi pour cette tâche'
+      update({state:'waiting',message:outcomeMessage,current_action:null,last_action:{id:task.id,kind:task.kind,outcome,at:new Date(now()).toISOString(),message:outcomeMessage}})
       if(task.kind==='publish_item'&&value.prepared){update({state:'manual',message:'Formulaire prêt dans Vinted. Tu as la main pour vérifier et publier ; aucune reprise automatique.',current_action:null});task=null;return}
       await routine.completed()
       task=null
       deadline=Infinity
       const pauseMs=Math.max(10,Number(reader.pace.action_pause_seconds)||20)*1000
-      update({state:'waiting',message:`Action terminée · pause de ${pauseMs/1000} s avant la suivante`,resume_at:new Date(now()+pauseMs).toISOString()})
+      update({state:'waiting',message:`${outcomeMessage} · pause de ${pauseMs/1000} s`,resume_at:new Date(now()+pauseMs).toISOString()})
       await sleep(pauseMs);check();update({resume_at:null})
     }
   }catch(e){
@@ -231,7 +238,10 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
     // look like a successful session. An explicit stop still closes our own tabs.
     if(!signal.aborted||e.keep_page||task?.kind==='publish_item')keepPage=true
     if(task&&!submitted){
-      const payload={task_id:task.id,lease:task.lease,ok:false,code:'desktop_review',error:e.code==='desktop_review'?e.message.slice(0,300):'Action interrompue ou non confirmée : vérifie Vinted avant de reprendre.'}
+      const confirmed=writes(task)?(await journal.read(task.id).catch(()=>null))?.confirmed:null
+      const detail=desktopFailure(e).message.slice(0,300)
+      if(confirmed?.message){e=review('Message confirmé dans Vinted, mais la suite de l’action est à vérifier. Aucun nouvel envoi automatique de ce message.');keepPage=true}
+      const payload={task_id:task.id,lease:task.lease,ok:false,code:'desktop_review',error:confirmed?.message?e.message:detail}
       // Keep the result if reporting fails. No write will be replayed by this worker.
       if(writes(task))await journal.complete(task.id,payload).catch(()=>{})
       await acknowledge(payload).catch(()=>{})
