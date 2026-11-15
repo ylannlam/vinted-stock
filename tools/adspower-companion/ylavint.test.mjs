@@ -141,6 +141,17 @@ test('unknown bubbles disable automatic context validation instead of guessing',
  const c=readThread(domSnapshot(pageHtml.replace('aria-label="Message from acheteuse: Bonjour"','')))
  assert.equal(c.uncertain,true)
 })
+
+test('both observed composer variants allow writing, hidden or locked fields do not',()=>{
+ for(const id of ['composer--input','composer-input']){
+  const html='<div data-testid="conversation-content"></div><div data-testid="composer"><textarea data-testid="'+id+'"></textarea><button disabled></button></div>'
+  assert.equal(domSnapshot(html).allow_reply,true,'an empty editor is writable even with a disabled send arrow')
+  for(const attr of ['disabled','readonly','aria-disabled="true"','hidden'])assert.equal(domSnapshot(html.replace('<textarea','<textarea '+attr)).allow_reply,false)
+ }
+ const unknown=domSnapshot('<div data-testid="composer"><textarea data-testid="new-format"></textarea></div>')
+ assert.equal(unknown.composer_unknown,true)
+ assert.equal(readThread({...unknown,conversation:true}).composer_unknown,true)
+})
 test('visible inbox button rows are read in order, including non-selected conversations',async()=>{
  const s=domSnapshot(pageHtml+'<div data-testid="conversation-list"><div role="button" data-testid="inbox-list-item-55">Buyer A</div><div role="button" data-testid="inbox-list-item-66">Buyer B</div><div role="button" data-testid="inbox-list-item-77" hidden>Hidden</div></div>')
  assert.deepEqual(s.inboxRows.map(r=>r.id),['55','66'])

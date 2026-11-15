@@ -52,9 +52,11 @@ export function renderedPage(){
  const inboxRows=all('[data-testid="conversation-list"] [role="button"][data-testid^="inbox-list-item-"]').map(e=>({id:e.getAttribute('data-testid').slice('inbox-list-item-'.length),text:txt(e)}))
  const notices=all('a[data-testid="user-notification-item"]').map(e=>({...link(e),text:txt(e.querySelector('[data-testid="user-notification-item--content"]')||e)}))
  const cards=all('a[href*="/items/"]').filter(e=>!e.href.includes('/items/new')).map(e=>{const box=e.closest('[data-testid="grid-item"]')||e.parentElement;return {...link(e),text:txt(box)||e.getAttribute('title')||'',image:box.querySelector('img')?.src||null}})
- const editor=document.querySelector('textarea[data-testid="composer-input"]')
+ const editors=all('textarea[data-testid="composer--input"],textarea[data-testid="composer-input"]')
+ const editor=editors.length===1?editors[0]:null
+ const composer=all('[data-testid="composer"]').length>0
  const hero=all('a[data-testid="hero-message"]')[0],header=document.querySelector('[data-testid="conversation-header"]')
- return {url:location.href,scroll_y:typeof scrollY==='number'?scrollY:0,login:user?.alt||null,links,inboxRows,notices,cards,messages,conversation:!!content,allow_reply:!!editor&&!editor.disabled,
+ return {url:location.href,scroll_y:typeof scrollY==='number'?scrollY:0,login:user?.alt||null,links,inboxRows,notices,cards,messages,conversation:!!content,composer_unknown:composer&&!editor,allow_reply:!!editor&&!editor.disabled&&!editor.hasAttribute('disabled')&&!editor.readOnly&&!editor.hasAttribute('readonly')&&editor.getAttribute('aria-disabled')!=='true',
    history_start:!!content&&all('[class*="conversation-message-container"]',content).some(e=>/^Bonjour, je suis /.test(txt(e))&&!e.querySelector('[aria-label^="Message from "]')),
    threadLinks:header?all('a[href]',header).map(link):[],threadItem:hero?{...link(hero),text:txt(hero)}:null,
    text:txt(document.body).slice(0,60000),conversationText:txt(content),heading:all('h1').map(txt).join(' '),ratings:all('[aria-label]').map(e=>e.getAttribute('aria-label')).filter(s=>/étoile|rating|sur 5|out of 5/i.test(s))}
@@ -83,7 +85,7 @@ export function readThread(snapshot,now=Date.now()){
  })
  return {id,other:uniqueOther.length===1?{id:uniqueOther[0][0],login:uniqueOther[0][1].text}:null,
    item:item&&new URL(item.href).pathname.match(/^\/items\/(\d+)/)?{id:new URL(item.href).pathname.match(/^\/items\/(\d+)/)[1],title:item.title||item.alt||item.text.split('\n')[0],price:euros(item.text),photo:item.image}:null,
-   messages,allow_reply:snapshot.allow_reply,unread:false,updated_at:messages.at(-1)?.sent_at||null,preview:messages.at(-1)?.body||null,
+   messages,allow_reply:snapshot.allow_reply,composer_unknown:snapshot.composer_unknown===true,unread:false,updated_at:messages.at(-1)?.sent_at||null,preview:messages.at(-1)?.body||null,
    uncertain:messages.some(m=>m.kind==='unknown')||[...counts.values()].some(n=>n>1),history_start:snapshot.history_start===true,offers:[],complete:false}
 }
 
@@ -212,6 +214,7 @@ export class VisibleVinted{
    await this.identity()
    const thread=await this.thread()
    if(thread.id!==conversation)throw review('La conversation du favori ne peut pas être confirmée.')
+   if(thread.composer_unknown)throw review('Le champ de message visible n’est pas reconnu. Aucun envoi ni abandon du favori.')
    return {conversation_id:conversation}
  }
  async clickLink(href,selector='a[href]',paced=true){
@@ -244,6 +247,7 @@ export class VisibleVinted{
  async recheck(task,conversation,{afterMessage=false}={}){
    await this.identity();const c=await this.thread(),p=task.payload
    if(c.id!==conversation||c.uncertain)throw review('Le contenu de la conversation ne peut pas être confirmé.')
+   if(c.composer_unknown)throw review('Le champ de message visible n’est pas reconnu. Vérifie le formulaire avant de reprendre.')
    if(!c.allow_reply)return {cancelled:'Vinted ne permet plus d’écrire dans cette conversation.'}
    if(task.kind==='like_message'){
      if(c.messages.some(m=>!m.from_me&&['message','offer','photo'].includes(m.kind)))return {cancelled:'L’acheteur a répondu ou fait une offre.',buyer_engaged:true}

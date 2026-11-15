@@ -21,7 +21,7 @@ test('the HTTP service preserves temporary verification errors without executing
   const states=await Promise.all([fetch(base+'/state',{headers}),fetch(base+'/state',{headers})])
   assert.ok(states.every(response=>response.status===200));assert.equal(verified,2);assert.equal(started,0)
   const state=await states[0].json()
-  assert.equal(state.version,'1.8.4');assert.equal(state.commerce_ui,true);assert.equal(state.browse_routine,true)
+  assert.equal(state.version,'1.8.5');assert.equal(state.commerce_ui,true);assert.equal(state.browse_routine,true)
 })
 
 test('local connection survives encrypted Windows storage without plaintext on disk',async()=>{

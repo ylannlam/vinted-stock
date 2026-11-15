@@ -54,7 +54,7 @@ export class VintedMessenger{
     const first=await this.recheck(conversation_id)
     if(first.cancelled)return {...first,desktop_cancelled:first.cancelled}
     this.update({state:'typing',message:'Saisie du message dans Vinted · conversation surveillée'})
-    const editor=await unique(this.page.locator('textarea[data-testid="composer-input"]:visible'),'Champ de message')
+    const editor=await unique(this.page.locator('textarea[data-testid="composer--input"]:visible,textarea[data-testid="composer-input"]:visible'),'Champ de message')
     const interrupted=await this.type(editor,body,()=>this.recheck(conversation_id))
     if(interrupted)return {...interrupted,desktop_cancelled:interrupted.cancelled}
     await this.guard()

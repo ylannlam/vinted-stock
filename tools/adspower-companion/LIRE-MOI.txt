@@ -1,6 +1,6 @@
 STOCK VINTED — CONNECTEUR ADSPOWER
 
-CONNEXION 1.8.4
+CONNEXION 1.8.5
 - Accueil : comptes choisis et profils mémorisés, démarrage, pause et reprise sur leur carte.
 - Correction de l'ouverture d'une fiche lorsque Vinted ajoute le titre de l'article à son adresse.
 - Réutilisation des pages ouvertes, lecture de 10 s avant navigation et pause de 20 s entre les tâches (réglables).
@@ -14,7 +14,7 @@ CONNEXION 1.8.4
 - La connexion protégée et les journaux sont conservés dans le dossier local StockVinted/AdsPower de ton compte Windows.
 - Pour reprendre une ancienne installation, remplace ses fichiers en conservant son dossier .data, puis relance run.bat : les données seront reprises automatiquement.
 
-ASSISTANT YLAVINT SUR PC (version 1.8.4)
+ASSISTANT YLAVINT SUR PC (version 1.8.5)
 Cette version ajoute le pilotage des favoris et de la messagerie depuis
 https://vinted-stock.vercel.app/ylavint#assistant-pc.
 La mise à jour du site et de sa base doit être installée avant de choisir ce mode.

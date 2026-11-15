@@ -1,6 +1,6 @@
 export const HOME_KEY='ylavint.assistant-home.v1'
 export const sessionActive=s=>['opening','reading','typing','preparing','running','waiting','browsing','break','stopping'].includes(s?.state)
-export function companionCurrent(version){const [a,b,c]=String(version||'0').split('.').map(Number);return a>1||a===1&&(b>8||b===8&&c>=4)}
+export function companionCurrent(version){const [a,b,c]=String(version||'0').split('.').map(Number);return a>1||a===1&&(b>8||b===8&&c>=5)}
 export function readHome(storage){
  try{const x=JSON.parse(storage.getItem(HOME_KEY));if(!x||!Array.isArray(x.ids))return null;return {ids:x.ids.filter(id=>typeof id==='string'),bindings:x.bindings&&typeof x.bindings==='object'?x.bindings:{},selected:typeof x.selected==='string'?x.selected:''}}catch{return null}
 }
