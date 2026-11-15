@@ -54,6 +54,7 @@ function fakeDb(state={}){
     return q
   },
   async rpc(fn,args){
+    if(fn==='ylavint_desktop_ready')return {data:true,error:null}
     db.calls.push({fn,args})
     const tasks=table('vinted_agent_tasks')
     if(fn==='upsert_sales_snapshot'){for(const o of args.p_orders){const i=table('sales_orders').findIndex(r=>r.id===o.id);if(i>=0)Object.assign(table('sales_orders')[i],o);else table('sales_orders').push({...o})};for(const l of args.p_lines){const i=table('sales_lines').findIndex(r=>r.id===l.id);if(i>=0)Object.assign(table('sales_lines')[i],l);else table('sales_lines').push({...l,stage:'to_order'})};return {data:null,error:null}}

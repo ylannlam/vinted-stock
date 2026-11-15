@@ -34,6 +34,7 @@ function fakeDb(state={}){
     return q
   },
   async rpc(fn,args){
+    if(fn==='ylavint_desktop_ready')return {data:true,error:null}
     const tasks=table('vinted_agent_tasks')
     if(fn==='claim_vinted_agent_task'){
       const s=table('vinted_agent_settings').find(r=>r.account_id===args.p_account)
@@ -229,6 +230,7 @@ test('settings are saved with a version check, and pause / resume are journaled'
   const state=base(),db=fakeDb(state),user={id:'u1'}
   const saved=await handleAgent({method:'POST',body:{action:'save_settings',account_id:ACC,enabled:true,settings:{features:{orders:true}}}},{db,user})
   assert.equal(saved.version,1);assert.equal(state.vinted_agent_settings[0].features.orders,true)
+  assert.equal(state.vinted_agent_settings[0].messaging.executor,'desktop')
   await assert.rejects(handleAgent({method:'POST',body:{action:'save_settings',account_id:ACC,enabled:true,version:0,settings:{}}},{db,user}),/modifiés/)
   await handleAgent({method:'POST',body:{action:'pause',account_id:ACC}},{db,user})
   assert.equal(state.vinted_agent_settings[0].paused,true)

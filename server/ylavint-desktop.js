@@ -7,7 +7,7 @@ const check=r=>{if(r.error)throw r.error;return r.data}
 
 // A desktop key is bound to one account. The PC never receives the admin session.
 export async function authorizeDesktop(db,key,body){
-  if(!key.desktop_account_id)return
+  if(!key.desktop_account_id)throw new AppError('YlaVint fonctionne désormais avec l’Assistant PC. Cette ancienne connexion est arrêtée.',410)
   if(!['agent_poll','agent_result','agent_guard','agent_status','agent_preview','agent_context','agent_progress'].includes(body?.action))throw new AppError('Cette connexion est réservée à l’assistant de ce compte.',403)
   if(body.profile_id!==key.desktop_profile_id)throw new AppError('Cette connexion appartient à un autre profil AdsPower.',403)
   const account=check(await db.from('publication_accounts').select('id,vinted_id,ylavint_unlinked_at').eq('id',key.desktop_account_id).maybeSingle())

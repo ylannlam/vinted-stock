@@ -39,31 +39,31 @@ function Discount({value,onChange}){
 }
 
 // ---------- Likes d'articles ----------
-export function LikesSettings({likes,onChange,gap,onGap}){
+export function LikesSettings({likes,onChange,gap,onGap,section='all'}){
  const L=likes,set=(k,v)=>onChange({...L,[k]:v})
  const steps=L.messages?.length?L.messages:[newStep()]
  const setStep=(i,patch)=>set('messages',steps.map((s,j)=>j===i?{...s,...patch}:s))
  const ordinal=i=>['premier','deuxième','troisième'][i]
  return <div className="space-y-4">
-  <div className="rounded-xl border border-blue-900/60 bg-blue-950/40 p-3 text-xs text-blue-100">
+  {section!=='followups'&&<div className="rounded-xl border border-blue-900/60 bg-blue-950/40 p-3 text-xs text-blue-100">
    <p className="mb-1 font-semibold">Comment ça marche ?</p>
    <ul className="list-disc space-y-0.5 pl-4"><li>Les messages suivent l’ordre prévu, en respectant le délai entre deux contacts.</li><li>Plusieurs favoris du même membre sont regroupés tant qu’un premier message attend son envoi. Un nouveau contact éligible utilisera le message suivant.</li>
-    <li>S’il n’y a que 2 messages, la rotation s’arrête au message 2.</li><li>Aucun message au même membre pendant le nombre de jours choisi plus bas.</li></ul></div>
+    <li>S’il n’y a que 2 messages, la rotation s’arrête au message 2.</li><li>Aucun message au même membre pendant le nombre de jours choisi plus bas.</li></ul></div>}
   {steps.map((s,i)=><Box key={i}>
-   <div className="mb-1 flex items-center justify-between"><p className="text-sm font-semibold text-white">Ce message / cette offre sera envoyé(e) au {ordinal(i)} article aimé par un membre</p>
-    {steps.length>1&&<button type="button" className={buttonClass+' px-2 py-1 text-xs text-red-300'} onClick={()=>set('messages',steps.filter((_,j)=>j!==i))}>Supprimer</button>}</div>
-   <Field label="Message (optionnel)" hint="Laisse vide pour n’envoyer qu’une offre de réduction. @username = pseudo du membre, {article} = titre, {prix} = prix."><Area value={s.message} onChange={v=>setStep(i,{message:v})}/></Field>
-   <Discount value={s.discount} onChange={v=>setStep(i,{discount:v})}/>
-   <div className="mt-3 border-t border-zinc-800 pt-2">
+   <div className="mb-1 flex items-center justify-between"><p className="text-sm font-semibold text-white">{section==='followups'?`Relance du message ${i+1}`:`Message ${i+1} · ${ordinal(i)} article aimé`}</p>
+    {section!=='followups'&&steps.length>1&&<button type="button" className={buttonClass+' px-2 py-1 text-xs text-red-300'} onClick={()=>set('messages',steps.filter((_,j)=>j!==i))}>Supprimer</button>}</div>
+   {section!=='followups'&&<><Field label="Message (optionnel)" hint="Laisse vide pour n’envoyer qu’une offre de réduction. @username = pseudo du membre, {article} = titre, {prix} = prix."><Area value={s.message} onChange={v=>setStep(i,{message:v})}/></Field>
+   <Discount value={s.discount} onChange={v=>setStep(i,{discount:v})}/></>}
+   {section!=='likes'&&<div className="mt-3 border-t border-zinc-800 pt-2">
     <Switch checked={s.followup?.enabled} onChange={v=>setStep(i,{followup:{...s.followup,enabled:v}})} label="↩ Envoyer un message de relance si le membre n’a pas répondu" hint="Un seul rappel, après le délai choisi, si le membre n’a pas répondu et que l’article est toujours en vente."/>
     {s.followup?.enabled&&<div className="space-y-2 border-l border-zinc-800 pl-3">
      <Field label="Délai avant la relance"><Select value={s.followup.delay_hours} onChange={v=>setStep(i,{followup:{...s.followup,delay_hours:v}})} options={FOLLOWUP_DELAYS}/></Field>
      <Field label="Message de relance" hint="@username = pseudo du membre."><Area value={s.followup.message} onChange={v=>setStep(i,{followup:{...s.followup,message:v}})}/></Field>
      <Discount value={s.followup.discount} onChange={v=>setStep(i,{followup:{...s.followup,discount:v}})}/>
     </div>}
-   </div>
+   </div>}
   </Box>)}
-  {steps.length<3&&<div className="flex justify-center"><button type="button" className={buttonClass+' text-sm'} onClick={()=>set('messages',[...steps,newStep()])}>＋ Ajouter un message ({steps.length}/3)</button></div>}
+  {section!=='followups'&&<>{steps.length<3&&<div className="flex justify-center"><button type="button" className={buttonClass+' text-sm'} onClick={()=>set('messages',[...steps,newStep()])}>＋ Ajouter un message ({steps.length}/3)</button></div>}
   <Box title="Paramètres membres" icon="👥">
    <div className="flex flex-wrap items-center gap-3 py-2"><Switch checked={L.per_item?.enabled} onChange={v=>set('per_item',{...L.per_item,enabled:v})} label="Limiter les messages par article à"/>
     <input type="number" className={compactClass+' w-20'} min={1} max={1000} disabled={!L.per_item?.enabled} value={L.per_item?.max??10} onChange={e=>set('per_item',{...L.per_item,max:Number(e.target.value)})}/><span className="text-sm text-zinc-400">messages</span></div>
@@ -79,7 +79,7 @@ export function LikesSettings({likes,onChange,gap,onGap}){
    <Field label="Délai avant d’envoyer un message après un J’aime" hint="Les J’aime en attente sont conservés même si le profil se ferme."><Select value={L.wait_minutes} onChange={v=>set('wait_minutes',v)} options={LIKE_DELAYS.some(([v])=>v===L.wait_minutes)?LIKE_DELAYS:[...LIKE_DELAYS,[L.wait_minutes,`${L.wait_minutes} minutes`]]}/></Field>
    {onGap&&<Field label="Délai entre chaque envoi" hint="Les envois sont espacés dans cette plage et respectent les horaires et plafonds du compte.">
     <span className="flex items-center gap-2 text-sm text-zinc-300">entre <input type="number" className={compactClass+' w-20'} min={5} max={3600} value={gap?.action_gap_min??30} onChange={e=>onGap('action_gap_min',e.target.value===''?'':Number(e.target.value))}/> et <input type="number" className={compactClass+' w-20'} min={5} max={3600} value={gap?.action_gap_max??45} onChange={e=>onGap('action_gap_max',e.target.value===''?'':Number(e.target.value))}/> secondes</span></Field>}
-  </Box>
+  </Box></>}
  </div>
 }
 

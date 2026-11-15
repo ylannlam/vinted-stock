@@ -18,14 +18,14 @@ export default function YlaVintWardrobe({request,accounts=[]}){
  const rows=(data?.listings||[]).filter(l=>(state==='all'||l.state===state)&&(!q||`${l.title} ${l.item_id}`.toLowerCase().includes(q.toLowerCase())))
  const desktop=isDesktop(data?.settings),f=executionSettings(data?.settings)?.features||{}
  return <div className="space-y-4">
-  <PageTitle title="Articles Vinted" hint="Le dressing de chaque compte, relu par YlaVint toutes les 2 h quand « Dressing », « Démasquage » ou « Prix » est actif. Il alimente aussi le suivi « Tes publications, jour après jour »."/>
+  <PageTitle title="Articles Vinted" hint="Le dressing de chaque compte, relu par l’Assistant PC quand la lecture du dressing est active. Il alimente aussi le suivi « Tes publications, jour après jour »."/>
   <div className="flex flex-wrap items-center gap-2">
    <input className={compactClass+' w-60'} placeholder="Rechercher titre ou ID" value={q} onChange={e=>setQ(e.target.value)}/>
    <select className={compactClass} value={account} onChange={e=>setAccount(e.target.value)}>{accounts.map(a=><option key={a.id} value={a.id}>{a.login}{a.settings?.enabled?'':' (non activé)'}</option>)}</select>
    <button className={buttonClass} disabled={busy||!data?.settings?.enabled} onClick={()=>act({action:'enqueue',kind:'scan_wardrobe'})}>↻ Relire le dressing</button>
-   <span className="ml-auto text-xs text-zinc-500">Dernière lecture : {when(data?.last_scan)} · démasquage {f.unmask?'auto':'manuel'} · prix {f.pricing?'auto':'manuels'}</span>
+   <span className="ml-auto text-xs text-zinc-500">Dernière lecture : {when(data?.last_scan)}</span>
   </div>
-  {desktop&&<p className="text-sm text-amber-300">L’Assistant PC peut relire le dressing. Les changements de prix et le démasquage nécessitent le mode Extension.</p>}
+  {desktop&&<p className="text-sm text-amber-300">L’Assistant PC peut relire le dressing. Les modifications de prix se font directement dans Vinted.</p>}
   {data&&<div className="flex flex-wrap gap-1">{STATES.map(([k,l])=><button key={k} onClick={()=>setState(k)} className={`rounded-md px-2.5 py-1 text-xs font-medium ${state===k?'bg-zinc-100 text-zinc-900':'text-zinc-400 hover:bg-zinc-800'}`}>{l} <span className="opacity-60">{k==='all'?data.listings.length:data.counts[k]||0}</span></button>)}</div>}
   {error&&<p role="alert" className="text-sm text-rose-400">{error}</p>}
   {notice&&<p role="status" className="text-sm text-blue-300">{notice}</p>}

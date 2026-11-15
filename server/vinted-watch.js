@@ -76,9 +76,7 @@ export async function handleWatch(req,{db,user}){
     return {keys}
   }
   if(req.body?.action==='download'){
-    const t=newWatchToken()
-    check(await db.from('vinted_watch_keys').insert({id:t.id,token_hash:t.token_hash,created_by:user.id}))
-    return {filename:'ylavint.zip',zip_base64:Buffer.from(watchArchive(t.token)).toString('base64')}
+    throw new AppError('Utilise le connecteur depuis la rubrique Assistant PC.',410)
   }
   if(req.body?.action==='revoke'){
     if(!isId(req.body.id))throw new AppError('Clé invalide.')

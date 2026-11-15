@@ -15,7 +15,7 @@ export default function YlaVintActions({request,accounts,onAssistant}){
   {error&&<p role="alert" className="text-sm text-rose-300">{error}</p>}
   {data&&!data.actions.length&&<Card className="p-8 text-center text-zinc-400">Aucune action en attente.</Card>}
   <div className="grid gap-4 xl:grid-cols-2">{(data?.actions||[]).map(a=><Card key={a.id} className="space-y-4 p-5">
-   <div className="flex items-start justify-between gap-3"><div><p className="font-semibold">{a.recipient}</p><p className="mt-1 text-xs text-zinc-400">{a.login} · {a.executor==='desktop'?'Assistant PC':'Extension'}{a.item_title?' · '+a.item_title:''}</p></div><Pill tone={a.state==='running'?'violet':a.blocked_reason?'amber':'blue'}>{a.state==='running'?'Prise en charge':a.blocked_reason?'En attente':'Prévue'}</Pill></div>
+   <div className="flex items-start justify-between gap-3"><div><p className="font-semibold">{a.recipient}</p><p className="mt-1 text-xs text-zinc-400">{a.login} · {a.executor==='desktop'?'Assistant PC':'Ancienne tâche'}{a.item_title?' · '+a.item_title:''}</p></div><Pill tone={a.state==='running'?'violet':a.blocked_reason?'amber':'blue'}>{a.state==='running'?'Prise en charge':a.blocked_reason?'En attente':'Prévue'}</Pill></div>
    <p className="text-xs text-zinc-400">{a.reason}</p>
    {a.body?<p className="rounded-xl border border-zinc-700 bg-zinc-900 p-4 text-sm leading-relaxed whitespace-pre-wrap">{a.body}</p>:<p className="text-sm text-zinc-400">Aucun texte prévu.</p>}
    {a.offer_requested&&<p className="text-sm text-emerald-300">Réduction prévue : {a.offer_price==null?'prix à confirmer':Number(a.offer_price).toLocaleString('fr-FR',{style:'currency',currency:'EUR'})}</p>}

@@ -4,7 +4,7 @@ export const DESKTOP_FEATURES=['inbox','ai','dressing','likes','publish','wallet
 export const isDesktop=settings=>settings?.messaging?.executor==='desktop'
 export const supportsTask=(settings,kind)=>kind==='scan_wallet'?isDesktop(settings):!isDesktop(settings)||DESKTOP_KINDS.includes(kind)
 export const supportsFeature=(settings,feature)=>feature==='wallet'?isDesktop(settings):!isDesktop(settings)||DESKTOP_FEATURES.includes(feature)
-export const EXTENSION_REQUIRED='Cette action nécessite le mode Extension. Le mode Assistant PC couvre le dressing, les favoris, les réductions, les relances, les réponses, les annonces, le porte-monnaie et les bordereaux.'
+export const EXTENSION_REQUIRED='Cette ancienne action n’est pas prise en charge par l’Assistant PC. Il couvre le dressing, les favoris, les réductions, les relances, les réponses, les annonces, le porte-monnaie et les bordereaux.'
 export const DESKTOP_DEFAULTS={typing_delay_ms:70,page_wait_seconds:3,session_minutes:25,pause_minutes:5,browse_enabled:false,browse_every_minutes:30,browse_items:3,browse_item_seconds:8,browse_scrolls:2,
  active_days:[1,2,3,4,5,6,7],absent_until:null,browse_keywords:'',browse_price_min:0,browse_price_max:0,browse_photos:false,browse_memory_hours:24,reply_max_age_hours:24,
  publication_typing_ms:250,publication_punctuation_ms:600,publication_field_seconds:2,publication_review_seconds:5,publication_corrections:false,wallet_hours:[9,18],

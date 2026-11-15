@@ -670,8 +670,9 @@ export async function handleAgent(req,{db,user}){
     const exists=check(await db.from('publication_accounts').select('id').eq('id',account).maybeSingle());if(!exists)throw new AppError('Compte introuvable.',404)
     const current=check(await db.from('vinted_agent_settings').select('*').eq('account_id',account).maybeSingle())
     const settings=effectiveSettings(current)
+    settings.messaging.executor='desktop'
     settings.features.publish=true
-    const row={enabled:true,features:settings.features,updated_at:new Date().toISOString(),updated_by:user?.id||null,version:(current?.version||0)+1}
+    const row={enabled:true,features:settings.features,messaging:settings.messaging,updated_at:new Date().toISOString(),updated_by:user?.id||null,version:(current?.version||0)+1}
     if(current){const saved=check(await db.from('vinted_agent_settings').update(row).eq('account_id',account).eq('version',current.version).select('account_id'));if(!saved.length)throw new AppError('Réglages modifiés entre-temps : réessaie.',409)}
     else check(await db.from('vinted_agent_settings').insert({account_id:account,...settings,...row}))
     await agentLog(db,{account_id:account,event:'settings',message:'Publication YlaVint activée depuis l’atelier.'})
@@ -680,12 +681,13 @@ export async function handleAgent(req,{db,user}){
   if(body.action==='save_settings'){
     if(!account)throw new AppError('Choisis un compte.')
     const exists=check(await db.from('publication_accounts').select('id').eq('id',account).maybeSingle());if(!exists)throw new AppError('Compte introuvable.',404)
-    const settings=normalizeSettings(body.settings||{}),enabled=body.enabled===true
+    const input=body.settings||{}
+    const settings=normalizeSettings({...input,messaging:{...input.messaging,executor:'desktop'}}),enabled=body.enabled===true
     if(settings.messaging.executor==='desktop'){
       const ready=await db.rpc('ylavint_desktop_ready')
       if(ready.error||ready.data!==true)throw new AppError('L’assistant PC attend encore l’activation de la mise à jour.',409)
     }
-    if(settings.messaging.offers.enabled){
+    if(settings.messaging.executor!=='desktop'&&settings.messaging.offers.enabled){
       const capability=await db.rpc('ylavint_offers_ready')
       if(capability.error||capability.data!==true)throw new AppError('L’acceptation des offres attend encore l’activation de la mise à jour.',409)
     }

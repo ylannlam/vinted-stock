@@ -4,7 +4,7 @@ export default function YlaVintPublicationSettings({pace,onChange}){
  const seconds=(pace.publication_typing_ms/1000).toFixed(2).replace('.',',')
  return <fieldset className="space-y-4 rounded-2xl border border-violet-400/30 bg-gradient-to-br from-violet-500/10 to-sky-500/5 p-5">
   <legend className="px-2 text-sm font-semibold text-violet-200">Publication à l’écran</legend>
-  <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold text-white">Une annonce, étape par étape</p><p className="mt-1 text-xs text-zinc-400">Photos → choix des détails → saisie → relecture → validation</p></div><span className="rounded-full bg-violet-400/15 px-3 py-1 text-xs text-violet-200">Connecteur 1.5</span></div>
+  <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold text-white">Une annonce, étape par étape</p><p className="mt-1 text-xs text-zinc-400">Photos → choix des détails → saisie → relecture → validation</p></div><span className="rounded-full bg-violet-400/15 px-3 py-1 text-xs text-violet-200">Assistant PC</span></div>
   <label className="block text-sm text-zinc-200">Vitesse du clavier · environ {(1000/pace.publication_typing_ms).toFixed(1).replace('.',',')} caractères / seconde
    <input aria-label="Vitesse de saisie des annonces" type="range" min="200" max="350" step="10" className="mt-3 w-full accent-violet-400" value={pace.publication_typing_ms} onChange={e=>onChange('publication_typing_ms',Number(e.target.value))}/>
    <span className="mt-1 flex justify-between text-xs text-zinc-400"><span>Plus rapide</span><span>{seconds} s entre les caractères</span><span>Plus lent</span></span>

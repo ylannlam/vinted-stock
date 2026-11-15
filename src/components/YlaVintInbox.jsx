@@ -101,7 +101,7 @@ export default function YlaVintInbox({request,accounts=[],initialConversation=nu
      </button></li>})}</ul>
    </div>
    <div className={current?'':'hidden lg:block'}>{current?<Thread key={`${current.account_id}:${current.conversation_id}`} request={request} conv={current} onBack={()=>setCurrent(null)} onChanged={load}/>
-    :<div className="grid min-h-[60vh] place-items-center p-8 text-center text-sm text-slate-500"><div><p className="text-base font-semibold text-slate-700">Toutes tes conversations, au même endroit</p><p className="mt-1">Choisis une conversation. Tes réponses partent avec le mode choisi pour ce compte : extension connectée ou Assistant PC démarré.</p></div></div>}</div>
+    :<div className="grid min-h-[60vh] place-items-center p-8 text-center text-sm text-slate-500"><div><p className="text-base font-semibold text-slate-700">Toutes tes conversations, au même endroit</p><p className="mt-1">Choisis une conversation. Tes réponses sont confiées à l’Assistant PC démarré pour ce compte.</p></div></div>}</div>
   </div>
  </section>
 }

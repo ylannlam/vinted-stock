@@ -53,3 +53,13 @@
 .ylv.ylv .ylv-chart-bar{transition:opacity .15s;outline:none}.ylv.ylv .ylv-chart-bar:hover,.ylv.ylv .ylv-chart-bar:focus{opacity:.65}
 @media(max-width:767px){.ylv.ylv .ylv-main{padding:16px}.ylv.ylv .ylv-hero{padding:23px}.ylv.ylv .ylv-table td{padding:12px}.ylv.ylv .ylv-stat{padding:16px}.ylv.ylv .ylv-stat-icon{width:34px;height:34px}.ylv.ylv .ylv-stat-value{font-size:25px}.ylv.ylv .ylv-page-title h1{font-size:25px}}
 @media(prefers-reduced-motion:reduce){.ylv.ylv *{transition:none!important;animation:none!important}}
+
+/* Account workspace and independent PC settings */
+.ylv.ylv .ylv-settings-dialog{box-shadow:0 30px 100px #02081790}
+.ylv.ylv .ylv-settings-nav{background:#0e1729}
+.ylv.ylv .ylv-setting-nav:hover,.ylv.ylv .ylv-account-choice:hover{background:#202d47}
+.ylv.ylv .ylv-setting-nav.is-selected,.ylv.ylv .ylv-account-choice.is-selected{background:#6375e824;color:#dce2ff;box-shadow:inset 0 0 0 1px #8c9aff68}
+.ylv.ylv .ylv-module{--module:#91a7ff;border-color:#2d3c59;background:linear-gradient(130deg,#17223a,#101a2c);transition:border-color .18s,transform .18s}
+.ylv.ylv .ylv-module:hover{transform:translateY(-2px);border-color:var(--module)}
+.ylv.ylv .ylv-module-red{--module:#f1a5ba}.ylv.ylv .ylv-module-violet{--module:#bca3ff}.ylv.ylv .ylv-module-amber{--module:#ebc18a}.ylv.ylv .ylv-module-green{--module:#77d6bd}
+.ylv.ylv .ylv-module-icon{color:var(--module);background:color-mix(in srgb,var(--module) 12%,transparent);border:1px solid color-mix(in srgb,var(--module) 20%,transparent)}
