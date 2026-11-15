@@ -209,7 +209,7 @@ async function taskBundle(db,task,settings){
 }
 
 // L'extension demande du travail pour le compte connecté dans son profil.
-export async function agentPoll(db,key,body,now=Date.now()){
+export async function agentPoll(db,key,body,now=Date.now(),{generate}={}){
   const {member,account,unlinked}=await accountFor(db,body)
   if(unlinked)return {state:'unknown',message:'Compte délié de YlaVint sur le site.',wait_seconds:3600}
   if(!account){
@@ -271,7 +271,9 @@ export async function agentPoll(db,key,body,now=Date.now()){
     await db.from('vinted_agent_tasks').update({started_at:null}).eq('id',claimed.task.id).then(check)
     claimed=check(await claim())
   }
-  const extra=await (await import('./ylavint.js')).pollExtras(db,account,settings,{paused:row.paused,draft:claimed?.state!=='task'}).catch(e=>{console.error('ylavint_poll_extra_failed',{code:e.code||e.status||'unknown'});return {}})
+  // Continuous read tasks must not starve replies. Prepare one reply alongside
+  // a read; an already claimed write still takes precedence over generation.
+  const extra=await (await import('./ylavint.js')).pollExtras(db,account,settings,{paused:row.paused,draft:claimed?.state!=='task'||claimed.task.writes===false,generate,now}).catch(e=>{console.error('ylavint_poll_extra_failed',{code:e.code||e.status||'unknown'});return {}})
   if(claimed?.state==='idle'&&extra.ai==='queued')claimed=check(await claim())
   // Des messages attendent l'écart entre deux envois : on repasse vite pour tenir le délai réglé (30 à 45 s par défaut).
   const nextMessage=claimed?.state==='idle'?check(await db.from('vinted_agent_tasks').select('not_before').eq('account_id',account.id).eq('state','queued').in('kind',MESSAGE_KINDS.filter(kind=>supportsTask(settings,kind))).order('not_before',{ascending:true}).limit(1))[0]:null

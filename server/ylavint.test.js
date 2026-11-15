@@ -102,6 +102,16 @@ const convo=(extra={})=>({id:'9001',other:{id:'77',login:'acheteuse',photo:'http
 const enableAi=(db,extra={})=>db.state.ylavint_config.push({key:'ai',value:{enabled:true,mode:'suggest',...extra},version:1})
 const fakeAi=(reply='Elle taille normalement, prends ta taille habituelle.',extra={})=>async()=>({reply,needs_human:false,reason:'',usage:{model:'gemini-test',input_tokens:10,output_tokens:5},...extra})
 
+test('continuous read tasks do not starve a pending AI reply',async()=>{
+ const db=fakeDb(base()),now=Date.now()+60000;enableAi(db,{mode:'auto'})
+ await applyInbox(db,{account_id:ACC},{conversations:[convo()]},{settings:settings(db),now:now-60000})
+ db.state.vinted_agent_tasks.push({id:crypto.randomUUID(),account_id:ACC,kind:'sync_inbox',state:'queued',writes:false,priority:4,created_at:recent(0)})
+ const result=await agentPoll(db,{}, {member_id:'3206068112'},now,{generate:fakeAi()})
+ assert.equal(result.task.kind,'sync_inbox')
+ assert.equal(result.ai,'queued')
+ assert.equal(db.state.vinted_agent_tasks.filter(t=>t.kind==='reply_message').length,1)
+})
+
 test('inbox results are revalidated: ids, bodies, photos, order',()=>{
   const [c]=parseInbox({conversations:[convo(),{id:'abc'},convo()]})
   assert.equal(c.id,'9001');assert.equal(c.item_photo,null,'non-Vinted photo dropped');assert.equal(c.other_photo,'https://images1.vinted.net/a.jpg');assert.equal(c.item_price,25)
