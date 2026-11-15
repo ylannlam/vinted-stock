@@ -4,7 +4,7 @@ import {mkdtemp,readFile,rm} from 'node:fs/promises'
 import path from 'node:path'
 import {tmpdir} from 'node:os'
 import {taskJournal} from './ylavint-journal.mjs'
-import {DesktopAssistants,desktopRequest,runDesktop} from './ylavint.mjs'
+import {DesktopAssistants,desktopRequest,runDesktop,desktopFailure} from './ylavint.mjs'
 import {VintedMessenger,conversationUrl} from './ylavint-ui.mjs'
 import {VisibleVinted,PACE,renderedPage,readLikes,readThread,visibleDate,euros} from './ylavint-visible.mjs'
 import {parseHTML} from 'linkedom'
@@ -236,11 +236,21 @@ test('manual replies require review when their remembered context has changed',a
  assert.equal(auto.context_changed,true);assert.equal(auto.review_required,false)
 })
 
-test('rehearsal only reads visible pages and the scoped plan, without task claims or sends',async()=>{
+test('rehearsal validates visible context on the site without task claims or sends',async()=>{
  const actions=[],updates=[],page={close:async()=>{}}
  await runDesktop({...binding,rehearse:true},{start:async()=>({address:'test'})},{signal:new AbortController().signal,dataDir:tmpdir(),Reader:FakeReader,update:x=>updates.push(x),connect:async()=>({contexts:()=>[{newPage:async()=>page}],close:async()=>{}}),request:async(_token,action)=>{actions.push(action);return {actions:[{id:'preview'}]}}})
- assert.deepEqual(actions,['agent_preview']);assert.equal(updates.at(-1).state,'rehearsed');assert.equal(updates.at(-1).actions_preview[0].id,'preview')
+ assert.deepEqual(actions,['agent_preview','agent_context']);assert.equal(updates.at(-1).state,'rehearsed');assert.equal(updates.find(x=>x.actions_preview).actions_preview[0].id,'preview')
  assert.equal(updates.find(x=>x.summary).summary.messages_sent,0)
+})
+
+test('rehearsal exposes a context-save failure that a page-only check would miss',async()=>{
+ const actions=[],updates=[];let closed=0
+ await assert.rejects(runDesktop({...binding,rehearse:true},{start:async()=>({address:'test'})},{signal:new AbortController().signal,dataDir:tmpdir(),Reader:FakeReader,update:x=>updates.push(x),connect:async()=>({contexts:()=>[{newPage:async()=>({close:async()=>{closed++}})}],close:async()=>{}}),request:async(_token,action)=>{
+  actions.push(action);if(action==='agent_context')throw Object.assign(Error('Storage rejected'),{status:500});return {actions:[]}
+ }}),/Storage rejected/)
+ assert.deepEqual(actions,['agent_preview','agent_context']);assert.equal(closed,0)
+ assert.equal(updates.some(x=>x.state==='rehearsed'),false)
+ assert.match(updates.at(-1).message,/Enregistrement/)
 })
 
 test('resume rereads and imports context before polling; takeover leaves the owned page open',async t=>{
@@ -266,4 +276,23 @@ test('manual takeover blocks automatic restart and keeps a distinct session stat
  assert.throws(()=>manager.start({...binding,account_id:task.lease,profile_id:'another'}),/déjà/)
  manager.stop(binding.account_id,true);await new Promise(setImmediate)
  assert.equal(manager.active,false);assert.equal(manager.snapshot()[0].state,'manual');await manager.close()
+})
+
+test('a failed read leaves the visible page open, disconnects and never claims a task',async()=>{
+ let closed=0,disconnected=0,claimed=0
+ class Reader extends FakeReader{async inbox(){throw new TypeError("Cannot read properties of null (reading '1')")}}
+ await assert.rejects(runDesktop({...binding,check_only:true},{start:async()=>({address:'test'})},{signal:new AbortController().signal,dataDir:tmpdir(),Reader,update:()=>{},connect:async()=>({contexts:()=>[{newPage:async()=>({close:async()=>{closed++}})}],close:async()=>{disconnected++}}),request:async()=>{claimed++}}),TypeError)
+ assert.equal(closed,0);assert.equal(disconnected,1);assert.equal(claimed,0)
+})
+
+test('diagnostics retain the failed step without exposing arbitrary error data',async t=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'ylavint-diagnostic-'))
+ t.after(async()=>{if(path.dirname(dir)===tmpdir()&&path.basename(dir).startsWith('ylavint-diagnostic-'))await rm(dir,{recursive:true,force:true})})
+ const manager=new DesktopAssistants({getClient:()=>({}),dataDir:dir,run:async(_b,_a,{update})=>{update({message:'Lecture des conversations'});throw Error('private buyer text '+binding.token+' https://example.com/?key=secret')}})
+ manager.start(binding);await manager.sessions.get(binding.account_id).done
+ const saved=JSON.parse(await readFile(path.join(dir,'ylavint',binding.account_id,'last-stop.json'),'utf8'))
+ assert.equal(saved.code,'reader_error');assert.equal(saved.stage,'Lecture des conversations')
+ assert.equal(manager.snapshot()[0].state,'review');assert.equal(manager.active,false)
+ assert.ok(!JSON.stringify([saved,manager.snapshot()]).match(/private buyer|svwk_|example.com|secret/))
+ assert.equal(desktopFailure(Object.assign(Error('private'),{status:503})).code,'site_response')
 })

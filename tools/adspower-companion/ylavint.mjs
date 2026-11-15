@@ -1,4 +1,5 @@
 import path from 'node:path'
+import {mkdir,writeFile} from 'node:fs/promises'
 import {taskJournal} from './ylavint-journal.mjs'
 import {VintedMessenger,review} from './ylavint-ui.mjs'
 import {VisibleVinted,PACE} from './ylavint-visible.mjs'
@@ -58,12 +59,25 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       await reader.open('/');await reader.identity(true)
       if(ownPages.length>1){summary.tabs_reopened++;publishSummary()}
     }
+    const refreshInbox=async()=>{
+      update({state:'reading',message:'Lecture des conversations avant les actions en attente'})
+      const preview=await api('agent_preview');update({actions_preview:preview.actions})
+      const inbox=await reader.inbox({conversation_ids:[...new Set((preview.actions||[]).filter(a=>a.kind==='reply_message').map(a=>a.conversation_id).filter(Boolean))].slice(0,4)})
+      update({state:'reading',message:'Enregistrement des conversations lues sur le site'})
+      await api('agent_context',{result:inbox})
+      summary.conversations_read+=inbox.conversations.length;publishSummary()
+      return inbox
+    }
     if(binding.check_only===true||binding.rehearse===true){
       await ensureWorker()
       update({state:'opening',message:'Vérification des lectures visibles, sans envoi'})
-      const wardrobe=await reader.wardrobe(),likes=await reader.likes(),inbox=await reader.inbox()
-      Object.assign(summary,{articles_read:wardrobe.items.length,likes_read:likes.likes.length,conversations_read:inbox.conversations.length});publishSummary()
-      if(binding.rehearse===true){const preview=await api('agent_preview');update({actions_preview:preview.actions,state:'rehearsed',message:'Répétition terminée : lectures visibles et aperçu des actions. Aucun brouillon saisi, aucune tâche prise, aucun envoi.'});return}
+      const wardrobe=await reader.wardrobe(),likes=await reader.likes()
+      Object.assign(summary,{articles_read:wardrobe.items.length,likes_read:likes.likes.length});publishSummary()
+      // Rehearse the actual startup path, including saving the read context.
+      // Never poll/claim work, type in Vinted, or submit messages in this mode.
+      const inbox=binding.rehearse===true?await refreshInbox():await reader.inbox()
+      summary.conversations_read=inbox.conversations.length;publishSummary()
+      if(binding.rehearse===true){update({state:'rehearsed',message:'Répétition terminée : conversations lues et enregistrées sur le site, actions vérifiées. Aucun brouillon saisi, aucune tâche prise, aucun envoi.'});return}
       update({state:'checked',message:`Compte confirmé : ${wardrobe.items.length} annonce(s), ${likes.likes.length} favori(s) et ${inbox.conversations.length} conversation(s) lus sur les pages chargées. Aucun message ni réduction envoyés.`});return
     }
     // Recover reports after a crash before claiming anything new; never repeat a Vinted write.
@@ -89,7 +103,7 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
     while(!signal.aborted){
       task=null;submitted=false;deadline=Infinity
       const status=await control()
-      if(!status.allowed){update({state:'stopped',message:'Compte désactivé, en pause ou confié à l’extension sur le site.'});return}
+      if(!status.allowed){update({state:'stopped',message:'Compte désactivé ou en pause sur le site.'});return}
       reader.pace={...PACE,...status.pace}
       if(!status.in_window){update({state:'waiting',message:'En attente du planning · jours, horaires et absences'});await sleep(20000);continue}
       if(!initialized){await routine.initialize(reader.pace);initialized=true}
@@ -109,10 +123,7 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       }
       await ensureWorker()
       if(!lastContextRefresh||now()-lastContextRefresh>15*60000){
-        update({state:'reading',message:'Reprise : relecture des conversations avant les actions en attente'})
-        const preview=await api('agent_preview');update({actions_preview:preview.actions})
-        const inbox=await reader.inbox({conversation_ids:[...new Set((preview.actions||[]).filter(a=>a.kind==='reply_message').map(a=>a.conversation_id).filter(Boolean))].slice(0,4)})
-        await api('agent_context',{result:inbox});summary.conversations_read+=inbox.conversations.length;publishSummary();lastContextRefresh=now()
+        await refreshInbox();lastContextRefresh=now()
         continue
       }
       if(routine.due(reader.pace)){await browseRound();continue}
@@ -201,7 +212,9 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       await sleep(1500)
     }
   }catch(e){
-    if(e.keep_page||task?.kind==='publish_item')keepPage=true
+    // Preserve the failing page for inspection instead of making the interruption
+    // look like a successful session. An explicit stop still closes our own tabs.
+    if(!signal.aborted||e.keep_page||task?.kind==='publish_item')keepPage=true
     if(task&&!submitted){
       const payload={task_id:task.id,lease:task.lease,ok:false,code:'desktop_review',error:e.code==='desktop_review'?e.message.slice(0,300):'Action interrompue ou non confirmée : vérifie Vinted avant de reprendre.'}
       // Keep the result if reporting fails. No write will be replayed by this worker.
@@ -216,6 +229,15 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
   }
 }
 
+export function desktopFailure(error,stage){
+  const raw=String(error?.message||''),location=String(error?.stack||'').match(/(ylavint[-\w]*\.mjs:\d+:\d+)/)?.[1]||null
+  const code=error?.code==='desktop_review'?'desktop_review':error?.status?'site_response':/Timeout|timeout/i.test(error?.name+' '+raw)?'page_timeout':/fetch failed|ECONN|ENOTFOUND/i.test(raw)?'connection_lost':'reader_error'
+  const message=code==='desktop_review'?raw:code==='site_response'?`Le site a refusé la demande (${error.status}). Actualise le site puis reprends l’assistant.`:code==='page_timeout'?'La page Vinted a mis trop de temps à répondre. Elle reste ouverte pour vérification.':code==='connection_lost'?'La connexion au site a été interrompue. L’onglet Vinted reste ouvert.':'La lecture de Vinted a été interrompue. L’onglet reste ouvert pour vérification.'
+  // No page contents, URLs, credentials or arbitrary error strings in diagnostics.
+  const detail=error?.name==='TypeError'&&/^Cannot read properties of (?:null|undefined) \(reading '[\w]+'\)$/.test(raw)?raw:null
+  return {at:new Date().toISOString(),code,message,stage:String(stage||'').slice(0,200),location,detail}
+}
+
 export class DesktopAssistants{
   constructor({getClient,dataDir,run=runDesktop}){Object.assign(this,{getClient,dataDir,run});this.sessions=new Map()}
   snapshot(){return [...this.sessions.values()].map(s=>({...s.public}))}
@@ -227,7 +249,12 @@ export class DesktopAssistants{
     if([...this.sessions.values()].some(s=>s.active))throw review('Un assistant pilote déjà ce PC. Arrête-le avant de choisir un autre profil pour garder une seule fenêtre sous contrôle.')
     const controller=new AbortController(),session={active:true,controller,public:{account_id:input.account_id,profile_id:input.profile_id,member_id:input.member_id,state:'opening',message:'Démarrage demandé'}}
     this.sessions.set(input.account_id,session)
-    session.done=Promise.resolve().then(()=>this.run(input,this.getClient(),{signal:controller.signal,dataDir:this.dataDir,update:patch=>Object.assign(session.public,patch)})).catch(e=>Object.assign(session.public,{state:'review',message:e.code==='desktop_review'?e.message:'Assistant interrompu. Vérifie AdsPower et la connexion au site.'})).finally(()=>{session.active=false;if(controller.signal.aborted)Object.assign(session.public,{state:controller.signal.reason?.takeover?'manual':'stopped',message:controller.signal.reason?.takeover?'Tu as la main. L’onglet reste ouvert ; aucune reprise automatique.':'Assistant arrêté sur ce PC.'})})
+    session.done=Promise.resolve().then(()=>this.run(input,this.getClient(),{signal:controller.signal,dataDir:this.dataDir,update:patch=>Object.assign(session.public,patch)})).catch(async e=>{
+      const failure=desktopFailure(e,session.public.message)
+      Object.assign(session.public,{state:'review',message:failure.message,error_code:failure.code,failed_step:failure.stage})
+      const folder=path.join(this.dataDir,'ylavint',input.account_id)
+      await mkdir(folder,{recursive:true}).then(()=>writeFile(path.join(folder,'last-stop.json'),JSON.stringify(failure),{mode:0o600})).catch(()=>{})
+    }).finally(()=>{session.active=false;if(controller.signal.aborted)Object.assign(session.public,{state:controller.signal.reason?.takeover?'manual':'stopped',message:controller.signal.reason?.takeover?'Tu as la main. L’onglet reste ouvert ; aucune reprise automatique.':'Assistant arrêté sur ce PC.'})})
     return this.snapshot()
   }
   stop(account,takeover=false){const s=this.sessions.get(account);if(s?.active){s.public.state='stopping';s.public.message='Arrêt de l’assistant en cours';s.controller.abort({takeover})}return this.snapshot()}
