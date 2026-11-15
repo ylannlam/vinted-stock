@@ -14,7 +14,7 @@ import {DesktopAssistants} from './ylavint.mjs'
 import {setupPage} from './setup-page.mjs'
 import {prepareDataDirectory} from './data-directory.mjs'
 
-export const VERSION='1.8.14',PORT=17442,SITE='https://vinted-stock.vercel.app',LOCAL=`http://127.0.0.1:${PORT}`
+export const VERSION='1.8.15',PORT=17442,SITE='https://vinted-stock.vercel.app',LOCAL=`http://127.0.0.1:${PORT}`
 async function body(req){let size=0,parts=[];for await(const part of req){size+=part.length;if(size>16000)throw new LocalError('Demande trop volumineuse.',413);parts.push(part)}return Buffer.concat(parts).toString('utf8')}
 function json(res,status,value){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(value))}
 export async function verifyTicket(ticket,fetcher=fetch){

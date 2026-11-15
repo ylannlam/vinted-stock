@@ -104,13 +104,14 @@ export class PublicationForm{
   if(await field.evaluate(e=>e.disabled||e.readOnly))throw stop('Ce champ ne peut pas être saisi.')
   await typePublication(field,value,{pace:this.pace,check:this.check,sleep:this.sleep,corrections:['title','description'].includes(name),inspect:async()=>{await this.guard();await inspect()},onProgress:(n,total)=>this.update({state:'typing',message:`Annonce · ${name==='title'?'Titre':name==='description'?'Description':'Prix'} · ${n}/${total}`})})
  }
- async option(id,label,{category=false}={}){
+ async option(id,label,{category=false,color=false}={}){
   if(!label)throw stop('Libellé de choix manquant.')
-  if(category&&(!Number.isSafeInteger(id)||id<=0))throw stop('Identifiant de catégorie invalide.')
+  if((category||color)&&(!Number.isSafeInteger(id)||id<=0))throw stop('Identifiant de choix invalide.')
   // Category branches are buttons, while leaves are radios. Bind both to the
   // requested catalog ID inside the picker, never to the site's navigation.
   const selector=category
    ?`[data-testid="category-list"] [id="catalog-${id}"][role="button"],[data-testid="category-list"] [id="catalog-${id}"][role="radio"]`
+   :color?`[role="checkbox"][data-testid="filter-grid-option-${id}"]:has([data-testid="color-${id}"])`
    :'[role="radio"],[role="checkbox"],[role="option"],input[type="radio"],input[type="checkbox"]'
   const options=this.page.locator(selector).filter({visible:true})
   for(let attempt=0;attempt<20;attempt++){
@@ -143,7 +144,7 @@ export class PublicationForm{
    await typePublication(search,String(label),{pace:this.pace,check:this.check,sleep:this.sleep,inspect:()=>this.guard()})
   }
   if(name==='category')for(const entry of label){await this.option(entry.id,entry.title,{category:true});await this.sleep(500)}
-  else for(let i=0;i<ids.length;i++){await this.option(ids[i],labels[i]);await this.sleep(300)}
+  else for(let i=0;i<ids.length;i++){await this.option(ids[i],labels[i],{color:name==='color'});await this.sleep(300)}
   if(name==='color')await (await this.field(name)).click()
   await this.sleep(500)
  }

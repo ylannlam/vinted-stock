@@ -131,6 +131,36 @@ test('an already selected category leaf is clicked to close the picker',async()=
  let clicks=0;document.querySelector('[role="radio"]').addEventListener('click',()=>clicks++)
  await form.option(1777,'Robes de bal de fin d’année',{category:true});assert.equal(clicks,1)
 })
+
+test('colors use the exact catalog tile, not the duplicate photo suggestion',async()=>{
+ const {form,document}=domForm('<div role="checkbox" data-testid="filter-grid-option-20" aria-label="Crème"><div data-testid="suggested-color-20">Crème</div></div><div role="checkbox" data-testid="filter-grid-option-20" aria-label="Crème"><div data-testid="color-20">Crème</div></div><div role="checkbox" data-testid="filter-grid-option-4" aria-label="Beige"><div data-testid="color-4">Beige</div></div>')
+ const clicks=[];for(const e of document.querySelectorAll('[role="checkbox"]'))e.addEventListener('click',()=>{clicks.push(e.firstElementChild.getAttribute('data-testid'));e.setAttribute('aria-checked','true')})
+ await form.option(20,'Crème',{color:true});await form.option(4,'Beige',{color:true});await form.option(20,'Crème',{color:true})
+ assert.deepEqual(clicks,['color-20','color-4'])
+ await assert.rejects(form.option(20,'Beige',{color:true}),/introuvable/)
+ document.querySelector('[data-testid="color-20"]').parentElement.remove()
+ await assert.rejects(form.option(20,'Crème',{color:true}),/introuvable/)
+ assert.deepEqual(clicks,['color-20','color-4'])
+})
+
+test('real browser: category branches and duplicated color suggestions select only the approved choices',{skip:process.env.YLAVINT_BROWSER_TEST!=='1'},async t=>{
+ const {chromium}=await import('playwright-core'),browser=await chromium.launch({channel:'msedge',headless:true})
+ t.after(()=>browser.close());const page=await browser.newPage()
+ await page.setContent(`<nav><button id="navigation">Femmes</button></nav><input name="catalog" readonly value="Robes de mariée"><input name="color" readonly><ul data-testid="category-list"></ul><div id="colors" hidden></div>`)
+ await page.evaluate(()=>{
+  const field=document.querySelector('[name="catalog"]'),list=document.querySelector('ul'),colors=document.querySelector('#colors'),color=document.querySelector('[name="color"]')
+  const branch=()=>{list.innerHTML='<li><div id="catalog-1904" role="button"><span>Femmes</span></div></li>';list.querySelector('[role="button"]').onclick=()=>{list.innerHTML='<li><div id="catalog-1777" role="radio"><span>Robes de bal de fin d’année</span></div></li>';list.querySelector('[role="radio"]').onclick=()=>{field.value='Robes de bal de fin d’année';list.innerHTML=''}}}
+  field.onclick=branch;document.querySelector('#navigation').onclick=()=>{throw Error('Wrong header target')}
+  colors.innerHTML='<div role="checkbox" aria-label="Crème" data-testid="filter-grid-option-20"><div data-testid="suggested-color-20">Crème</div></div><div role="checkbox" aria-label="Crème" data-testid="filter-grid-option-20"><div data-testid="color-20">Crème</div></div><div role="checkbox" aria-label="Beige" data-testid="filter-grid-option-4"><div data-testid="color-4">Beige</div></div>'
+  color.onclick=()=>{colors.hidden=!colors.hidden};for(const tile of colors.children)tile.onclick=()=>{if(tile.firstElementChild.dataset.testid.startsWith('suggested'))throw Error('Suggestion targeted');tile.setAttribute('aria-checked','true');color.value=[...colors.querySelectorAll('[aria-checked="true"]')].map(e=>e.getAttribute('aria-label')).join(', ')}
+ })
+ const form=new PublicationForm({page,check:()=>{},sleep:async()=>{}});form.guard=async()=>{}
+ const path=[{id:1904,title:'Femmes'},{id:1777,title:'Robes de bal de fin d’année'}]
+ await form.choice('category',1777,path);await form.choice('color',[20,4],['Crème','Beige'])
+ await form.verify([{name:'category',id:1777,label:path},{name:'color',id:[20,4],label:['Crème','Beige']}])
+ assert.equal(await page.locator('#colors').isVisible(),false)
+ assert.equal(await page.locator('[data-testid="suggested-color-20"]').evaluate(e=>e.parentElement.getAttribute('aria-checked')),null)
+})
 test('publication confirmation rejects a toast or an item page without the seller edit control',async()=>{
  let path='/items/new',owner=false,confirmed=0
  const form=new PublicationForm({page:{url:()=>`https://www.vinted.fr${path}`,getByRole:()=>({count:async()=>1}),locator:()=>({filter:()=>({count:async()=>owner?1:0})})},reader:{identity:async()=>({member_id:'7'})},task:{id:'t'},journal:{step:async()=>confirmed++},check:()=>{},sleep:async()=>{}})
