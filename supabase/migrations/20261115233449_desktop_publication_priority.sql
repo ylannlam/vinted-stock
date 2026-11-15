@@ -1,0 +1,159 @@
+create or replace function public.claim_vinted_agent_task(p_account uuid, p_driver text) returns jsonb
+language plpgsql security invoker set search_path='' as $$
+declare
+  s public.vinted_agent_settings;
+  t public.vinted_agent_tasks;
+  v_day timestamptz := (date_trunc('day', now() at time zone 'Europe/Paris')) at time zone 'Europe/Paris';
+  v_hour integer := extract(hour from now() at time zone 'Europe/Paris')::integer;
+  v_from integer; v_to integer; v_in_window boolean;
+  v_writes integer; v_last timestamptz; v_cap integer; v_kind_count integer;
+  v_likes integer; v_replies integer; v_last_msg timestamptz; v_gap_min numeric; v_gap_max numeric; v_gap numeric;
+  v_response_priority boolean; v_last_read timestamptz; v_responses_after integer;
+  v_publication_pending boolean;
+  v_msg_kinds text[] := array['reply_message','like_message','order_message','accept_offer'];
+begin
+  select * into s from public.vinted_agent_settings where account_id=p_account for update;
+  if not found or not s.enabled then return jsonb_build_object('state','disabled','task',null); end if;
+  if p_driver not in ('extension','desktop') or p_driver is null then raise exception 'invalid_executor'; end if;
+  if coalesce(s.messaging->>'executor','extension') <> p_driver then
+    return jsonb_build_object('state','other_executor','task',null);
+  end if;
+  update public.vinted_agent_settings set last_seen_at=now() where account_id=p_account;
+
+  update public.vinted_agent_tasks set
+      state=case when writes then 'failed' else 'queued' end,
+      error=case when writes then 'Résultat inconnu : le profil s''est fermé pendant l''action. Vérifie sur Vinted avant de relancer.' else error end,
+      finished_at=case when writes then now() else null end,
+      lease=null, lease_until=null
+    where account_id=p_account and state='running' and lease_until<now();
+  update public.vinted_agent_tasks set state='failed', error='Trois essais sans succès.', finished_at=now()
+    where account_id=p_account and state='queued' and attempts>=3;
+
+  update public.vinted_agent_tasks set state='failed',finished_at=now(),error='Ancien envoi direct arrêté. Prépare le formulaire depuis le site.'
+    where account_id=p_account and kind='publish_item' and state='queued' and payload->'listing'->>'assisted' is distinct from 'true';
+  if s.paused then return jsonb_build_object('state','paused','reason',s.pause_reason,'task',null); end if;
+  if exists(select 1 from public.vinted_agent_tasks where account_id=p_account and state='running') then
+    return jsonb_build_object('state','busy','task',null);
+  end if;
+
+  v_from := coalesce((s.limits->>'from_hour')::integer, 9);
+  v_to := coalesce((s.limits->>'to_hour')::integer, 22);
+  v_in_window := case when v_from=v_to then true when v_from<v_to then v_hour>=v_from and v_hour<v_to else v_hour>=v_from or v_hour<v_to end;
+  select count(*) into v_writes from public.vinted_agent_tasks where account_id=p_account and writes and not (kind = any(v_msg_kinds)) and started_at>=v_day;
+  select max(started_at) into v_last from public.vinted_agent_tasks where account_id=p_account and writes and not (kind = any(v_msg_kinds)) and started_at is not null;
+  -- Compter les tâches démarrées, y compris les échecs et les relances.
+  select count(*) into v_likes from public.vinted_agent_tasks where account_id=p_account and kind='like_message' and started_at>=v_day;
+  select count(*) into v_replies from public.vinted_agent_tasks where account_id=p_account and kind='reply_message' and started_at>=v_day;
+  select max(started_at) into v_last_msg from public.vinted_agent_tasks where account_id=p_account and kind = any(v_msg_kinds) and started_at is not null;
+  -- Écart entre deux messages : tiré au hasard entre le minimum et le maximum réglés (30 à 45 s par défaut).
+  v_gap_min := greatest(5, coalesce((s.messaging->>'action_gap_min')::numeric, 30));
+  v_gap_max := greatest(v_gap_min, coalesce((s.messaging->>'action_gap_max')::numeric, 45));
+  v_response_priority := p_driver='desktop' and coalesce((s.messaging#>>'{desktop,response_priority}')::boolean,true);
+  if v_response_priority then
+    v_gap_min := least(v_gap_min,30); v_gap_max := least(greatest(v_gap_min,v_gap_max),45);
+  end if;
+  select max(started_at) into v_last_read from public.vinted_agent_tasks
+    where account_id=p_account and kind in ('sync_inbox','scan_likes');
+  select count(*) into v_responses_after from public.vinted_agent_tasks
+    where account_id=p_account and kind in ('reply_message','like_message','accept_offer')
+      and started_at>coalesce(v_last_read,now()-interval '1 day');
+  v_gap := v_gap_min + random() * (v_gap_max - v_gap_min);
+
+  -- An explicit desktop publication precedes routine scans. Urgent buyer replies
+  -- keep their deadline priority; the normal read/response alternation is unchanged
+  -- when no publication is due. Execution guards below still apply to every task.
+  select p_driver='desktop' and exists(
+    select 1 from public.vinted_agent_tasks p
+      join public.listing_drafts d on d.publication_task_id=p.id
+    where p.account_id=p_account and p.kind='publish_item' and p.state='queued' and p.not_before<=now()
+      and p.payload->'listing'->>'assisted'='true' and p.payload->'listing'->>'execution'='desktop'
+      and d.publish_provider='ylavint' and d.state='scheduled' and d.owner_id=p.created_by
+      and d.fields->>'account_id'=p_account::text
+  ) into v_publication_pending;
+
+  for t in select * from public.vinted_agent_tasks
+      where account_id=p_account and state='queued' and not_before<=now()
+        and ((p_driver='extension' and kind<>'scan_wallet' and payload->>'desktop_order' is distinct from 'true') or (p_driver='desktop' and kind in ('scan_wardrobe','scan_likes','sync_inbox','like_message','reply_message','accept_offer','publish_item','scan_wallet','sync_orders','fetch_label','order_extension')))
+      order by case when v_publication_pending then case
+        when kind in ('reply_message','accept_offer','like_message') and response_deadline_at<=now()+interval '90 seconds' then 0
+        when kind='publish_item' and payload->'listing'->>'execution'='desktop' and payload->'listing'->>'assisted'='true' then 1
+        else 2 end else 0 end,
+      case when v_response_priority then case
+        when kind in ('sync_inbox','scan_likes') and v_responses_after>=2 then 0
+        when response_deadline_at<=now()+interval '90 seconds' then 1
+        when kind in ('sync_inbox','scan_likes') and not_before<=now()-interval '60 seconds' then 2
+        when kind in ('reply_message','accept_offer','like_message') and payload->>'followup' is distinct from 'true' then 3
+        when kind in ('sync_inbox','scan_likes') then 4 else 5 end
+      when p_driver='desktop' then case
+        when kind in ('scan_wallet','sync_orders','fetch_label') and not_before < now()-interval '15 minutes' then 0
+        when kind='reply_message' then 0 when kind='accept_offer' then 1
+        when kind='sync_inbox' then 2 when kind='like_message' then 3 else 4 end else 0 end,
+        case when v_response_priority then response_deadline_at end asc nulls last,
+        case when v_response_priority and kind in ('sync_inbox','scan_likes') then not_before end asc nulls last,
+        priority desc, writes, not_before, created_at
+      for update skip locked
+  loop
+    if p_driver='desktop' and t.kind in ('scan_wallet','sync_orders','fetch_label') then
+      if coalesce(s.extension_version,'') !~ '^pc-1[.]([6-9]|[1-9][0-9])[.][0-9]+$' then continue;end if;
+      if not v_in_window then continue;end if;
+      if t.kind='scan_wallet' and not coalesce((s.features->>'wallet')::boolean,false) then continue;end if;
+      if t.kind='scan_wallet' and t.payload->>'manual' is distinct from 'true' and v_hour < least(coalesce((s.messaging#>>'{desktop,wallet_hours,0}')::integer,9),coalesce((s.messaging#>>'{desktop,wallet_hours,1}')::integer,18)) then continue;end if;
+      if t.kind='sync_orders' and not (coalesce((s.features->>'orders')::boolean,false) or coalesce((s.features->>'labels')::boolean,false)) then continue;end if;
+      if t.kind='fetch_label' and (not coalesce((s.features->>'labels')::boolean,false) or t.payload->>'desktop_order' is distinct from 'true') then continue;end if;
+    end if;
+    if p_driver='desktop' and t.kind='order_extension' then
+      if coalesce(s.extension_version,'') !~ '^pc-1[.]([8-9]|[1-9][0-9])[.][0-9]+$' or t.payload->>'desktop_order' is distinct from 'true' then continue; end if;
+    end if;
+    if t.kind='publish_item' then
+      if t.payload->'listing'->>'assisted' is distinct from 'true' then
+        update public.vinted_agent_tasks set state='failed',finished_at=now(),error='Ancien envoi direct arrêté. Prépare le formulaire depuis le site.' where id=t.id;continue;
+      end if;
+      if not coalesce((s.features->>'publish')::boolean,false) then continue;end if;
+      if coalesce(t.payload->'listing'->>'execution','extension')<>p_driver then continue;end if;
+      if p_driver='desktop' then
+        if coalesce(s.extension_version,'') !~ '^pc-1[.]([5-9]|[1-9][0-9])[.][0-9]+$' then continue;end if;
+      else
+        if coalesce(s.extension_version,'') !~ '^[0-9]+[.][0-9]+[.][0-9]+$' then continue;end if;
+        if (split_part(s.extension_version,'.',1)::integer,split_part(s.extension_version,'.',2)::integer)<(3,8) then continue;end if;
+      end if;
+      if not exists(select 1 from public.listing_drafts d where d.publication_task_id=t.id and d.publish_provider='ylavint' and d.state='scheduled' and d.owner_id=t.created_by and d.fields->>'account_id'=p_account::text) then
+        update public.vinted_agent_tasks set state='failed',finished_at=now(),error='La fiche ne correspond plus à cette tâche.' where id=t.id;continue;
+      end if;
+    end if;
+    if t.kind='accept_offer' and p_driver='desktop' then
+      if t.payload->>'desktop_offer' is distinct from 'true' then continue; end if;
+      if coalesce(s.extension_version,'') !~ '^pc-[0-9]+[.][0-9]+[.][0-9]+$' then continue; end if;
+      if (split_part(substring(s.extension_version from 4),'.',1)::integer,split_part(s.extension_version,'.',2)::integer,split_part(s.extension_version,'.',3)::integer)<(1,8,7) then continue; end if;
+    end if;
+    if t.kind='accept_offer' then
+      if not coalesce((s.messaging->'offers'->>'enabled')::boolean,false) then continue; end if;
+      select count(*) into v_kind_count from public.vinted_agent_tasks
+        where account_id=p_account and kind='accept_offer' and started_at >= now()-make_interval(days=>coalesce((s.messaging->'offers'->>'period_days')::integer,1))
+          and payload->'offer'->>'buyer_id'=t.payload->'offer'->>'buyer_id';
+      if v_kind_count >= coalesce((s.messaging->'offers'->>'max_per_buyer')::integer,5) then continue; end if;
+    end if;
+    if t.kind = any(v_msg_kinds) then
+      -- Relances et tâches manuelles incluses ; le verrou du compte protège les appels concurrents.
+      if t.kind='like_message' and v_likes >= coalesce((s.limits->>'like_message_per_day')::integer, 10) then continue; end if;
+      if not coalesce((t.payload->>'manual')::boolean, false) and not v_in_window then continue; end if;
+      if t.kind='reply_message' and not coalesce((s.messaging->>'reply_unlimited')::boolean,false) and v_replies >= coalesce((s.messaging->>'reply_per_day')::integer, 80) then continue; end if;
+      if v_last_msg is not null and v_last_msg > now() - make_interval(secs => v_gap) then continue; end if;
+    elsif t.writes and (t.kind<>'publish_item' or p_driver='desktop') then
+      if not v_in_window then continue; end if;
+      if v_writes >= coalesce((s.limits->>'writes_per_day')::integer, 15) then continue; end if;
+      if v_last is not null and v_last > now() - make_interval(mins => coalesce((s.limits->>'min_gap_minutes')::integer, 12)) then continue; end if;
+      v_cap := coalesce((s.limits->>(t.kind||'_per_day'))::integer, 5);
+      select count(*) into v_kind_count from public.vinted_agent_tasks where account_id=p_account and kind=t.kind and started_at>=v_day;
+      if v_kind_count >= v_cap then continue; end if;
+    end if;
+    update public.vinted_agent_tasks set state='running', attempts=attempts+1, lease=gen_random_uuid(),
+        lease_until=now()+case when t.kind='publish_item' and p_driver='desktop' then interval '30 minutes' when t.kind='publish_item' then interval '10 minutes' else interval '4 minutes' end, started_at=now(), error=null
+      where id=t.id returning * into t;
+    return jsonb_build_object('state','task','task',to_jsonb(t));
+  end loop;
+  return jsonb_build_object('state','idle','task',null);
+end; $$;
+
+revoke all on function public.claim_vinted_agent_task(uuid,text) from public,anon,authenticated;
+grant execute on function public.claim_vinted_agent_task(uuid,text) to service_role;
+

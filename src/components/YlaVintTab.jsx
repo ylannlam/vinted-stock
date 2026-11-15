@@ -6,7 +6,7 @@ import '../ylavint.css'
 import {vintedWatchRequest} from '../lib/assistantConnection'
 import {ORDER_LABELS} from '../lib/fulfillment'
 import {isDesktop,supportsFeature,supportsTask} from '../lib/ylavintExecution'
-import {taskOutcome} from '../lib/assistantActivity'
+import {taskOutcome,taskLabel} from '../lib/assistantActivity'
 import {priorityResponses} from '../lib/responsePriority'
 
 const YlaVintInbox=lazy(()=>import('./YlaVintInbox'))
@@ -217,7 +217,7 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
    {section==='journal'&&<div className="grid gap-5 xl:grid-cols-2">
     <div className="space-y-2"><p className="font-semibold text-white">File de tâches</p>
      <Table head={['Tâche','Compte','État','Quand']} empty={!data.tasks.length&&'Aucune tâche.'}>
-      {data.tasks.slice(0,80).map(t=><tr key={t.id}><Td>{data.kinds[t.kind]?.label||t.kind}{t.error&&<p className="text-xs text-rose-400">{t.error}</p>}</Td><Td className="text-blue-400">{logins.get(t.account_id)}</Td>
+      {data.tasks.slice(0,80).map(t=><tr key={t.id}><Td>{taskLabel(t,data.kinds[t.kind]?.label||t.kind)}{t.error&&<p className="text-xs text-rose-400">{t.error}</p>}</Td><Td className="text-blue-400">{logins.get(t.account_id)}</Td>
        <Td><Pill tone={taskOutcome(t).tone}>{t.state==='queued'&&!supportsTask(accounts.find(a=>a.id===t.account_id)?.settings,t.kind)?'non prise en charge par le PC':taskOutcome(t).label}</Pill></Td>
        <Td className="whitespace-nowrap text-xs text-zinc-400">{when(t.state==='queued'?t.not_before:t.finished_at||t.started_at)}{t.state==='queued'&&<button className="ml-2 underline" disabled={busy} onClick={()=>act({action:'cancel',task_id:t.id})}>Annuler</button>}</Td></tr>)}
      </Table></div>

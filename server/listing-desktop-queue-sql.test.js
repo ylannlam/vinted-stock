@@ -12,6 +12,7 @@ test('Postgres: PC listings queue offline, deduplicate and execute serially only
    create table listing_drafts(id uuid primary key,owner_id uuid,version integer,state text,fields jsonb,dotb_item_id text,publication_task_id uuid,payload jsonb,publish_provider text,planned_at timestamptz,scheduled_at timestamptz,dotb_publish boolean,updated_at timestamptz,last_error text,message text);`)
   await db.exec(await readFile(new URL('../supabase/migrations/20261115154530_priority_buyer_responses.sql',import.meta.url),'utf8'))
   await db.exec(await readFile(new URL('../supabase/migrations/20261115223422_desktop_publication_queue.sql',import.meta.url),'utf8'))
+  await db.exec(await readFile(new URL('../supabase/migrations/20261115233449_desktop_publication_priority.sql',import.meta.url),'utf8'))
   await db.query(`insert into vinted_agent_settings values($1,true,true,'Pause demandée','{"executor":"desktop"}','{"publish":true}','{"from_hour":0,"to_hour":0,"min_gap_minutes":0}',null,null)`,[account])
   const draft=async()=>{const id=crypto.randomUUID();await db.query(`insert into listing_drafts(id,owner_id,version,state,fields) values($1,$2,1,'draft',$3)`,[id,owner,JSON.stringify({account_id:account})]);return id}
   const payload={assisted:true,execution:'desktop',submit:true,fields:{account_id:account},photos:[{path:'owned.png'}]}

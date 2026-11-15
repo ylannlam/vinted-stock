@@ -14,6 +14,7 @@ test('Postgres: replies, received offers, inbox and favourites; aged operational
      attempts integer default 0,error text,started_at timestamptz,finished_at timestamptz,lease uuid,lease_until timestamptz);
    create table public.listing_drafts(publication_task_id uuid,publish_provider text,state text,owner_id uuid,fields jsonb);`)
   await db.exec(await readFile(new URL('../supabase/migrations/20261115154530_priority_buyer_responses.sql',import.meta.url),'utf8'))
+  await db.exec(await readFile(new URL('../supabase/migrations/20261115233449_desktop_publication_priority.sql',import.meta.url),'utf8'))
   const account='00000000-0000-4000-8000-000000000001'
   await db.query(`insert into vinted_agent_settings(account_id,enabled,messaging,limits,features,extension_version) values ($1,true,'{"executor":"desktop","desktop":{"response_priority":false},"offers":{"enabled":true}}','{"from_hour":0,"to_hour":0}','{"wallet":true,"orders":true}','pc-1.8.10')`,[account])
   await db.query(`insert into vinted_agent_tasks(account_id,kind,writes,priority,payload) values
@@ -46,5 +47,34 @@ test('Postgres: replies, received offers, inbox and favourites; aged operational
   assert.equal((await claim()).state,'idle','priority never bypasses daily limit')
   await db.exec(`update vinted_agent_settings set limits='{"from_hour":0,"to_hour":0}'; update vinted_agent_tasks set not_before=now()+interval '1 hour'`)
   assert.equal((await claim()).state,'idle','priority never overrides a backoff')
+  for(const fast of [true,false]){
+   await db.exec(`delete from vinted_agent_tasks;delete from listing_drafts;
+    update vinted_agent_settings set messaging='{"executor":"desktop","desktop":{"response_priority":${fast}},"offers":{"enabled":true}}',
+     features='{"publish":true,"orders":true,"wallet":true,"labels":true}',limits='{"from_hour":0,"to_hour":0}'`)
+   const publication=crypto.randomUUID(),owner=crypto.randomUUID()
+   await db.query(`insert into vinted_agent_tasks(id,account_id,kind,writes,priority,payload,created_by) values
+    ($1,$2,'publish_item',true,2,$3,$4)`,[publication,account,JSON.stringify({listing:{assisted:true,execution:'desktop',submit:fast}}),owner])
+   await db.query(`insert into listing_drafts values($1,'ylavint','scheduled',$2,$3)`,[publication,owner,JSON.stringify({account_id:account})])
+   for(const kind of ['sync_inbox','scan_likes','sync_orders','scan_wallet','scan_wardrobe','fetch_label']){
+    await db.query(`insert into vinted_agent_tasks(account_id,kind,writes,priority,not_before,payload) values($1,$2,false,999,now()-interval '1 hour','{"desktop_order":true}')`,[account,kind])
+   }
+   await db.query(`insert into vinted_agent_tasks(account_id,kind,writes,response_deadline_at) values
+    ($1,'reply_message',true,now()+interval '1 minute'),($1,'like_message',true,now()+interval '3 minutes')`,[account])
+   const urgent=await claim();assert.equal(urgent.task.kind,'reply_message','urgent buyer response still precedes publication')
+   await db.query(`update vinted_agent_tasks set state='done',started_at=now()-interval '1 minute' where id=$1`,[urgent.task.id])
+   const next=await claim();assert.equal(next.task.id,publication,'publication beats all routine reads, including overdue scans with higher numeric priority')
+   assert.equal((await claim()).state,'busy','never interrupts an action already running')
+   await db.query(`delete from vinted_agent_tasks where id<>$1`,[publication])
+   await db.exec(`update vinted_agent_tasks set state='queued',started_at=null,attempts=0,lease=null`)
+   await db.exec(`update vinted_agent_settings set paused=true`);assert.equal((await claim()).state,'paused')
+   await db.exec(`update vinted_agent_settings set paused=false;update vinted_agent_tasks set not_before=now()+interval '1 hour'`);assert.equal((await claim()).state,'idle','future publication stays scheduled')
+   await db.exec(`update vinted_agent_tasks set not_before=now();update vinted_agent_settings set limits='{"from_hour":0,"to_hour":0,"publish_item_per_day":0}'`);assert.equal((await claim()).state,'idle','publication daily cap still applies')
+   await db.exec(`update vinted_agent_settings set limits='{"from_hour":0,"to_hour":0,"writes_per_day":0}'`);assert.equal((await claim()).state,'idle','overall daily cap still applies')
+   await db.exec(`update vinted_agent_settings set limits=jsonb_build_object('from_hour',(extract(hour from now() at time zone 'Europe/Paris')::int+1)%24,'to_hour',(extract(hour from now() at time zone 'Europe/Paris')::int+2)%24)`);assert.equal((await claim()).state,'idle','activity hours still apply')
+   await db.exec(`update vinted_agent_settings set limits='{"from_hour":0,"to_hour":0}',features='{"publish":false}'`);assert.equal((await claim()).state,'idle','disabled publication stays disabled')
+   await db.exec(`update vinted_agent_settings set features='{"publish":true}',extension_version=null`);assert.equal((await claim()).state,'idle','missing desktop connector stays blocked')
+   await db.exec(`update vinted_agent_settings set extension_version='pc-1.8.13'`)
+   await db.query(`insert into vinted_agent_tasks(account_id,kind,writes,state,started_at) values($1,'publish_item',true,'done',now())`,[account]);assert.equal((await claim()).state,'idle','spacing between publications still applies')
+  }
  }finally{await db.close()}
 })
