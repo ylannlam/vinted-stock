@@ -1,6 +1,14 @@
 STOCK VINTED — CONNECTEUR ADSPOWER
 
-CONNEXION 1.8.10
+CONNEXION 1.8.11
+
+Priorité aux acheteurs : objectif de réponse sous 4 minutes pour messages,
+offres et premiers favoris, selon les fonctions activées. Vérification environ
+chaque minute. Ce mode suspend les consultations facultatives et les pauses
+automatiques longues ; les horaires, pauses manuelles, filtres et plafonds
+restent appliqués. Les relances gardent leur délai. Active/désactive ce mode
+dans les réglages du compte, Activation & horaires. Le délai reste un objectif,
+avec alerte sur l'accueil si une réponse de la file attend trop longtemps.
 - Réponses reçues et offres prioritaires sur les favoris ; consultation du catalogue seulement quand aucune tâche n'est prête.
 - Pas de rafraîchissement pendant une saisie ; tout brouillon bloque le départ vers une autre page.
 - L'accueil distingue lecture, préparation et envoi confirmé, avec la cause de la pause et la tâche à venir.
@@ -23,7 +31,7 @@ CONNEXION 1.8.10
 - La connexion protégée et les journaux sont conservés dans le dossier local StockVinted/AdsPower de ton compte Windows.
 - Pour reprendre une ancienne installation, remplace ses fichiers en conservant son dossier .data, puis relance run.bat : les données seront reprises automatiquement.
 
-ASSISTANT YLAVINT SUR PC (version 1.8.10)
+ASSISTANT YLAVINT SUR PC (version 1.8.11)
 Cette version ajoute le pilotage des favoris et de la messagerie depuis
 https://vinted-stock.vercel.app/ylavint#assistant-pc.
 La mise à jour du site et de sa base doit être installée avant de choisir ce mode.

@@ -2,6 +2,7 @@
 // (confirmation, demande de délai, annulation, retrait, évaluation, message de fin, suppression de l'article vendu).
 // Toutes les actions passent par la file de tâches : plafonds du compte, plage horaire et recettes apprises.
 import {inHistory} from './ylavint-history.js'
+import {priorityResponses,responseTiming} from '../src/lib/responsePriority.js'
 import {check,vid,cid,text,iso,jitter,enqueue,KINDS} from './vinted-agent.js'
 import {fillTemplate,offerPrice,OPTIONAL} from './vinted-agent-config.js'
 
@@ -37,7 +38,8 @@ export async function planLikes(db,task,likes,settings,{now=Date.now(),can}){
     pendingUsers.add(l.user_id)
     byUser.set(l.user_id,{count:u.count+1,last:now});byItem.set(l.item_id,(byItem.get(l.item_id)||0)+1)
     tasks.push({account_id:account,kind:'like_message',dedupe_key:`like:${account}:${l.item_id}:${l.user_id}`,
-      not_before:nowIso(now+L.wait_minutes*60000),payload:{item_id:l.item_id,user_id:l.user_id,login:l.login||null,step,liked_at:l.liked_at||null}})
+      ...(priorityResponses(settings)?responseTiming(l.liked_at,now):{}),
+      not_before:nowIso(now+(priorityResponses(settings)?0:L.wait_minutes*60000)),payload:{item_id:l.item_id,user_id:l.user_id,login:l.login||null,step,liked_at:l.liked_at||null}})
   }
   if(rows.length)check(await db.from('vinted_agent_contacts').upsert(rows,{onConflict:'account_id,item_id,user_id',ignoreDuplicates:true}))
   const queued=await enqueue(db,tasks),skipped=rows.filter(r=>r.state==='skipped').length

@@ -15,7 +15,7 @@ const writes=task=>['like_message','reply_message','accept_offer','publish_item'
 const SITE='https://vinted-stock.vercel.app'
 const wait=(ms,signal)=>new Promise(resolve=>{if(signal.aborted)return resolve();const done=()=>{clearTimeout(timer);signal.removeEventListener('abort',done);resolve()};const timer=setTimeout(done,ms);signal.addEventListener('abort',done,{once:true})})
 export async function desktopRequest(token,action,body,fetcher=fetch){
-  const r=await fetcher(SITE+'/api/collector',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...body,action,version:'pc-1.8.10'}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(30000)})
+  const r=await fetcher(SITE+'/api/collector',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({...body,action,version:'pc-1.8.11'}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(30000)})
   const data=await r.json().catch(()=>null)
   if(!r.ok)throw Object.assign(Error(data?.error||'Le site ne répond pas.'),{status:r.status})
   if(!data||typeof data!=='object')throw Error('Réponse du site illisible.')
@@ -116,9 +116,16 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       const status=await control()
       if(!status.allowed){update({state:'stopped',message:'Compte désactivé ou en pause sur le site.'});return}
       reader.pace={...PACE,...status.pace}
+      const responsePriority=reader.pace.response_priority!==false
+      if(responsePriority){
+        reader.pace.navigation_seconds=Math.min(10,reader.pace.navigation_seconds||10)
+        reader.pace.page_wait_seconds=3
+        reader.pace.action_pause_seconds=10
+      }
       if(!status.in_window){update({state:'waiting',message:'En attente du planning · jours, horaires et absences'});await sleep(20000);continue}
       if(!initialized){await routine.initialize(reader.pace);initialized=true}
-      if(!routine.state.break_until&&now()>=routine.state.next_pause_at){
+      if(responsePriority&&routine.state.break_until){await routine.finishBreak(reader.pace);update({resume_at:null})}
+      if(!responsePriority&&!routine.state.break_until&&now()>=routine.state.next_pause_at){
         if(worker)await reader.assertNoDraft()
         await routine.beginBreak(reader.pace)
       }
@@ -145,8 +152,8 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       if(['other_executor','unknown','disabled','paused','update_required'].includes(next.state)){update({state:'stopped',message:next.reason||next.message||'Compte désactivé ou en pause sur le site.'});return}
       if(next.state!=='task'){
         // Optional browsing never takes precedence over work already ready.
-        if(next.state==='idle'&&routine.due(reader.pace,{idle:true})){await browseRound();continue}
-        const waitMs=Math.max(1,Math.min(20,Number(next.wait_seconds)||20))*1000
+        if(!responsePriority&&next.state==='idle'&&routine.due(reader.pace,{idle:true})){await browseRound();continue}
+        const waitMs=Math.max(1,Math.min(responsePriority?15:20,Number(next.wait_seconds)||20))*1000
         update({state:'waiting',message:next.reason||'En attente des prochains favoris et messages',current_action:null,next_check_at:new Date(now()+waitMs).toISOString()});await sleep(waitMs);update({next_check_at:null});continue
       }
       task=next.task
@@ -170,7 +177,7 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
       else if(task.kind==='scan_likes')value=await reader.likes()
       else if(task.kind==='scan_wardrobe')value=await reader.wardrobe()
       else if(task.kind==='sync_inbox'){
-        value=startupInbox&&now()-startupInboxAt<120000&&!p.conversation_ids?.length&&!p.force_details?startupInbox:await reader.inbox(p)
+        value=startupInbox&&now()-startupInboxAt<(responsePriority?15000:120000)&&!p.conversation_ids?.length&&!p.force_details?startupInbox:await reader.inbox(p)
         startupInbox=null
       }
       else if(task.kind==='accept_offer')value=await acceptVisibleOffer({reader,ui,authorize,journal,task},p)

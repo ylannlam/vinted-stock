@@ -5,7 +5,7 @@ export const isDesktop=settings=>settings?.messaging?.executor==='desktop'
 export const supportsTask=(settings,kind)=>kind==='scan_wallet'?isDesktop(settings):!isDesktop(settings)||DESKTOP_KINDS.includes(kind)
 export const supportsFeature=(settings,feature)=>feature==='wallet'?isDesktop(settings):!isDesktop(settings)||DESKTOP_FEATURES.includes(feature)
 export const EXTENSION_REQUIRED='Cette ancienne action n’est pas prise en charge par l’Assistant PC. Il couvre le dressing, les favoris, les réductions, les relances, les réponses, les annonces, le porte-monnaie et les bordereaux.'
-export const DESKTOP_DEFAULTS={typing_delay_ms:70,page_wait_seconds:3,session_minutes:25,pause_minutes:5,browse_enabled:false,browse_every_minutes:30,browse_items:3,browse_item_seconds:8,browse_scrolls:2,
+export const DESKTOP_DEFAULTS={response_priority:true,typing_delay_ms:70,page_wait_seconds:3,session_minutes:25,pause_minutes:5,browse_enabled:false,browse_every_minutes:30,browse_items:3,browse_item_seconds:8,browse_scrolls:2,
  active_days:[1,2,3,4,5,6,7],absent_until:null,browse_keywords:'',browse_price_min:0,browse_price_max:0,browse_photos:false,browse_memory_hours:24,reply_max_age_hours:24,
  publication_typing_ms:250,publication_punctuation_ms:600,publication_field_seconds:2,publication_review_seconds:5,publication_corrections:false,wallet_hours:[9,18],
  browse_variety:true,browse_between_actions:true,browse_after_actions_min:3,browse_after_actions_max:7,browse_like_enabled:false,browse_like_keywords:'robe',browse_like_price_min:20,browse_like_price_max:50,browse_like_per_day:5,browse_like_percent:25,pause_close_percent:0}
@@ -23,6 +23,6 @@ export function executionSettings(settings){
  if(!isDesktop(settings))return settings
  return {...settings,
   features:Object.fromEntries(Object.entries(settings.features||{}).map(([key,value])=>[key,value&&DESKTOP_FEATURES.includes(key)])),
-  messaging:{...settings.messaging,sync_seconds:Math.max(120,Number(settings.messaging?.sync_seconds)||120)},
+  messaging:{...settings.messaging,sync_seconds:settings.messaging.desktop?.response_priority!==false?60:Math.max(120,Number(settings.messaging?.sync_seconds)||120)},
   order_flow:Object.fromEntries(Object.entries(settings.order_flow||{}).map(([key,value])=>[key,key==='delete_sold'?false:value&&typeof value==='object'?{...value,enabled:false}:value]))}
 }

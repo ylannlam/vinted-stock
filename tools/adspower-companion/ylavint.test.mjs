@@ -320,7 +320,7 @@ test('the first scheduled inbox scan reuses startup context and pauses before th
   if(action==='agent_result'){results.push(body);return {saved:true}}
   assert.fail(action)
  }})
- assert.equal(reads,1);assert.equal(results.length,1);assert.equal(results[0].ok,true);assert.deepEqual(waits,[20000])
+ assert.equal(reads,1);assert.equal(results.length,1);assert.equal(results[0].ok,true);assert.deepEqual(waits,[10000])
 })
 
 test('due optional browsing waits until the server has no ready task',async t=>{
@@ -332,7 +332,7 @@ test('due optional browsing waits until the server has no ready task',async t=>{
  let clock=100000,polls=0,browsed=0;const events=[]
  class Reader extends FakeReader{async browseOne(){browsed++;assert.ok(polls>=2);events.push('browse');return false}}
  await runDesktop(binding,{start:async()=>({address:'test'})},{signal:new AbortController().signal,dataDir:dir,Reader,now:()=>clock,waitFor:async ms=>{clock+=ms},update:()=>{},connect:async()=>({contexts:()=>[{newPage:async()=>({close:async()=>{}})}],close:async()=>{}}),request:async(_token,action)=>{
-  if(action==='agent_status')return {allowed:true,in_window:true,pace:{...PACE,browse_enabled:true,browse_variety:false,browse_minutes:30}}
+  if(action==='agent_status')return {allowed:true,in_window:true,pace:{...PACE,response_priority:false,browse_enabled:true,browse_variety:false,browse_minutes:30}}
   if(action==='agent_preview')return {actions:[]}
   if(action==='agent_context')return {saved:true}
   if(action==='agent_poll'){events.push('poll');return ++polls===1?{state:'task',task:{...task,kind:'scan_likes',payload:{},lease_until:new Date(clock+180000).toISOString()}}:polls===2?{state:'idle'}:{state:'paused'}}

@@ -470,6 +470,32 @@ test('the in-page panel only reads and changes the account logged in that profil
 // ---------- Likes et flux de commande façon Dotb ----------
 import {planLikes,likePayload,likeDone,orderStage,planFlow,flowDone} from './ylavint-flows.js'
 import {normalizeSettings,offerPrice,fillTemplate} from './vinted-agent-config.js'
+test('priority favourite is due immediately, deduplicated, but its followup keeps the configured delay',async()=>{
+ const now=Date.parse('2026-11-15T12:00:00Z'),s=normalizeSettings({messaging:{executor:'desktop'},features:{likes:true},likes:{wait_minutes:30}}),db=fakeDb({})
+ const likes=[{item_id:'1',user_id:'77',liked_at:new Date(now-60000).toISOString()}]
+ const can=new Set(['conversation_create','message_send'])
+ assert.equal((await planLikes(db,{account_id:ACC},likes,s,{now,can})).queued,1)
+ const task=db.state.vinted_agent_tasks[0]
+ assert.equal(Date.parse(task.not_before),now)
+ assert.equal(Date.parse(task.response_deadline_at),now+180000)
+ assert.equal((await planLikes(db,{account_id:ACC},likes,s,{now,can})).queued,0)
+ s.likes.messages[0].followup={enabled:true,delay_hours:24,message:'Bonjour'}
+ await likeDone(db,task,{conversation_id:'9001'},s,{now,rand:()=>0})
+ const followup=db.state.vinted_agent_tasks[1]
+ assert.equal(Date.parse(followup.not_before),now+86400000);assert.equal(followup.response_deadline_at,undefined)
+})
+test('priority AI reply caps artificial delay, keeps source timestamp and does not accelerate manual replies',async()=>{
+ const now=Date.parse('2026-11-15T12:00:00Z'),source=new Date(now-60000).toISOString(),state=base(),db=fakeDb(state)
+ state.vinted_agent_settings[0].messaging={executor:'desktop'}
+ state.ylavint_conversations=[{account_id:ACC,conversation_id:'9001',allow_reply:true}]
+ state.ylavint_messages=[{account_id:ACC,conversation_id:'9001',message_id:'buyer1',kind:'message',sent_at:source,state:'vinted'}]
+ await queueReply(db,{account_id:ACC,conversation_id:'9001',body:'Oui, disponible.',source:'ai',manual:false,source_message_at:source,source_message_id:'buyer1',delayMs:120000,now})
+ const task=state.vinted_agent_tasks[0]
+ assert.equal(Date.parse(task.not_before),now+10000);assert.equal(Date.parse(task.response_deadline_at),now+180000)
+ await queueReply(db,{account_id:ACC,conversation_id:'9001',body:'Réponse prévue',delayMs:120000,now})
+ assert.equal(Date.parse(state.vinted_agent_tasks[1].not_before),now+120000)
+ assert.equal(state.vinted_agent_tasks[1].response_deadline_at,undefined)
+})
 const ACF='11111111-1111-4111-8111-111111111111'
 const can=new Set(['conversation_create','message_send','shipping_extension','order_cancel','feedback_send','item_delete'])
 

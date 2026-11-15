@@ -1,3 +1,4 @@
+import {priorityResponses,responseTiming} from '../src/lib/responsePriority.js'
 import {check,vid,money,enqueue} from './vinted-agent.js'
 import {inHistory} from './ylavint-history.js'
 import {acceptableOffer} from './vinted-agent-config.js'
@@ -29,7 +30,7 @@ export async function planOffers(db,account,conversations,settings,{now=Date.now
       .eq('payload->offer->>buyer_id',offer.buyer_id).neq('state','cancelled').gte('created_at',new Date(now-config.period_days*864e5).toISOString())
     check(recent)
     if((recent.count||0)>=config.max_per_buyer)continue
-    queued+=await enqueue(db,[{account_id:account,kind:'accept_offer',priority:6,dedupe_key:key,
+    queued+=await enqueue(db,[{account_id:account,kind:'accept_offer',priority:6,dedupe_key:key,...(priorityResponses(settings)?responseTiming(offer.created_at,now):{}),
       payload:{conversation_id:c.id,offer,...(offer.desktop?{desktop_offer:true,item_id:c.item_id,title:c.item_title||''}:{})},not_before:new Date(now).toISOString()}])
   }
   return queued

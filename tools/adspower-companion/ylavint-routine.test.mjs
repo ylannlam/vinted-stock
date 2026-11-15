@@ -116,10 +116,10 @@ test('an uncertain favourite is left for review, retained in the quota and never
  assert.equal(await f.reader.maybeFavourite('101'),false);assert.equal(f.clicks,1)
 })
 
-async function runtimeFixture(t,{takeover=false,draft=false,stopped=false,outside=false,between=false,restart=false,resumeEarly=false}={}){
+async function runtimeFixture(t,{takeover=false,draft=false,stopped=false,outside=false,between=false,restart=false,resumeEarly=false,responsePriority=false}={}){
  const dataDir=await directory(t),controller=new AbortController(),events=[],updates=[],pages=[]
  let now=Date.parse('2026-11-14T10:00:00Z'),polls=0,paused=false
- const settings={...pace,browse_enabled:between,browse_items:1,browse_every_minutes:5,browse_after_actions_min:1,browse_after_actions_max:1,session_minutes:between?120:5}
+ const settings={...pace,response_priority:responsePriority,browse_enabled:between,browse_items:1,browse_every_minutes:5,browse_after_actions_min:1,browse_after_actions_max:1,session_minutes:between?120:5}
  const memory=await routineMemory(path.join(dataDir,'ylavint',binding.account_id),{now:()=>now,random:()=>0});await memory.initialize(settings)
  if(restart){await memory.beginBreak(settings);now+=2*60000}
  class Reader{
@@ -157,6 +157,16 @@ test('a pause closes only the owned tab after acknowledgement, waits five minute
  const reopened=r.events.findIndex((e,i)=>e[0]==='open'&&i>0&&e[1]===opens[1][1]),tail=r.events.slice(reopened).map(e=>e[0])
  assert.ok(tail.indexOf('identity_full')<tail.indexOf('agent_poll'));assert.ok(tail.indexOf('inbox')<tail.indexOf('agent_poll'))
  assert.equal(r.updates.findLast(p=>p.summary)?.summary.tabs_reopened,1)
+})
+
+test('buyer priority cancels an automatic break and skips optional browsing without bypassing planning',async t=>{
+ const resumed=await runtimeFixture(t,{restart:true,responsePriority:true})
+ assert.equal(resumed.events.find(e=>e[0]==='open')[1],Date.parse('2026-11-14T10:02:00Z'))
+ assert.equal(resumed.paused,false)
+ const active=await runtimeFixture(t,{between:true,responsePriority:true})
+ assert.equal(active.events.some(e=>e[0]==='browse'),false)
+ const outside=await runtimeFixture(t,{outside:true,responsePriority:true})
+ assert.equal(outside.pages.length,0);assert.equal(outside.polls,0)
 })
 
 test('manual takeover or a site pause during a break never reopens the tab',async t=>{

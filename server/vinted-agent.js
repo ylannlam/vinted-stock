@@ -10,6 +10,7 @@ import {AppError,isId} from './dotb.js'
 import {desktopDriver,desktopWindow,DESKTOP_KINDS} from './ylavint-desktop.js'
 import {executionSettings,isDesktop,supportsTask,EXTENSION_REQUIRED} from '../src/lib/ylavintExecution.js'
 import {walletDue} from '../src/lib/ylavintWallet.js'
+import {priorityResponses} from '../src/lib/responsePriority.js'
 import {applyWallet,applyDesktopOrders,applyDesktopLabel,desktopLabelPayload} from './ylavint-commerce.js'
 
 export const BUCKET='creative-assets'
@@ -39,7 +40,7 @@ export function dueScans(settings,last={},now=Date.now()){
   settings=executionSettings(settings)
   const f=settings.features
   const every={scan_wardrobe:120,sync_orders:30,scan_likes:2,sync_inbox:(settings.messaging?.sync_seconds||20)/60}
-  if(isDesktop(settings)){every.sync_inbox=Math.max(2,every.sync_inbox);every.scan_likes=3}
+  if(isDesktop(settings)){every.sync_inbox=priorityResponses(settings)?1:Math.max(2,every.sync_inbox);every.scan_likes=priorityResponses(settings)?1:3}
   const o=settings.order_flow||{},flow=!!(o.confirm?.enabled||o.extension?.enabled||o.cancel?.enabled||o.pickup?.enabled||o.review?.enabled||o.delete_sold)
   const want={scan_wardrobe:f.unmask||f.pricing||f.dressing||f.likes,sync_orders:f.orders||f.labels||f.sales||flow,scan_likes:f.likes,sync_inbox:f.inbox||f.ai||settings.messaging?.offers?.enabled}
   const due=Object.entries(want).filter(([kind,on])=>on&&(!last[kind]||Date.parse(last[kind])<now-minutes(every[kind]))).map(([kind])=>kind)
@@ -254,8 +255,8 @@ export async function agentPoll(db,key,body,now=Date.now(),{generate}={}){
   if(driver==='desktop'&&!desktopWindow(settings.limits,now,settings.messaging.desktop))return {state:'idle',reason:'Compte en dehors de son planning ou en absence.',wait_seconds:20}
   if(!row.paused){
     // Frequent inbox reads must not hide the last daily wallet check.
-    const recent=(await Promise.all(SCANS.map(kind=>db.from('vinted_agent_tasks').select('kind,created_at,finished_at').eq('account_id',account.id).eq('kind',kind).neq('state','cancelled').order('created_at',{ascending:false}).limit(1).then(check)))).flat()
-    const last={};for(const t of recent)last[t.kind]??=driver==='desktop'||t.kind==='scan_wallet'?(t.finished_at||t.created_at):t.created_at
+    const recent=(await Promise.all(SCANS.map(kind=>db.from('vinted_agent_tasks').select('kind,created_at,started_at,finished_at').eq('account_id',account.id).eq('kind',kind).neq('state','cancelled').order('created_at',{ascending:false}).limit(1).then(check)))).flat()
+    const last={};for(const t of recent)last[t.kind]??=priorityResponses(settings)&&['sync_inbox','scan_likes'].includes(t.kind)?(t.started_at||t.created_at):driver==='desktop'||t.kind==='scan_wallet'?(t.finished_at||t.created_at):t.created_at
     const can=await learned(db),due=dueScans(settings,last,now).filter(kind=>(driver==='desktop'?DESKTOP_KINDS.includes(kind):ready(kind,can)&&kind!=='scan_wallet'))
     if(due.length)await enqueue(db,due.map(kind=>({account_id:account.id,kind,priority:kind==='scan_wallet'?6:driver==='desktop'&&kind==='sync_orders'?5:kind==='sync_inbox'?4:0,dedupe_key:`${kind}:${account.id}`})))
     await dropStaleLikes(db,account.id,settings,now)
@@ -606,10 +607,10 @@ export async function agentLearn(db,key,body){
 const ACCOUNT_FIELDS='account_id,enabled,paused,pause_reason,paused_at,features,limits,unmask,pricing,likes,messaging,order_flow,last_seen_at,extension_version,version,updated_at'
 export async function agentOverview(db,user=null){
   const since=parisDayStart()
-  const [accounts,settings,tasks,today,log,recipes,orders,listings,alerts,drafts,sent]=await Promise.all([
+  const [accounts,settings,tasks,today,log,recipes,orders,listings,alerts,drafts,sent,pendingResponses,attention]=await Promise.all([
     db.from('publication_accounts').select('id,login,vinted_id,ylavint_unlinked_at').order('login'),
     db.from('vinted_agent_settings').select(ACCOUNT_FIELDS),
-    db.from('vinted_agent_tasks').select('id,account_id,kind,state,not_before,created_at,started_at,finished_at,error,result,payload').order('created_at',{ascending:false}).limit(80),
+    db.from('vinted_agent_tasks').select('id,account_id,kind,state,not_before,created_at,started_at,finished_at,error,result,payload,priority,response_received_at,response_deadline_at').order('created_at',{ascending:false}).limit(80),
     db.from('vinted_agent_tasks').select('account_id,kind,writes,state,result').gte('started_at',since),
     db.from('vinted_agent_log').select('id,account_id,task_id,level,event,message,created_at').order('created_at',{ascending:false}).limit(150),
     db.from('vinted_agent_recipes').select('kind,learned_at,learned_login,samples,recipe'),
@@ -619,15 +620,17 @@ export async function agentOverview(db,user=null){
     user?db.from('listing_drafts').select('id,state,fields,photos,planned_at,updated_at').eq('owner_id',user.id).in('state',['draft','attention']).is('dotb_item_id',null).order('updated_at',{ascending:false}).limit(60):Promise.resolve({data:[],error:null}),
     // Messages aux likes réellement envoyés aujourd'hui (les likes écartés ne comptent pas).
     db.from('vinted_agent_contacts').select('account_id').gte('sent_at',since),
-  ]);[accounts,settings,tasks,today,log,recipes,orders,listings,alerts,drafts,sent].forEach(check)
+    db.from('vinted_agent_tasks').select('id,account_id,kind,state,not_before,created_at,started_at,finished_at,error,result,payload,priority,response_received_at,response_deadline_at').in('state',['queued','running']).not('response_deadline_at','is',null).order('response_deadline_at',{ascending:true}).limit(300),
+    db.from('ylavint_conversations').select('account_id,ai_state,ai_reason,last_message_at').eq('last_from_me',false).in('ai_state',['pending','drafting','human','error']).order('last_message_at',{ascending:true}).limit(300),
+  ]);[accounts,settings,tasks,today,log,recipes,orders,listings,alerts,drafts,sent,pendingResponses,attention].forEach(check)
   const counts={},of=id=>counts[id]||(counts[id]={writes:0,like_sent:0})
   for(const t of today.data){const c=of(t.account_id);if(t.state==='done'){c[t.kind]=(c[t.kind]||0)+1;if(t.result?.message_sent===true)c.messages_confirmed=(c.messages_confirmed||0)+1;if(t.result?.offer_sent===true||t.result?.accepted===true)c.offers_confirmed=(c.offers_confirmed||0)+1}if(t.writes)c.writes++}
   for(const r of sent.data)of(r.account_id).like_sent++
   const byAccount=new Map(settings.data.map(s=>[s.account_id,s])),alert=new Map(alerts.data.map(a=>[a.account_id,a]))
   return {
     unlinked:accounts.data.filter(a=>a.ylavint_unlinked_at).map(a=>({id:a.id,login:a.login,unlinked_at:a.ylavint_unlinked_at})),
-    accounts:accounts.data.filter(a=>!a.ylavint_unlinked_at).map(({ylavint_unlinked_at,...a})=>{const s=byAccount.get(a.id);return {...a,last_seen_at:s?.last_seen_at||null,extension_version:s?.extension_version||null,settings:s?{...effectiveSettings(s),enabled:s.enabled,paused:s.paused,pause_reason:s.pause_reason,paused_at:s.paused_at,last_seen_at:s.last_seen_at,extension_version:s.extension_version,version:s.version,updated_at:s.updated_at}:null,today:counts[a.id]||{writes:0,like_sent:0},alert:alert.get(a.id)||null}}),
-    tasks:tasks.data,log:log.data,orders:orders.data,hidden:listings.data,
+    accounts:accounts.data.filter(a=>!a.ylavint_unlinked_at).map(({ylavint_unlinked_at,...a})=>{const s=byAccount.get(a.id);return {...a,response_attention:attention.data.filter(c=>c.account_id===a.id),last_seen_at:s?.last_seen_at||null,extension_version:s?.extension_version||null,settings:s?{...effectiveSettings(s),enabled:s.enabled,paused:s.paused,pause_reason:s.pause_reason,paused_at:s.paused_at,last_seen_at:s.last_seen_at,extension_version:s.extension_version,version:s.version,updated_at:s.updated_at}:null,today:counts[a.id]||{writes:0,like_sent:0},alert:alert.get(a.id)||null}}),
+    tasks:[...new Map([...tasks.data,...pendingResponses.data].map(t=>[t.id,t])).values()],log:log.data,orders:orders.data,hidden:listings.data,
     drafts:drafts.data.map(d=>({id:d.id,state:d.state,title:d.fields?.title||'Sans titre',account_id:String(d.fields?.account_id||'').toLowerCase()||null,price:d.fields?.price||null,photos:(d.photos||[]).length,planned_at:d.planned_at})),
     recipes:Object.entries(RECIPES).map(([kind,info])=>{const r=recipes.data.find(x=>x.kind===kind);return {kind,...info,default:!!DEFAULT_RECIPES[kind],learned_at:r?.learned_at||null,learned_login:r?.learned_login||null,samples:r?.samples||0,method:r?.recipe?.method||null,path:r?.recipe?.path||null}}),
     kinds:Object.fromEntries(Object.entries(KINDS).map(([k,v])=>[k,{label:v.label,writes:v.writes,needs:v.needs}])),defaults:DEFAULTS,

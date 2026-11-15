@@ -39,7 +39,7 @@ function Discount({value,onChange}){
 }
 
 // ---------- Likes d'articles ----------
-export function LikesSettings({likes,onChange,gap,onGap,section='all'}){
+export function LikesSettings({likes,onChange,gap,onGap,section='all',priority=false}){
  const L=likes,set=(k,v)=>onChange({...L,[k]:v})
  const steps=L.messages?.length?L.messages:[newStep()]
  const setStep=(i,patch)=>set('messages',steps.map((s,j)=>j===i?{...s,...patch}:s))
@@ -76,7 +76,7 @@ export function LikesSettings({likes,onChange,gap,onGap,section='all'}){
     <textarea className={fieldClass} rows={2} value={(L.ignored||[]).join(', ')} onChange={e=>set('ignored',e.target.value.split(',').map(x=>x.trim()))} placeholder="pseudo1, pseudo2"/></Field>
   </Box>
   <Box title="Paramètres de délai" icon="⏱">
-   <Field label="Délai avant d’envoyer un message après un J’aime" hint="Les J’aime en attente sont conservés même si le profil se ferme."><Select value={L.wait_minutes} onChange={v=>set('wait_minutes',v)} options={LIKE_DELAYS.some(([v])=>v===L.wait_minutes)?LIKE_DELAYS:[...LIKE_DELAYS,[L.wait_minutes,`${L.wait_minutes} minutes`]]}/></Field>
+   {priority?<p className="text-sm text-indigo-200">Priorité aux acheteurs activée : premier message prêt dès la détection, objectif 4 minutes selon tes filtres et plafonds. Les relances gardent leur délai.</p>:<Field label="Délai avant d’envoyer un message après un J’aime" hint="Les J’aime en attente sont conservés même si le profil se ferme."><Select value={L.wait_minutes} onChange={v=>set('wait_minutes',v)} options={LIKE_DELAYS.some(([v])=>v===L.wait_minutes)?LIKE_DELAYS:[...LIKE_DELAYS,[L.wait_minutes,`${L.wait_minutes} minutes`]]}/></Field>}
    {onGap&&<Field label="Délai entre chaque envoi" hint="Les envois sont espacés dans cette plage et respectent les horaires et plafonds du compte.">
     <span className="flex items-center gap-2 text-sm text-zinc-300">entre <input type="number" className={compactClass+' w-20'} min={5} max={3600} value={gap?.action_gap_min??30} onChange={e=>onGap('action_gap_min',e.target.value===''?'':Number(e.target.value))}/> et <input type="number" className={compactClass+' w-20'} min={5} max={3600} value={gap?.action_gap_max??45} onChange={e=>onGap('action_gap_max',e.target.value===''?'':Number(e.target.value))}/> secondes</span></Field>}
   </Box></>}

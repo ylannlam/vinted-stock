@@ -17,6 +17,7 @@ test('visible offers retain the exact account conversation item and message rule
  const settings=normalizeSettings({messaging:{executor:'desktop',offers:{enabled:true,single_discount:20,message:'Merci, accepté à {prix} pour {article}.'}}})
  assert.equal(await planOffers(db,'account',[{id:'10',other_id:'88',item_id:'99',item_title:'Robe',allow_reply:false,offers:[parsed]}],settings),1,'the pending-offer card may disable the composer until acceptance')
  assert.equal(rows[0].payload.desktop_offer,true);assert.equal(rows[0].payload.conversation_id,'10')
+ assert.equal(Date.parse(rows[0].response_deadline_at)-Date.parse(rows[0].response_received_at),240000)
  assert.equal(acceptedOfferText(settings.messaging.offers,rows[0].payload),'Merci, accepté à 40,00 € pour Robe.')
  assert.throws(()=>normalizeSettings({messaging:{offers:{message:'a'.repeat(501)}}}))
 })

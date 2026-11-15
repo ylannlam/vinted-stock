@@ -7,6 +7,7 @@ import {vintedWatchRequest} from '../lib/assistantConnection'
 import {ORDER_LABELS} from '../lib/fulfillment'
 import {isDesktop,supportsFeature,supportsTask} from '../lib/ylavintExecution'
 import {taskOutcome} from '../lib/assistantActivity'
+import {priorityResponses} from '../lib/responsePriority'
 
 const YlaVintInbox=lazy(()=>import('./YlaVintInbox'))
 const YlaVintAi=lazy(()=>import('./YlaVintAi'))
@@ -180,14 +181,14 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
 
    {section==='likes'&&<><PageTitle title="Likes d’articles" hint="Quand un membre like une annonce, YlaVint lui envoie ton message après le délai choisi. Configure les messages, réductions et relances de chaque compte séparément."/>
     <AutomationTable kind="likes" accounts={accounts} data={data} busy={busy} act={act} setConfigure={setConfigure}
-     chips={a=><><Pill tone={on(a,'likes')?'green':'zinc'} icon="●">Likes {on(a,'likes')?'Activé':'Désactivé'}</Pill><Pill icon="💬">{((a.settings||data.defaults).likes.messages||[]).length||1} message(s)</Pill><Pill icon="⏱">{(a.settings||data.defaults).likes.wait_minutes?`Après ${(a.settings||data.defaults).likes.wait_minutes} min`:'Aucun délai'}</Pill><Pill icon="↔">{(a.settings||data.defaults).messaging?.action_gap_min??30}–{(a.settings||data.defaults).messaging?.action_gap_max??45} s entre deux envois</Pill></>}/></>}
+     chips={a=><><Pill tone={on(a,'likes')?'green':'zinc'} icon="●">Likes {on(a,'likes')?'Activé':'Désactivé'}</Pill><Pill icon="💬">{((a.settings||data.defaults).likes.messages||[]).length||1} message(s)</Pill><Pill icon="⏱">{priorityResponses(a.settings)?'Objectif 4 min':(a.settings||data.defaults).likes.wait_minutes?`Après ${(a.settings||data.defaults).likes.wait_minutes} min`:'Aucun délai'}</Pill><Pill icon="↔">{priorityResponses(a.settings)?'Écart plafonné à 30–45 s':`${(a.settings||data.defaults).messaging?.action_gap_min??30}–${(a.settings||data.defaults).messaging?.action_gap_max??45} s entre deux envois`}</Pill></>}/></>}
 
 
 
    {section==='agent'&&<><PageTitle title="Smart Agent" hint="L’agent IA répond aux acheteurs avec tes consignes. Règle-le une fois ci-dessous, puis active-le compte par compte."/>
     <YlaVintAi request={request} accounts={accounts} onAccounts={()=>{}}/>
     <AutomationTable kind="agent" accounts={accounts} data={data} busy={busy} act={act} setConfigure={setConfigure}
-     chips={a=><><Pill icon="✦">{data.ai?.mode==='auto'?'Répond seul':'Propose'}</Pill><Pill tone={on(a,'ai')&&data.ai?.enabled?'green':'zinc'} icon="●">Agent IA {on(a,'ai')&&data.ai?.enabled?'Activé':'Désactivé'}</Pill><Pill tone={on(a,'inbox')?'green':'zinc'} icon="💬">Messagerie {on(a,'inbox')?'Activée':'Désactivée'}</Pill><Pill icon="↻">Lecture {Math.max(120,(a.settings?.messaging||data.defaults.messaging).sync_seconds)} s</Pill></>}/></>}
+     chips={a=><><Pill icon="✦">{data.ai?.mode==='auto'?'Répond seul':'Propose'}</Pill><Pill tone={on(a,'ai')&&data.ai?.enabled?'green':'zinc'} icon="●">Agent IA {on(a,'ai')&&data.ai?.enabled?'Activé':'Désactivé'}</Pill><Pill tone={on(a,'inbox')?'green':'zinc'} icon="💬">Messagerie {on(a,'inbox')?'Activée':'Désactivée'}</Pill><Pill icon="↻">Lecture {priorityResponses(a.settings)?60:Math.max(120,(a.settings?.messaging||data.defaults.messaging).sync_seconds)} s</Pill></>}/></>}
 
 
 

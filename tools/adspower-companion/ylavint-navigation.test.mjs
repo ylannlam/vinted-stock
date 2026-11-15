@@ -67,7 +67,7 @@ test('a conversation button switches the loaded inbox without direct navigation'
 })
 
 test('new replies are prioritized without waiting for a full inbox rotation',async()=>{
- const reader=new VisibleVinted({}),opened=[]
+ const reader=new VisibleVinted({pace:{...PACE,response_priority:false}}),opened=[]
  let rows=Array.from({length:10},(_,i)=>({id:String(i+1),text:`buyer ${i+1}\nil y a 5 minutes\nAncien message ${i+1}`}))
  reader.identity=async()=>{}
  reader.open=async path=>{if(path==='/inbox')return {inboxRows:rows,links:[],text:'Messages'};opened.push(path.split('/').at(-1))}
@@ -92,8 +92,25 @@ test('an unreadable page stops after bounded waiting instead of a refresh loop',
  await assert.rejects(f.reader.open('/inbox/55'),/stabilisée/)
  assert.equal(f.visits.length,1);assert.ok(f.clock<20000)
 })
+
+test('priority inbox bounds each batch, visits new and changed threads, then rotates history',async()=>{
+ const reader=new VisibleVinted({pace:{...PACE,response_priority:true}}),opened=[]
+ let rows=Array.from({length:6},(_,i)=>({id:String(i+1),text:`buyer ${i+1} il y a 1 minute message`}))
+ reader.identity=async()=>{}
+ reader.open=async path=>path==='/inbox'?{inboxRows:rows,links:[],text:'Messages'}:opened.push(path.split('/').at(-1))
+ reader.thread=async()=>({id:opened.at(-1)})
+ const scan=async()=>(await reader.inbox()).conversations.map(c=>c.id)
+ assert.deepEqual(await scan(),['1','2'])
+ assert.deepEqual(await scan(),['3','4'])
+ rows[1]={...rows[1],text:'buyer 2 Nouvelle question'}
+ assert.deepEqual(await scan(),['2','5'])
+ assert.deepEqual(await scan(),['6','1'])
+ assert.equal((await scan()).length,2)
+ rows.unshift({id:'7',text:'nouvel acheteur'})
+ assert.equal((await scan())[0],'7')
+})
 test('desktop scan deadlines leave two minutes for inbox and three for favourites',()=>{
- const now=Date.parse('2026-11-15T12:00:00Z'),settings=normalizeSettings({messaging:{executor:'desktop',sync_seconds:20},features:{inbox:true,likes:true}})
+ const now=Date.parse('2026-11-15T12:00:00Z'),settings=normalizeSettings({messaging:{executor:'desktop',desktop:{response_priority:false},sync_seconds:20},features:{inbox:true,likes:true}})
  const last={sync_inbox:new Date(now-60000).toISOString(),scan_likes:new Date(now-150000).toISOString(),scan_wardrobe:new Date(now).toISOString()}
  assert.ok(!dueScans(settings,last,now).includes('sync_inbox'));assert.ok(!dueScans(settings,last,now).includes('scan_likes'))
  assert.ok(dueScans(settings,last,now+121000).includes('sync_inbox'));assert.ok(dueScans(settings,last,now+121000).includes('scan_likes'))

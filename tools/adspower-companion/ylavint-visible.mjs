@@ -5,7 +5,7 @@ import {PUBLICATION_PACE} from './ylavint-typing.mjs'
 import {randomInt,varied} from './ylavint-routine.mjs'
 import {renderedListing,visibleDraft,favouriteMatches} from './ylavint-browsing.mjs'
 export const BASE='https://www.vinted.fr'
-export const PACE={typing_delay_ms:70,page_wait_seconds:3,session_minutes:25,pause_minutes:5,browse_enabled:false,browse_every_minutes:30,browse_items:3,browse_item_seconds:8,browse_scrolls:2,active_days:[1,2,3,4,5,6,7],absent_until:null,browse_keywords:'',browse_price_min:0,browse_price_max:0,browse_photos:false,browse_memory_hours:24,reply_max_age_hours:24,...PUBLICATION_PACE,wallet_hours:[9,18],browse_variety:true,browse_between_actions:true,browse_after_actions_min:3,browse_after_actions_max:7,browse_like_enabled:false,browse_like_keywords:'robe',browse_like_price_min:20,browse_like_price_max:50,browse_like_per_day:5,browse_like_percent:25,pause_close_percent:0}
+export const PACE={response_priority:true,typing_delay_ms:70,page_wait_seconds:3,session_minutes:25,pause_minutes:5,browse_enabled:false,browse_every_minutes:30,browse_items:3,browse_item_seconds:8,browse_scrolls:2,active_days:[1,2,3,4,5,6,7],absent_until:null,browse_keywords:'',browse_price_min:0,browse_price_max:0,browse_photos:false,browse_memory_hours:24,reply_max_age_hours:24,...PUBLICATION_PACE,wallet_hours:[9,18],browse_variety:true,browse_between_actions:true,browse_after_actions_min:3,browse_after_actions_max:7,browse_like_enabled:false,browse_like_keywords:'robe',browse_like_price_min:20,browse_like_price_max:50,browse_like_per_day:5,browse_like_percent:25,pause_close_percent:0}
 export const cid=v=>/^(?:[1-9]\d{0,17}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i.test(String(v))?String(v):null
 Object.assign(PACE,{navigation_seconds:10,action_pause_seconds:20})
 // Vinted redirects /items/123 to /items/123-title. Compare the stable article
@@ -196,10 +196,12 @@ export class VisibleVinted{
    const preview=r=>String(r.text||'').replace(/(?:il y a|dans)\s+(?:\d+|une?|quelques)\s+(?:secondes?|minutes?|heures?|jours?|semaines?|mois|ans?)/gi,'').replace(/\s+/g,' ').trim()
    const previews=new Map((s.inboxRows||[]).map(r=>[r.id,preview(r)]))
    const changed=pool.filter(id=>this.inboxPreviews.has(id)&&previews.has(id)&&this.inboxPreviews.get(id)!==previews.get(id))
-   const priority=[...new Set([...changed,...pool.slice(0,2)])].slice(0,3)
+   const quick=this.pace?.response_priority!==false
+   const priority=quick?[...new Set([...changed,...pool.filter(id=>!this.inboxPreviews.has(id)),...pool.slice(0,1)])].slice(0,2):[...new Set([...changed,...pool.slice(0,2)])].slice(0,3)
    const rotated=[...pool.slice(offset),...pool.slice(0,offset)].filter(id=>!priority.includes(id))
    const explicit=payload.conversation_ids?.length>0
-   const ids=[...new Set(explicit?payload.conversation_ids:[...priority,...rotated])].slice(0,4),conversations=[]
+   const batch=this.pace?.response_priority!==false?2:4
+   const ids=[...new Set(explicit?payload.conversation_ids:[...priority,...rotated])].slice(0,explicit?4:batch),conversations=[]
    if(!explicit){const lastRotated=ids.filter(id=>!priority.includes(id)).at(-1);if(lastRotated)this.inboxOffset=(pool.indexOf(lastRotated)+1)%Math.max(1,pool.length)}
    if(!ids.length&&!/aucun message|pas encore de (message|conversation)/i.test(s.text))throw review('La liste des conversations visibles n’est pas reconnue.')
    for(const id of ids){await this.open(conversationUrl(id));const c=await this.thread();if(c.uncertain)c.allow_reply=false;conversations.push(c);if(previews.has(id))this.inboxPreviews.set(id,previews.get(id))}

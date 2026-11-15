@@ -1,3 +1,4 @@
+import {priorityResponses,responseTiming} from '../src/lib/responsePriority.js'
 // YlaVint : messagerie centralisée de tous les comptes, agent IA de réponse, ventes vers l'onglet Ventes,
 // dressing vers le suivi des publications, publication depuis l'atelier.
 // L'extension YlaVint lit et agit dans les profils AdsPower ; ce module range ce qu'elle rapporte et prépare ses tâches.
@@ -158,8 +159,11 @@ export async function queueReply(db,{account_id,conversation_id,body,source='sit
   const context=isDesktop(settings)?check(await db.from('ylavint_messages').select('message_id,kind').eq('account_id',account_id).eq('conversation_id',conversation_id).neq('state','queued').neq('state','failed').neq('state','cancelled').order('sent_at',{ascending:false}).limit(50)).find(m=>!SYSTEM_KINDS.has(m.kind)):null
   if(isDesktop(settings)&&!context)throw new AppError('Relis cette conversation sur Vinted avant de préparer la réponse.',409)
   const id=localId(),at=nowIso(now)
+  const priority=priorityResponses(settings)&&source==='ai'&&!manual
+  if(priority)delayMs=Math.min(10000,Math.max(0,delayMs))
   check(await db.from('ylavint_messages').insert({account_id,conversation_id,message_id:id,from_me:true,body:message,state:'queued',source,created_by:user,sent_at:nowIso(now+delayMs)}))
   const taskId=await insertTask(db,{account_id,kind:'reply_message',priority:manual?10:5,dedupe_key:`reply:${id}`,not_before:nowIso(now+delayMs),
+    ...(priority?responseTiming(source_message_at,now):{}),
     payload:{conversation_id,body:message,local_id:id,manual,source,source_message_at,source_message_id,...(context?{context_message_id:context.message_id}:{})},created_by:user})
   check(await db.from('ylavint_messages').update({task_id:taskId}).eq('account_id',account_id).eq('conversation_id',conversation_id).eq('message_id',id))
   const patch={last_message:message,last_message_at:at,last_from_me:true,updated_at:at}
@@ -356,6 +360,7 @@ export async function pollExtras(db,account,settings,{paused=false,draft=true,no
   }
   if(settings.features.ai&&!paused&&draft){
     const config=await readAi(db)
+    if(priorityResponses(settings))config.group_seconds=Math.min(20,config.group_seconds||45)
     if(config.enabled){
       const stale=nowIso(now-120000)
       const candidates=check(await db.from('ylavint_conversations').select('*').eq('account_id',account.id).or(`ai_state.eq.pending,and(ai_state.eq.drafting,updated_at.lt.${stale})`).order('last_message_at',{ascending:true}).limit(20))

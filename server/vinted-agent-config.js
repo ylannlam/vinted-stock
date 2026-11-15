@@ -125,7 +125,7 @@ export function normalizeSettings(input={}){
   out.messaging.desktop.browse_enabled=desktop.browse_enabled===true
   if(desktop.browse_photos!==undefined&&typeof desktop.browse_photos!=='boolean')throw new AppError('Consultation des photos : choix invalide.')
   out.messaging.desktop.browse_photos=desktop.browse_photos===true
-  for(const key of ['browse_variety','browse_between_actions','browse_like_enabled']){
+  for(const key of ['browse_variety','browse_between_actions','browse_like_enabled','response_priority']){
     if(desktop[key]!==undefined&&typeof desktop[key]!=='boolean')throw new AppError('Réglages des consultations et favoris : choix invalide.')
     out.messaging.desktop[key]=desktop[key]??DESKTOP_DEFAULTS[key]
   }
