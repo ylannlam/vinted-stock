@@ -95,6 +95,42 @@ test('visible option matching requires a unique exact title and matching value',
  document.body.insertAdjacentHTML('beforeend','<div role="radio" value="2" aria-label="Très bon état"></div>')
  await assert.rejects(form.option(2,'Très bon état'),/Plusieurs choix/);assert.equal(clicks,1)
 })
+
+test('category picker walks button branches and the exact radio leaf despite a different photo suggestion',async()=>{
+ const path=[{id:1904,title:'Femmes'},{id:4,title:'Vêtements'},{id:10,title:'Robes'},{id:1774,title:'Pour occasions'},{id:1777,title:"Robes de bal de fin d'année"}]
+ const {form,document}=domForm('<nav><button>Femmes</button></nav><input name="catalog" readonly value="Robes de mariée"><ul data-testid="category-list"></ul>')
+ const list=document.querySelector('ul'),field=document.querySelector('[name="catalog"]'),visited=[]
+ let navigationClicks=0;document.querySelector('nav button').addEventListener('click',()=>navigationClicks++)
+ const level=index=>{
+  const entry=path[index],leaf=index===path.length-1
+  list.innerHTML=`<li><div id="catalog-${entry.id}" role="${leaf?'radio':'button'}" aria-checked="false"><div><span>${entry.title}</span></div></div></li>`
+  if(index===0)list.insertAdjacentHTML('afterbegin','<li><div id="catalog-1776" role="radio" aria-checked="true"><span>Robes de mariée</span><p>Femmes &gt; Vêtements &gt; Robes &gt; Pour occasions</p></div></li>')
+  list.querySelector(`[id="catalog-${entry.id}"]`).addEventListener('click',()=>{visited.push(entry.id);if(leaf){field.value=entry.title;list.innerHTML=''}else level(index+1)})
+ }
+ field.addEventListener('click',()=>level(0))
+ await form.choice('category',1777,path)
+ assert.deepEqual(visited,path.map(p=>p.id));assert.equal(navigationClicks,0);assert.equal(list.children.length,0)
+ await form.verify([{name:'category',id:1777,label:path}])
+})
+
+test('category choices cannot use the header, another catalog ID, duplicate rows or an incorrect title',async()=>{
+ for(const html of [
+  '<nav><div id="catalog-1904" role="button">Femmes</div></nav>',
+  '<ul data-testid="category-list"><li><div id="catalog-4" role="button">Femmes</div></li></ul>',
+  '<ul data-testid="category-list"><li><div id="catalog-1904" role="button">Hommes</div></li></ul>',
+  '<ul data-testid="category-list"><li><div id="catalog-1904" role="button">Femmes</div></li><li><div id="catalog-1904" role="button">Femmes</div></li></ul>'
+ ]){
+  const {form,document}=domForm(html);let clicks=0;document.body.addEventListener('click',()=>clicks++)
+  await assert.rejects(form.option(1904,'Femmes',{category:true}),e=>e.keep_page===true);assert.equal(clicks,0)
+ }
+ const {form}=domForm('');await assert.rejects(form.option('1904','Femmes',{category:true}),/invalide/)
+})
+
+test('an already selected category leaf is clicked to close the picker',async()=>{
+ const {form,document}=domForm('<ul data-testid="category-list"><li><div id="catalog-1777" role="radio" aria-checked="true">Robes de bal de fin d’année</div></li></ul>')
+ let clicks=0;document.querySelector('[role="radio"]').addEventListener('click',()=>clicks++)
+ await form.option(1777,'Robes de bal de fin d’année',{category:true});assert.equal(clicks,1)
+})
 test('publication confirmation rejects a toast or an item page without the seller edit control',async()=>{
  let path='/items/new',owner=false,confirmed=0
  const form=new PublicationForm({page:{url:()=>`https://www.vinted.fr${path}`,getByRole:()=>({count:async()=>1}),locator:()=>({filter:()=>({count:async()=>owner?1:0})})},reader:{identity:async()=>({member_id:'7'})},task:{id:'t'},journal:{step:async()=>confirmed++},check:()=>{},sleep:async()=>{}})

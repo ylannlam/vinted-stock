@@ -104,15 +104,21 @@ export class PublicationForm{
   if(await field.evaluate(e=>e.disabled||e.readOnly))throw stop('Ce champ ne peut pas être saisi.')
   await typePublication(field,value,{pace:this.pace,check:this.check,sleep:this.sleep,corrections:['title','description'].includes(name),inspect:async()=>{await this.guard();await inspect()},onProgress:(n,total)=>this.update({state:'typing',message:`Annonce · ${name==='title'?'Titre':name==='description'?'Description':'Prix'} · ${n}/${total}`})})
  }
- async option(id,label){
+ async option(id,label,{category=false}={}){
   if(!label)throw stop('Libellé de choix manquant.')
-  const options=this.page.locator('[role="radio"],[role="checkbox"],[role="option"],input[type="radio"],input[type="checkbox"]').filter({visible:true})
+  if(category&&(!Number.isSafeInteger(id)||id<=0))throw stop('Identifiant de catégorie invalide.')
+  // Category branches are buttons, while leaves are radios. Bind both to the
+  // requested catalog ID inside the picker, never to the site's navigation.
+  const selector=category
+   ?`[data-testid="category-list"] [id="catalog-${id}"][role="button"],[data-testid="category-list"] [id="catalog-${id}"][role="radio"]`
+   :'[role="radio"],[role="checkbox"],[role="option"],input[type="radio"],input[type="checkbox"]'
+  const options=this.page.locator(selector).filter({visible:true})
   for(let attempt=0;attempt<20;attempt++){
    await this.guard()
    const candidates=await options.evaluateAll(es=>es.map(e=>({value:e.getAttribute('value'),disabled:e.disabled||e.getAttribute('aria-disabled')==='true',text:(e.getAttribute('aria-labelledby')||'').split(/\s+/).filter(Boolean).map(id=>document.getElementById(id)?.textContent||'').join(' ').trim()||e.getAttribute('aria-label')||[...(e.labels||[])].map(l=>l.textContent).join(' ')||e.textContent,leaves:e.hasAttribute('aria-label')||e.hasAttribute('aria-labelledby')?[]:[...e.querySelectorAll('*')].filter(n=>!n.children.length).map(n=>n.textContent)})))
    const hits=candidates.map((v,i)=>({...v,i})).filter(v=>!v.disabled&&(v.value===null||v.value===String(id))&&(norm(v.text)===norm(label)||v.leaves.some(t=>norm(t)===norm(label))))
    if(hits.length>1)throw stop('Plusieurs choix correspondent à « '+label+' ».')
-   if(hits.length===1){const option=options.nth(hits[0].i);await option.scrollIntoViewIfNeeded();if(!await option.evaluate(e=>e.checked||e.getAttribute('aria-checked')==='true'||e.getAttribute('aria-selected')==='true'))await option.click();return}
+   if(hits.length===1){const option=options.nth(hits[0].i);await option.scrollIntoViewIfNeeded();if(category||!await option.evaluate(e=>e.checked||e.getAttribute('aria-checked')==='true'||e.getAttribute('aria-selected')==='true'))await option.click();return}
    await this.sleep(300)
   }
   throw stop('Choix « '+label+' » introuvable.')
@@ -136,7 +142,7 @@ export class PublicationForm{
    await search.waitFor({state:'visible',timeout:10000})
    await typePublication(search,String(label),{pace:this.pace,check:this.check,sleep:this.sleep,inspect:()=>this.guard()})
   }
-  if(name==='category')for(const entry of label){await this.option(entry.id,entry.title);await this.sleep(500)}
+  if(name==='category')for(const entry of label){await this.option(entry.id,entry.title,{category:true});await this.sleep(500)}
   else for(let i=0;i<ids.length;i++){await this.option(ids[i],labels[i]);await this.sleep(300)}
   if(name==='color')await (await this.field(name)).click()
   await this.sleep(500)
