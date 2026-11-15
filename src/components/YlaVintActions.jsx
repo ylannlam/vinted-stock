@@ -2,8 +2,8 @@ import {useEffect,useRef,useState} from 'react'
 import {PageTitle,Card,Pill,fieldClass,buttonClass,Icon} from './YlaVintUI'
 
 const when=v=>v?new Date(v).toLocaleString('fr-FR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Europe/Paris'}):'Dès que possible'
-export default function YlaVintActions({request,accounts,onAssistant}){
- const [account,setAccount]=useState(''),[data,setData]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(null)
+export default function YlaVintActions({request,accounts,onAssistant,initialAccount=''}){
+ const [account,setAccount]=useState(initialAccount),[data,setData]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(null)
  const query='&view=actions'+(account?'&account_id='+account:''),current=useRef(query);current.current=query
  const load=async()=>{try{const r=await request('GET',undefined,query);if(current.current===query){setData(r);setError('')}}catch(e){if(current.current===query)setError(e.message)}}
  useEffect(()=>{current.current=query;setData(null);load();const t=setInterval(()=>{if(document.visibilityState==='visible')load()},5000);return()=>{clearInterval(t);current.current=null}},[query])

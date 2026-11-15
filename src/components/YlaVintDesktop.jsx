@@ -6,6 +6,7 @@ import {ASSISTANT_SECTIONS,sectionStatus} from '../lib/assistantSettings'
 import {HOME_KEY,readHome,profileFor,managedAccounts,sessionActive,launchBlock,launchAssistant,companionCurrent} from '../lib/assistantHome'
 
 const time=value=>value?new Date(value).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Paris'}):''
+const actionNames={scan_wallet:'Lecture du porte-monnaie',sync_orders:'Lecture des ventes',fetch_label:'Récupération du bordereau',scan_wardrobe:'Lecture du dressing',scan_likes:'Lecture des favoris',sync_inbox:'Lecture des messages',like_message:'Message au favori et réduction',reply_message:'Réponse à un message',publish_item:'Publication de l’annonce',order_extension:'Demande de délai d’envoi'}
 export default function YlaVintDesktop({accounts,tasks=[],compact=false,onConfigure,onActions,onAccountAction,request=adsPowerRequest,pair=vintedWatchRequest}){
  const [saved]=useState(()=>readHome(window.localStorage))
  const [ids,setIds]=useState(saved?.ids||[]),[bindings,setBindings]=useState(saved?.bindings||{}),[selected,setSelected]=useState(saved?.selected||new URLSearchParams(window.location.search).get('account')||'')
@@ -48,12 +49,13 @@ export default function YlaVintDesktop({accounts,tasks=[],compact=false,onConfig
    const label=running?(s.state==='break'?'Pause programmée':s.state==='waiting'?'En attente':s.state==='stopping'?'Arrêt en cours':'En cours'):failure?'À reprendre':paused?'En pause':'Arrêté'
    return <Card key={a.id} className={'overflow-hidden '+(selected===a.id?'ring-1 ring-indigo-400/40':'')}>
     <div className="ylv-hero p-5"><div className="flex items-center gap-3"><span className="ylv-avatar grid h-11 w-11 shrink-0 place-items-center rounded-xl font-semibold">{a.login.slice(0,2).toUpperCase()}</span><div className="min-w-0 flex-1"><h3 className="truncate text-xl font-semibold text-white">{a.login}</h3><button className="mt-1 text-xs text-indigo-200 underline decoration-indigo-400/30 underline-offset-4" onClick={()=>{setProfileEditor(profileEditor===a.id?'':a.id);setProfileSearch('')}}>{p?`Profil AdsPower #${p.number} · Modifier`:profile?'Profil enregistré · Modifier':'Associer son profil AdsPower'}</button></div><Pill tone={failure?'red':paused||s?.state==='break'?'amber':running?'green':'zinc'}>{label}</Pill></div>
+     {running&&s?.current_action&&<p className="mt-4 text-sm font-semibold text-indigo-200">{actionNames[s.current_action.kind]||'Traitement de l’action prévue'}</p>}
      <p role="status" className="mt-4 text-sm leading-relaxed text-zinc-200">{connected&&s?.message?s.message:paused?a.settings.pause_reason||'En pause à ta demande.':'Prêt à démarrer avec les fonctions activées.'}</p>
      {s?.resume_at&&running&&<p className="mt-1 text-xs text-indigo-200">Reprise prévue à {time(s.resume_at)}</p>}
     </div>
     <div className="space-y-4 p-5">
      <div className="grid grid-cols-3 divide-x divide-white/10 rounded-xl bg-white/[.025] py-3 text-center"><div><p className="text-2xl font-semibold text-white">{a.today?.like_sent||0}</p><p className="mt-1 text-xs text-zinc-400">Favoris traités aujourd’hui</p></div><div><p className="text-2xl font-semibold text-emerald-300">{a.today?.offers_confirmed||0}</p><p className="mt-1 text-xs text-zinc-400">Offres confirmées aujourd’hui</p></div><div><p className="text-2xl font-semibold text-indigo-200">{a.today?.messages_confirmed||0}</p><p className="mt-1 text-xs text-zinc-400">Messages confirmés aujourd’hui</p></div></div>
-     {(pending>0||failed>0)&&<div className="flex flex-wrap items-center justify-between gap-2 text-xs"><p className={failed?'text-amber-200':'text-zinc-300'}>Dans les dernières actions : {pending} en attente{failed?` · ${failed} en échec`:''}</p><button className="text-indigo-300 underline" onClick={onActions}>Voir les actions</button></div>}
+     {(pending>0||failed>0)&&<div className="flex flex-wrap items-center justify-between gap-2 text-xs"><p className={failed?'text-amber-200':'text-zinc-300'}>Dans les dernières actions : {pending} en attente{failed?` · ${failed} en échec`:''}</p><button className="text-indigo-300 underline" onClick={()=>onActions(a.id)}>Voir les actions</button></div>}
      {failure&&s.failed_step&&<p className="text-xs text-amber-200">Arrêt pendant : {s.failed_step}</p>}
      {!running&&blocked&&<p className="text-xs text-amber-200">{blocked}</p>}
      <div className="flex flex-wrap gap-2">
