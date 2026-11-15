@@ -35,15 +35,16 @@ export function renderedPage(){
  const link=e=>({href:e.href,text:txt(e),title:e.getAttribute('title')||e.getAttribute('aria-label')||'',image:e.querySelector('img')?.src||null,alt:e.querySelector('img')?.alt||''})
  const content=document.querySelector('[data-testid="conversation-content"]')
  const bubbles=content?all('[class*="Bubble__bubble"]',content):[]
+ const introductions=content?all('[class*="conversation-message"][class*="intro"]',content):[]
  const messages=bubbles.map(b=>{
    const price=b.querySelector('[data-testid="offer-current-price-label"]'),label=b.querySelector('[aria-label^="Message from "]')
-   const body=txt(label||b),fromMe=label?label.getAttribute('aria-label').startsWith('Message from me:'):b.className.includes('Bubble__inverse')
+   const body=txt(label||b),fromMe=label?/^Message from me(?::|$)/.test(label.getAttribute('aria-label')):b.className.includes('Bubble__inverse')
    let holder=b,when=null
    for(let i=0;i<5&&holder&&holder!==content;i++,holder=holder.parentElement){
      const t=holder.querySelector('time[datetime]');if(t){when=t.getAttribute('datetime');break}
      const prev=holder.previousElementSibling,s=txt(prev);if(s.length<100&&/il y a /i.test(s)){when=s;break}
    }
-   return {body,from_me:fromMe,kind:price?'offer':label?'message':b.querySelector('img')?'photo':'unknown',price:txt(price),when,intro:!label&&/^Bonjour, je suis /i.test(body)}
+   return {body,from_me:fromMe,kind:price?'offer':label?'message':b.querySelector('img')?'photo':'unknown',price:txt(price),when,intro:introductions.some(e=>e.contains(b))||!label&&/^Bonjour, je suis /i.test(body)}
  }).filter(m=>!m.intro)
  const user=document.querySelector('[data-testid="user-menu-button"] img')
  const links=all('a[href]').map(link)
@@ -57,7 +58,7 @@ export function renderedPage(){
  const composer=all('[data-testid="composer"]').length>0
  const hero=all('a[data-testid="hero-message"]')[0],header=document.querySelector('[data-testid="conversation-header"]')
  return {url:location.href,scroll_y:typeof scrollY==='number'?scrollY:0,login:user?.alt||null,links,inboxRows,notices,cards,messages,conversation:!!content,composer_unknown:composer&&!editor,allow_reply:!!editor&&!editor.disabled&&!editor.hasAttribute('disabled')&&!editor.readOnly&&!editor.hasAttribute('readonly')&&editor.getAttribute('aria-disabled')!=='true',
-   history_start:!!content&&all('[class*="conversation-message-container"]',content).some(e=>/^Bonjour, je suis /.test(txt(e))&&!e.querySelector('[aria-label^="Message from "]')),
+   history_start:introductions.length>0||!!content&&all('[class*="conversation-message-container"]',content).some(e=>/^Bonjour, je suis /.test(txt(e))&&!e.querySelector('[aria-label^="Message from "]')),
    threadLinks:header?all('a[href]',header).map(link):[],threadItem:hero?{...link(hero),text:txt(hero)}:null,
    text:txt(document.body).slice(0,60000),conversationText:txt(content),heading:all('h1').map(txt).join(' '),ratings:all('[aria-label]').map(e=>e.getAttribute('aria-label')).filter(s=>/étoile|rating|sur 5|out of 5/i.test(s))}
 }

@@ -152,6 +152,16 @@ test('both observed composer variants allow writing, hidden or locked fields do 
  assert.equal(unknown.composer_unknown,true)
  assert.equal(readThread({...unknown,conversation:true}).composer_unknown,true)
 })
+
+test('the Vinted introduction is history context, never a buyer reply; real greetings remain messages',()=>{
+ const intro='<div class="AAMwBG_conversation-message AAMwBG_conversation-message__intro"><div class="web_ui__Bubble__bubble"><div aria-label="Message from acheteuse"><span>Bonjour, je suis acheteuse</span><span>France</span><span>Vu la dernière fois : il y a 1 heure</span></div></div></div>'
+ const message='<div class="web_ui__Bubble__bubble"><div aria-label="Message from acheteuse">Bonjour, je suis intéressée</div></div>'
+ const own='<div class="web_ui__Bubble__bubble"><div aria-label="Message from me">Bonjour !</div></div>'
+ const s=domSnapshot('<div data-testid="conversation-content">'+intro+message+own+'</div>')
+ assert.equal(s.history_start,true)
+ assert.deepEqual(s.messages.map(m=>[m.body,m.from_me]),[['Bonjour, je suis intéressée',false],['Bonjour !',true]])
+ assert.deepEqual(domSnapshot('<div data-testid="conversation-content">'+intro+'</div>').messages,[])
+})
 test('visible inbox button rows are read in order, including non-selected conversations',async()=>{
  const s=domSnapshot(pageHtml+'<div data-testid="conversation-list"><div role="button" data-testid="inbox-list-item-55">Buyer A</div><div role="button" data-testid="inbox-list-item-66">Buyer B</div><div role="button" data-testid="inbox-list-item-77" hidden>Hidden</div></div>')
  assert.deepEqual(s.inboxRows.map(r=>r.id),['55','66'])
