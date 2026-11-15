@@ -18,6 +18,14 @@ const SYSTEM_KINDS=new Set(['action','status'])
 const safePhoto=v=>typeof v==='string'&&/^https:\/\/[a-z0-9.-]+\.vinted\.net\//.test(v)?v.slice(0,500):null
 const localId=()=>`local:${randomUUID()}`
 const clean=(v,max)=>typeof v==='string'?v.replace(/\r\n/g,'\n').replace(/[ \t]+\n/g,'\n').trim().slice(0,max):''
+// Older PC readers imported Vinted's profile card as a buyer message. Preserve
+// that history as status data, so a moving last-seen time cannot drive replies.
+const legacyIntroduction=(m,login)=>!!login&&!m.from_me&&m.state==='vinted'&&m.kind==='message'&&m.message_id?.startsWith('ui:')&&
+  m.body?.startsWith(`Bonjour, je suis ${login}\n`)&&m.body.split('\n').length===3&&/^Vu la dernière fois : .+/.test(m.body.split('\n')[2])
+async function confirmedAiReplies(db,account,conversation){
+  const r=await db.from('ylavint_messages').select('id',{count:'exact',head:true}).eq('account_id',account).eq('conversation_id',conversation).eq('source','ai').eq('state','sent')
+  check(r);return r.count||0
+}
 
 // ---------- Messagerie : lecture rapportée par l'extension ----------
 export function parseInbox(result){
@@ -61,7 +69,9 @@ export async function applyInbox(db,task,result,{settings,now=Date.now()}={}){
   const ids=convs.map(c=>c.id)
   const before=new Map(check(await db.from('ylavint_conversations').select('*').eq('account_id',account).in('conversation_id',ids)).map(r=>[r.conversation_id,r]))
   const detailed=convs.filter(c=>c.messages)
-  const existing=detailed.length?check(await db.from('ylavint_messages').select('id,conversation_id,message_id,from_me,body,state,sent_at,created_at').eq('account_id',account).in('conversation_id',detailed.map(c=>c.id))):[]
+  const existing=detailed.length?check(await db.from('ylavint_messages').select('id,conversation_id,message_id,from_me,body,kind,state,sent_at,created_at').eq('account_id',account).in('conversation_id',detailed.map(c=>c.id))):[]
+  const introductions=existing.filter(m=>legacyIntroduction(m,convs.find(c=>c.id===m.conversation_id)?.other_login||before.get(m.conversation_id)?.other_login))
+  if(introductions.length)check(await db.from('ylavint_messages').update({kind:'status'}).eq('account_id',account).in('id',introductions.map(m=>m.id)))
   const observed=new Map(existing.map(m=>[`${m.conversation_id}|${m.message_id}`,m]))
   // Relative dates on visible pages move with time; an already observed message keeps its first timestamp.
   for(const c of detailed)for(const m of c.messages){const known=observed.get(`${c.id}|${m.id}`);if(known?.sent_at)m.sent_at=known.sent_at}
@@ -184,7 +194,7 @@ export async function applyReply(db,task,result,{now=Date.now()}={}){
   if(r.error?.code==='23505'){ // la lecture suivante l'a déjà rangé : on garde la copie Vinted
     await db.from('ylavint_messages').delete().eq('account_id',task.account_id).eq('conversation_id',p.conversation_id).eq('message_id',p.local_id)
   }else check(r)
-  if(p.source==='ai')await db.from('ylavint_conversations').update({ai_state:'sent'}).eq('account_id',task.account_id).eq('conversation_id',p.conversation_id)
+  if(p.source==='ai')check(await db.from('ylavint_conversations').update({ai_state:'sent',ai_replies:await confirmedAiReplies(db,task.account_id,p.conversation_id)}).eq('account_id',task.account_id).eq('conversation_id',p.conversation_id))
   return {conversation_id:p.conversation_id,message:p.source==='ai'?'Réponse de l’agent IA envoyée.':'Réponse envoyée.'}
 }
 export async function replyFailed(db,task,error){
@@ -312,10 +322,11 @@ export async function draftAi(db,conv,config,{generate=generateReply,now=Date.no
     check(await db.from('ylavint_conversations').update({...base,ai_state:'human',needs_human:true,ai_draft:result.reply||null}).eq('account_id',conv.account_id).eq('conversation_id',conv.conversation_id))
     return {state:'human',reply:result.reply,reason}
   }
-  if(!force&&config.mode==='auto'&&(conv.ai_replies||0)<config.max_auto_per_conversation){
+  const confirmed=await confirmedAiReplies(db,conv.account_id,conv.conversation_id)
+  if(!force&&config.mode==='auto'&&confirmed<config.max_auto_per_conversation){
     const delay=Math.round((config.delay_min_seconds+(config.delay_max_seconds-config.delay_min_seconds)*rand())*1000)
     await queueReply(db,{account_id:conv.account_id,conversation_id:conv.conversation_id,body:result.reply,source:'ai',source_message_at:last.date||null,source_message_id:lastId,manual:false,delayMs:delay,now})
-    check(await db.from('ylavint_conversations').update({...base,ai_state:'queued',ai_draft:null,ai_replies:(conv.ai_replies||0)+1}).eq('account_id',conv.account_id).eq('conversation_id',conv.conversation_id))
+    check(await db.from('ylavint_conversations').update({...base,ai_state:'queued',ai_draft:null,ai_replies:confirmed}).eq('account_id',conv.account_id).eq('conversation_id',conv.conversation_id))
     return {state:'queued',reply:result.reply,delay_seconds:Math.round(delay/1000)}
   }
   check(await db.from('ylavint_conversations').update({...base,ai_state:'drafted',ai_draft:result.reply}).eq('account_id',conv.account_id).eq('conversation_id',conv.conversation_id))

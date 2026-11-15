@@ -171,7 +171,7 @@ test('AI agent: suggestion, automatic reply with delay, sensitive words go to a 
   conv().ai_state='pending'
   const before=Date.now()
   r=await draftAi(db,conv(),normalizeAi({enabled:true,mode:'auto',delay_min_seconds:60,delay_max_seconds:60}),{generate:fakeAi(),rand:()=>0})
-  assert.equal(r.state,'queued');assert.equal(conv().ai_replies,1)
+  assert.equal(r.state,'queued');assert.equal(conv().ai_replies,0)
   const t=db.state.vinted_agent_tasks.find(t=>t.kind==='reply_message')
   assert.equal(t.payload.source,'ai');assert.equal(t.payload.manual,false);assert.equal(t.priority,5);assert.ok(Date.parse(t.not_before)>=before+59000)
   // Mot sensible : jamais envoyé seul.
@@ -181,6 +181,33 @@ test('AI agent: suggestion, automatic reply with delay, sensitive words go to a 
   assert.equal(r.state,'human');assert.equal(conv().needs_human,true);assert.match(conv().ai_reason,/rembours/)
   assert.equal(db.state.vinted_agent_tasks.filter(t=>t.kind==='reply_message').length,1,'no automatic send')
   assert.equal(humanKeyword(normalizeAi({}),'Il est ABÎMÉ'),'abime')
+})
+
+test('legacy profile cards cannot replace the buyer context or exhaust the automatic reply quota',async()=>{
+ const db=fakeDb(base());enableAi(db,{mode:'auto'})
+ const c=convo(),login=c.other.login
+ await applyInbox(db,{account_id:ACC},{conversations:[c]},{settings:settings(db)})
+ const conv=db.state.ylavint_conversations[0]
+ const intro={id:999,account_id:ACC,conversation_id:c.id,message_id:'ui:legacy',from_me:false,body:`Bonjour, je suis ${login}\nFrance, Paris\nVu la dernière fois : il y a 10 minutes`,kind:'message',state:'vinted',sent_at:recent(0)}
+ db.state.ylavint_messages.push(intro)
+ Object.assign(conv,{ai_state:'drafted',ai_handled_message_id:intro.message_id,ai_replies:6})
+ await applyInbox(db,{account_id:ACC},{conversations:[c]},{settings:settings(db)})
+ assert.equal(intro.kind,'status');assert.equal(conv.ai_state,'pending')
+ const config=normalizeAi({enabled:true,mode:'auto',max_auto_per_conversation:1})
+ await draftAi(db,conv,config,{generate:fakeAi()})
+ let task=db.state.vinted_agent_tasks.at(-1)
+ assert.equal(task.payload.source_message_id,'m1')
+ assert.equal(conv.ai_replies,0)
+ await applyReply(db,task,{skipped:'Conversation modifiée',context_changed:true})
+ assert.equal(conv.ai_replies,0)
+ await draftAi(db,conv,config,{generate:fakeAi()})
+ task=db.state.vinted_agent_tasks.at(-1)
+ await applyReply(db,task,{message_id:'confirmed-ai'})
+ await applyReply(db,task,{message_id:'confirmed-ai'})
+ assert.equal(conv.ai_replies,1,'confirmed messages count once, even after an acknowledgement retry')
+ const next={...c,messages:[...c.messages,{id:'confirmed-ai',from_me:true,body:task.payload.body,sent_at:recent(1)},{id:'next-question',from_me:false,body:'Et la couleur ?',sent_at:new Date(Date.now()+60000).toISOString()}]}
+ await applyInbox(db,{account_id:ACC},{conversations:[next]},{settings:settings(db)})
+ assert.equal((await draftAi(db,conv,config,{generate:fakeAi()})).state,'drafted','the cap still applies to real sends')
 })
 
 test('AI replies never carry links or phone numbers; the prompt keeps everything on Vinted',async()=>{
