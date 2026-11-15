@@ -116,7 +116,7 @@ test('an uncertain favourite is left for review, retained in the quota and never
  assert.equal(await f.reader.maybeFavourite('101'),false);assert.equal(f.clicks,1)
 })
 
-async function runtimeFixture(t,{takeover=false,draft=false,stopped=false,outside=false,between=false,restart=false}={}){
+async function runtimeFixture(t,{takeover=false,draft=false,stopped=false,outside=false,between=false,restart=false,resumeEarly=false}={}){
  const dataDir=await directory(t),controller=new AbortController(),events=[],updates=[],pages=[]
  let now=Date.parse('2026-11-14T10:00:00Z'),polls=0,paused=false
  const settings={...pace,browse_enabled:between,browse_items:1,browse_every_minutes:5,browse_after_actions_min:1,browse_after_actions_max:1,session_minutes:between?120:5}
@@ -145,7 +145,7 @@ async function runtimeFixture(t,{takeover=false,draft=false,stopped=false,outsid
   if(action==='agent_result'){now+=5*60000+1;events.push(['ack',now]);return {saved:true}}
   assert.fail(action)
  }
- const work=runDesktop(binding,{start:async()=>({address:'test'})},{signal:controller.signal,dataDir,Reader,request,now:()=>now,random:()=>0,update:p=>{updates.push(p);if(p.state==='break')paused=true},waitFor:async ms=>{events.push(['wait',now,ms]);now+=ms;if(takeover&&paused||outside)controller.abort({takeover:true})},connect:async()=>({contexts:()=>[{newPage:async()=>{const p={closed:false,isClosed(){return this.closed},close:async()=>{if(!p.closed){events.push(['close',now]);p.closed=true}}};pages.push(p);return p}}],close:async()=>{events.push(['disconnect',now])}})})
+ const work=runDesktop(binding,{start:async()=>({address:'test'})},{signal:controller.signal,dataDir,Reader,request,now:()=>now,random:()=>0,resumeBreak:()=>resumeEarly,update:p=>{updates.push(p);if(p.state==='break')paused=true},waitFor:async ms=>{events.push(['wait',now,ms]);now+=ms;if(takeover&&paused||outside)controller.abort({takeover:true})},connect:async()=>({contexts:()=>[{newPage:async()=>{const p={closed:false,isClosed(){return this.closed},close:async()=>{if(!p.closed){events.push(['close',now]);p.closed=true}}};pages.push(p);return p}}],close:async()=>{events.push(['disconnect',now])}})})
  if(draft)await assert.rejects(work,/draft/);else await work
  return {events,updates,pages,polls,paused,dataDir,now}
 }
@@ -172,6 +172,13 @@ test('restarting during a persisted break waits the remaining three minutes befo
 test('outside planning no Vinted tab is created and a draft prevents a planned close',async t=>{
  const outside=await runtimeFixture(t,{outside:true});assert.equal(outside.pages.length,0);assert.equal(outside.polls,0)
  const draft=await runtimeFixture(t,{draft:true});assert.equal(draft.pages.length,1);assert.equal(draft.pages[0].closed,false)
+})
+
+test('the home resume button ends a programmed break but still verifies identity and context',async t=>{
+ const r=await runtimeFixture(t,{restart:true,resumeEarly:true})
+ assert.equal(r.events.find(e=>e[0]==='open')[1],Date.parse('2026-11-14T10:02:00Z'))
+ assert.ok(r.events.findIndex(e=>e[0]==='identity_full')<r.events.findIndex(e=>e[0]==='agent_poll'))
+ assert.ok(r.events.findIndex(e=>e[0]==='inbox')<r.events.findIndex(e=>e[0]==='agent_poll'))
 })
 
 test('consultation occurs between acknowledged tasks even without an idle poll',async t=>{

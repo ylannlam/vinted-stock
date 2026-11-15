@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {normalizeSettings,effectiveSettings,unmaskPlan,repricePlan,dueScans,parseWardrobe,parseOrders,parseLikes,parseLabel,sanitizeRecipe,parisDayStart,
-  agentPoll,agentResult,agentLearn,pauseOnAlert,handleAgent,KINDS,DEFAULTS,rateLimitWait,cid} from './vinted-agent.js'
+  agentPoll,agentResult,agentLearn,pauseOnAlert,handleAgent,agentOverview,KINDS,DEFAULTS,rateLimitWait,cid} from './vinted-agent.js'
 
 // --- Base en mémoire, juste assez proche de supabase-js pour ces parcours ---
 function fakeDb(state={}){
@@ -57,6 +57,21 @@ function fakeDb(state={}){
 const ACC='11111111-1111-4111-8111-111111111111'
 const base=()=>({publication_accounts:[{id:ACC,login:'compte_demo',vinted_id:'3206068112'}],vinted_agent_settings:[],vinted_agent_tasks:[],vinted_agent_log:[],vinted_agent_recipes:[],vinted_agent_listings:[],vinted_agent_orders:[],vinted_agent_contacts:[],listing_drafts:[]})
 const recipe=(kind,extra={})=>({kind,recipe:{method:'POST',path:'/api/v2/x',body:'none',...extra}})
+
+test('home counters count confirmed sends only, excluding skipped, failed and old unproven replies',async()=>{
+ const state=base(),db=fakeDb(state),started_at=new Date().toISOString()
+ for(const [kind,status,result] of [
+  ['like_message','done',{message_sent:true,offer_sent:true}],
+  ['reply_message','done',{message_sent:true}],
+  ['reply_message','done',{message:'Réponse non envoyée'}],
+  ['reply_message','done',{message_sent:false}],
+  ['like_message','failed',null],
+  ['like_message','queued',null],
+ ])state.vinted_agent_tasks.push({account_id:ACC,kind,state:status,result,started_at})
+ const overview=await agentOverview(db)
+ assert.equal(overview.accounts[0].today.messages_confirmed,2)
+ assert.equal(overview.accounts[0].today.offers_confirmed,1)
+})
 
 test('the studio can enable PC publication without changing its executor or pairing',async()=>{
  const state=base(),db=fakeDb(state)

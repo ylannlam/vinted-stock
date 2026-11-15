@@ -449,13 +449,17 @@ export async function agentResult(db,key,body,{now=Date.now(),rand=Math.random}=
     }
   }
   if(task.kind==='sync_inbox')summary=await (await import('./ylavint.js')).applyInbox(db,task,body.result,{member,settings,now})
-  if(task.kind==='reply_message')summary=await (await import('./ylavint.js')).applyReply(db,task,body.result,{now})
+  if(task.kind==='reply_message'){
+    summary=await (await import('./ylavint.js')).applyReply(db,task,body.result,{now})
+    summary.message_sent=!!body.result?.message_id&&!body.result?.skipped
+  }
   if(task.kind==='accept_offer'){
     if(!body.result?.skipped&&(body.result?.accepted!==true||String(body.result.offer_id)!==String(task.payload.offer?.id)))throw new AppError('Résultat d’offre invalide.')
     summary={message:body.result.skipped?`Offre non acceptée : ${text(body.result.skipped,150)}`:`Offre acceptée à ${Number(task.payload.offer.price).toFixed(2).replace('.',',')} €.`}
   }
   if(task.kind==='like_message'){
     summary=await (await import('./ylavint-flows.js')).likeDone(db,task,body.result,settings,{now,rand})
+    if(desktopDriver(key)==='desktop')summary.message_sent=!!body.result?.message_id&&!summary.skipped
     if(!summary.skipped)await (await import('./ylavint.js')).recordLikeMessage(db,{...task,payload:{...task.payload,message:body.result?.message||null}},body.result,{now}).catch(()=>null)
     const engaged=cid(body.result?.conversation_id)
     if(body.result?.buyer_engaged===true&&engaged)await enqueue(db,[{account_id:task.account_id,kind:'sync_inbox',priority:8,dedupe_key:`engaged:${task.account_id}:${engaged}`,payload:{conversation_ids:[engaged],force_details:true}}])
@@ -595,7 +599,7 @@ export async function agentOverview(db,user=null){
     db.from('publication_accounts').select('id,login,vinted_id,ylavint_unlinked_at').order('login'),
     db.from('vinted_agent_settings').select(ACCOUNT_FIELDS),
     db.from('vinted_agent_tasks').select('id,account_id,kind,state,not_before,created_at,started_at,finished_at,error,result,payload').order('created_at',{ascending:false}).limit(80),
-    db.from('vinted_agent_tasks').select('account_id,kind,writes,state').gte('started_at',since),
+    db.from('vinted_agent_tasks').select('account_id,kind,writes,state,result').gte('started_at',since),
     db.from('vinted_agent_log').select('id,account_id,task_id,level,event,message,created_at').order('created_at',{ascending:false}).limit(150),
     db.from('vinted_agent_recipes').select('kind,learned_at,learned_login,samples,recipe'),
     db.from('vinted_agent_orders').select('transaction_id,account_id,status,title,price,currency,order_date,label_path,seen_at,stage,flow,ship_deadline').order('order_date',{ascending:false,nullsFirst:false}).limit(40),
@@ -606,7 +610,7 @@ export async function agentOverview(db,user=null){
     db.from('vinted_agent_contacts').select('account_id').gte('sent_at',since),
   ]);[accounts,settings,tasks,today,log,recipes,orders,listings,alerts,drafts,sent].forEach(check)
   const counts={},of=id=>counts[id]||(counts[id]={writes:0,like_sent:0})
-  for(const t of today.data){const c=of(t.account_id);if(t.state==='done')c[t.kind]=(c[t.kind]||0)+1;if(t.writes)c.writes++}
+  for(const t of today.data){const c=of(t.account_id);if(t.state==='done'){c[t.kind]=(c[t.kind]||0)+1;if(t.result?.message_sent===true)c.messages_confirmed=(c.messages_confirmed||0)+1;if(t.result?.offer_sent===true)c.offers_confirmed=(c.offers_confirmed||0)+1}if(t.writes)c.writes++}
   for(const r of sent.data)of(r.account_id).like_sent++
   const byAccount=new Map(settings.data.map(s=>[s.account_id,s])),alert=new Map(alerts.data.map(a=>[a.account_id,a]))
   return {

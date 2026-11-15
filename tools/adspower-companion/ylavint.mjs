@@ -21,7 +21,7 @@ export async function desktopRequest(token,action,body,fetcher=fetch){
   return data
 }
 
-export async function runDesktop(binding,ads,{signal,update,dataDir,connect,request=desktopRequest,Reader=VisibleVinted,now=Date.now,random=Math.random,waitFor=ms=>wait(ms,signal)}={}){
+export async function runDesktop(binding,ads,{signal,update,dataDir,connect,request=desktopRequest,Reader=VisibleVinted,now=Date.now,random=Math.random,resumeBreak=()=>false,waitFor=ms=>wait(ms,signal)}={}){
   let deadline=Infinity
   const check=()=>{if(signal.aborted)throw review('Assistant arrêté. Vérifie l’action en cours avant de la relancer.');if(now()>deadline)throw review('Le délai de l’action est dépassé : vérifie Vinted.')}
   let browser,worker,reader,task,submitted=false,activeTimer,keepPage=false
@@ -84,7 +84,7 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
         await reader.verifyFavourite(likes.likes[0]);summary.favourite_form_checked=true;publishSummary()
       }
       if(binding.rehearse===true){update({state:'rehearsed',message:'Répétition terminée : conversations lues et enregistrées sur le site, actions vérifiées. Aucun brouillon saisi, aucune tâche prise, aucun envoi.'});return}
-      update({state:'checked',message:`Compte confirmé : ${wardrobe.items.length} annonce(s), ${likes.likes.length} favori(s) et ${inbox.conversations.length} conversation(s) lus sur les pages chargées. ${summary.favourite_form_checked?'Ouverture du favori et fermeture du formulaire vérifiées. ':''}Aucun message ni réduction envoyés.`});return
+      update({state:'checked',message:`Compte confirmé : ${wardrobe.items.length} annonce(s), ${likes.likes.length} favori(s) et ${inbox.conversations.length} conversation(s) lus sur les pages chargées. ${summary.favourite_form_checked?'Disponibilité de l’article, ouverture du favori et fermeture du formulaire vérifiées. ':''}Aucun message ni réduction envoyés.`});return
     }
     // Recover reports after a crash before claiming anything new; never repeat a Vinted write.
     for(const pending of await journal.pending()){
@@ -118,6 +118,7 @@ export async function runDesktop(binding,ads,{signal,update,dataDir,connect,requ
         await routine.beginBreak(reader.pace)
       }
       if(routine.state.break_until){
+        if(resumeBreak()){await routine.finishBreak(reader.pace);lastContextRefresh=0;update({resume_at:null,message:'Pause terminée à ta demande'})}
         if(now()<routine.state.break_until){
           if(routine.state.close_for_break&&worker){
             await reader.assertNoDraft();await worker.close();worker=null;reader.page=null;reader.verified=false
@@ -261,7 +262,7 @@ export class DesktopAssistants{
     if([...this.sessions.values()].some(s=>s.active))throw review('Un assistant pilote déjà ce PC. Arrête-le avant de choisir un autre profil pour garder une seule fenêtre sous contrôle.')
     const controller=new AbortController(),session={active:true,controller,public:{account_id:input.account_id,profile_id:input.profile_id,member_id:input.member_id,state:'opening',message:'Démarrage demandé'}}
     this.sessions.set(input.account_id,session)
-    session.done=Promise.resolve().then(()=>this.run(input,this.getClient(),{signal:controller.signal,dataDir:this.dataDir,update:patch=>Object.assign(session.public,patch)})).catch(async e=>{
+    session.done=Promise.resolve().then(()=>this.run(input,this.getClient(),{signal:controller.signal,dataDir:this.dataDir,resumeBreak:()=>{const resume=session.resumeRequested;session.resumeRequested=false;return resume===true},update:patch=>Object.assign(session.public,patch)})).catch(async e=>{
       const failure=desktopFailure(e,session.public.message)
       Object.assign(session.public,{state:'review',message:failure.message,error_code:failure.code,failed_step:failure.stage})
       const folder=path.join(this.dataDir,'ylavint',input.account_id)
@@ -270,6 +271,7 @@ export class DesktopAssistants{
     return this.snapshot()
   }
   stop(account,takeover=false){const s=this.sessions.get(account);if(s?.active){s.public.state='stopping';s.public.message='Arrêt de l’assistant en cours';s.controller.abort({takeover})}return this.snapshot()}
+  resume(account){const s=this.sessions.get(account);if(!s?.active||s.public.state!=='break')throw review('Ce compte n’a pas de pause programmée en cours.');s.resumeRequested=true;s.public.message='Reprise demandée · vérification du compte en cours';return this.snapshot()}
   async close(){for(const s of this.sessions.values())s.controller.abort();await Promise.allSettled([...this.sessions.values()].map(s=>s.done))}
   get active(){return [...this.sessions.values()].some(s=>s.active)}
 }

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {VisibleVinted,PACE,BASE} from './ylavint-visible.mjs'
+import {VisibleVinted,PACE,BASE,sameVintedRoute} from './ylavint-visible.mjs'
 import {dueScans,normalizeSettings} from '../../server/vinted-agent.js'
 
 function fixture(){
@@ -21,7 +21,8 @@ test('reading the current inbox and its selected conversation never reloads it',
 test('route changes leave a full reading interval and prefer the existing visible link',async()=>{
  const f=fixture();await f.reader.open('/inbox/55');const settled=f.clock
  f.reader.snapshot=async()=>({url:f.page.url(),login:'demo',text:'Notifications',links:[{href:BASE+'/member/notifications'}],notices:[]})
- f.page.locator=()=>({all:async()=>[{getAttribute:async()=>'/member/notifications',isVisible:async()=>true,click:async()=>{f.clicks.push(f.clock);f.url=BASE+'/member/notifications'}}]})
+ const link={count:async()=>1,getAttribute:async()=>'/member/notifications',isVisible:async()=>true,click:async()=>{f.clicks.push(f.clock);f.url=BASE+'/member/notifications'}}
+ f.page.locator=()=>({...link,all:async()=>[link]})
  await f.reader.open('/member/notifications')
  assert.equal(f.visits.length,1);assert.equal(f.clicks.length,1)
  assert.ok(f.clicks[0]-settled>=10000)
@@ -41,7 +42,8 @@ test('the notifications bell is followed through its visible View all link',asyn
  const f=fixture();await f.reader.open('/')
  let bell=0,all=0
  f.reader.snapshot=async()=>({url:f.page.url(),login:'demo',text:'Notifications',links:[{href:BASE+'/member/notifications'}],notices:[]})
- f.page.locator=()=>({all:async()=>[{getAttribute:async()=>'/member/notifications',isVisible:async()=>true,click:async()=>{bell++}}]})
+ const link={count:async()=>1,getAttribute:async()=>'/member/notifications',isVisible:async()=>true,click:async()=>{bell++}}
+ f.page.locator=()=>({...link,all:async()=>[link]})
  const seeAll={filter(){return this},first(){return this},waitFor:async()=>{},count:async()=>1,getAttribute:async()=>'/member/notifications',click:async()=>{all++;f.url=BASE+'/member/notifications'}}
  f.page.getByRole=()=>seeAll
  await f.reader.open('/member/notifications')
@@ -81,4 +83,23 @@ test('closing an offer never clears an entered price or clicks another button',a
  const drafted=offerFixture({draft:'40'});await assert.rejects(drafted.reader.closeEmptyOffer(drafted.dialog),/déjà saisi/);assert.equal(drafted.escaped,0);assert.equal(drafted.clicked,0)
  const missing=offerFixture({missing:true});await assert.rejects(missing.reader.closeEmptyOffer(missing.dialog),/identifiable/);assert.equal(missing.clicked,0)
  const stuck=offerFixture({staysOpen:true});await assert.rejects(stuck.reader.closeEmptyOffer(stuck.dialog),/encore ouvert/);assert.equal(stuck.clicked,1)
+})
+
+test('an article redirect to its canonical title is ready and reused',async()=>{
+ const f=fixture()
+ f.page.goto=async url=>{f.visits.push(url);f.url=url+'-robe-verte-taille-s'}
+ await f.reader.open('/items/10577522169');await f.reader.open('/items/10577522169')
+ assert.equal(f.visits.length,1);assert.ok(f.clock<10000)
+ assert.equal(sameVintedRoute(BASE+'/items/123-robe',BASE+'/items/123'),true)
+ for(const path of ['/items/1234-robe','/items/123/edit','/items/123/photos','/member/123'])assert.equal(sameVintedRoute(BASE+path,BASE+'/items/123'),false)
+ assert.equal(sameVintedRoute('https://example.com/items/123',BASE+'/items/123'),false)
+})
+
+test('a favourite verification includes article availability before its conversation',async()=>{
+ const f=fixture(),events=[]
+ f.reader.availableItem=async id=>events.push(['item',id])
+ f.reader.openLike=async()=>{events.push(['favourite']);return '55'}
+ f.reader.identity=async()=>{};f.reader.thread=async()=>({id:'55'})
+ await f.reader.verifyFavourite({item_id:'123'})
+ assert.deepEqual(events,[['item','123'],['favourite']])
 })

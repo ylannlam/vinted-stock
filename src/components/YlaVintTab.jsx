@@ -28,7 +28,7 @@ export const bridgeOnline=a=>!!a.last_seen_at&&Date.now()-Date.parse(a.last_seen
 
 // Navigation latérale (rubriques et sous-rubriques), comme un tableau de bord de gestion Vinted.
 const NAV=[
- {key:'accueil',label:'Dashboard',icon:'▦'},
+ {key:'accueil',label:'Accueil',icon:'▦'},
  {key:'aujourdhui',label:'À traiter aujourd’hui',icon:'◷'},
  {key:'resultats',label:'Résultats de l’assistant',icon:'▦'},
  {key:'porte-monnaie',label:'Porte-monnaie',icon:'◉'},
@@ -145,7 +145,7 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
    {notice&&<p role="status" className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-3 text-sm text-blue-200">{notice}</p>}
    <Suspense fallback={<p className="text-sm text-zinc-500">Chargement…</p>}>
 
-   {section==='accueil'&&<YlaVintDashboard accounts={accounts} data={data} orders={valid} revenue={revenue} toShip={toShip} transit={transit} range={range} periodPicker={periodPicker} chart={<SalesChart orders={valid} range={range}/>} onNavigate={setSection} onRefresh={()=>{load();loadSales()}} busy={busy}/>}
+   {section==='accueil'&&<><Suspense fallback={<p>Chargement des assistants…</p>}><YlaVintDesktop compact accounts={accounts} tasks={data.tasks} onAccountAction={body=>act(body,null,false,true)} onActions={()=>setSection('actions')} onConfigure={(account,only='general')=>setConfigure({account,only})} pair={watchRequest} request={desktopRequest}/></Suspense><details className="mt-8"><summary className="cursor-pointer py-4 text-lg font-semibold text-white">Ventes et activité de mes boutiques</summary><YlaVintDashboard accounts={accounts} data={data} orders={valid} revenue={revenue} toShip={toShip} transit={transit} range={range} periodPicker={periodPicker} chart={<SalesChart orders={valid} range={range}/>} onNavigate={setSection} onRefresh={()=>{load();loadSales()}} busy={busy}/></details></>}
 
    {section==='commandes'&&<YlaVintSales request={request} accounts={accounts} onPrepare={()=>setSection('preparation')}/>}
    {['preparation','aujourdhui','resultats'].includes(section)&&<YlaVintOperations key={section} view={({preparation:'preparation',aujourdhui:'today',resultats:'results'})[section]} request={request} accounts={accounts} onNavigate={setSection} onConversation={c=>{setConversationTarget(c);setSection('messagerie')}}/>}
@@ -223,7 +223,7 @@ export default function YlaVintTab({request=ylavintRequest,watchRequest=vintedWa
       {!data.log.length&&<li className="p-4 text-zinc-500">Rien pour l’instant.</li>}</ul></Card></div>
    </div>}
 
-   {section==='assistant-pc'&&<Suspense fallback={<p>Chargement…</p>}><YlaVintDesktop accounts={accounts} onActions={()=>setSection('actions')} onConfigure={(account,only='general')=>setConfigure({account,only})} pair={watchRequest} request={desktopRequest}/></Suspense>}
+   {section==='assistant-pc'&&<Suspense fallback={<p>Chargement…</p>}><YlaVintDesktop accounts={accounts} tasks={data.tasks} onAccountAction={body=>act(body,null,false,true)} onActions={()=>setSection('actions')} onConfigure={(account,only='general')=>setConfigure({account,only})} pair={watchRequest} request={desktopRequest}/></Suspense>}
    {section==='actions'&&<YlaVintActions request={request} accounts={accounts} onAssistant={()=>setSection('assistant-pc')}/>}
    </Suspense>
   </main>

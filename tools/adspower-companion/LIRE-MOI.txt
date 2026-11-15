@@ -1,6 +1,8 @@
 STOCK VINTED — CONNECTEUR ADSPOWER
 
-CONNEXION 1.8.3
+CONNEXION 1.8.4
+- Accueil : comptes choisis et profils mémorisés, démarrage, pause et reprise sur leur carte.
+- Correction de l'ouverture d'une fiche lorsque Vinted ajoute le titre de l'article à son adresse.
 - Réutilisation des pages ouvertes, lecture de 10 s avant navigation et pause de 20 s entre les tâches (réglables).
 - Messagerie : deux minutes au minimum entre les lectures ; favoris : trois minutes.
 - Lecture des lignes cliquables de la nouvelle messagerie Vinted.
@@ -12,20 +14,22 @@ CONNEXION 1.8.3
 - La connexion protégée et les journaux sont conservés dans le dossier local StockVinted/AdsPower de ton compte Windows.
 - Pour reprendre une ancienne installation, remplace ses fichiers en conservant son dossier .data, puis relance run.bat : les données seront reprises automatiquement.
 
-ASSISTANT YLAVINT SUR PC (version 1.8.3)
+ASSISTANT YLAVINT SUR PC (version 1.8.4)
 Cette version ajoute le pilotage des favoris et de la messagerie depuis
 https://vinted-stock.vercel.app/ylavint#assistant-pc.
 La mise à jour du site et de sa base doit être installée avant de choisir ce mode.
 
 Après la connexion AdsPower décrite ci-dessous :
 1. Arrête Scalency et Dotb sur le compte réservé à YlaVint.
-2. Ouvre Assistant PC et choisis ton compte dans la liste.
-3. Sélectionne le compte et son profil dans Assistant PC.
-4. Clique « Vérifier le compte sans envoyer ». Le nom du compte est contrôlé.
+2. Dans l'accueil YlaVint, clique « Ajouter un compte » et cherche son nom.
+3. Associe son profil AdsPower une seule fois : ce choix reste mémorisé dans ce navigateur.
+4. Ouvre « Vérification sans envoi et bilan de la session », puis « Vérifier sans envoyer ».
 5. Configure séparément Favoris & réductions, Réponses IA et Relances
    dans les cartes de ton compte. Utilise « Répéter sans envoyer » pour vérifier
    le démarrage complet et la synchronisation au site, sans prendre de tâche.
-6. Clique « Démarrer cet assistant » lorsque les réglages sont prêts.
+6. Clique « Démarrer » sur sa carte lorsque les réglages sont prêts.
+   « Pause » et « Reprendre et démarrer » sont sur la même carte : aucun passage par le journal.
+   Une pause programmée peut aussi être terminée avec « Reprendre maintenant ».
 
 Les lectures, messages et réductions passent par les pages Vinted visibles.
 Aucun appel direct aux API Vinted, ni lecture des données cachées de la page.

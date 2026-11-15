@@ -8,6 +8,15 @@ export const BASE='https://www.vinted.fr'
 export const PACE={typing_delay_ms:70,page_wait_seconds:3,session_minutes:25,pause_minutes:5,browse_enabled:false,browse_every_minutes:30,browse_items:3,browse_item_seconds:8,browse_scrolls:2,active_days:[1,2,3,4,5,6,7],absent_until:null,browse_keywords:'',browse_price_min:0,browse_price_max:0,browse_photos:false,browse_memory_hours:24,reply_max_age_hours:24,...PUBLICATION_PACE,wallet_hours:[9,18],browse_variety:true,browse_between_actions:true,browse_after_actions_min:3,browse_after_actions_max:7,browse_like_enabled:false,browse_like_keywords:'robe',browse_like_price_min:20,browse_like_price_max:50,browse_like_per_day:5,browse_like_percent:25,pause_close_percent:0}
 export const cid=v=>/^(?:[1-9]\d{0,17}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i.test(String(v))?String(v):null
 Object.assign(PACE,{navigation_seconds:10,action_pause_seconds:20})
+// Vinted redirects /items/123 to /items/123-title. Compare the stable article
+// identifier, never a prefix that could also match another item or an edit page.
+export function sameVintedRoute(left,right){
+ const a=new URL(left,BASE),b=new URL(right,BASE)
+ if(a.origin!==BASE||b.origin!==BASE)return false
+ const item=u=>u.pathname.match(/^\/items\/([1-9]\d{0,17})(?:-[^/]+)?\/?$/)?.[1]
+ const ai=item(a),bi=item(b)
+ return a.pathname===b.pathname||!!ai&&ai===bi
+}
 export const euros=v=>{const m=String(v??'').replace(/\u00a0|\u202f/g,' ').match(/(\d+(?:[ .,]\d{3})*(?:[,.]\d{1,2})?)\s*€/);return m?Number(m[1].replace(/ /g,'').replace(',','.')):null}
 // A relative label is rounded down conservatively; it must never make an old like look new.
 export function visibleDate(value,now=Date.now()){
@@ -106,7 +115,7 @@ export class VisibleVinted{
    let previous=null
    for(let attempt=0;attempt<30;attempt++){
      this.check();const s=await this.snapshot(),url=new URL(s.url),target=expected&&new URL(expected,BASE)
-     const route=!target||url.pathname===target.pathname||(target.pathname==='/inbox'&&!!cid(url.pathname.split('/')[2]))
+     const route=!target||sameVintedRoute(url.href,target.href)||(target.pathname==='/inbox'&&!!cid(url.pathname.split('/')[2]))
      const contentReady=!/^\/inbox(?:\/|$)/.test(url.pathname)||!!s.conversation||/aucun message|pas encore de (message|conversation)/i.test(s.text)
      const ready=route&&s.login&&s.text?.trim()&&contentReady
      const key=JSON.stringify([url.pathname,s.login,s.conversation,s.threadItem?.href,s.messages?.length,s.cards?.length,s.notices?.length])
@@ -118,7 +127,7 @@ export class VisibleVinted{
  async open(path){
    this.check();const u=new URL(path,BASE);if(u.origin!==BASE)throw review('Destination non autorisée.')
    const current=new URL(this.page.url())
-   const same=current.origin===BASE&&(current.pathname===u.pathname&&(current.search===u.search||!!cid(u.pathname.split('/')[2])&&u.pathname.startsWith('/inbox/'))||u.pathname==='/inbox'&&!!cid(current.pathname.split('/')[2]))
+   const same=current.origin===BASE&&(sameVintedRoute(current.href,u.href)&&(current.search===u.search||!!cid(u.pathname.split('/')[2])&&u.pathname.startsWith('/inbox/'))||u.pathname==='/inbox'&&!!cid(current.pathname.split('/')[2]))
    // Reuse the live DOM, including the inbox sidebar. Never reload an already
    // open route just because another task wants to read it.
    if(same){
@@ -129,7 +138,7 @@ export class VisibleVinted{
    }
    await this.beforeNavigation()
    const s=current.origin===BASE?await this.snapshot():null
-   const link=s?.links.find(l=>{const v=new URL(l.href,BASE);return v.origin===BASE&&v.pathname===u.pathname&&v.search===u.search})
+   const link=s?.links.find(l=>{const v=new URL(l.href,BASE);return sameVintedRoute(v.href,u.href)&&v.search===u.search})
    const threadId=u.pathname.startsWith('/inbox/')&&cid(u.pathname.split('/')[2])
    const row=threadId&&s?.inboxRows?.some(r=>r.id===threadId)?this.page.locator(`[data-testid="conversation-list"] [role="button"][data-testid="inbox-list-item-${threadId}"]`):null
    if(row){if(await row.count()!==1)throw review('La ligne de conversation n’est pas unique.');await row.click({timeout:10000})}
@@ -198,6 +207,7 @@ export class VisibleVinted{
    if(!await closed())throw review('Le formulaire d’offre est encore ouvert. Vérifie Vinted avant de reprendre.')
  }
  async verifyFavourite(like){
+   await this.availableItem(like.item_id)
    const conversation=await this.openLike(like)
    await this.identity()
    const thread=await this.thread()
@@ -206,8 +216,19 @@ export class VisibleVinted{
  }
  async clickLink(href,selector='a[href]',paced=true){
    if(paced)await this.beforeNavigation()
+   await this.page.bringToFront()
+   // all() returns positional locators: a re-render can shift a link while the
+   // loop is reading it. Bind the exact observed href before clicking instead.
    const links=await this.page.locator(selector).all()
-   for(const a of links)if(new URL(await a.getAttribute('href'),BASE).href===href&&await a.isVisible()){await a.click();return}
+   for(const a of links){
+     const raw=await a.getAttribute('href')
+     if(raw&&new URL(raw,BASE).href===href&&await a.isVisible()){
+       const target=this.page.locator(`${selector}[href=${JSON.stringify(raw)}]:visible`)
+       if(await target.count()!==1)throw review('Plusieurs liens correspondent à cette destination. Vérifie la page Vinted.')
+       this.update?.({message:'Ouverture de la page Vinted sélectionnée'})
+       await target.click({timeout:10000});return
+     }
+   }
    throw review('Le lien attendu n’est plus visible sur cette page.')
  }
  async memberFilter(p){

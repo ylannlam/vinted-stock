@@ -50,7 +50,7 @@ export default function YlaVintAccountSettings({account,defaults,only,onSave,onC
       <header className="mb-6"><p className="ylv-eyebrow">Réglages indépendants · ce compte uniquement</p><h3 className="mt-2 text-2xl font-semibold text-white">{selected.title}</h3><p className="mt-2 text-sm text-zinc-400">{selected.hint}</p></header>
       <fieldset disabled={busy} className="min-w-0 space-y-5">
        {section==='general'&&<>
-        <Box title="Autorisation du compte"><Switch checked={form.enabled} onChange={v=>update(f=>({...f,enabled:v}))} label="Autoriser l’assistant sur ce compte" hint="Le démarrage se fait ensuite depuis Assistant PC. Enregistrer les réglages ne lance aucune session."/>{account.settings?.paused&&<Pill tone="amber">Compte en pause · la pause reste conservée</Pill>}</Box>
+        <Box title="Autorisation du compte"><Switch checked={form.enabled} onChange={v=>update(f=>({...f,enabled:v}))} label="Autoriser l’assistant sur ce compte" hint="Démarre ensuite depuis sa carte sur l’accueil. Enregistrer les réglages ne lance aucune session."/>{account.settings?.paused&&<Pill tone="amber">Compte en pause · reprise depuis sa carte sur l’accueil</Pill>}</Box>
         <Box title="Horaires d’activité · heure de Paris"><div className="grid gap-4 sm:grid-cols-2">{limit('from_hour','Début',23,'h')}{limit('to_hour','Fin',23,'h')}</div><p className="text-xs text-zinc-400">Deux heures identiques autorisent toute la journée. Ce créneau s’applique à toutes les fonctions du compte.</p></Box>
         <YlaVintRoutineSettings messaging={form.messaging} desktop section="general" onChange={(k,v)=>set('messaging',k,v)}/>
        </>}
