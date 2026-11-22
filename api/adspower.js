@@ -34,4 +34,7 @@ export function adsPowerHandler(authorizer=authorize,key=()=>process.env.SUPABAS
     }
   }
 }
-export default adsPowerHandler()
+export default function pausedProvider(req,res){
+  res.setHeader('Cache-Control','no-store')
+  return res.status(410).json({error:'Ce connecteur est en pause.'})
+}

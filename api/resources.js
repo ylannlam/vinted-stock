@@ -12,6 +12,8 @@ return async function handler(req,res) {
   try {
     const auth=await authorizer(req,res,['admin']);if(!auth)return
     const {db,user}=auth
+    if(['watch','agent','health'].includes(req.query?.scope))return res.status(410).json({error:'Ce connecteur est en pause.'})
+    if(req.query?.scope==='listings'&&(req.method==='GET'?['publisher_status','accounts','metadata','options','brands','planner'].includes(req.query?.action):!['upload','shein','ai_price','settings'].includes(req.body?.action)))return res.status(409).json({error:'Ouvre Annonces pour utiliser Scalency.'})
     if(req.query?.scope==='health'){const {handleAccountHealth}=await import('../server/account-health.js');return res.json(await handleAccountHealth(req,auth))}
     if(req.query?.scope==='listings')return res.json(await handleListingStudio(req,auth))
     if(req.query?.scope==='watch'){const {handleWatch}=await import('../server/vinted-watch.js');return res.json(await handleWatch(req,auth))}

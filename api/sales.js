@@ -43,6 +43,12 @@ export default async function handler(req, res) {
     const auth = await authorize(req, res, ['admin','stock'])
     if (!auth) return
     const { db, role, user } = auth
+    if(req.query?.scope==='scalency'){
+      const {scalencyHandler}=await import('../server/scalency-workspace.js')
+      try{return await scalencyHandler(req,res,auth)}
+      catch(error){return res.status(error.status||503).json({error:error.status?error.message:'Les données sont temporairement indisponibles. Actualise la page.'})}
+    }
+    if(req.method==='POST'&&(!req.body?.action||['automation','dotb_costs','shipping_label','refresh_photos'].includes(req.body.action)))return res.status(409).json({error:'La gestion Vinted se fait désormais dans Scalency.'})
     if (req.method === 'GET') {
       if(req.query?.view==='incomplete')return res.json(await readIncompleteOrders(db,req.query.page??0))
       if(req.query?.view==='shein_assistant')return res.json(await assistantSummary(db,req.query))

@@ -45,6 +45,7 @@ export default async function handler(req, res) {
     }
     if (role!=='admin') throw new AppError('Seul un administrateur peut modifier le catalogue.',403)
     const body=req.body
+    if(body?.action==='library-sync')return res.status(410).json({error:'Ouvre le dressing Scalency pour synchroniser les annonces.'})
     if (!body || typeof body!=='object') throw new AppError('Formulaire invalide.')
     if(req.method==='POST' && body.action==='supplier') {
       const product=validateSupplierAssociation(body)

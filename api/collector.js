@@ -13,30 +13,7 @@ export default async function handler(req,res) {
   res.setHeader('Cache-Control','no-store')
   if(!['GET','POST'].includes(req.method)){res.setHeader('Allow','GET, POST');return res.status(405).end()}
   try {
-    if(req.headers.authorization?.startsWith('Bearer svwk_')) {
-      // Extension des profils AdsPower : veille du compte (bandeau Vinted) et, depuis la version 2, agent Vinted.
-      const action=req.body?.action
-      if(req.method!=='POST'||!['watch_report','agent_poll','agent_progress','agent_result','agent_guard','agent_status','agent_preview','agent_context','agent_learn','agent_self'].includes(action))throw new AppError('Action non autorisée pour cette extension.',403)
-      const {authorizeWatch,watchReport,recordWatch}=await import('../server/vinted-watch.js')
-      const {db,key}=await authorizeWatch(req)
-      await (await import('../server/ylavint-desktop.js')).authorizeDesktop(db,key,req.body)
-      if(action==='agent_guard')return res.json(await (await import('../server/ylavint-desktop.js')).guardDesktop(db,key,req.body))
-      if(action==='agent_status')return res.json(await (await import('../server/ylavint-desktop.js')).statusDesktop(db,key))
-      if(action==='agent_preview')return res.json(await (await import('../server/ylavint-desktop.js')).previewDesktop(db,key))
-      if(action==='agent_context')return res.json(await (await import('../server/ylavint-desktop.js')).refreshDesktop(db,key,req.body))
-      const agent=await import('../server/vinted-agent.js')
-      if(action==='watch_report'){
-        const report=watchReport(req.body),saved=await recordWatch(db,key,report)
-        // Un bandeau « restreint » ou « bloqué » arrête immédiatement l'agent de ce compte.
-        const paused=await agent.pauseOnAlert(db,report).catch(e=>{console.error('agent_pause_failed',{code:e.code||'unknown'});return false})
-        return res.json({...saved,agent_paused:paused})
-      }
-      if(action==='agent_poll')return res.json(await agent.agentPoll(db,key,req.body))
-      if(action==='agent_progress')return res.json(await agent.agentProgress(db,key,req.body))
-      if(action==='agent_result')return res.json(await agent.agentResult(db,key,req.body))
-      if(action==='agent_self')return res.json(await (await import('../server/ylavint.js')).agentSelf(db,key,req.body))
-      return res.json(await agent.agentLearn(db,key,req.body))
-    }
+    if(req.headers.authorization?.startsWith('Bearer svwk_'))return res.status(410).json({error:'Ce connecteur est en pause.'})
     if(req.headers.authorization?.startsWith('Bearer svpc_')) {
       if(req.method!=='POST' || !deviceActions.has(req.body?.action))throw new AppError('Ce PC ne peut accéder qu’à ses récupérations Shein.',403)
       const {db,device}=await authorizeCollector(req), body=req.body

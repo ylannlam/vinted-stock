@@ -6,8 +6,8 @@ export default function CategoryTabs({active,onChange,items=[],commandes=[],user
  useEffect(()=>{const close=e=>{if(e.key==='Escape')setMenu(false)};document.addEventListener('keydown',close);return()=>document.removeEventListener('keydown',close)},[])
  if(userRole==='employe')return null
  const admin=userRole==='admin',stockTabs=[TAB_TOUT,TAB_A_RECEVOIR,TAB_A_ENVOYER,TAB_A_ENVOYER_LOT,TAB_ENVOYES]
- const primary=[[TAB_HOME,'Accueil'],[TAB_SALES,'Ventes'],[TAB_TOUT,'Stock'],[TAB_CATALOG,'Bibliothèque'],...(admin?[[TAB_ADSPOWER,'AdsPower'],[TAB_RESOURCES,'Atelier photo'],[TAB_LISTINGS,'Annonces'],[TAB_PUBLICATION,'Publication'],[TAB_AGENT,'YlaVint'],[TAB_BUDGET,'Budget']]:[])]
- const other=[...(admin?[[TAB_COMPTES_VINTED,'Comptes']]:[]),[TAB_HISTORY,'Historique & corbeille']]
+ const primary=[[TAB_HOME,'Accueil'],[TAB_TOUT,'Stock physique'],[TAB_SALES,'Ventes'],[TAB_ADSPOWER,'Dressing'],...(admin?[[TAB_LISTINGS,'Annonces'],[TAB_PUBLICATION,'Publication'],[TAB_AGENT,'Messages'],[TAB_COMPTES_VINTED,'Comptes']]:[])]
+ const other=[[TAB_CATALOG,'Catalogue fournisseur'],...(admin?[[TAB_RESOURCES,'Atelier photo'],[TAB_BUDGET,'Budget historique']]:[]),[TAB_HISTORY,'Historique & corbeille']]
  // Rubrique du menu « Plus » ouverte : le bouton Plus porte son nom pour qu'on sache où l'on est.
  const current=other.find(([id])=>id===active)
  const tabClass=id=>`workspace-nav-link px-3 py-3 text-sm font-medium rounded-lg transition ${active===id||(id===TAB_TOUT&&stockTabs.includes(active))?'is-active bg-teal-700 text-white':'text-slate-500 hover:bg-slate-50'}`

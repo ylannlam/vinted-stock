@@ -1,11 +1,7 @@
-const AdsPowerTab=lazy(()=>import('./components/AdsPowerTab'))
-const SalesTab=lazy(()=>import('./components/SalesTab'))
+const ScalencyWorkspace=lazy(()=>import('./components/ScalencyWorkspace'))
 const BudgetTab=lazy(()=>import('./components/BudgetTab'))
 const CatalogueTab=lazy(()=>import('./components/CatalogueTab'))
 const ResourcesTab=lazy(()=>import('./components/ResourcesTab'))
-const ListingStudio=lazy(()=>import('./components/ListingStudio'))
-const PublicationTab=lazy(()=>import('./components/PublicationTab'))
-const YlaVintLauncher=lazy(()=>import('./components/YlaVintLauncher'))
 import { captureDraft } from './lib/catalog'
 import { TAB_ADSPOWER, TAB_LISTINGS, TAB_SALES, TAB_BUDGET, TAB_CATALOG, TAB_RESOURCES, TAB_AGENT } from './constants'
 import { useState, useEffect, useRef, lazy, Suspense } from 'react'
@@ -15,7 +11,6 @@ import {clearViewCache,setViewCacheScope} from './lib/viewCache'
 import {ErrorNotice,PageBoundary} from './components/WorkspaceUI'
 import {workspaceErrors} from '../server/workspace'
 import {TAB_HOME,TAB_HISTORY,TAB_PUBLICATION} from './constants'
-const HomeTab=lazy(()=>import('./components/HomeTab'))
 const HistoryTab=lazy(()=>import('./components/HistoryTab'))
 const PhotoPreparation=lazy(()=>import('./components/PhotoPreparation'))
 import { supabase } from './lib/supabase'
@@ -25,15 +20,11 @@ import { recordLogin } from './lib/loginLog'
 import { usePersistedState } from './lib/usePersistedState'
 import Header from './components/Header'
 import CategoryTabs from './components/CategoryTabs'
-import PublicationRunnerBadge from './components/PublicationRunnerBadge'
-import AccountAlertBanner from './components/AccountAlertBanner'
-import {vintedWatchRequest} from './lib/assistantConnection'
 import Gallery from './components/Gallery'
 import FilterBar from './components/FilterBar'
 import AddItemModal from './components/AddItemModal'
 import EditItemModal from './components/EditItemModal'
 import SoldModal from './components/SoldModal'
-const VintedAccountsTab=lazy(()=>import('./components/VintedAccountsTab'))
 const WorkspaceTab=lazy(()=>import('./components/WorkspaceTab'))
 import EmplacementsView from './components/EmplacementsView'
 import LotPdfModal from './components/LotPdfModal'
@@ -77,7 +68,7 @@ export default function App() {
   }, [activeTab])
 
   useEffect(() => {
-    if(profile && profile.role!=='admin' && [TAB_RESOURCES,TAB_BUDGET,TAB_COMPTES_VINTED,TAB_ADSPOWER,TAB_LISTINGS,TAB_AGENT].includes(activeTab))setActiveTab(TAB_HOME)
+    if(profile && profile.role!=='admin' && [TAB_RESOURCES,TAB_BUDGET,TAB_COMPTES_VINTED,TAB_LISTINGS,TAB_AGENT].includes(activeTab))setActiveTab(TAB_HOME)
     // Les annonces ont quitté l'atelier photo : un ancien lien « atelier ?section=listings » ouvre l'onglet Annonces.
     if(activeTab===TAB_RESOURCES&&navigationFilters.section==='listings')setActiveTab(TAB_LISTINGS,navigationFilters.profile?{profile:navigationFilters.profile}:{})
   }, [profile,activeTab])
@@ -530,24 +521,16 @@ export default function App() {
         userRole={userRole}
         sentCount={items.filter(i=>i.status==='envoye').length}
       />
-      {isAdmin&&<AccountAlertBanner onOpen={()=>setActiveTab(TAB_ADSPOWER)}/>}
 
       {(stockError||commandeError)&&<div className="max-w-screen-2xl mx-auto p-4 space-y-3"><ErrorNotice error={stockError} retry={fetchItems} busy={itemsLoading}/><ErrorNotice error={commandeError} retry={fetchCommandes}/></div>}
       {stockNotice&&<div role="status" className="max-w-screen-2xl mx-auto p-3 bg-teal-50 text-sm text-teal-800 flex justify-between gap-3">{stockNotice}<button onClick={()=>setStockNotice('')}>Fermer</button></div>}
       <Suspense fallback={<p role="status" className="p-8 text-center text-gray-500">Chargement de l’écran…</p>}><PageBoundary key={activeTab}>
-      {activeTab===TAB_ADSPOWER&&isAdmin&&<AdsPowerTab owner={user.id} watchRequest={vintedWatchRequest} onCreateListing={p=>setActiveTab(TAB_LISTINGS,{profile:p.id})}/>}
-      {activeTab===TAB_HOME&&<HomeTab isAdmin={isAdmin} onNavigate={setActiveTab}/>}
+      {({[TAB_HOME]:"home",[TAB_SALES]:"orders",[TAB_LISTINGS]:"drafts",[TAB_PUBLICATION]:"jobs",[TAB_AGENT]:"conversations",[TAB_COMPTES_VINTED]:"accounts",[TAB_ADSPOWER]:"items"})[activeTab] && <ScalencyWorkspace key={activeTab+JSON.stringify(navigationFilters)} kind={({[TAB_HOME]:"home",[TAB_SALES]:"orders",[TAB_LISTINGS]:"drafts",[TAB_PUBLICATION]:"jobs",[TAB_AGENT]:"conversations",[TAB_COMPTES_VINTED]:"accounts",[TAB_ADSPOWER]:"items"})[activeTab]} admin={isAdmin} params={navigationFilters}/>}
       {activeTab===TAB_HISTORY&&<HistoryTab isAdmin={isAdmin} onRestored={()=>{fetchItems();fetchCommandes()}}/>}
       {activeTab === TAB_BUDGET && isAdmin && <BudgetTab onOpenSale={row=>setActiveTab(TAB_SALES,{line:row.id})} />}
-      {activeTab===TAB_LISTINGS&&isAdmin&&<main className="workspace-page max-w-screen-2xl mx-auto p-4 sm:p-6 text-slate-800"><ListingStudio key={JSON.stringify(navigationFilters)} initialProfile={navigationFilters.profile} initialSku={navigationFilters.sku} onAccounts={()=>setActiveTab(TAB_ADSPOWER)} onStyles={()=>setActiveTab(TAB_RESOURCES,{section:'accounts'})}/></main>}
-      {activeTab===TAB_PUBLICATION&&isAdmin&&<PublicationTab onOpenListings={()=>setActiveTab(TAB_LISTINGS)}/>}
-      {activeTab===TAB_AGENT&&isAdmin&&<YlaVintLauncher/>}
-      {activeTab === TAB_RESOURCES && isAdmin && <ResourcesTab key={JSON.stringify(navigationFilters)} initialSection={navigationFilters.section} initialProfile={navigationFilters.profile} onAccounts={()=>setActiveTab(TAB_ADSPOWER)} />}
-      {activeTab === TAB_SALES && <SalesTab key={JSON.stringify(navigationFilters)} isAdmin={isAdmin} initialFilters={navigationFilters} onPreparePhoto={setPhotoArticle} />}
+      {activeTab === TAB_RESOURCES && isAdmin && <ResourcesTab key={JSON.stringify(navigationFilters)} initialSection={navigationFilters.section||'fonds'} initialProfile={navigationFilters.profile} onAccounts={()=>setActiveTab(TAB_ADSPOWER)} />}
       {activeTab === TAB_CATALOG && (userRole==='admin'||userRole==='stock') && <CatalogueTab isAdmin={isAdmin} onPreparePhoto={isAdmin?setPhotoArticle:undefined} onCreateListing={isAdmin?sku=>setActiveTab(TAB_LISTINGS,{sku}):undefined} />}
-      {activeTab === TAB_COMPTES_VINTED && isAdmin && <VintedAccountsTab onDirections={()=>setActiveTab(TAB_RESOURCES,{section:'accounts'})} />}
       </PageBoundary></Suspense>
-      {isAdmin&&activeTab!==TAB_PUBLICATION&&<PublicationRunnerBadge onOpen={()=>setActiveTab(TAB_PUBLICATION)}/>}
 
 
       {activeTab === TAB_TOUT && (

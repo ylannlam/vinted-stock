@@ -20,9 +20,7 @@ export function creativeAccountsHandler(authorizer=authorize,readAccounts=readDo
    const body=req.body
    if(!body||typeof body!=='object')throw new AppError('Formulaire invalide.')
    if(req.method==='POST'&&body.action==='sync'){
-    const accounts=await readAccounts()
-    const result=await db.rpc('sync_creative_accounts',{p_accounts:accounts});check(result.error)
-    return res.json({synced:true,count:accounts.length})
+    return res.status(410).json({error:'Utilise Comptes pour actualiser les profils Scalency.'})
    }
    if(req.method==='PATCH'&&body.action==='select'){
     const changes=selectionValue(body.changes)

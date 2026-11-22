@@ -1,0 +1,12 @@
+import {authenticatedFetch} from './api'
+export async function query(view,fields={},body){
+  const params=new URLSearchParams({scope:'scalency',view,...fields})
+  const response=await authenticatedFetch('/api/sales?'+params,body?{method:'POST',body:JSON.stringify(body)}:{})
+  if(response.ok&&view==='label')return response.blob()
+  const result=await response.json().catch(()=>({}))
+  if(!response.ok)throw new Error(result.error||'Connexion interrompue. Actualise les données.')
+  return result
+}
+export const act=(action,fields={})=>query('',{},{action,...fields})
+export const formatMoney=(v,currency='EUR')=>v==null||v===''?'—':new Intl.NumberFormat('fr-FR',{style:'currency',currency}).format(Number(v))
+export const formatDate=v=>v?new Date(v).toLocaleString('fr-FR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'—'
