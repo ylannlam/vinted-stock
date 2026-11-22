@@ -38,7 +38,15 @@ test('Le générateur Scalency construit le format à partir de données structu
  assert.equal(result.title,'Robe bordeaux taille XS')
  assert.ok(result.description.includes('Taille : XS | État : Très bon état | Mesures : sur demande'))
  assert.equal(result.label_size,'L')
- assert.equal(result.catalog_id,2)
+ assert.equal(result.catalog_id,1778)
  assert.deepEqual(result.color_ids,[23])
  assert.ok(contract.response_format.json_schema.schema.required.includes('hashtags'))
+})
+
+test('Scalency sélectionne le bal pour une robe volumineuse et conserve la catégorie des autres vêtements',async()=>{
+ for(const [is_dress,is_ball_gown,expected] of [[true,true,1777],[true,false,1778],[false,false,2]]){
+   const fetcher=async()=>Response.json({choices:[{message:{content:JSON.stringify({...parts,is_dress,is_ball_gown,catalog_id:2,color_ids:[],label_size:'',review_notes:''})}}]})
+   const result=await generateListingText({fields:{}},[],[{id:2,title:'Vêtements',parent_id:null}],[],{fetcher,token:'test',quick:true})
+   assert.equal(result.catalog_id,expected)
+ }
 })
