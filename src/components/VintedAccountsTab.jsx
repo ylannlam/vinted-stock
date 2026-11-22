@@ -13,10 +13,10 @@ import AccountDetails, { CopyValue } from './AccountDetails'
 const secondary = 'rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50'
 const selectClass = 'border border-gray-200 bg-white rounded-lg px-3 py-2 text-xs text-gray-600 focus:outline-none focus:border-teal-400'
 
-export default function VintedAccountsTab({client=supabase,onDirections}) {
+export default function VintedAccountsTab({client=supabase,onDirections,initialView='ready'}) {
   const [accounts,setAccounts]=useCachedState(client,'accounts',[])
   const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('')
-  const [view,setView]=useState('ready'),[search,setSearch]=useState(''),[sort,setSort]=useState('priority'),[dueOnly,setDueOnly]=useState(false)
+  const [view,setView]=useState(initialView),[search,setSearch]=useState(''),[sort,setSort]=useState('priority'),[dueOnly,setDueOnly]=useState(false)
   const [selectedId,setSelectedId]=useState(null),[editAccount,setEditAccount]=useState(undefined)
   const [now,setNow]=useState(Date.now())
   const [deleteId,setDeleteId]=useState(null),[page,setPage]=useState(0)
