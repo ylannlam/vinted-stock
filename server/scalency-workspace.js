@@ -210,7 +210,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
   }
   if(action==='quick-brand')return res.json(await saveQuickBrand(db,b.account,b.name))
   if(action==='save'){
-    const id=remoteId(b.id), fields=listingFields(b.fields),photos=await verifiedPhotos(db,user.id,b.photos)
+    const id=remoteId(b.id), fields=listingFields(b.fields,{scalency:true}),photos=await verifiedPhotos(db,user.id,b.photos)
     const row={fields,photos,updated_at:now()}
     if(Object.hasOwn(b,'piece')||Object.hasOwn(b,'product')){
       const source=await draftSource(db,b.piece,b.product,fields.sku)

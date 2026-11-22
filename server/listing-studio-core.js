@@ -6,11 +6,11 @@ import {composeVintedSeo} from '../src/lib/vintedSeo.js'
 import {withMeasures} from '../src/lib/library.js'
 
 export const check=result=>{if(result.error)throw result.error;return result.data}
-export function listingFields(input={}){
+export function listingFields(input={},{scalency=false}={}){
  const text=(key,max)=>{const value=input[key]??'';if(typeof value!=='string'||value.length>max)throw new AppError('Un champ de l’annonce est trop long ou invalide.');return value.trim()}
  const integer=key=>{const value=input[key];if(value==null||value==='')return null;if(!Number.isSafeInteger(value)||value<1)throw new AppError('Une option de l’annonce est invalide.');return value}
  const account_id=text('account_id',36)
- if(account_id&&!isId(account_id))throw new AppError('Choisis un compte valide.')
+ if(account_id&&!isId(account_id)&&!(scalency&&/^vt-[0-9]+$/.test(account_id)))throw new AppError('Choisis un compte valide.')
  const color_ids=input.color_ids??[],item_attributes=input.item_attributes??[]
  if(!Array.isArray(color_ids)||color_ids.length>2||color_ids.some(n=>!Number.isSafeInteger(n)||n<1)||new Set(color_ids).size!==color_ids.length)throw new AppError('Choisis au maximum deux couleurs différentes.')
  if(!Array.isArray(item_attributes)||item_attributes.length>30||item_attributes.some(a=>!a||typeof a.code!=='string'||a.code.length>100||!Array.isArray(a.ids)||a.ids.length>30||a.ids.some(n=>!Number.isSafeInteger(n)||n<1)||new Set(a.ids).size!==a.ids.length)||new Set(item_attributes.map(a=>a.code)).size!==item_attributes.length)throw new AppError('Une caractéristique de l’annonce est invalide.')

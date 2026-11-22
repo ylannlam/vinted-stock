@@ -60,10 +60,11 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued}){
     if(owner)try{localStorage.setItem('scalency-last-account:'+owner,account)}catch{}
   }
   async function quickSend(){
+    const schedule=date?new Date(date).toISOString():null
     const v=await save()
-    if(prepared){const result=await act('quick-publish',{id:uid.current,version:v});onQueued(result);return}
+    if(prepared){const result=await act('quick-publish',{id:uid.current,version:v,schedule});onQueued(result);return}
     setMessage('Analyse des photos et préparation de l’annonce…')
-    const r=await act('autopost',{id:uid.current,version:v}).catch(async e=>{
+    const r=await act('autopost',{id:uid.current,version:v,schedule}).catch(async e=>{
       const latest=await query('draft',{id:uid.current}).catch(()=>null)
       if(latest){setFields(latest.fields);setVersion(latest.version);setSavedState(latest.state);setPrepared(latest.state==='draft'&&latest.version>v)}
       throw e
@@ -95,7 +96,7 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued}){
     </div><Field label="Photos, dans l’ordre de publication"><input type="file" multiple accept="image/png,image/jpeg,image/webp" onChange={e=>{const files=[...e.target.files];e.target.value='';setPrepared(false);run(()=>upload(files))}}/></Field>
     <div className="sc-photos">{photos.map((p,i)=><div key={p.path}><img src={p.url} alt={'Photo '+(i+1)}/><button onClick={()=>{setPhotos(photos.filter(x=>x.path!==p.path));setApproved(false);setPrepared(false)}}>Retirer</button></div>)}</div>
     {quickEditable&&<div className="sc-quick-submit"><p>Petit colis · {fields.account_id&&selectedBrand?'Publication sur '+(profiles.find(a=>a.id===fields.account_id)?.login||'ce compte'):'Choisis le compte et sa marque'}</p>
-      <button className="sc-primary" disabled={!selectedBrand||!fields.sku.trim()||!(Number(fields.price)>0)||!photos.length} onClick={()=>run(async()=>{try{await quickSend()}catch(e){setMessage('Le brouillon est conservé.');setReview(true);throw e}})}>{busy?'Préparation en cours…':prepared?'Vérifier et envoyer à Scalency':'Remplir et publier via Scalency'}</button>
+      <button className="sc-primary" disabled={!selectedBrand||!fields.sku.trim()||!(Number(fields.price)>0)||!photos.length} onClick={()=>run(async()=>{try{await quickSend()}catch(e){setMessage('Le brouillon est conservé.');setReview(true);throw e}})}>{busy?'Préparation en cours…':prepared?'Vérifier et envoyer à Scalency':date?'Remplir et programmer via Scalency':'Remplir et publier via Scalency'}</button>
       <button onClick={()=>setReview(v=>!v)}>{review?'Masquer les détails':'Afficher les détails'}</button></div>}
     {(!quick||review)&&<><div className="sc-tools">{!quick&&<button onClick={()=>run(async()=>{const v=await save();const r=await act('generate',{id:uid.current,version:v});edit('title',r.title);edit('description',r.description);setMessage('Texte préparé. Tu peux le relire et le modifier.')})}>Rédiger le titre et la bio</button>}</div>
     <Field label="Titre"><input maxLength={100} value={fields.title} onChange={e=>edit('title',e.target.value)}/></Field>
@@ -109,7 +110,7 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued}){
     {(options?.attributes||[]).filter(a=>a.required).map(a=><Field key={a.code} label={a.title}><select value={fields.item_attributes?.find(x=>x.code===a.code)?.ids[0]||''} onChange={e=>edit('item_attributes',[...fields.item_attributes.filter(x=>x.code!==a.code),...(e.target.value?[{code:a.code,ids:[Number(e.target.value)]}]:[])])}><option value="">Choisir</option>{(a.options||[]).map(v=><option value={v.id} key={v.id}>{v.title}</option>)}</select></Field>)}
     <Field label="Marque"><input readOnly={quick} value={quick?selectedBrand||'':fields.brand_title||''} onChange={e=>{edit('brand_id',null);edit('brand_title',e.target.value)}}/></Field>
     <Field label="Format du colis"><select value={fields.package_size_id||''} onChange={e=>edit('package_size_id',Number(e.target.value)||null)}><option value="">Choisir</option>{(options?.package_sizes||[]).map(s=><option key={s.id} value={s.id}>{s.title||s.name||s.id}</option>)}</select></Field>
-    {!quick&&<Field label="Programmer (facultatif)"><input type="datetime-local" value={date} onChange={e=>{setDate(e.target.value);setApproved(false)}}/></Field>}</div>
+    {<Field label="Programmer (facultatif)"><input type="datetime-local" value={date} onChange={e=>{setDate(e.target.value);setApproved(false)}}/></Field>}</div>
     <div className="sc-tools"><button onClick={()=>run(async()=>{await save();setMessage('Brouillon enregistré sur ton site.')})}>Enregistrer le brouillon</button>
     {!quick&&(approved?<button className="sc-primary" onClick={()=>run(async()=>{await act('publish',{id:uid.current,version,schedule:date?new Date(date).toISOString():null});onQueued()})}>Confirmer la mise en file</button>:<button className="sc-primary" onClick={()=>run(validate)}>Vérifier avec Scalency</button>)}</div></>}</fieldset>
     <ListingSeoOutput title={fields.title} description={fields.description}/>
