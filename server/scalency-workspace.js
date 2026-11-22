@@ -221,11 +221,16 @@ export async function scalencyHandler(req,res,{db,user,role}){
     if(!checked(result))fail('Ce brouillon a changé. Rouvre-le avant de continuer.',409)
     return res.json(result.data)
   }
-  if(['generate','autofill','validate','publish','quick-publish'].includes(action)){
-    const row=await getDraft(db,user,b.id)
+  if(['generate','autofill','autopost','validate','publish','quick-publish'].includes(action)){
+    let row=await getDraft(db,user,b.id)
     if(row.version!==b.version||row.state!=='draft')fail('Ce brouillon a changé. Actualise avant de continuer.',409)
     if(action==='autofill')return res.json(await prepareQuickDraft(db,user,req,row,photosFor))
-    if(action==='quick-publish')await verifyQuickFields(db,row.fields)
+    if(action==='autopost'){
+      const prepared=await prepareQuickDraft(db,user,req,row,photosFor)
+      if(prepared.missing.length)return res.json(prepared)
+      row={...row,...prepared}
+    }
+    if(action==='quick-publish'||action==='autopost')await verifyQuickFields(db,row.fields)
     if(action==='generate'){
       const urls=await photosFor(db,row.photos.slice(0,3),300)
       if(!urls.length||!row.fields.size_text)fail('Ajoute une photo et une taille.')
@@ -245,9 +250,9 @@ export async function scalencyHandler(req,res,{db,user,role}){
       if(preview.dry_run!==true||preview.would_queue!==true)fail(preview.reason||'Scalency ne peut pas accepter cette annonce.',409)
       return preview
     }
-    if(action==='validate')return res.json(await validatePayload())
+    const preview=await validatePayload()
+    if(action==='validate')return res.json(preview)
     const result=await once(db,user,'publish',row.id,async()=>{
-      await validatePayload()
       const locked=checked(await db.from('listing_drafts').update({state:'preparing',message:'Transmission à Scalency'}).eq('id',row.id).eq('state','draft').eq('version',row.version).select('id').maybeSingle())
       if(!locked)fail('Le brouillon a changé. Rouvre-le.',409)
       try{

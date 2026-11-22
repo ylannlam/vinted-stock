@@ -51,7 +51,13 @@ export async function prepareQuickDraft(db,user,req,row,photosFor){
   const facts=listingFacts(product,size)
   const result=await generateListingText({...row,fields:{...fields,size_text:size}},urls,catalogs,listingColors,
     {token:listingAiToken(req),settings,quick:true,shein:facts?{details:facts.details}:null})
-  const sizeText=size||result.label_size||''
+  let stockSize=''
+  if(!size&&!result.label_size&&product?.id){
+    const units=checked(await db.from('scalency_physical_catalog').select('size').eq('product_id',product.id).eq('status','en_stock'))
+    const labels=new Set(units.map(u=>String(u.size||'').trim().toUpperCase()))
+    if(labels.size===1)stockSize=[...labels][0]
+  }
+  const sizeText=size||result.label_size||stockSize
   const category=result.catalog_id,options=category?await remote('catalogs/'+remoteId(category)):null
   const next=applyListingPresets({...fields,brand_id:null,brand_title:brand,title:result.title,description:result.description,
     catalog_id:category,status_id:null,size_id:null,package_size_id:null,size_text:sizeText,color_ids:result.color_ids,item_attributes:[]},options,settings)

@@ -18,7 +18,7 @@ import {readIncompleteOrders} from '../server/incomplete-orders.js'
 import {syncDotbCosts} from '../server/dotb-costs.js'
 import {attachParcels,readParcelBoard} from '../server/parcels.js'
 
-export const config = { maxDuration: 60 }
+export const config = { maxDuration: 120 }
 const fail = error => { if (error) throw error }
 const errorMessages = {
   shein_item_unavailable:'Cet article Shein est annulé, non payé ou à vérifier. Aucune vente n’a été modifiée.',

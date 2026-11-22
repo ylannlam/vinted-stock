@@ -50,12 +50,15 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued}){
     const v=await save()
     if(prepared){const result=await act('quick-publish',{id:uid.current,version:v});onQueued(result);return}
     setMessage('Analyse des photos et préparation de l’annonce…')
-    const r=await act('autofill',{id:uid.current,version:v})
+    const r=await act('autopost',{id:uid.current,version:v}).catch(async e=>{
+      const latest=await query('draft',{id:uid.current}).catch(()=>null)
+      if(latest){setFields(latest.fields);setVersion(latest.version);setSavedState(latest.state);setPrepared(latest.state==='draft'&&latest.version>v)}
+      throw e
+    })
+    if(r.job){onQueued(r);return}
     setVersion(r.version);setFields(r.fields);setPrepared(true)
     if(r.missing.length){setReview(true);setMessage('Brouillon enregistré. À compléter : '+r.missing.join(', ')+'.');return}
-    setMessage('Vérification et envoi à Scalency…')
-    const result=await act('quick-publish',{id:uid.current,version:r.version})
-    onQueued(result)
+    setReview(true);setMessage('Vérifie les champs de l’annonce.')
   }
   const sizes=listingSizes(options)
   const selectedBrand=profiles.find(a=>a.id===fields.account_id)?.brand
