@@ -1,6 +1,7 @@
 import {enableWebhook} from '../server/scalency-webhook.js'
 import {createClient} from '@supabase/supabase-js'
 import {remote,collections,snapshot} from '../server/scalency-api.js'
+import {refreshListingCatalogs} from '../server/scalency-catalogs.js'
 import {finishHistory} from '../server/scalency-history.js'
 
 // Populate an empty workspace once. Later refreshes and history imports run in the app.
@@ -19,6 +20,7 @@ if(process.env.VERCEL_ENV==='production' && process.env.SCALENCY_API_KEY){
     console.log('Scalency · '+kind+' · '+rows.length+' entrées vérifiées')
   }
   try{await enableWebhook(db);console.log('Scalency · notifications connectées')}catch(e){console.warn('Scalency · notifications à vérifier dans Comptes (',e.status||'connexion',')')}
+  console.log('Catégories Scalency disponibles',await refreshListingCatalogs(db))
   await finishHistory(db)
   check(await db.rpc('scalency_import_references'))
   check(await db.rpc('scalency_connect_pieces'))

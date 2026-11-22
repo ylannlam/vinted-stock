@@ -3,6 +3,7 @@ import {collections,remote,remoteId,ScalencyError,snapshot,shippable,draftPayloa
 import {verifiedPhotos,listingFields,listingAiToken,generateListingText} from './listing-studio-core.js'
 import {ASSET_BUCKET} from './resources.js'
 import {readListingSettings} from './listing-settings.js'
+import {prepareQuickDraft,quickProfiles,saveQuickBrand,verifyQuickFields} from './scalency-quick.js'
 import {nextHistoryPage} from './scalency-history.js'
 import {catalogProduct,connectedRecords,draftSource} from './scalency-relations.js'
 const fail=(message,status)=>{throw new ScalencyError(message,status)}
@@ -123,6 +124,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
   const q=req.query, b=req.body||{}, action=req.method==='GET'?q.view:b.action
   if(role!=='admin'&&!['home','orders','items','order','label','pack','stock','link','relations','product'].includes(action)&&!(action==='sync'&&['orders','items'].includes(b.kind)))fail('Réservé à l’administrateur.',403)
   if(req.method==='GET'){
+    if(action==='quick-profiles')return res.json(await quickProfiles(db,user))
     if(action==='relations')return res.json(await connectedRecords(db,user,role,q))
     if(action==='product')return res.json(await catalogProduct(db,q.id))
     if(action==='draft-source')return res.json(await draftSource(db,q.piece,q.product,q.sku))
@@ -205,6 +207,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
     const {enableWebhook}=await import('./scalency-webhook.js')
     return res.json(await enableWebhook(db))
   }
+  if(action==='quick-brand')return res.json(await saveQuickBrand(db,b.account,b.name))
   if(action==='save'){
     const id=remoteId(b.id), fields=listingFields(b.fields),photos=await verifiedPhotos(db,user.id,b.photos)
     const row={fields,photos,updated_at:now()}
@@ -218,9 +221,11 @@ export async function scalencyHandler(req,res,{db,user,role}){
     if(!checked(result))fail('Ce brouillon a changé. Rouvre-le avant de continuer.',409)
     return res.json(result.data)
   }
-  if(['generate','validate','publish'].includes(action)){
+  if(['generate','autofill','validate','publish','quick-publish'].includes(action)){
     const row=await getDraft(db,user,b.id)
     if(row.version!==b.version||row.state!=='draft')fail('Ce brouillon a changé. Actualise avant de continuer.',409)
+    if(action==='autofill')return res.json(await prepareQuickDraft(db,user,req,row,photosFor))
+    if(action==='quick-publish')await verifyQuickFields(db,row.fields)
     if(action==='generate'){
       const urls=await photosFor(db,row.photos.slice(0,3),300)
       if(!urls.length||!row.fields.size_text)fail('Ajoute une photo et une taille.')
@@ -235,10 +240,25 @@ export async function scalencyHandler(req,res,{db,user,role}){
     if(source.stock?.emplacement)payload.location=source.stock.emplacement
     const supplier=source.stock?.shein_url||source.product?.supplier_url
     if(supplier&&/^https?:\/\//i.test(supplier))payload.supplier_link=supplier
-    if(action==='validate')return res.json(await remote('items',{method:'POST',body:{...payload,dry_run:true}}))
+    async function validatePayload(){
+      const preview=await remote('items',{method:'POST',body:{...payload,dry_run:true}})
+      if(preview.dry_run!==true||preview.would_queue!==true)fail(preview.reason||'Scalency ne peut pas accepter cette annonce.',409)
+      return preview
+    }
+    if(action==='validate')return res.json(await validatePayload())
     const result=await once(db,user,'publish',row.id,async()=>{
-      await remote('items',{method:'POST',body:{...payload,dry_run:true}})
-      return remote('items',{method:'POST',body:payload})
+      await validatePayload()
+      const locked=checked(await db.from('listing_drafts').update({state:'preparing',message:'Transmission à Scalency'}).eq('id',row.id).eq('state','draft').eq('version',row.version).select('id').maybeSingle())
+      if(!locked)fail('Le brouillon a changé. Rouvre-le.',409)
+      try{
+        const queued=await remote('items',{method:'POST',body:payload})
+        if(!queued.job?.id)throw new ScalencyError('Scalency doit confirmer la mise en file.',502)
+        return queued
+      }catch(error){
+        const rejected=error instanceof ScalencyError&&error.status>=400&&error.status<500
+        checked(await db.from('listing_drafts').update({state:rejected?'draft':'attention',message:rejected?'Envoi refusé par Scalency':'Vérifie la file Scalency avant de réessayer.'}).eq('id',row.id).eq('state','preparing'))
+        throw error
+      }
     })
     checked(await db.from('listing_drafts').update({state:'scheduled',message:'En file Scalency',payload:{scalency_job_id:result.job?.id},scheduled_at:at?.toISOString()||now(),version:row.version+1}).eq('id',row.id).eq('version',row.version))
     if(result.job)await saveRecords(db,'jobs',[result.job])
