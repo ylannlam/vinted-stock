@@ -16,6 +16,7 @@ const PhotoPreparation=lazy(()=>import('./components/PhotoPreparation'))
 import { supabase } from './lib/supabase'
 import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE } from './constants'
 import Login from './Login'
+import ScalencyRelations from './components/ScalencyRelations'
 import { recordLogin } from './lib/loginLog'
 import { usePersistedState } from './lib/usePersistedState'
 import Header from './components/Header'
@@ -475,6 +476,7 @@ export default function App() {
   const isSpecialTab = activeTab === TAB_TOUT || activeTab === TAB_A_RECEVOIR || activeTab === TAB_A_ENVOYER || activeTab === TAB_A_ENVOYER_LOT || activeTab === TAB_ENVOYES || activeTab === TAB_COMPTES_VINTED
 
   const filteredItems = (() => {
+    if(activeTab===TAB_TOUT&&navigationFilters.piece)return items.filter(item=>item.id===navigationFilters.piece)
     if (activeTab === TAB_A_RECEVOIR)    return items.filter(i => i.status === 'a_recevoir')
     if (activeTab === TAB_A_ENVOYER || activeTab === TAB_A_ENVOYER_LOT) {
       const vendus = items.filter(i => i.status === 'vendu')
@@ -527,13 +529,14 @@ export default function App() {
       <Suspense fallback={<p role="status" className="p-8 text-center text-gray-500">Chargement de l’écran…</p>}><PageBoundary key={activeTab}>
       {({[TAB_HOME]:"home",[TAB_SALES]:"orders",[TAB_LISTINGS]:"drafts",[TAB_PUBLICATION]:"jobs",[TAB_AGENT]:"conversations",[TAB_COMPTES_VINTED]:"accounts",[TAB_ADSPOWER]:"items"})[activeTab] && <ScalencyWorkspace key={activeTab+JSON.stringify(navigationFilters)} kind={({[TAB_HOME]:"home",[TAB_SALES]:"orders",[TAB_LISTINGS]:"drafts",[TAB_PUBLICATION]:"jobs",[TAB_AGENT]:"conversations",[TAB_COMPTES_VINTED]:"accounts",[TAB_ADSPOWER]:"items"})[activeTab]} admin={isAdmin} params={navigationFilters}/>}
       {activeTab===TAB_HISTORY&&<HistoryTab isAdmin={isAdmin} onRestored={()=>{fetchItems();fetchCommandes()}}/>}
-      {activeTab === TAB_BUDGET && isAdmin && <BudgetTab onOpenSale={row=>setActiveTab(TAB_SALES,{line:row.id})} />}
+      {activeTab === TAB_BUDGET && isAdmin && <BudgetTab onOpenSale={row=>setActiveTab(TAB_SALES,row.order?{id:row.order,account:row.account}:{id:row.id,filter:'archive'})} />}
       {activeTab === TAB_RESOURCES && isAdmin && <ResourcesTab key={JSON.stringify(navigationFilters)} initialSection={navigationFilters.section||'fonds'} initialProfile={navigationFilters.profile} onAccounts={()=>setActiveTab(TAB_ADSPOWER)} />}
-      {activeTab === TAB_CATALOG && (userRole==='admin'||userRole==='stock') && <CatalogueTab isAdmin={isAdmin} onPreparePhoto={isAdmin?setPhotoArticle:undefined} onCreateListing={isAdmin?sku=>setActiveTab(TAB_LISTINGS,{sku}):undefined} />}
+      {activeTab === TAB_CATALOG && (userRole==='admin'||userRole==='stock') && <CatalogueTab initialProduct={navigationFilters.product} isAdmin={isAdmin} onPreparePhoto={isAdmin?setPhotoArticle:undefined} onCreateListing={isAdmin?sku=>setActiveTab(TAB_LISTINGS,{sku}):undefined} />}
       </PageBoundary></Suspense>
 
 
-      {activeTab === TAB_TOUT && (
+      {activeTab===TAB_TOUT&&navigationFilters.piece&&<section className="sc-work"><a href="#stock">← Tout le stock</a><ScalencyRelations entity="stock" id={navigationFilters.piece}/></section>}
+      {activeTab === TAB_TOUT && !navigationFilters.piece && (
         <FilterBar
           sizes={filterSizes}
           onSizesChange={setFilterSizes}

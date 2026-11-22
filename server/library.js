@@ -67,14 +67,14 @@ export async function handleLibraryAction(db,user,body,{sync=syncDotbLibrary}={}
 // Données en plus de la bibliothèque : articles postés, grille et état du relevé Dotb.
 export async function readLibraryExtras(db,readPage,offset) {
   const [posted,settings,sync]=await Promise.all([
-    readPage(head=>db.from('catalog_library_posted').select('*',{count:'exact',head}).order('sku').order('id'),offset),
+    readPage(head=>db.from('scalency_posted_catalog').select('*',{count:'exact',head}).order('sku').order('id'),offset),
     offset?{data:null}:db.from('catalog_settings').select('pricing,updated_at').eq('id',true).maybeSingle(),
-    offset?{data:null}:db.from('catalog_sync_state').select('last_completed_at,locked_until,cursor').eq('id',true).maybeSingle(),
+    offset?{data:null}:db.from('scalency_sync').select('updated_at,complete').eq('kind','items').maybeSingle(),
   ])
   if(settings.error)throw settings.error
   if(sync.error)throw sync.error
   return {posted:posted.data,posted_count:posted.count,pricing:settings.data?.pricing||null,
-    dotb_sync:sync.data?{last_completed_at:sync.data.last_completed_at,running:Date.parse(sync.data.locked_until)>Date.now(),resumable:!!sync.data.cursor}:null}
+    dotb_sync:sync.data?{last_completed_at:sync.data.updated_at,running:false,resumable:!sync.data.complete}:null}
 }
 
 // --- Création d'annonce : le SKU retrouve sa fiche Shein (bibliothèque), sinon le PC va la chercher.

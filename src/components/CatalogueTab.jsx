@@ -5,6 +5,8 @@ import { safeUrl } from '../lib/fulfillment'
 import CollectionManager from './CollectionManager'
 import TrackingPeriod from './TrackingPeriod'
 import CoefficientSimulator from './CoefficientSimulator'
+import ScalencyRelations from './ScalencyRelations'
+import {query as scalencyQuery} from '../lib/scalency'
 import {BestSellerList,ProductDetails} from './CatalogueLibrary'
 import {AddReferencesPanel,CategoryChips,LibraryCard,PostedCard,PricingPanel} from './LibraryParts'
 import {groupPosted,productCategory,bestSellers} from '../lib/library'
@@ -60,7 +62,7 @@ function SkuRow({group,data,isAdmin,busy,onLink,onHistory}) {
   </tr>
 }
 
-export default function CatalogueTab({isAdmin,request=defaultRequest,collectorRequest=defaultCollectorRequest,collectorBridge,onPreparePhoto,onCreateListing}) {
+export default function CatalogueTab({initialProduct,isAdmin,request=defaultRequest,collectorRequest=defaultCollectorRequest,collectorBridge,onPreparePhoto,onCreateListing}) {
   const [data,setData]=useCachedState(request,'catalog',{products:[],items:[],links:[],sales:[],posted:[],pricing:null,library_ready:false}), [tab,setTab]=useState('sold')
   const [category,setCategory]=useState('all'),[panel,setPanel]=useState(null)
   const [search,setSearch]=useState(''), [filter,setFilter]=useState('all'), [page,setPage]=useState(0)
@@ -68,6 +70,7 @@ export default function CatalogueTab({isAdmin,request=defaultRequest,collectorRe
   const [editing,setEditing]=useState(null),[linking,setLinking]=useState(null),[history,setHistory]=useState(null)
   const [historyFilter,setHistoryFilter]=useState('all')
   const [details,setDetails]=useState(null),[toolsOpen,setToolsOpen]=useState(false)
+  useEffect(()=>{let live=true;if(initialProduct)scalencyQuery('product',{id:initialProduct}).then(p=>{if(live)setDetails(p)}).catch(e=>{if(live)setError(e.message)});return()=>{live=false}},[initialProduct])
   const alive=useRef(true),operation=useRef(false)
   const groups=[...data.items.reduce((map,item)=>{
     if (!item.sku) return map
@@ -147,22 +150,12 @@ export default function CatalogueTab({isAdmin,request=defaultRequest,collectorRe
   const productView=['sold','added','fluctuations'].includes(tab)
   // Best-sellers du moment : au moins 2 ventes sur 30 jours.
   const hot=new Set(bestSellers(data,{days:30}).filter(r=>r.count>=2&&r.product).map(r=>r.product.id))
-  const postedGroups=groupPosted(data.posted,data)
+  const postedGroups=groupPosted(data.posted,{...data,includeSold:true})
   const postedSkus=new Set(postedGroups.map(g=>g.sku.toLowerCase()))
-  // Articles postés sans fiche Shein : la récupération part toute seule (une fois par session et par SKU).
-  const missingPosted=isAdmin&&data.library_ready?postedGroups.filter(g=>!g.product&&/^s[a-z]\d{10,}$/i.test(g.sku)).map(g=>g.sku):[]
-  useEffect(()=>{
-    if(busy||!missingPosted.length)return
-    let tried=[];try{tried=JSON.parse(sessionStorage.getItem('library-auto-collect')||'[]')}catch{}
-    const fresh=missingPosted.filter(s=>!tried.includes(s)).slice(0,50)
-    if(!fresh.length)return
-    try{sessionStorage.setItem('library-auto-collect',JSON.stringify([...tried,...fresh].slice(-500)))}catch{}
-    request('POST',{action:'library-add',references:fresh.join('\n')}).then(r=>{if(r.queued)setNotice(`${r.queued} article${r.queued>1?'s':''} posté${r.queued>1?'s':''} sans fiche Shein : récupération lancée sur le PC.`)}).catch(()=>{})
-  },[missingPosted.join('|'),busy])
   const productSkus=p=>[p.supplier_sku,...data.links.filter(l=>l.product_id===p.id).map(l=>l.sku)].filter(Boolean).map(s=>s.toLowerCase())
   // Sans la migration de la bibliothèque, tous les produits sont des produits vendus.
   const isSold=p=>!data.library_ready||p.sold
-  const isAdded=p=>!isSold(p)&&!productSkus(p).some(s=>postedSkus.has(s))
+  const isAdded=p=>!isSold(p)&&!postedGroups.some(g=>g.product?.id===p.id)&&!productSkus(p).some(s=>postedSkus.has(s))
   const sectionProducts=data.products.filter(p=>tab==='sold'?isSold(p):tab==='added'?isAdded(p):true)
   const categoryCounts=(tab==='posted'?postedGroups.map(g=>g.product||{title:g.title}):sectionProducts).reduce((a,p)=>{const c=productCategory(p);a[c]=(a[c]||0)+1;return a},{})
   const inCategory=p=>category==='all'||productCategory(p)===category
@@ -193,13 +186,13 @@ export default function CatalogueTab({isAdmin,request=defaultRequest,collectorRe
         <div className="article-grid catalog-grid">{visibleProducts.slice(currentPage*20,(currentPage+1)*20).map(p=>{const skus=productSkus(p);return <LibraryCard key={p.id} product={p} skus={data.links.filter(l=>l.product_id===p.id).map(l=>l.sku)} sales={(data.sales||[]).filter(s=>skus.includes(String(s.sku).toLowerCase())).reduce((n,s)=>n+Number(s.quantity),0)} pricing={data.pricing} isAdmin={isAdmin} busy={busy} onDetails={setDetails} onMeta={saveMeta} onCreateListing={isAdmin?onCreateListing:undefined}/>})}</div>
         {!visibleProducts.length&&<div className="workspace-empty" role="status"><span className="workspace-empty-symbol" aria-hidden="true">◇</span><h2>{busy?'Chargement des produits…':term||filter!=='all'||category!=='all'?'Aucun produit trouvé':tab==='fluctuations'?'Aucune variation pour le moment':tab==='added'?'Rien à poster pour le moment':'Tes produits, en images'}</h2><p>{term||filter!=='all'||category!=='all'?'Essaie un autre mot-clé, une autre catégorie ou un autre filtre.':tab==='fluctuations'?'Les variations apparaîtront après deux relevés de prix comparables.':tab==='added'?'Ajoute des SKU ou des liens Shein : ils apparaîtront ici avec leurs photos, mesures et prix.':'Les photos, les tailles et le prix Shein apparaîtront ici après la récupération des produits vendus.'}</p></div>}
       </>:tab==='posted'?<>
-        <div className="article-grid catalog-grid">{visiblePosted.slice(currentPage*20,(currentPage+1)*20).map(g=><PostedCard key={g.sku} group={g} pricing={data.pricing} isAdmin={isAdmin} busy={busy} onDetails={setDetails} onMeta={saveMeta} onCollect={g=>addReferences(g.sku,true).catch(()=>{})} onCreateListing={isAdmin?onCreateListing:undefined}/>)}</div>
-        {!visiblePosted.length&&<div className="workspace-empty" role="status"><span className="workspace-empty-symbol" aria-hidden="true">◇</span><h2>{busy?'Chargement…':data.dotb_sync?.last_completed_at?'Aucun article posté trouvé':'Aucune annonce archivée'}</h2><p>{data.dotb_sync?.last_completed_at?'Essaie une autre recherche ou une autre catégorie. Les articles vendus sont dans « Vendus ».':'Les annonces actuelles sont dans le dressing Scalency.'}</p></div>}
+        <div className="article-grid catalog-grid">{visiblePosted.slice(currentPage*20,(currentPage+1)*20).map(g=><PostedCard key={g.key} group={g} pricing={data.pricing} isAdmin={isAdmin} busy={busy} onDetails={setDetails} onMeta={saveMeta} onCollect={g=>addReferences(g.sku,true).catch(()=>{})} onCreateListing={isAdmin?onCreateListing:undefined}/>)}</div>
+        {!visiblePosted.length&&<div className="workspace-empty" role="status"><span className="workspace-empty-symbol" aria-hidden="true">◇</span><h2>{busy?'Chargement…':'Aucune annonce en ligne pour cette sélection'}</h2><p>Essaie une autre recherche ou une autre catégorie.</p></div>}
       </>:tab==='bestsellers'?<BestSellerList data={data} search={search} onDetails={setDetails} onCreateListing={onCreateListing}/>:<div className="rounded-xl border bg-white overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-gray-50 text-gray-500 text-xs"><tr>{['Article vendu / SKU','Ventes','Fiche Shein associée','Actions'].map(t=><th key={t} className="p-4 font-medium">{t}</th>)}</tr></thead><tbody>{visibleGroups.slice(currentPage*20,(currentPage+1)*20).map(g=><SkuRow key={g.sku} group={g} data={data} isAdmin={isAdmin} busy={busy} onLink={openLink} onHistory={p=>run(()=>showHistory(p))}/>)}{!visibleGroups.length&&<tr><td colSpan="4" className="p-10 text-center text-gray-500">Aucun SKU vendu pour cette recherche. Les prochaines ventes alimenteront cette liste automatiquement.</td></tr>}</tbody></table></div>}
       {tab!=='bestsellers'&&pages>1&&<div className="flex justify-between items-center text-xs text-gray-500"><span>{visible.length} {productView||tab==='posted'?'articles':'SKU'} · Page {currentPage+1}/{pages}</span><div className="flex gap-2"><button className={button} disabled={!currentPage} onClick={()=>setPage(currentPage-1)}>Précédente</button><button className={button} disabled={currentPage+1>=pages} onClick={()=>setPage(currentPage+1)}>Suivante</button></div></div>}
       <p className="text-xs text-gray-500">Ces produits sont ajoutés depuis tes ventes. Les prix relevés peuvent varier au panier.</p>
     </>}
-    {details&&<Dialog key="product" title={details.title} close={()=>setDetails(null)} busy={busy}><ProductDetails onPreparePhoto={isAdmin&&onPreparePhoto?()=>{setDetails(null);onPreparePhoto({type:'catalog',id:details.id,title:details.title,photo_url:details.photo_url,sku:details.supplier_sku})}:undefined} product={details} items={data.items.filter(i=>data.links.some(l=>l.sku===i.sku&&l.product_id===details.id))}/><div className="flex flex-wrap gap-2 border-t pt-4"><button disabled={busy} className={button} onClick={()=>{const product=details;setDetails(null);run(()=>showHistory(product))}}>Historique des prix</button>{isAdmin&&<button disabled={busy} className={button} onClick={()=>run(async()=>{await collectorRequest('POST',{action:'enqueue',references:details.supplier_url});setDetails(null);setNotice('Actualisation demandée. Tu peux suivre son avancée dans Outils → Connexion Shein.');await load()})}>Actualiser la fiche Shein</button>}</div></Dialog>}
+    {details&&<Dialog key="product" title={details.title} close={()=>setDetails(null)} busy={busy}><ScalencyRelations entity="product" id={details.id}/><ProductDetails onPreparePhoto={isAdmin&&onPreparePhoto?()=>{setDetails(null);onPreparePhoto({type:'catalog',id:details.id,title:details.title,photo_url:details.photo_url,sku:details.supplier_sku})}:undefined} product={details} items={data.items.filter(i=>data.links.some(l=>l.sku===i.sku&&l.product_id===details.id))}/><div className="flex flex-wrap gap-2 border-t pt-4"><button disabled={busy} className={button} onClick={()=>{const product=details;setDetails(null);run(()=>showHistory(product))}}>Historique des prix</button>{isAdmin&&<button disabled={busy} className={button} onClick={()=>run(async()=>{await collectorRequest('POST',{action:'enqueue',references:details.supplier_url});setDetails(null);setNotice('Actualisation demandée. Tu peux suivre son avancée dans Outils → Connexion Shein.');await load()})}>Actualiser la fiche Shein</button>}</div></Dialog>}
     {editing&&<Dialog title="Vérifier le relevé Shein" close={closeDraft} busy={busy}><form onSubmit={e=>{e.preventDefault();run(saveObservation)}} className="space-y-4">
       <p className="text-sm text-gray-500">Vérifie la fiche ouverte sur Shein. Un prix illisible reste vide ; il ne devient jamais zéro.</p>
       <div className="grid sm:grid-cols-2 gap-3">{[['supplier_url','Lien complet de la fiche Shein',2000],['title','Nom du produit',500],['supplier_sku','SKU affiché sur Shein',200],['price','Prix affiché (€)',30],['size','Taille observée',80],['color','Couleur observée',100]].map(([key,label,max])=><label key={key} className="text-xs text-gray-600">{label}<input className={`${input} mt-1`} required={['title','supplier_url'].includes(key)} inputMode={key==='price'?'decimal':undefined} maxLength={max} value={editing[key]} onChange={e=>setEditing({...editing,[key]:e.target.value,confirmed:false})}/></label>)}

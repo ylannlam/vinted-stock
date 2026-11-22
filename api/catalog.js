@@ -27,7 +27,7 @@ export default async function handler(req, res) {
       let library=null
       try {
         const [products,links,extras]=await Promise.all([
-          readPage(head=>db.from('catalog_library_products').select('*',{count:'exact',head}).order('created_at',{ascending:false}).order('id'),offset),
+          readPage(head=>db.from('scalency_product_library').select('*',{count:'exact',head}).order('created_at',{ascending:false}).order('id'),offset),
           readPage(head=>db.from('catalog_sku_links').select('*',{count:'exact',head}).order('sku'),offset),
           readLibraryExtras(db,readPage,offset),
         ])
@@ -35,13 +35,13 @@ export default async function handler(req, res) {
       } catch(e) { if(!missingRelation(e))throw e }
       const [products,items,links,sales,tracking] = await Promise.all([
         library?library.products:readPage(head=>db.from('catalog_tracked_products').select('*',{count:'exact',head}).order('created_at',{ascending:false}).order('id'),offset),
-        readPage(head=>db.from('catalog_sales_items').select('*',{count:'exact',head}).order('id'),offset),
+        readPage(head=>db.from('scalency_catalog_sales').select('*',{count:'exact',head}).order('id'),offset),
         library?library.links:readPage(head=>db.from('catalog_tracked_links').select('*',{count:'exact',head}).order('sku'),offset),
-        readPage(head=>db.from('catalog_sales_by_sku').select('*',{count:'exact',head}).order('sku').order('currency'),offset),
+        readPage(head=>db.from('scalency_sales_by_sku').select('*',{count:'exact',head}).order('sku').order('currency'),offset),
         readTrackingPeriod(db),
       ])
       return res.json({products:products.data,items:items.data,links:links.data,sales:sales.data,tracking,sales_count:sales.count,product_count:products.count,item_count:items.count,link_count:links.count,
-        connected:!!process.env.DOTB_API_TOKEN,sales_only:!library,library_ready:!!library,...(library?library.extras:{posted:[],posted_count:0,pricing:null,dotb_sync:null})})
+        connected:!!process.env.SCALENCY_API_KEY,sales_only:!library,library_ready:!!library,...(library?library.extras:{posted:[],posted_count:0,pricing:null,dotb_sync:null})})
     }
     if (role!=='admin') throw new AppError('Seul un administrateur peut modifier le catalogue.',403)
     const body=req.body
@@ -49,7 +49,7 @@ export default async function handler(req, res) {
     if (!body || typeof body!=='object') throw new AppError('Formulaire invalide.')
     if(req.method==='POST' && body.action==='supplier') {
       const product=validateSupplierAssociation(body)
-      const {data,error}=await db.rpc('create_catalog_product_for_sku',{p_sku:product.sku,p_supplier_id:product.supplier_id,p_supplier_url:product.supplier_url,p_updated:body.updated_at})
+      const {data,error}=await db.rpc('scalency_create_catalog_product_for_sku',{p_sku:product.sku,p_supplier_id:product.supplier_id,p_supplier_url:product.supplier_url,p_updated:body.updated_at})
       if(error?.message?.includes('link_conflict'))throw new AppError('Cette association a changé. Actualisez avant de recommencer.',409)
       if(error?.message?.includes('sku_missing'))throw new AppError('Ce SKU ne correspond à aucune vente suivie.',409)
       check(error);return res.json({saved:true,product_id:data})
@@ -67,7 +67,7 @@ export default async function handler(req, res) {
     if (req.method==='PATCH' && body.action==='link') {
       if (typeof body.sku!=='string' || !body.sku.trim() || body.sku.length>200 || (body.product_id!==null && !isId(body.product_id)) ||
         (body.updated_at!==null && !Number.isFinite(Date.parse(body.updated_at)))) throw new AppError('Association invalide.')
-      const {error}=await db.rpc('link_catalog_sku',{p_sku:body.sku.trim(),p_product:body.product_id,p_updated:body.updated_at})
+      const {error}=await db.rpc('scalency_link_catalog_sku',{p_sku:body.sku.trim(),p_product:body.product_id,p_updated:body.updated_at})
       if (error?.message?.includes('link_conflict')) throw new AppError('Cette association a changé. Actualisez avant de recommencer.',409)
       if (error?.message?.includes('sku_missing')) throw new AppError('Ce SKU ne correspond à aucune vente suivie.',409)
       check(error)

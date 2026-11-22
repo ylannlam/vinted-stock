@@ -4,6 +4,7 @@ import {verifiedPhotos,listingFields,listingAiToken,generateListingText} from '.
 import {ASSET_BUCKET} from './resources.js'
 import {readListingSettings} from './listing-settings.js'
 import {nextHistoryPage} from './scalency-history.js'
+import {catalogProduct,connectedRecords,draftSource} from './scalency-relations.js'
 const fail=(message,status)=>{throw new ScalencyError(message,status)}
 const checked=r=>{if(r.error)throw r.error;return r.data}
 const pageSize=36
@@ -13,6 +14,10 @@ const now=()=>new Date().toISOString()
 
 export async function saveRecords(db,kind,rows,stamp=now()){
   if(rows.length) checked(await db.from(table).upsert(rows.map(r=>snapshot(kind,r,stamp)),{onConflict:'kind,account,remote_id'}))
+  if(rows.length&&(['items','orders'].includes(kind))){
+    if(rows.some(r=>r.supplier_link||r.items?.some(i=>i.supplier_link)))checked(await db.rpc('scalency_import_references'))
+    if(kind==='items')checked(await db.rpc('scalency_connect_pieces'))
+  }
   if(kind==='jobs'){
     const terminal=rows.filter(r=>r.type==='publish'&&['done','failed','skipped','cancelled'].includes(r.status))
     if(terminal.length){
@@ -46,7 +51,7 @@ export async function syncPage(db,kind,{older=false,force=false}={}){
 }
 async function list(db,kind,q){
   const page=Math.max(0,Math.min(100000,parseInt(q.page,10)||0))
-  let read=db.from(kind==='items'?'scalency_inventory':table).select('*',{count:'exact'}).eq('kind',kind)
+  let read=db.from(kind==='items'?'scalency_catalog_inventory':table).select('*',{count:'exact'}).eq('kind',kind)
   const term=value(q,'search').replace(/[%_\\]/g,' ')
   if(term)read=read.ilike(kind==='accounts'?'payload->>login':'payload->>title','%'+term+'%')
   if(q.account)read=read.eq('account',value(q,'account'))
@@ -62,22 +67,22 @@ async function list(db,kind,q){
   const sync=checked(await db.from('scalency_sync').select('*').eq('kind',kind).maybeSingle())
   return {rows:r.data,total:r.count,page,pageSize,sync,connected:!!process.env.SCALENCY_API_KEY}
 }
-async function orderDetails(db,id){
-  const stored=checked(await db.from(table).select('payload').eq('kind','orders').eq('remote_id',id).limit(1).maybeSingle())
-  const order=stored?.payload
+async function orderDetails(db,id,account){
+  let read=db.from(table).select('payload,account').eq('kind','orders').eq('remote_id',id)
+  if(account)read=read.eq('account',account)
+  const stored=checked(await read.maybeSingle()),order=stored?.payload
   if(!order)fail('Commande introuvable.',404)
-  const historical=order.vinted_transaction_id?checked(await db.from('sales_orders').select('id,account_login').eq('transaction_id',String(order.vinted_transaction_id))):[]
-  const same=historical.filter(r=>String(r.account_login).toLowerCase()===String(order.account).toLowerCase())
-  const lines=same.length===1?checked(await db.from('sales_lines').select('actual_cost,location,notes,fees_amount,refund_amount,sku_override,source').eq('order_id',same[0].id)):[]
-  const local=checked(await db.from('scalency_sale_costs').select('*').eq('order_id',id))
-  const acct=checked(await db.from(table).select('remote_id').eq('kind','accounts').eq('payload->>login',String(order.account)).limit(1).maybeSingle())
-  const items=await Promise.all(order.items.map(async item=>{
-    const saved=local.find(line=>line.line_id===String(item.id))
-    const matches=lines.filter(l=>item.vinted_id&&String(l.source?.vinted_id)===String(item.vinted_id))
-    const old=matches.length===1?matches[0]:lines.length===1&&order.items.length===1?lines[0]:null
-    const listing=item.vinted_id?checked(await db.from('scalency_inventory').select('item_id,emplacement,size,account').eq('remote_id',String(item.vinted_id))):[]
-    const link=listing.find(x=>x.account===acct?.remote_id)
-    return {...item,location:link?.emplacement||old?.location||item.location,size:link?.size||old?.source?.size_label,sku:old?.sku_override||item.sku,notes:saved?.notes??old?.notes,actual_cost:saved?saved.actual_cost:old?.actual_cost,fees:old?.fees_amount,refund:old?.refund_amount}
+  const [entryRows,costRows]=await Promise.all([
+    db.from('scalency_order_products').select('*').eq('order_id',id).eq('login',stored.account),
+    db.from('scalency_sale_costs').select('*').eq('order_id',id)])
+  const entries=checked(entryRows),local=checked(costRows)
+  const archiveIds=entries.map(e=>e.archive_line).filter(Boolean)
+  const oldLines=archiveIds.length?checked(await db.from('sales_lines').select('id,actual_cost,location,notes,fees_amount,refund_amount,finance_confirmed').in('id',archiveIds)):[]
+  const items=await Promise.all((order.items||[]).map(async item=>{
+    const line=entries.find(e=>e.line_id===String(item.id))
+    const saved=local.find(e=>e.line_id===String(item.id)),old=oldLines.find(e=>e.id===line?.archive_line)
+    const ad=line?.listing&&line.account_id?checked(await db.from('scalency_inventory').select('size,emplacement').eq('remote_id',line.listing).eq('account',line.account_id).maybeSingle()):null
+    return {...item,location:ad?.emplacement||old?.location||item.location,size:ad?.size||line?.size_text,sku:line?.sku||item.sku,notes:saved?.notes??old?.notes,actual_cost:saved?saved.actual_cost:old?.actual_cost,fees:saved?.fees_amount??old?.fees_amount,refund:saved?.refund_amount??old?.refund_amount,confirmed:saved?saved.finance_confirmed:old?.finance_confirmed}
   }))
   return {...order,items}
 }
@@ -99,7 +104,7 @@ async function once(db,user,action,key,run){
     throw error
   }
 }
-const draftCols='id,version,state,fields,photos,owner_id,published_at,updated_at'
+const draftCols='id,version,state,fields,photos,owner_id,published_at,updated_at,stock_item_id,catalog_product_id'
 async function photosFor(db,photos,seconds){
   if(!photos.length)return []
   return checked(await db.storage.from(ASSET_BUCKET).createSignedUrls(photos.map(p=>p.path),seconds)).map(x=>{if(!x.signedUrl)fail('Une photo est indisponible.',409);return x.signedUrl})
@@ -116,10 +121,16 @@ async function drafts(db,user,q){
 }
 export async function scalencyHandler(req,res,{db,user,role}){
   const q=req.query, b=req.body||{}, action=req.method==='GET'?q.view:b.action
-  if(role!=='admin'&&!['home','orders','items','order','label','pack','stock','link'].includes(action)&&!(action==='sync'&&['orders','items'].includes(b.kind)))fail('Réservé à l’administrateur.',403)
+  if(role!=='admin'&&!['home','orders','items','order','label','pack','stock','link','relations','product'].includes(action)&&!(action==='sync'&&['orders','items'].includes(b.kind)))fail('Réservé à l’administrateur.',403)
   if(req.method==='GET'){
+    if(action==='relations')return res.json(await connectedRecords(db,user,role,q))
+    if(action==='product')return res.json(await catalogProduct(db,q.id))
+    if(action==='draft-source')return res.json(await draftSource(db,q.piece,q.product,q.sku))
     if(action==='orders'&&q.filter==='archive'){
-      const page=Math.max(0,parseInt(q.page)||0), result=await db.from('workspace_sales').select('id,source,account_login,actual_cost,notes,location,sale_date,order_status,listing_photo_url',{count:'exact'}).order('sale_date',{ascending:false}).order('id').range(page*pageSize,(page+1)*pageSize-1)
+      const page=Math.max(0,parseInt(q.page)||0)
+      let read=db.from('workspace_sales').select('id,source,account_login,actual_cost,notes,location,sale_date,order_status,listing_photo_url',{count:'exact'})
+      if(q.focus)read=read.eq('id',value(q,'focus'))
+      const result=await read.order('sale_date',{ascending:false}).order('id').range(page*pageSize,(page+1)*pageSize-1)
       checked(result)
       return res.json({page,pageSize,total:result.count,rows:result.data.map(x=>({remote_id:x.id,account:x.account_login,payload:{archive:true,id:x.id,title:x.source?.title,account:x.account_login,status_fr:x.order_status,photo_url:x.listing_photo_url,actual_cost:x.actual_cost,notes:x.notes,location:x.location,date:x.sale_date}}))})
     }
@@ -136,9 +147,16 @@ export async function scalencyHandler(req,res,{db,user,role}){
       const r=await read.order('emplacement').order('id').range(page*pageSize,(page+1)*pageSize-1);checked(r)
       return res.json({rows:r.data,total:r.count,page,pageSize})
     }
-    if(action==='order')return res.json(await orderDetails(db,remoteId(q.id)))
+    if(action==='order')return res.json(await orderDetails(db,remoteId(q.id),q.account))
     if(action==='label'){const pdf=await remote('orders/'+remoteId(q.id)+'/label',{pdf:true});res.setHeader('Content-Type','application/pdf');res.setHeader('Content-Disposition','attachment; filename="bordereau.pdf"');return res.send(pdf)}
-    if(action==='thread')return res.json(await remote('conversations/'+remoteId(q.id),{query:{account_id:remoteId(q.account)}}))
+    if(action==='thread'){
+      const id=remoteId(q.id),account=remoteId(q.account)
+      const thread=await remote('conversations/'+id,{query:{account_id:account}})
+      const listing=thread.item?.vinted_id||thread.item?.id||thread.item_id
+      if(listing&&(!thread.account_id||String(thread.account_id)===account))
+        checked(await db.from('scalency_thread_items').upsert({account,thread:id,listing:remoteId(listing)}))
+      return res.json(thread)
+    }
     if(action==='drafts')return res.json(await drafts(db,user,q))
     if(action==='draft'){
       const row=await getDraft(db,user,q.id)
@@ -151,21 +169,29 @@ export async function scalencyHandler(req,res,{db,user,role}){
   }
   if(req.method!=='POST')fail('Méthode invalide.',405)
   if(action==='cost'){
-    const id=remoteId(b.id), line=remoteId(b.line),order=await orderDetails(db,id)
+    const id=remoteId(b.id), line=remoteId(b.line),order=await orderDetails(db,id,b.account)
     if(!order.items.some(i=>String(i.id)===line))fail('Article introuvable.',404)
     const cost=b.cost===''?null:Number(b.cost)
     if(cost!==null&&(!Number.isFinite(cost)||cost<0||cost>99999999)||typeof b.notes!=='string'||b.notes.length>2000)fail('Coût ou note invalide.')
-    checked(await db.from('scalency_sale_costs').upsert({order_id:id,line_id:line,actual_cost:cost,notes:b.notes}))
+    const patch={order_id:id,line_id:line,actual_cost:cost,notes:b.notes}
+    for(const [field,property] of [['fees','fees_amount'],['refund','refund_amount']]){
+      if(!Object.hasOwn(b,field))continue
+      const amount=b[field]===''?null:Number(b[field])
+      if(amount!==null&&(!Number.isFinite(amount)||amount<0||amount>99999999))fail('Montant invalide.')
+      patch[property]=amount
+    }
+    if(b.confirmed===true&&(cost===null||patch.fees_amount==null||patch.refund_amount==null))fail('Renseigne le coût, les frais et les remboursements, y compris les montants à zéro.')
+    patch.finance_confirmed=b.confirmed===true
+    checked(await db.from('scalency_sale_costs').upsert(patch))
     return res.json({saved:true})
   }
   if(action==='sync'){
     return res.json(await syncPage(db,b.kind,{older:b.older===true,force:b.force===true}))
   }
   if(action==='link'){
-    const item=checked(await db.from('items').select('id').eq('id',remoteId(b.item)).is('deleted_at',null).maybeSingle())
-    const ad=checked(await db.from(table).select('remote_id').eq('kind','items').eq('account',remoteId(b.account)).eq('remote_id',remoteId(b.id)).maybeSingle())
-    if(!ad||!item)fail('Pièce ou annonce introuvable.',404)
-    checked(await db.from('scalency_links').upsert({account:b.account,listing:String(b.id),item_id:item.id}))
+    const result=await db.rpc('scalency_set_piece',{p_account:remoteId(b.account),p_listing:remoteId(b.id),p_item:b.item===null?null:remoteId(b.item),p_previous:b.previous?remoteId(b.previous):null})
+    if(result.error?.message==='link_changed')fail('L’association a changé. Actualise la fiche.',409)
+    checked(result)
     return res.json({saved:true})
   }
   if(action==='pack'){
@@ -182,6 +208,11 @@ export async function scalencyHandler(req,res,{db,user,role}){
   if(action==='save'){
     const id=remoteId(b.id), fields=listingFields(b.fields),photos=await verifiedPhotos(db,user.id,b.photos)
     const row={fields,photos,updated_at:now()}
+    if(Object.hasOwn(b,'piece')||Object.hasOwn(b,'product')){
+      const source=await draftSource(db,b.piece,b.product,fields.sku)
+      row.stock_item_id=source.stock?.id||null
+      row.catalog_product_id=source.product?.id||null
+    }
     let result=b.version==null?await db.from('listing_drafts').insert({...row,id,owner_id:user.id}).select(draftCols).single():
       await db.from('listing_drafts').update({...row,version:b.version+1}).eq('id',id).eq('owner_id',user.id).eq('state','draft').eq('version',b.version).select(draftCols).maybeSingle()
     if(!checked(result))fail('Ce brouillon a changé. Rouvre-le avant de continuer.',409)
@@ -200,13 +231,17 @@ export async function scalencyHandler(req,res,{db,user,role}){
     const at=b.schedule?new Date(b.schedule):null
     if(at&&(!Number.isFinite(at.getTime())||at<=new Date()||at.getTime()-Date.now()>30*86400000))fail('Choisis une date future dans les 30 prochains jours.')
     const payload=draftPayload(row,await photosFor(db,row.photos,35*86400),row.fields.account_id,at?.toISOString())
+    const source=await draftSource(db,row.stock_item_id,row.catalog_product_id,row.fields.sku)
+    if(source.stock?.emplacement)payload.location=source.stock.emplacement
+    const supplier=source.stock?.shein_url||source.product?.supplier_url
+    if(supplier&&/^https?:\/\//i.test(supplier))payload.supplier_link=supplier
     if(action==='validate')return res.json(await remote('items',{method:'POST',body:{...payload,dry_run:true}}))
     const result=await once(db,user,'publish',row.id,async()=>{
       await remote('items',{method:'POST',body:{...payload,dry_run:true}})
       return remote('items',{method:'POST',body:payload})
     })
-    if(result.job)await saveRecords(db,'jobs',[result.job])
     checked(await db.from('listing_drafts').update({state:'scheduled',message:'En file Scalency',payload:{scalency_job_id:result.job?.id},scheduled_at:at?.toISOString()||now(),version:row.version+1}).eq('id',row.id).eq('version',row.version))
+    if(result.job)await saveRecords(db,'jobs',[result.job])
     return res.json(result)
   }
   if(action==='reply'||action==='offer'){

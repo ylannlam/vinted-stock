@@ -86,11 +86,12 @@ export function PostedCard({group,pricing,isAdmin,busy,onDetails,onMeta,onCollec
         <div><span className="card-eyebrow">Sur Vinted</span><span className="library-sale">{vinted}</span>{p&&salePriceOf(p,pricing)&&<span className="library-sale-note">conseillé {euros(salePriceOf(p,pricing).price)}</span>}</div>
       </div>
       {!!group.accounts.length&&<p className="text-xs text-slate-500">Comptes : {group.accounts.slice(0,4).join(', ')}{group.accounts.length>4?` +${group.accounts.length-4}`:''}</p>}
-      <CopyLine label="SKU" value={group.sku}/>
+      {group.sku?<CopyLine label="SKU" value={group.sku}/>:<p className="text-xs text-slate-500">SKU à renseigner</p>}
+      <div className="flex flex-wrap gap-2">{group.items.filter(i=>i.id&&i.account_id).map(i=><a key={i.account_id+"/"+i.id} className="article-details-link" href={"#dressing?"+new URLSearchParams({id:i.id,account:i.account_id})}>Annonce · {i.account_login||i.account_id}</a>)}</div>
       <div className="catalog-card-footer">
         {p?<button className="article-open-button" onClick={()=>onDetails(p)}>Fiche Shein</button>
-          :isAdmin?<button className="article-open-button" disabled={busy} onClick={()=>onCollect(group)}>{pending?'Récupération…':'Récupérer sur Shein'}</button>:<span className="text-xs text-slate-400">Fiche Shein à récupérer</span>}
-        {onCreateListing&&<button className="article-details-link" onClick={()=>onCreateListing(group.sku)}>Reposter</button>}
+          :isAdmin&&group.sku?<button className="article-open-button" disabled={busy} onClick={()=>onCollect(group)}>{pending?'Récupération…':'Récupérer sur Shein'}</button>:<span className="text-xs text-slate-400">Fiche Shein à récupérer</span>}
+        {onCreateListing&&group.sku&&<button className="article-details-link" onClick={()=>onCreateListing(group.sku)}>Reposter</button>}
       </div>
     </div>
   </article>

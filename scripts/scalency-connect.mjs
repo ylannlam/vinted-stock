@@ -20,4 +20,6 @@ if(process.env.VERCEL_ENV==='production' && process.env.SCALENCY_API_KEY){
   }
   try{await enableWebhook(db);console.log('Scalency · notifications connectées')}catch(e){console.warn('Scalency · notifications à vérifier dans Comptes (',e.status||'connexion',')')}
   await finishHistory(db)
+  check(await db.rpc('scalency_import_references'))
+  check(await db.rpc('scalency_connect_pieces'))
 }

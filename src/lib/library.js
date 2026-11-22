@@ -56,18 +56,19 @@ export function salePriceOf(product,pricing) {
 }
 
 // Articles Dotb présents, regroupés par SKU, sans ceux déjà vendus (ils sont dans « Vendus »).
-export function groupPosted(posted=[],{products=[],links=[],sales=[]}={}) {
+export function groupPosted(posted=[],{products=[],links=[],sales=[],includeSold=false}={}) {
   const sold=new Set(sales.map(s=>String(s.sku).toLowerCase()))
   const groups=new Map()
   for(const item of posted) {
-    const key=String(item.sku||'').toLowerCase()
-    if(!key||sold.has(key))continue
-    if(!groups.has(key))groups.set(key,{sku:item.sku,items:[]})
+    const sku=String(item.sku||'').trim()
+    const key=sku.toLowerCase()||(includeSold&&item.id?'listing:'+item.account_id+'/'+item.id:'')
+    if(!key||(!includeSold&&sold.has(key)))continue
+    if(!groups.has(key))groups.set(key,{key,sku,items:[]})
     groups.get(key).items.push(item)
   }
   return [...groups.values()].map(g=>{
     const link=links.find(l=>String(l.sku).toLowerCase()===g.sku.toLowerCase())
-    const product=products.find(p=>p.id===link?.product_id)||products.find(p=>String(p.supplier_sku||'').toLowerCase()===g.sku.toLowerCase())||null
+    const product=products.find(p=>p.id===g.items[0]?.product_id)||products.find(p=>p.id===link?.product_id)||(g.sku&&products.find(p=>String(p.supplier_sku||'').toLowerCase()===g.sku.toLowerCase()))||null
     const prices=[...new Set(g.items.map(i=>i.price).filter(v=>v!=null).map(Number))].sort((a,b)=>a-b)
     const latest=[...g.items].sort((a,b)=>String(b.synced_at).localeCompare(String(a.synced_at)))[0]
     return {...g,product,prices,title:product?.title||latest.title||g.sku,photo_url:latest.photo_url||product?.photo_url||null,

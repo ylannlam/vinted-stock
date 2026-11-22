@@ -37,7 +37,7 @@ export function workspaceHandler(authorizer=authorize) {
     if(role!=='admin')throw new AppError('Action réservée aux administrateurs.',403)
     const month=req.query?.month||'',page=Number(req.query?.page||0)
     if(!Number.isSafeInteger(page)||page<0||page>20000||typeof month!=='string'||!/^$|^\d{4}-(0[1-9]|1[0-2])$/.test(month))throw new AppError('Période invalide.')
-    return res.json(check(await db.rpc('workspace_finance',{p_month:month,p_page:page})))
+    return res.json(check(await db.rpc('scalency_finance',{p_month:month,p_page:page})))
    }
    const page=Number(req.query?.page||0)
    if(!Number.isSafeInteger(page)||page<0||page>20000)throw new AppError('Page invalide.')

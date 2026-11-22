@@ -9,7 +9,7 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       const { data, error } = await auth.db.from('drop_tracker').select('payload,revision').eq('id', true).single()
       if (error) throw error
-      const [automatic,income]=await Promise.all([auth.db.rpc('shein_budget_expenses'),auth.db.rpc('sales_budget_income')])
+      const [automatic,income]=await Promise.all([auth.db.rpc('shein_budget_expenses'),auth.db.rpc('scalency_budget_income')])
       if(automatic.error)throw automatic.error
       if(income.error)throw income.error
       return res.json({...data,automatic_expenses:automatic.data||[],automatic_income:income.data||[]})

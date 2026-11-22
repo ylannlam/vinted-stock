@@ -51,7 +51,14 @@ export async function receiveScalency(req,db){
     for(const id of ids){const item=await remote('items/'+remoteId(id),{query:{account_id:data.sale.account_id}});await saveRecords(db,'items',[item])}
   }else if(event.type.startsWith('job.')){
     const id=data.job?.id||data.job_id||data.id
-    if(id)await saveRecords(db,'jobs',[await remote('jobs/'+remoteId(id))])
+    if(id){
+      const job=await remote('jobs/'+remoteId(id))
+      await saveRecords(db,'jobs',[job])
+      if(job.status==='done'&&job.new_item_id&&job.account_id){
+        const listing=await remote('items/'+remoteId(job.new_item_id),{query:{account_id:job.account_id}})
+        await saveRecords(db,'items',[listing])
+      }
+    }
     else await syncPage(db,'jobs',{force:true})
   }else if(event.type==='message.new'){await syncPage(db,'conversations',{force:true})}
   return {received:true}
