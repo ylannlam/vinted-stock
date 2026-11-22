@@ -3,6 +3,7 @@ import {collections,remote,remoteId,ScalencyError,snapshot,shippable,draftPayloa
 import {verifiedPhotos,listingFields,listingAiToken,generateListingText} from './listing-studio-core.js'
 import {ASSET_BUCKET} from './resources.js'
 import {readListingSettings} from './listing-settings.js'
+import {nextHistoryPage} from './scalency-history.js'
 const fail=(message,status)=>{throw new ScalencyError(message,status)}
 const checked=r=>{if(r.error)throw r.error;return r.data}
 const pageSize=36
@@ -27,6 +28,7 @@ export async function saveRecords(db,kind,rows,stamp=now()){
 }
 export async function syncPage(db,kind,{older=false,force=false}={}){
   if(!collections.includes(kind))fail('Collection inconnue.')
+  if(older)return nextHistoryPage(db,kind)
   const state=checked(await db.from('scalency_sync').select('*').eq('kind',kind).maybeSingle())
   if(older&&state?.complete)return state
   if(!older&&!force&&state&&Date.now()-Date.parse(state.updated_at)<60000)return state
