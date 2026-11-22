@@ -1,4 +1,6 @@
 import {useState,useEffect,useRef} from 'react'
+import ListingSeoOutput from './ListingSeoOutput'
+import {updateSeoDetails} from '../lib/vintedSeo'
 import ScalencyQuickAccount from './ScalencyQuickAccount'
 import {listingColors} from '../lib/scalencyQuick'
 import ScalencyRelations from './ScalencyRelations'
@@ -37,7 +39,18 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued}){
     return()=>{live=false}
   },[id,piece,product,sku])
   useEffect(()=>{let live=true;setOptions(null);if(fields.catalog_id)query('category',{id:fields.catalog_id}).then(r=>{if(live)setOptions(r)}).catch(e=>live&&setError(e.message));return()=>{live=false}},[fields.catalog_id])
-  const edit=(key,value)=>{setFields(f=>({...f,[key]:value}));setApproved(false);setMessage('')}
+  const edit=(key,value)=>{
+    setFields(f=>{
+      const next={...f,[key]:value}
+      if(key==='size_text')Object.assign(next,updateSeoDetails(f,{size:value}))
+      if(key==='status_id'){
+        next.seo_condition=options?.conditions?.find(c=>c.id===value)?.title||''
+        Object.assign(next,updateSeoDetails(f,{condition:next.seo_condition}))
+      }
+      return next
+    })
+    setApproved(false);setMessage('')
+  }
   async function run(fn){if(gate.current)return;gate.current=true;setBusy(true);setError('');try{await fn()}catch(e){setError(e.message)}finally{gate.current=false;setBusy(false)}}
   async function save(){const r=await act('save',{id:uid.current,version,fields,piece:source.piece,product:source.product,photos:photos.map(({url,...p})=>p)});setVersion(r.version);return r.version}
   async function validate(){const v=await save();await act('validate',{id:uid.current,version:v,schedule:date?new Date(date).toISOString():null});setApproved(true);setMessage('Scalency a validé cette annonce. Tu peux confirmer sa publication.')}
@@ -98,5 +111,7 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued}){
     <Field label="Format du colis"><select value={fields.package_size_id||''} onChange={e=>edit('package_size_id',Number(e.target.value)||null)}><option value="">Choisir</option>{(options?.package_sizes||[]).map(s=><option key={s.id} value={s.id}>{s.title||s.name||s.id}</option>)}</select></Field>
     {!quick&&<Field label="Programmer (facultatif)"><input type="datetime-local" value={date} onChange={e=>{setDate(e.target.value);setApproved(false)}}/></Field>}</div>
     <div className="sc-tools"><button onClick={()=>run(async()=>{await save();setMessage('Brouillon enregistré sur ton site.')})}>Enregistrer le brouillon</button>
-    {!quick&&(approved?<button className="sc-primary" onClick={()=>run(async()=>{await act('publish',{id:uid.current,version,schedule:date?new Date(date).toISOString():null});onQueued()})}>Confirmer la mise en file</button>:<button className="sc-primary" onClick={()=>run(validate)}>Vérifier avec Scalency</button>)}</div></>}</fieldset></article>
+    {!quick&&(approved?<button className="sc-primary" onClick={()=>run(async()=>{await act('publish',{id:uid.current,version,schedule:date?new Date(date).toISOString():null});onQueued()})}>Confirmer la mise en file</button>:<button className="sc-primary" onClick={()=>run(validate)}>Vérifier avec Scalency</button>)}</div></>}</fieldset>
+    <ListingSeoOutput title={fields.title} description={fields.description}/>
+  </article>
 }

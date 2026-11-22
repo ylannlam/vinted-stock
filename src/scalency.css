@@ -53,3 +53,8 @@
 .sc-mode [aria-pressed=true]{background:#d8efe6;color:#075d48;border-color:#91c3af;font-weight:650}
 .sc-quick-account{padding:.85rem;background:#f1f7f4;border-radius:.7rem;align-items:end}
 .sc-quick-submit p{width:100%;margin:0;color:#34594c}.sc-colors{display:flex;flex-wrap:wrap;gap:.45rem}.sc-colors label{display:inline-flex;align-items:center;gap:.25rem}
+
+.sc-seo{margin-block:1rem;padding:1rem;border:1px solid #d8e4df;border-radius:12px;background:#fff;color:#173f34}
+.sc-seo>div+div{border-top:1px solid #d8e4df;margin-top:1rem;padding-top:1rem}
+.sc-seo h3{margin:0;font-weight:650}.sc-seo p{margin:.4rem 0 .7rem;overflow-wrap:anywhere}.sc-seo-bio{white-space:pre-wrap}
+.sc-seo [role=status]:not(:empty){display:block;margin-top:.6rem}

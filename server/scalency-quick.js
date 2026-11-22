@@ -5,7 +5,8 @@ import {generateListingText,listingAiToken,listingFields} from './listing-studio
 import {readListingSettings} from './listing-settings.js'
 import {applyListingPresets} from '../src/lib/listingSettings.js'
 import {listingColors,quickIssues} from '../src/lib/scalencyQuick.js'
-import {listingFacts,withMeasures} from '../src/lib/library.js'
+import {composeVintedSeo} from '../src/lib/vintedSeo.js'
+import {listingFacts} from '../src/lib/library.js'
 
 const checked=r=>{if(r.error)throw r.error;return r.data}
 const profileKey=id=>'listing-brand:'+remoteId(id)
@@ -46,7 +47,7 @@ export async function prepareQuickDraft(db,user,req,row,photosFor){
   const photos=row.photos.length<=8?row.photos:[...row.photos.slice(0,6),...row.photos.slice(-2)]
   const urls=await photosFor(db,photos,300)
   const product=source.product
-  const size=source.stock?.size||fields.size_text||''
+  const size=fields.size_text||source.stock?.size||''
   const settings={...presets.effective,package:'Petit',no_brand:false,description_footer:''}
   const facts=listingFacts(product,size)
   const result=await generateListingText({...row,fields:{...fields,size_text:size}},urls,catalogs,listingColors,
@@ -60,15 +61,9 @@ export async function prepareQuickDraft(db,user,req,row,photosFor){
   const sizeText=size||result.label_size||stockSize
   const category=result.catalog_id,options=category?await remote('catalogs/'+remoteId(category)):null
   const next=applyListingPresets({...fields,brand_id:null,brand_title:brand,title:result.title,description:result.description,
-    catalog_id:category,status_id:null,size_id:null,package_size_id:null,size_text:sizeText,color_ids:result.color_ids,item_attributes:[]},options,settings)
-  const condition=options?.conditions?.find(c=>c.id===next.status_id)?.title
-  const detail=[sizeText?'Taille : '+sizeText:'',condition?'État : '+condition:''].filter(Boolean).join(' | ')
-  const text=next.description.split(/\n(?=#)/)
-  if(detail)text.splice(1,0,detail)
-  next.description=withMeasures(text.join('\n\n'),listingFacts(product,sizeText))
-  const footer=presets.effective.description_footer?.trim()
-  if(footer)next.description+='\n\n'+footer
-  const safe=listingFields({...next,description:next.description.slice(0,2000)})
+    catalog_id:category,status_id:fields.seo_condition?options?.conditions?.find(c=>c.title===fields.seo_condition)?.id:null,size_id:null,package_size_id:null,size_text:sizeText,color_ids:result.color_ids,item_attributes:[]},options,settings)
+  const copy=composeVintedSeo(result.seoParts,{size:sizeText,condition:fields.seo_condition,measures:listingFacts(product,sizeText)?.measures})
+  const safe=listingFields({...next,...copy,seo_condition:fields.seo_condition||''})
   const missing=quickIssues(safe,options)
   const saved=checked(await db.from('listing_drafts').update({fields:safe,catalog_product_id:product?.id||null,version:row.version+1,updated_at:new Date().toISOString()}).eq('id',row.id).eq('owner_id',user.id).eq('version',row.version).eq('state','draft').select('id,fields,version').maybeSingle())
   if(!saved)throw new ScalencyError('Le brouillon a été modifié. Rouvre-le.',409)

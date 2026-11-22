@@ -4,6 +4,7 @@ import {verifiedPhotos,listingFields,listingAiToken,generateListingText} from '.
 import {ASSET_BUCKET} from './resources.js'
 import {readListingSettings} from './listing-settings.js'
 import {prepareQuickDraft,quickProfiles,saveQuickBrand,verifyQuickFields} from './scalency-quick.js'
+import {listingFacts} from '../src/lib/library.js'
 import {nextHistoryPage} from './scalency-history.js'
 import {catalogProduct,connectedRecords,draftSource} from './scalency-relations.js'
 const fail=(message,status)=>{throw new ScalencyError(message,status)}
@@ -233,9 +234,11 @@ export async function scalencyHandler(req,res,{db,user,role}){
     if(action==='quick-publish'||action==='autopost')await verifyQuickFields(db,row.fields)
     if(action==='generate'){
       const urls=await photosFor(db,row.photos.slice(0,3),300)
-      if(!urls.length||!row.fields.size_text)fail('Ajoute une photo et une taille.')
+      if(!urls.length)fail('Ajoute une photo du vêtement.')
       const presets=await readListingSettings(db,row.fields.account_id||null)
-      const result=await generateListingText(row,urls,[],[],{token:listingAiToken(req),settings:presets.effective})
+      const source=await draftSource(db,null,row.catalog_product_id,row.fields.sku)
+      const facts=listingFacts(source.product,row.fields.size_text||'')
+      const result=await generateListingText(row,urls,[],[],{token:listingAiToken(req),settings:presets.effective,quick:true,shein:facts})
       return res.json({title:result.title,description:result.description})
     }
     const at=b.schedule?new Date(b.schedule):null

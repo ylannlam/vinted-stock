@@ -54,6 +54,7 @@ export async function draftSource(db,stockId,productId,sku){
 export async function connectedRecords(db,user,role,q){
   const kind=q.entity,id=kind==='archive'?String(q.id||'').slice(0,180):remoteId(q.id)
   const account=q.account?(['orders','archive'].includes(kind)?String(q.account).slice(0,180):remoteId(q.account)):null,admin=role==='admin'
+  let seoCopy=null
   const links=[],suggestions=[]
   function add(...rows){links.push(...rows.filter(Boolean))}
   async function addProduct(productId){
@@ -110,6 +111,7 @@ export async function connectedRecords(db,user,role,q){
     if(r){const a=await accountOf(db,account);if(a)add(accountLink(a));await addListings([...new Set([r.payload.item_id,r.payload.new_item_id].filter(Boolean))].map(listing=>({account_id:account,listing})))}
     const drafts=checked(await db.from('listing_drafts').select('id,state,fields').eq('owner_id',user.id).eq('fields->>account_id',account).eq('payload->>scalency_job_id',id))
     add(...drafts.map(draftLink))
+    if(drafts.length===1)seoCopy={title:drafts[0].fields?.title,description:drafts[0].fields?.description}
   }else if(kind==='draft'&&admin){
     const d=checked(await db.from('listing_drafts').select('fields,vinted_id,stock_item_id,catalog_product_id,job:payload->>scalency_job_id').eq('id',id).eq('owner_id',user.id).maybeSingle())
     if(d){
@@ -150,5 +152,5 @@ export async function connectedRecords(db,user,role,q){
       if(!isStock||(stock.status==='en_stock'&&!rows.some(r=>r.linked_sale)))add(link('annonces',isStock?{piece:id}:{product:id},'Préparer une annonce','Publication'))
     }
   }
-  return {links:distinct(links),suggestions}
+  return {links:distinct(links),suggestions,...(seoCopy?{seoCopy}:{})}
 }
