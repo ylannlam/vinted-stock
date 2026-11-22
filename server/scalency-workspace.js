@@ -144,7 +144,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
     }
     if(action==='catalogs')return res.json(await remote('catalogs',{query:{limit:100,cursor:q.cursor}}))
     if(action==='category')return res.json(await remote('catalogs/'+remoteId(q.id)))
-    if(action==='connection')return res.json({configured:!!process.env.SCALENCY_API_KEY,webhook:!!checked(await db.from('scalency_settings').select('id').eq('id','webhook').maybeSingle())})
+    if(action==='connection')return res.json({configured:!!process.env.SCALENCY_API_KEY,webhook:!!checked(await db.from('scalency_settings').select('id').eq('id','webhook').not('value->>id','is',null).maybeSingle())})
     fail('Vue inconnue.',404)
   }
   if(req.method!=='POST')fail('Méthode invalide.',405)

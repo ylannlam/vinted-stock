@@ -8,12 +8,12 @@ export function remoteId(value) {
   if (!/^[A-Za-z0-9_-]{1,150}$/.test(id)) throw new ScalencyError('Identifiant invalide.')
   return id
 }
-export async function remote(path, {method='GET', body, query={}, pdf=false, fetcher=fetch}={}) {
+export async function remote(path, {method='GET', body, query={}, pdf=false, fetcher=fetch,timeoutMs=20000}={}) {
   const key = process.env.SCALENCY_API_KEY
   if (!key) throw new ScalencyError('Ajoute SCALENCY_API_KEY dans Vercel pour connecter Scalency.', 503)
   const url = new URL(base + path)
   for (const [name,value] of Object.entries(query)) if (value != null && value !== '') url.searchParams.set(name,value)
-  const response = await fetcher(url, {method, redirect:'error', signal:AbortSignal.timeout(20000),
+  const response = await fetcher(url, {method, redirect:'error', signal:AbortSignal.timeout(timeoutMs),
     headers:{Authorization:'Bearer '+key, Accept:pdf?'application/pdf':'application/json',...(body?{'Content-Type':'application/json'}:{})},
     ...(body?{body:JSON.stringify(body)}:{})})
   if (pdf && response.ok && response.headers.get('content-type')?.includes('application/pdf')) return Buffer.from(await response.arrayBuffer())

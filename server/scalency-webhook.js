@@ -1,23 +1,33 @@
-import {createHmac,timingSafeEqual} from 'node:crypto'
+import {createHmac,timingSafeEqual,randomUUID} from 'node:crypto'
 import {remote,remoteId,ScalencyError} from './scalency-api.js'
 
 const url='https://vinted-stock.vercel.app/api/dotb-webhook?provider=scalency'
 const checked=r=>{if(r.error)throw r.error;return r.data}
 export async function enableWebhook(db){
-  const result=await db.from('scalency_settings').insert({id:'webhook',value:{pending:true}})
+  const nonce=randomUUID(),pending={pending:true,nonce,started:Date.now()}
+  const result=await db.from('scalency_settings').insert({id:'webhook',value:pending})
+  let previousUrl
   if(result.error?.code==='23505'){
     const row=checked(await db.from('scalency_settings').select('value').eq('id','webhook').single())
     if(row.value?.secret)return {active:true}
-    throw new ScalencyError('Connexion des notifications en cours ou à vérifier.',409)
-  }
-  checked(result)
+    if(row.value.started>Date.now()-180000)throw new ScalencyError('Connexion des notifications en cours.',409)
+    const changed=checked(await db.from('scalency_settings').update({value:pending}).eq('id','webhook').eq('value',JSON.stringify(row.value)).select('id').maybeSingle())
+    if(!changed)throw new ScalencyError('Connexion des notifications en cours.',409)
+    previousUrl=row.value.nonce?url+'&slot='+row.value.nonce:url
+  }else checked(result)
   try{
-    const hook=await remote('webhooks',{method:'POST',body:{url,events:['sale.created','job.done','job.failed','job.skipped','job.published','message.new']}})
+    const response=await remote('webhooks',{method:'POST',timeoutMs:100000,body:{url:url+'&slot='+nonce,events:['sale.created','job.done','job.failed','job.skipped','job.published','message.new']}})
+    const hook=response.webhook||response
     if(!hook.secret)throw new Error('missing_signature')
     checked(await db.from('scalency_settings').update({value:{secret:hook.secret,id:hook.id}}).eq('id','webhook'))
+    if(previousUrl){
+      const hooks=await remote('webhooks')
+      const orphan=hooks.data?.find(h=>h.url===previousUrl&&String(h.id)!==String(hook.id))
+      if(orphan)await remote('webhooks/'+remoteId(orphan.id),{method:'DELETE'})
+    }
     return {active:true}
   }catch(e){
-    if(e.status&&e.status<500)checked(await db.from('scalency_settings').delete().eq('id','webhook'))
+    if(e.status&&e.status<500)checked(await db.from('scalency_settings').delete().eq('id','webhook').eq('value->>nonce',nonce))
     throw e
   }
 }
