@@ -137,7 +137,7 @@ export function dressCatalogId(catalogs,{ball,hint=null,roots=null}={}){
  const evening=pick(t=>/\bsoiree\b/.test(t)&&/\brobes?\b/.test(t)),gown=pick(t=>/\bbal\b/.test(t)&&/\brobes?\b/.test(t))
  return ball?(gown??evening):evening
 }
-const CLAUDE_LISTING_MODEL='claude-haiku-4-5-20251001'
+const CLAUDE_LISTING_MODEL='claude-sonnet-4-6'
 
 function claudePhoto(url){
  if(!url.startsWith('data:'))return {type:'image',source:{type:'url',url}}
@@ -217,7 +217,7 @@ export async function generateListingText(row,urls,catalogs,colors,{fetcher=fetc
    'sentences : deux ou trois phrases françaises courtes, naturelles et vendeuses, une phrase par élément. Décris le vêtement, ses détails et les occasions adaptées. Pas de poésie. N’ajoute pas de phrase sur les lots, le prix, le SKU, les mesures, la taille ni l’état. Le site complète ces mentions.',
    'hashtags : propose quinze à vingt mots-dièses distincts et pertinents, par ordre de pertinence, sur le type, la couleur, la coupe, le style et les occasions. Aucune marque, taille ni terme de remplissage. Le site garde les quinze premiers valides et ajoute le seizième pour la taille. Ne publie aucun détail supposé.',
    'Utilise un français courant et précis. Évite les superlatifs (superbe, magnifique), les anglicismes si un terme français convient, et les occasions sans rapport avec la photo.',
-   'Relis chaque hashtag : orthographe française correcte, mots usuels, aucune expression inventée. Par exemple la couleur bleu marine donne #bleumarine. Distingue une occasion du type de vêtement : une robe pour une invitée peut porter #inviteemariage, mais réserve #robedemariee à une véritable robe de mariée.',
+   'Propose 18 à 20 hashtags simples et bien orthographiés afin de laisser de la marge à la validation. Écris au présent et garde chaque phrase concise. Par exemple la couleur bleu marine donne #bleumarine. Distingue une occasion du type de vêtement : une robe pour une invitée peut porter #inviteemariage, mais réserve #robedemariee à une véritable robe de mariée.',
    'label_size : uniquement la taille effectivement lisible sur une étiquette, sinon une chaîne vide. Le site applique la taille fournie ou son réglage de texte par défaut.',
    'Choisis un catalog_id de catégorie finale parmi les chemins fournis, et au plus deux color_ids parmi la palette fournie, uniquement pour le vêtement vendu. En cas de doute sur la catégorie ou les couleurs, retourne null ou [] respectivement.',
    'Pour une robe, regarde le volume de la jupe sur les photos. is_ball_gown=true seulement si elle est très ample ou bouffante, par exemple une jupe princesse ou plusieurs couches de tulle donnant un volume marqué. Elle va dans « Robes de bal de fin d’année ». Une robe droite, fluide, moulante ou légèrement évasée va dans « Robes de soirée » (is_ball_gown=false), même longue, en satin, avec traîne ou destinée à un mariage. Une jupe vendue seule n’est pas une robe.',

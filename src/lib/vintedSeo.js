@@ -36,11 +36,18 @@ export function composeVintedSeo(parts,{size,condition,measures=[]}={}){
     if([...new Intl.Segmenter('fr',{granularity:'sentence'}).segment(line)].length!==1)throw Error('Une phrase par élément est attendue.')
     return /[.!?…]$/.test(line)?line:line+'.'
   }).join(' ')
-  const tags=[],seen=new Set()
+  const normalize=value=>value.normalize('NFD').replace(/\p{M}/gu,'').toLocaleLowerCase('fr')
+ const garmentText=normalize([parts.title,paragraph].join(' '))
+ const bridalDress=/\brobe(?:s)?\s+(?:de\s+mariee|nuptiale)\b/.test(garmentText)
+ const tags=[],seen=new Set()
   for(const value of Array.isArray(parts.hashtags)?parts.hashtags:[]){
     if(typeof value!=='string')continue
-    const tag=value.trim().replace(/^#/,'').normalize('NFC')
-    const key=tag.toLocaleLowerCase('fr')
+    let tag=value.trim().replace(/^#/,'').normalize('NFC')
+    if(!bridalDress&&/^(?:robes?demariees?|weddingdress(?:es)?|bridalgown)$/.test(normalize(tag))){
+     if(!/\bmariage\b/.test(garmentText))continue
+     tag='inviteemariage'
+   }
+   const key=tag.toLocaleLowerCase('fr')
     if(!/^[\p{L}\p{N}_]{2,45}$/u.test(tag)||/^taille(?:xxs|xs|s|m|l|xl|xxl|\d)/i.test(tag)||key===sizeTag(size).slice(1).toLowerCase()||seen.has(key))continue
     seen.add(key);tags.push('#'+tag)
     if(tags.length===15)break

@@ -92,3 +92,12 @@ test('La bio des articles neufs porte le même état avec ou sans étiquette',()
    assert.ok(updateSeoDetails(result,{condition:'Neuf avec étiquette'}).description.includes('État : Neuf |'))
  }
 })
+
+test('Une robe pour une invitée ne reçoit pas le hashtag robe de mariée',()=>{
+ const generation={...parts,sentences:['Robe longue bleu marine.','Idéale pour assister à un mariage.'],hashtags:['robedemariée',...parts.hashtags]}
+ const guest=composeVintedSeo(generation)
+ assert.doesNotMatch(guest.description,/#robedemariée/i)
+ assert.match(guest.description,/#inviteemariage/)
+ assert.equal(guest.description.match(/#/g).length,16)
+ assert.match(composeVintedSeo({...generation,title:'Robe de mariée en dentelle'}).description,/#robedemariée/)
+})
