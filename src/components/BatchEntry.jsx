@@ -3,6 +3,8 @@ import {act} from '../lib/scalency'
 import {uploadListingPhoto} from '../lib/api'
 import {emptyListing,validateListingPhoto} from '../lib/listingStudio'
 
+import BatchPhotoOrder from './BatchPhotoOrder'
+
 export default function BatchEntry({account,onSaved,onDetailed,onBusy}){
   const [sku,setSku]=useState(''),[price,setPrice]=useState(''),[size,setSize]=useState('M')
   const [photos,setPhotos]=useState([]),[busy,setBusy]=useState(false),[error,setError]=useState('')
@@ -18,6 +20,22 @@ export default function BatchEntry({account,onSaved,onDetailed,onBusy}){
     }catch(e){setError(e.message)}
   }
   function release(url){URL.revokeObjectURL(url);urls.current.delete(url)}
+  function movePhoto(source,target){
+    if(gate.current)return
+    setPhotos(current=>{
+      const from=current.findIndex(p=>p.url===source),to=current.findIndex(p=>p.url===target)
+      if(from<0||to<0||from===to)return current
+      const next=[...current]
+      const [photo]=next.splice(from,1)
+      next.splice(to,0,photo)
+      return next
+    })
+  }
+  function removePhoto(photo){
+    if(gate.current)return
+    release(photo.url)
+    setPhotos(current=>current.filter(p=>p.url!==photo.url))
+  }
   async function start(event){
     event.preventDefault()
     if(gate.current||!account?.brand||!photos.length)return
@@ -45,8 +63,8 @@ export default function BatchEntry({account,onSaved,onDetailed,onBusy}){
         <strong>Ajouter les photos</strong><span>Glisse-les ici ou choisis tes fichiers</span>
         <input type="file" aria-label="Ajouter les photos" multiple accept="image/jpeg,image/png,image/webp" onChange={e=>{add([...e.target.files]);e.target.value=''}}/>
       </label>
-      {photos.length>0&&<div className="bs-photos">{photos.map((p,i)=><div key={p.url}><img src={p.url} alt={'Photo '+(i+1)}/><button type="button" aria-label={'Retirer la photo '+(i+1)} onClick={()=>{release(p.url);setPhotos(old=>old.filter(x=>x!==p))}}>×</button></div>)}</div>}
-      <p className="bs-meta">La première photo sera la couverture. Colis petit.</p>
+      {photos.length>0&&<BatchPhotoOrder photos={photos} busy={busy} onMove={movePhoto} onRemove={removePhoto}/>}
+      <p className="bs-meta">{photos.length>1?'Glisse les photos pour changer leur ordre.':'La première photo sera la couverture.'} Colis petit.</p>
       {error&&<p className="sc-error" role="alert">{error}</p>}
       <button className="sc-primary bs-submit" disabled={!account?.brand||!sku.trim()||!(Number(price)>0)||!size.trim()||!photos.length}>{busy?'Enregistrement des photos…':'Remplir l’annonce'}</button>
     </fieldset></form>
