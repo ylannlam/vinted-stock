@@ -1,0 +1,8 @@
+.lot-card{border-top:1px solid #dce7e3;padding:15px 0}
+.lot-card .pt-meta,.lot-entry p{margin:4px 0}
+.lot-counts,.lot-links{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0}
+.lot-counts button{font-size:13px;min-height:30px;padding:4px 10px;border-radius:16px}
+.lot-counts button[aria-pressed=true]{background:#0c655c;color:white}
+.lot-entry{display:flex;gap:14px;padding:14px 0;border-top:1px solid #e1e9e6;overflow-wrap:anywhere}
+.lot-entry img{width:64px;height:84px;object-fit:cover;border-radius:6px;flex-shrink:0}
+.lot-links a,.lot-links button{font-size:14px}

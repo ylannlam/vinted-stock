@@ -7,9 +7,12 @@ import {readListingSettings} from './listing-settings.js'
 import {prepareQuickDraft,quickProfiles,saveQuickBrand,saveQuickSize,verifyQuickFields} from './scalency-quick.js'
 import {bioCondition,conditionForCatalog,withBioCondition} from '../src/lib/scalencyQuick.js'
 import {listingFacts} from '../src/lib/library.js'
+import {matchingSize} from '../src/lib/listingStudio.js'
+import {updateSeoDetails} from '../src/lib/vintedSeo.js'
 import {nextHistoryPage} from './scalency-history.js'
 import {publicationTracking} from './scalency-publications.js'
 import {batchDrafts,batchImages,checkBatchSubmission,reviewEditedDraft,reviewMetadata} from './scalency-batch.js'
+import {acceptPublicationLot,publicationLots,retryLotEntry,reviewDuplicates} from './scalency-lots.js'
 import {catalogProduct,connectedRecords,draftSource} from './scalency-relations.js'
 const fail=(message,status)=>{throw new ScalencyError(message,status)}
 const checked=r=>{if(r.error)throw r.error;return r.data}
@@ -123,6 +126,25 @@ function applyCondition(fields,options){
   if(next.description.length>2000)fail('Raccourcis la bio pour conserver la ligne d’état dans les 2 000 caractères.')
   return next
 }
+export async function prepareScalencyPublication(db,row,{quick=false,schedule=null}={}){
+  const options=await catalogConditions(row.fields)
+  row.fields=applyCondition(row.fields,options)
+  if(!row.fields.status_id)fail('Très bon état indisponible pour cette catégorie.',409)
+  if(quick)await verifyQuickFields(db,row.fields,options)
+  const at=schedule?new Date(schedule):null
+  if(at&&(!Number.isFinite(at.getTime())||at<=new Date()||at.getTime()-Date.now()>30*86400000))fail('Choisis une date future dans les 30 prochains jours.')
+  const payload=draftPayload(row,await photosFor(db,row.photos,35*86400),row.fields.account_id,at?.toISOString())
+  const source=await draftSource(db,row.stock_item_id,row.catalog_product_id,row.fields.sku)
+  if(source.stock?.emplacement)payload.location=source.stock.emplacement
+  const supplier=source.stock?.shein_url||source.product?.supplier_url
+  if(supplier&&/^https?:\/\//i.test(supplier))payload.supplier_link=supplier
+  async function validatePayload(){
+    const preview=await remote('items',{method:'POST',body:{...payload,dry_run:true}})
+    if(preview.dry_run!==true||preview.would_queue!==true)fail(preview.reason||'Scalency ne peut pas accepter cette annonce.',409)
+    return preview
+  }
+  return {payload,preview:await validatePayload(),at}
+}
 async function getDraft(db,user,id){
   const row=checked(await db.from('listing_drafts').select(draftCols+',payload').eq('id',remoteId(id)).eq('owner_id',user.id).maybeSingle())
   if(!row)fail('Brouillon introuvable.',404)
@@ -138,6 +160,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
   if(role!=='admin'&&!['home','orders','items','order','label','pack','stock','link','relations','product'].includes(action)&&!(action==='sync'&&['orders','items'].includes(b.kind)))fail('Réservé à l’administrateur.',403)
   if(req.method==='GET'){
     if(action==='batch-drafts')return res.json(await batchDrafts(db,user,q))
+    if(action==='publication-lots')return res.json(await publicationLots(db,user,q,saveRecords))
     if(action==='publication-tracking')return res.json(await publicationTracking(db,user,q))
     if(action==='quick-profiles')return res.json(await quickProfiles(db,user))
     if(action==='relations')return res.json(await connectedRecords(db,user,role,q))
@@ -185,6 +208,27 @@ export async function scalencyHandler(req,res,{db,user,role}){
     fail('Vue inconnue.',404)
   }
   if(req.method!=='POST')fail('Méthode invalide.',405)
+  if(action==='accept-lot')return res.json(await acceptPublicationLot(db,user,b))
+  if(action==='retry-lot-entry')return res.json(await retryLotEntry(db,user,b))
+  if(action==='lot-duplicates')return res.json(await reviewDuplicates(db,user,b))
+  if(action==='lot-review-edit'){
+    const row=await getDraft(db,user,b.id)
+    checkBatchSubmission(row,b.account)
+    if(row.state!=='draft'||row.version!==b.version)fail('La fiche a changé. Actualise le récapitulatif.',409)
+    const price=String(b.price??'').trim().replace(',','.'),size=String(b.size??'').trim()
+    if(!/^\d{1,5}(?:\.\d{1,2})?$/.test(price)||Number(price)<=0||!size||size.length>60)fail('Vérifie le prix et la taille.')
+    const options=await catalogConditions(row.fields),fields={...row.fields,price}
+    if(size!==fields.size_text){
+      const sizeId=matchingSize(size,options)
+      if(!sizeId)fail('Choisis une taille proposée pour cette catégorie dans le formulaire détaillé.')
+      Object.assign(fields,updateSeoDetails(fields,{size}),{size_text:size,size_id:sizeId})
+    }
+    await verifyQuickFields(db,fields,options)
+    const saved=checked(await db.from('listing_drafts').update({version:row.version+1,fields,updated_at:now()})
+      .eq('id',row.id).eq('owner_id',user.id).eq('state','draft').eq('version',row.version).select('id,version,fields').maybeSingle())
+    if(!saved)fail('La fiche a changé. Actualise le récapitulatif.',409)
+    return res.json(saved)
+  }
   if(action==='cost'){
     const id=remoteId(b.id), line=remoteId(b.line),order=await orderDetails(db,id,b.account)
     if(!order.items.some(i=>String(i.id)===line))fail('Article introuvable.',404)
@@ -292,23 +336,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
       const result=await generateListingText({...row,fields:{...row.fields,seo_condition:bioCondition}},urls,[],[],{token:listingAiToken(req),settings:presets.effective,quick:true,shein:facts})
       return res.json({title:result.title,description:result.description})
     }
-    const options=await catalogConditions(row.fields)
-    row.fields=applyCondition(row.fields,options)
-    if(!row.fields.status_id)fail('Très bon état indisponible pour cette catégorie.',409)
-    if(['quick-publish','autopost','batch-submit'].includes(action))await verifyQuickFields(db,row.fields,options)
-    const at=b.schedule?new Date(b.schedule):null
-    if(at&&(!Number.isFinite(at.getTime())||at<=new Date()||at.getTime()-Date.now()>30*86400000))fail('Choisis une date future dans les 30 prochains jours.')
-    const payload=draftPayload(row,await photosFor(db,row.photos,35*86400),row.fields.account_id,at?.toISOString())
-    const source=await draftSource(db,row.stock_item_id,row.catalog_product_id,row.fields.sku)
-    if(source.stock?.emplacement)payload.location=source.stock.emplacement
-    const supplier=source.stock?.shein_url||source.product?.supplier_url
-    if(supplier&&/^https?:\/\//i.test(supplier))payload.supplier_link=supplier
-    async function validatePayload(){
-      const preview=await remote('items',{method:'POST',body:{...payload,dry_run:true}})
-      if(preview.dry_run!==true||preview.would_queue!==true)fail(preview.reason||'Scalency ne peut pas accepter cette annonce.',409)
-      return preview
-    }
-    const preview=await validatePayload()
+    const {payload,preview,at}=await prepareScalencyPublication(db,row,{quick:['quick-publish','autopost','batch-submit'].includes(action),schedule:b.schedule})
     if(action==='validate')return res.json(preview)
     const result=await once(db,user,'publish',row.id,async()=>{
       const locked=checked(await db.from('listing_drafts').update({state:'preparing',fields:row.fields,message:'Transmission à Scalency'}).eq('id',row.id).eq('state','draft').eq('version',row.version).select('id').maybeSingle())

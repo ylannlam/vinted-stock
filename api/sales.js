@@ -40,6 +40,16 @@ const errorMessages = {
 export default async function handler(req, res) {
   if (!['GET', 'POST', 'PATCH'].includes(req.method)) { res.setHeader('Allow', 'GET, POST, PATCH'); return res.status(405).end() }
   try {
+    if(req.query?.scope==='scalency-lot-worker'){
+      res.setHeader('Cache-Control','no-store')
+      if(req.method!=='POST'||!isId(req.body?.id)||!isId(req.body?.ticket))return res.status(403).end()
+      const {createClient}=await import('@supabase/supabase-js')
+      const db=createClient(process.env.VITE_SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY,{auth:{persistSession:false,autoRefreshToken:false}})
+      const {consumeLotTicket}=await import('../server/scalency-lots.js')
+      const {prepareScalencyPublication,saveRecords}=await import('../server/scalency-workspace.js')
+      const consumed=await consumeLotTicket(db,req.body,prepareScalencyPublication,saveRecords)
+      return res.status(consumed?204:403).end()
+    }
     const auth = await authorize(req, res, ['admin','stock'])
     if (!auth) return
     const { db, role, user } = auth

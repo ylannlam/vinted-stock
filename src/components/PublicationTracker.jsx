@@ -2,6 +2,7 @@ import {useEffect,useRef,useState} from 'react'
 import {query} from '../lib/scalency'
 import {publicationDate,publicationProgress} from '../lib/publicationTracking'
 import './PublicationTracker.css'
+import PublicationLots from './PublicationLots'
 
 const filters=[['','Tous les statuts'],['queued','En file ou planifiées'],['sent','Publication en cours'],['done','Traitement terminé'],['failed','Échec'],['cancelled','Annulées'],['skipped','Ignorées']]
 const draftLabels={draft:'En préparation',preparing:'Transmission en cours',attention:'À vérifier'}
@@ -52,6 +53,7 @@ export default function PublicationTracker({params}){
     <div className="pt-nav"><a href="#annonces?nouvelle=1">Nouvelle annonce</a><a href="#publication?section=actions">Toutes les actions Scalency</a></div>
     {error&&<p role="alert" className="sc-error">Actualisation impossible. {error}{data?' Les informations précédentes restent affichées.':''}</p>}
     <p className="pt-sync">Heure de Paris{data?.checkedAt&&' · Actualisé le '+publicationDate(data.checkedAt)}</p>
+    {!job&&<PublicationLots key={(params.lot||'')+account} account={account} lotId={params.lot||''}/>}
     {!job&&<section className="sc-panel"><div className="pt-head"><h2>En préparation sur Stock Vinted</h2>{data&&<span>{data.draftTotal}</span>}</div>
       {data?data.drafts.length?data.drafts.map(d=><article className="pt-row" key={d.id}>
         <div className="pt-row-head"><h3>{d.title||d.sku||'Brouillon sans titre'}</h3><span className={'pt-badge '+(d.state==='attention'?'warning':'muted')}>{draftLabels[d.state]}</span></div>

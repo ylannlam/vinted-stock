@@ -47,3 +47,7 @@
 .bs-discard-dialog ul{max-height:32vh;overflow:auto;padding-left:1.25rem;overflow-wrap:anywhere}
 .bs-discard-dialog .bs-actions{justify-content:flex-end;margin-bottom:0}
 .bs-work .bs-confirm-discard{color:#fff;background:#9f302d;border-color:#9f302d}
+.bs-review-item .bs-review-head .bs-cover{width:96px;height:120px;flex-shrink:0;object-fit:cover}
+.bs-inline-edit{display:flex;flex-wrap:wrap;align-items:end;gap:10px;margin:12px 0}
+.bs-inline-edit label{display:grid;gap:4px;max-width:10em}
+.bs-inline-edit p{flex-basis:100%}
