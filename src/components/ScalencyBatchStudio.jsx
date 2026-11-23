@@ -2,6 +2,7 @@ import {useCallback,useEffect,useRef,useState} from 'react'
 import {act,query,formatMoney} from '../lib/scalency'
 import {retryIntake,watchIntake} from '../lib/batchIntake'
 import {listingColors} from '../lib/scalencyQuick'
+import {PhotoAccountPanel} from './AccountPhotos'
 import BatchEntry from './BatchEntry'
 import ScalencyDraft from './ScalencyDraft'
 import ScalencyQuickAccount from './ScalencyQuickAccount'
@@ -184,6 +185,7 @@ export default function ScalencyBatchStudio({params}){
   }
   return <main className="sc-work bs-work"><header className="sc-head"><div><p>Stock Vinted / Scalency</p><h1>Atelier d’annonces</h1></div><a href="#publication">Suivi des publications</a></header>
     <fieldset className="bs-account" disabled={sending||!!editor}><ScalencyQuickAccount accounts={profiles} account={account} onSelect={choose} onSaved={updateProfile}/></fieldset>
+    {account&&login&&<PhotoAccountPanel key={account} account={account} login={login.login}/>}
     {error&&<p role="alert" className="sc-error">{error} <button onClick={reload}>Réessayer</button></p>}
     {notice&&<p className="bs-notice" role="status">{notice}{lastLot&&<> · <a href={'#publication?lot='+lastLot}>Suivre le lot</a></>}</p>}
     {editor&&<ScalencyDraft key={editor} detailed id={editor==='new'?null:editor} initialAccount={account} onProfileSaved={updateProfile} piece={params.piece} product={params.product} sku={params.sku}

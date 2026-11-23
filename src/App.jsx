@@ -1,3 +1,4 @@
+const AccountPhotos=lazy(()=>import('./components/AccountPhotos'))
 const VintedAccountsTab=lazy(()=>import('./components/VintedAccountsTab'))
 const ScalencyWorkspace=lazy(()=>import('./components/ScalencyWorkspace'))
 const BudgetTab=lazy(()=>import('./components/BudgetTab'))
@@ -455,7 +456,7 @@ export default function App() {
   }
 
   const userRole = profile?.role ?? null
-  const accountSection = ['registre','creation'].includes(navigationFilters.section) ? navigationFilters.section : 'scalency'
+  const accountSection = ['registre','creation','fonds'].includes(navigationFilters.section) ? navigationFilters.section : 'scalency'
   const isAdmin = userRole === 'admin'
   const isEmploye = userRole === 'employe'
 
@@ -531,10 +532,10 @@ export default function App() {
       <Suspense fallback={<p role="status" className="p-8 text-center text-gray-500">Chargement de l’écran…</p>}><PageBoundary key={activeTab}>
       {activeTab===TAB_COMPTES_VINTED && isAdmin && <>
         <nav aria-label="Gestion des comptes" className="max-w-screen-2xl mx-auto flex flex-wrap gap-1 px-3 py-2 border-b">
-          {[['registre','Fiches des comptes'],['creation','Suivi de création'],['scalency','Comptes Scalency']].map(([id,label])=>
+          {[['registre','Fiches des comptes'],['creation','Suivi de création'],['scalency','Comptes Scalency'],['fonds','Fonds et prompts']].map(([id,label])=>
             <a key={id} href={'#comptes/'+id} aria-current={accountSection===id?'page':undefined} className={`rounded-lg px-3 py-2 text-sm ${accountSection===id?'bg-teal-700 text-white':'text-slate-600 hover:bg-slate-50'}`}>{label}</a>)}
         </nav>
-        {accountSection==='scalency'
+        {accountSection==='fonds' ? <AccountPhotos account={navigationFilters.account||''}/> : accountSection==='scalency'
           ? <ScalencyWorkspace key={JSON.stringify(navigationFilters)} kind="accounts" admin={isAdmin} params={navigationFilters}/>
           : <VintedAccountsTab key={accountSection} initialView={accountSection==='creation'?'isolation':'ready'} onDirections={()=>setActiveTab(TAB_RESOURCES,{section:'accounts'})}/>}
       </>}

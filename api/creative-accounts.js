@@ -1,3 +1,4 @@
+import {readPhotos,savePhotos,downloadPhoto,photoUpload,addPhotoBackground} from '../server/account-photos.js'
 import {authorize} from '../server/auth.js'
 import {AppError} from '../server/dotb.js'
 import {readPage} from '../server/pagination.js'
@@ -11,6 +12,12 @@ export function creativeAccountsHandler(authorizer=authorize,readAccounts=readDo
   try {
    const auth=await authorizer(req,res,['admin']);if(!auth)return
    const {db}=auth
+   if(req.method==='GET'&&req.query?.view==='photos')return res.json(await readPhotos(db,req.query.account))
+   if(req.method==='GET'&&req.query?.view==='photo-options')return res.json(await readPhotos(db,null,true))
+   if(req.method==='PATCH'&&req.body?.action==='photo-save')return res.json(await savePhotos(db,req.body))
+   if(req.method==='POST'&&req.body?.action==='photo-upload')return res.json(await photoUpload(db,auth.user,req.body))
+   if(req.method==='POST'&&req.body?.action==='photo-background')return res.json(await addPhotoBackground(db,auth.user,req.body))
+   if(req.method==='POST'&&req.body?.action==='photo-download')return res.json(await downloadPhoto(db,req.body))
    if(req.method==='GET'){
     const offset=Number(req.query?.offset||0)
     if(!Number.isSafeInteger(offset)||offset<0||offset>100000)throw new AppError('Page invalide.')
