@@ -2,6 +2,7 @@ import {useEffect,useState,useRef} from 'react'
 import {query,act,formatDate,formatMoney} from '../lib/scalency'
 import ScalencyQuickAccount from './ScalencyQuickAccount'
 import ScalencyDraft from './ScalencyDraft'
+import PublicationTracker from './PublicationTracker'
 import ScalencyRelations from './ScalencyRelations'
 import '../scalency.css'
 
@@ -41,6 +42,10 @@ function Details({kind,row,close,reload,admin}){
  </article>
 }
 export default function ScalencyWorkspace({kind,admin,params={}}){
+ if(kind==='jobs'&&admin&&!params.id&&!params.filter&&params.section!=='actions')return <PublicationTracker params={params}/>
+ return <WorkspaceList kind={kind} admin={admin} params={params}/>
+}
+function WorkspaceList({kind,admin,params}){
  const [data,setData]=useState(null),[search,setSearch]=useState(''),[filter,setFilter]=useState(params.filter||''),[page,setPage]=useState(0),[rev,setRev]=useState(0),[busy,setBusy]=useState(false),[err,setErr]=useState(''),[selected,setSelected]=useState(null),[editor,setEditor]=useState(params.draft||(params.sku||params.piece||params.product||params.nouvelle==='1'?'new':null)),[connection,setConnection]=useState(null)
  const opened=useRef(false),syncing=useRef(false)
  const reload=()=>setRev(n=>n+1)
@@ -58,7 +63,9 @@ export default function ScalencyWorkspace({kind,admin,params={}}){
  const rowLabel=(r)=>kind==='orders'?[r.status_fr||r.state,r.account,formatDate(r.deadline)]:kind==='items'?[r.sku||'Sans SKU',r.sold?'Vendue':r.status==='active'?'En ligne':'Inactive',formatMoney(r.price)]:kind==='jobs'?[r.type_label,r.status_label||r.status,formatDate(r.not_before)]:kind==='accounts'?[r.linked?'Relié':'Non relié',r.agent?.active?'Bot allumé':'Bot inactif']:kind==='conversations'?[r.buyer,r.unread?'Non lu':'Lu',r.preview]:[r.fields?.sku||'Sans SKU',formatDate(r.updated_at)]
  return <main className="sc-work"><header className="sc-head"><div><p>Stock Vinted / Scalency</p><h1>{titles[kind]}</h1>{params.login&&<p>Compte · {params.login} <a href={'#'+destination[kind]}>Tous les comptes</a></p>}</div><div className="sc-tools">{kind==='drafts'?<button className="sc-primary" onClick={()=>setEditor('new')}>＋ Nouvelle annonce</button>:<button disabled={busy} onClick={()=>sync()}>{busy?'Synchronisation…':'Actualiser'}</button>}</div></header>
  <Notice text={err}/>{kind==='accounts'&&connection&&!connection.webhook&&<button disabled={busy} onClick={async()=>{setBusy(true);try{await act('webhook');setConnection({...connection,webhook:true})}catch(e){setErr(e.message)}finally{setBusy(false)}}}>Activer la réception automatique des ventes</button>}
- {editor?<ScalencyDraft id={editor==='new'?null:editor} sku={params.sku} piece={params.piece} product={params.product} onClose={()=>{setEditor(null);reload()}} onQueued={result=>go('jobs',result?.job?.id?{id:String(result.job.id),account:String(result.job.account_id)}:{})}/>:selected?<Details admin={admin} kind={kind} row={selected} close={()=>{if(params.id)go(kind,params.filter?{filter:params.filter}:{});else setSelected(null)}} reload={reload}/>:kind==='home'?(data?<Home data={data} admin={admin}/>:<p>Chargement du tableau de bord…</p>):<>
+ {kind==='drafts'&&<p className="sc-pages"><a href="#publication">Suivre mes publications</a></p>}
+ {kind==='jobs'&&<p className="sc-pages"><a href="#publication">Voir le suivi des publications</a></p>}
+ {editor?<ScalencyDraft id={editor==='new'?null:editor} sku={params.sku} piece={params.piece} product={params.product} onClose={()=>{setEditor(null);reload()}} onQueued={result=>go('jobs',result?.job?.id?{job:String(result.job.id)}:{})}/>:selected?<Details admin={admin} kind={kind} row={selected} close={()=>{if(params.id)go(kind,params.filter?{filter:params.filter}:{});else setSelected(null)}} reload={reload}/>:kind==='home'?(data?<Home data={data} admin={admin}/>:<p>Chargement du tableau de bord…</p>):<>
  <div className="sc-toolbar">{kind!=='drafts'&&filter!=='archive'&&<input aria-label="Rechercher" placeholder={kind==='accounts'?'Rechercher un compte':'Rechercher un titre'} value={search} onChange={e=>{setSearch(e.target.value);setPage(0)}}/>}{filters[kind]&&<select aria-label="Filtrer la liste" value={filter} onChange={e=>{setFilter(e.target.value);setPage(0)}}><option value="">Tout afficher</option>{filters[kind].map(([k,l])=><option key={k} value={k}>{l}</option>)}</select>}{data&&<span>{data.total} résultat{data.total!==1?'s':''}</span>}</div>
  <section className="sc-panel">{!data?<p>Chargement…</p>:!data.rows.length?<p>Aucun résultat pour cette sélection.</p>:data.rows.map(row=>{const r=row.payload||row;return <button className="sc-row" key={kind==='drafts'?r.id:row.account+':'+row.remote_id} onClick={()=>kind==='drafts'?setEditor(r.id):setSelected(row)}><Picture url={row.photo||r.photo_url||r.thumb||r.items?.[0]?.thumbnail}/><span><b>{r.title||r.login||r.fields?.title||r.type_label||'Brouillon sans titre'}</b><small>{[...rowLabel(r),...(kind==='items'&&row.emplacement?[row.emplacement]:[])].filter(Boolean).join(' · ')}</small></span><span className="sc-open">↗</span></button>})}</section>
  {data&&<div className="sc-tools sc-pages"><button disabled={!page} onClick={()=>setPage(page-1)}>Précédent</button><span>{page+1} / {Math.max(1,Math.ceil(data.total/data.pageSize))}</span><button disabled={(page+1)*data.pageSize>=data.total} onClick={()=>setPage(page+1)}>Suivant</button>{data.sync&&!data.sync.complete&&<button disabled={busy} onClick={()=>sync(true)}>Importer les suivants</button>}{data.sync?.updated_at&&<small>Synchronisé le {formatDate(data.sync.updated_at)}</small>}</div>}</>}

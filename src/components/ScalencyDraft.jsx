@@ -112,7 +112,7 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued}){
     <Field label="Format du colis"><select value={fields.package_size_id||''} onChange={e=>edit('package_size_id',Number(e.target.value)||null)}><option value="">Choisir</option>{(options?.package_sizes||[]).map(s=><option key={s.id} value={s.id}>{s.title||s.name||s.id}</option>)}</select></Field>
     {<Field label="Programmer (facultatif)"><input type="datetime-local" value={date} onChange={e=>{setDate(e.target.value);setApproved(false)}}/></Field>}</div>
     <div className="sc-tools"><button onClick={()=>run(async()=>{await save();setMessage('Brouillon enregistré sur ton site.')})}>Enregistrer le brouillon</button>
-    {!quick&&(approved?<button className="sc-primary" onClick={()=>run(async()=>{await act('publish',{id:uid.current,version,schedule:date?new Date(date).toISOString():null});onQueued()})}>Confirmer la mise en file</button>:<button className="sc-primary" onClick={()=>run(validate)}>Vérifier avec Scalency</button>)}</div></>}</fieldset>
+    {!quick&&(approved?<button className="sc-primary" onClick={()=>run(async()=>{const result=await act('publish',{id:uid.current,version,schedule:date?new Date(date).toISOString():null});onQueued(result)})}>Confirmer la mise en file</button>:<button className="sc-primary" onClick={()=>run(validate)}>Vérifier avec Scalency</button>)}</div></>}</fieldset>
     <ListingSeoOutput title={fields.title} description={fields.description}/>
   </article>
 }

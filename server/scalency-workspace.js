@@ -6,6 +6,7 @@ import {readListingSettings} from './listing-settings.js'
 import {prepareQuickDraft,quickProfiles,saveQuickBrand,verifyQuickFields} from './scalency-quick.js'
 import {listingFacts} from '../src/lib/library.js'
 import {nextHistoryPage} from './scalency-history.js'
+import {publicationTracking} from './scalency-publications.js'
 import {catalogProduct,connectedRecords,draftSource} from './scalency-relations.js'
 const fail=(message,status)=>{throw new ScalencyError(message,status)}
 const checked=r=>{if(r.error)throw r.error;return r.data}
@@ -125,6 +126,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
   const q=req.query, b=req.body||{}, action=req.method==='GET'?q.view:b.action
   if(role!=='admin'&&!['home','orders','items','order','label','pack','stock','link','relations','product'].includes(action)&&!(action==='sync'&&['orders','items'].includes(b.kind)))fail('Réservé à l’administrateur.',403)
   if(req.method==='GET'){
+    if(action==='publication-tracking')return res.json(await publicationTracking(db,user,q))
     if(action==='quick-profiles')return res.json(await quickProfiles(db,user))
     if(action==='relations')return res.json(await connectedRecords(db,user,role,q))
     if(action==='product')return res.json(await catalogProduct(db,q.id))
@@ -217,7 +219,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
       row.stock_item_id=source.stock?.id||null
       row.catalog_product_id=source.product?.id||null
     }
-    let result=b.version==null?await db.from('listing_drafts').insert({...row,id,owner_id:user.id}).select(draftCols).single():
+    let result=b.version==null?await db.from('listing_drafts').insert({...row,id,owner_id:user.id,payload:{scalency_source:'stock-vinted'}}).select(draftCols).single():
       await db.from('listing_drafts').update({...row,version:b.version+1}).eq('id',id).eq('owner_id',user.id).eq('state','draft').eq('version',b.version).select(draftCols).maybeSingle()
     if(!checked(result))fail('Ce brouillon a changé. Rouvre-le avant de continuer.',409)
     return res.json(result.data)
