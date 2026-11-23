@@ -16,12 +16,36 @@ function stage(row){
 function Cover({row}){
   return row.photo?<img className="bs-cover" src={row.photo} loading="lazy" alt=""/>:<span className="bs-cover bs-placeholder" aria-label="Sans aperçu">—</span>
 }
-function ReviewRow({row,onEdit,disabled}){
+function DiscardDialog({rows,onClose,onDiscard}){
+  const dialog=useRef(null),request=useRef(false)
+  const [busy,setBusy]=useState(false),[error,setError]=useState('')
+  useEffect(()=>{
+    const element=dialog.current
+    element.showModal()
+    return ()=>element.close()
+  },[])
+  async function confirm(){
+    if(request.current)return
+    request.current=true;setBusy(true);setError('')
+    try{await onDiscard(rows)}
+    catch(e){setError(e.message);request.current=false;setBusy(false)}
+  }
+  return <dialog className="bs-discard-dialog" ref={dialog} aria-labelledby="bs-discard-title" onCancel={ev=>{ev.preventDefault();if(!request.current)onClose()}}>
+    <h2 id="bs-discard-title">{rows.length===1?'Supprimer cette annonce prête ?':'Supprimer ces '+rows.length+' annonces prêtes ?'}</h2>
+    <ul>{rows.map(r=><li key={r.id}><strong>{r.fields.sku}</strong>{r.fields.title&&' · '+r.fields.title}</li>)}</ul>
+    <p>La suppression du brouillon est définitive.</p>
+    {error&&<p className="sc-error" role="alert">{error}</p>}
+    <div className="bs-actions"><button type="button" autoFocus disabled={busy} onClick={onClose}>Annuler</button>
+      <button type="button" className="bs-confirm-discard" disabled={busy} onClick={confirm}>{busy?'Suppression…':'Confirmer la suppression'}</button></div>
+  </dialog>
+}
+function ReviewRow({row,onEdit,onDiscard,disabled}){
   const f=row.fields
   return <article className="bs-review-item"><div className="bs-review-head"><Cover row={row}/><div><h3>{f.title}</h3><p>{f.sku} · {f.size_text} · {formatMoney(f.price)}</p></div></div>
     <p>{[row.batch?.category||'Catégorie '+f.catalog_id,f.brand_title,(f.color_ids||[]).map(id=>listingColors.find(c=>c.id===id)?.title).filter(Boolean).join(' / '),row.batch?.condition,'Petit colis',row.count&&row.count+' photo'+(row.count>1?'s':'')].filter(Boolean).join(' · ')}</p>
     <details><summary>Lire la bio</summary><p className="bs-bio">{f.description}</p></details>
-    <button className="bs-link" disabled={disabled} onClick={()=>onEdit(row.id)}>Modifier la fiche</button>
+    <div className="bs-actions"><button className="bs-link" disabled={disabled} onClick={()=>onEdit(row.id)}>Modifier la fiche</button>
+      <button className="bs-link bs-danger" disabled={disabled} onClick={()=>onDiscard([row])}>Supprimer</button></div>
   </article>
 }
 export default function ScalencyBatchStudio({params}){
@@ -29,6 +53,7 @@ export default function ScalencyBatchStudio({params}){
   const [page,setPage]=useState(0),[data,setData]=useState(null),[error,setError]=useState(''),[notice,setNotice]=useState('')
   const [selected,setSelected]=useState({}),[review,setReview]=useState(false),[sending,setSending]=useState(false),[receipts,setReceipts]=useState([])
   const [local,setLocal]=useState({}),[revision,setRevision]=useState(0)
+  const [discarding,setDiscarding]=useState(null)
   const [transfers,setTransfers]=useState([])
   const [editor,setEditor]=useState(params.draft||(params.piece||params.product||params.sku?'new':''))
   const lock=useRef(false),active=useRef(true),userPicked=useRef(false),pending=useRef(new Set())
@@ -105,6 +130,19 @@ export default function ScalencyBatchStudio({params}){
   const rows=data?.rows||[],ready=rows.filter(r=>account&&r.fields.account_id===account&&stage(r)==='ready'&&!local[r.id])
   const intake=transfers.filter(t=>(!account||t.fields.account_id===account)&&(t.stage==='error'||!rows.some(row=>row.id===t.id&&row.batch)))
   const drafts=[...Object.values(local).filter(r=>(!account||r.fields.account_id===account)&&!rows.some(x=>x.id===r.id)),...rows.filter(row=>!intake.some(t=>t.id===row.id))]
+  async function discard(batch){
+    if(lock.current)throw Error('Une opération est déjà en cours.')
+    lock.current=true
+    try{
+      await act('batch-discard',{account:batch[0].fields.account_id,drafts:batch.map(({id,version})=>({id,version}))})
+      const ids=new Set(batch.map(row=>row.id))
+      setSelected(prev=>Object.fromEntries(Object.entries(prev).filter(([id])=>!ids.has(id))))
+      setData(prev=>prev&&({...prev,rows:prev.rows.filter(row=>!ids.has(row.id)),total:Math.max(0,prev.total-ids.size)}))
+      if(review&&chosen.every(row=>ids.has(row.id)))setReview(false)
+      setNotice(ids.size===1?'Brouillon supprimé · '+(batch[0].fields.sku||batch[0].fields.title):ids.size+' brouillons supprimés.')
+      setDiscarding(null)
+    }finally{lock.current=false;reload()}
+  }
   async function submit(){
     if(lock.current||!review||!chosen.length)return
     lock.current=true;setSending(true);setReceipts([]);setNotice('')
@@ -133,11 +171,13 @@ export default function ScalencyBatchStudio({params}){
       <section className="bs-panel bs-list"><div className="bs-panel-head"><div><h2>{review?'Récapitulatif du lot':'Annonces du compte'}</h2>
         <p className="bs-meta">{review?chosen.length+' sélectionnée(s) pour '+(login?.login||'ce compte'):login?login.login+' · '+(data?.total??'…')+' brouillon(s)':'Tous les brouillons · choisis un compte pour préparer un lot'}</p></div>
         {!review&&<button className="bs-link" onClick={reload}>Actualiser</button>}</div>
-      {review?<>{chosen.map(row=><ReviewRow key={row.id} row={row} onEdit={edit} disabled={sending}/>)}
+      {discarding&&<DiscardDialog rows={discarding} onClose={()=>setDiscarding(null)} onDiscard={discard}/>}
+      {review?<>{chosen.map(row=><ReviewRow key={row.id} row={row} onEdit={edit} onDiscard={setDiscarding} disabled={sending}/>)}
         <div className="bs-actions"><button disabled={sending} onClick={()=>setReview(false)}>Retour à la sélection</button><button className="sc-primary" disabled={sending||!chosen.length} onClick={submit}>{sending?'Mise en file en cours…':'Publier le lot via Scalency ('+chosen.length+')'}</button></div>
         <p className="bs-meta">Scalency gère le départ de chaque annonce. Garde cet onglet ouvert pendant l’envoi du lot.</p></>:
         <><div className="bs-actions"><button disabled={!ready.length} onClick={()=>setSelected(prev=>({...prev,...Object.fromEntries(ready.map(r=>[r.id,r]))}))}>Sélectionner les prêtes</button>
-        <button className="sc-primary" disabled={!chosen.length} onClick={()=>{setReceipts([]);setReview(true)}}>Relire la sélection ({chosen.length})</button></div>
+        <button className="sc-primary" disabled={!chosen.length} onClick={()=>{setReceipts([]);setReview(true)}}>Relire la sélection ({chosen.length})</button>
+        {chosen.length>0&&<button type="button" className="bs-link bs-danger" onClick={()=>setDiscarding(chosen)}>Supprimer la sélection ({chosen.length})</button>}</div>
         {intake.map(t=><article key={t.id} className="bs-row"><div className="bs-row-body"><h3>{t.fields.sku}</h3>
           <p className="bs-meta">{t.fields.size_text} · {formatMoney(t.fields.price)}</p>
           <span className={'bs-badge '+(t.stage==='error'?'error':'running')}>{t.stage==='error'?'À reprendre':t.stage==='generating'?'Remplissage…':t.stage==='saving'?'En préparation…':'Envoi des photos…'}</span>
@@ -152,6 +192,7 @@ export default function ScalencyBatchStudio({params}){
             <span className={'bs-badge '+state}>{labels[state]}</span>
             {(state==='review'||state==='error')&&<p className="bs-problem">{row.batch?.missing?.join(' · ')||'Remplissage interrompu, tu peux le relancer.'}</p>}
             </div><div className="bs-row-tools"><button disabled={state==='running'} className="bs-link" onClick={()=>edit(row.id)}>Modifier</button>
+            {state==='ready'&&<button type="button" className="bs-link bs-danger" onClick={()=>setDiscarding([row])}>Supprimer</button>}
             {state!=='running'&&state!=='ready'&&login?.brand&&f.account_id===account&&row.count>0&&f.sku&&Number(f.price)>0&&<button className="bs-link" onClick={()=>generate(row)}>{state==='error'?'Réessayer':'Remplir'}</button>}</div></article>
         })}
         {data&&data.total>data.pageSize&&<div className="bs-actions"><button disabled={!page} onClick={()=>setPage(p=>p-1)}>Précédent</button><span>{page+1} / {Math.ceil(data.total/data.pageSize)}</span><button disabled={(page+1)*data.pageSize>=data.total} onClick={()=>setPage(p=>p+1)}>Suivant</button></div>}</>}

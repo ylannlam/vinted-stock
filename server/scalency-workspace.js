@@ -1,3 +1,4 @@
+import {isId} from './dotb.js'
 import {createHash} from 'node:crypto'
 import {collections,remote,remoteId,ScalencyError,snapshot,shippable,draftPayload} from './scalency-api.js'
 import {verifiedPhotos,listingFields,listingAiToken,generateListingText} from './listing-studio-core.js'
@@ -221,6 +222,14 @@ export async function scalencyHandler(req,res,{db,user,role}){
     const {enableWebhook}=await import('./scalency-webhook.js')
     return res.json(await enableWebhook(db))
   }
+  if(action==='batch-discard'){
+    const drafts=b.drafts,account=remoteId(b.account)
+    if(!Array.isArray(drafts)||!drafts.length||drafts.some(d=>!d||!isId(d.id)||!Number.isSafeInteger(d.version)||d.version<1)
+      ||new Set(drafts.map(d=>d.id)).size!==drafts.length)fail('Sélection de brouillons invalide.',400)
+    const result=await db.rpc('scalency_discard_ready_drafts',{p_owner:user.id,p_account:account,p_drafts:drafts.map(({id,version})=>({id,version}))})
+    if(result.error?.code==='P0001'&&result.error.message==='ready_draft_changed')fail('La sélection a changé. Actualise la liste avant de supprimer les annonces.',409)
+    return res.json({removed:checked(result)})
+  }
   if(action==='quick-size')return res.json(await saveQuickSize(db,b.account,b.size))
   if(action==='quick-brand')return res.json(await saveQuickBrand(db,b.account,b.name))
   if(action==='save'||action==='save-review'||action==='batch-create'){
@@ -228,6 +237,13 @@ export async function scalencyHandler(req,res,{db,user,role}){
     const id=remoteId(b.id), input=listingFields(b.fields,{scalency:true})
     const [options,photos]=await Promise.all([catalogConditions(input),verifiedPhotos(db,user.id,b.photos)])
     const fields=applyCondition(input,options)
+    if(action==='batch-create'){
+      if(!isId(id))fail('Identifiant de brouillon invalide.',400)
+      const saved=checked(await db.rpc('scalency_create_batch_draft',{p_id:id,p_owner:user.id,p_fields:fields,p_photos:photos}).select(draftCols+',payload').maybeSingle())
+      if(!saved)return res.json({id,state:'discarded',batch:null})
+      const {payload,...draft}=saved
+      return res.json({...draft,batch:payload?.batch||null})
+    }
     const row={fields,photos,updated_at:now()}
     const previous=b.version==null?null:await getDraft(db,user,id)
     if(action==='save-review'||previous?.payload?.batch){
@@ -241,10 +257,6 @@ export async function scalencyHandler(req,res,{db,user,role}){
     }
     let result=b.version==null?await db.from('listing_drafts').insert({payload:{scalency_source:'stock-vinted'},...row,id,owner_id:user.id}).select(draftCols).single():
       await db.from('listing_drafts').update({...row,version:b.version+1}).eq('id',id).eq('owner_id',user.id).eq('state','draft').eq('version',b.version).select(draftCols).maybeSingle()
-    if(action==='batch-create'&&result.error?.code==='23505'){
-      const existing=await getDraft(db,user,id)
-      return res.json({id,version:existing.version,state:existing.state,batch:existing.payload?.batch||null})
-    }
     if(!checked(result))fail('Ce brouillon a changé. Rouvre-le avant de continuer.',409)
     return res.json({...result.data,batch:row.payload?.batch})
   }

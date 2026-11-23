@@ -39,3 +39,11 @@
 .bs-review-item{border-top:1px solid #dce8e0;padding:14px 0}.bs-review-head{flex-wrap:nowrap}.bs-review-item summary{cursor:pointer;color:#08695b}.bs-bio{white-space:pre-wrap;overflow-wrap:anywhere}.bs-review-item .bs-link{margin-top:5px}
 @media(max-width:850px){.bs-layout{grid-template-columns:1fr}.bs-work .sc-head{gap:10px}.bs-work .bs-row{gap:8px}.bs-cover{width:43px;height:56px}}
 @media(max-width:450px){.bs-actions button{flex:1}.bs-row{flex-wrap:wrap}.bs-row-tools{margin-left:auto;display:flex;gap:10px}.bs-work{padding:14px}.bs-panel{padding:14px}}
+
+.bs-work .bs-link.bs-danger{color:#a4322f!important}
+.bs-discard-dialog{width:min(32rem,calc(100% - 2rem));max-height:85vh;overflow:auto;border:1px solid #cddbd6;padding:24px;border-radius:14px;color:#1d3530;background:#fff}
+.bs-discard-dialog::backdrop{background:#162c2780}
+.bs-discard-dialog h2{margin:0 0 12px;font-size:1.2rem}
+.bs-discard-dialog ul{max-height:32vh;overflow:auto;padding-left:1.25rem;overflow-wrap:anywhere}
+.bs-discard-dialog .bs-actions{justify-content:flex-end;margin-bottom:0}
+.bs-work .bs-confirm-discard{color:#fff;background:#9f302d;border-color:#9f302d}
