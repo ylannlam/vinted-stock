@@ -10,12 +10,15 @@ import {listingFacts} from '../src/lib/library.js'
 
 const checked=r=>{if(r.error)throw r.error;return r.data}
 const profileKey=id=>'listing-brand:'+remoteId(id)
+const sizeKey=id=>'listing-size:'+remoteId(id)
 export async function quickProfiles(db,user){
-  const [accounts,names]=await Promise.all([
+  const [accounts,names,sizes]=await Promise.all([
     db.from('scalency_records').select('remote_id,payload').eq('kind','accounts').eq('payload->>linked','true').order('payload->>login'),
-    db.from('scalency_settings').select('id,value').like('id','listing-brand:%')])
+    db.from('scalency_settings').select('id,value').like('id','listing-brand:%'),
+    db.from('scalency_settings').select('id,value').like('id','listing-size:%')])
   const lookup=new Map(checked(names).map(p=>[p.id,p.value.name]))
-  return {owner:user.id,accounts:checked(accounts).map(a=>({id:a.remote_id,login:a.payload.login,brand:lookup.get(profileKey(a.remote_id))||''}))}
+  const sizeByAccount=new Map(checked(sizes).map(p=>[p.id,p.value.size]))
+  return {owner:user.id,accounts:checked(accounts).map(a=>({id:a.remote_id,login:a.payload.login,brand:lookup.get(profileKey(a.remote_id))||'',default_size:sizeByAccount.get(sizeKey(a.remote_id))||''}))}
 }
 async function activeAccount(db,id){
   const account=checked(await db.from('scalency_records').select('payload').eq('kind','accounts').eq('remote_id',remoteId(id)).maybeSingle())
@@ -26,6 +29,19 @@ export async function saveQuickBrand(db,id,name){
   if(typeof name!=='string'||!name.trim()||name.trim().length>100||/[\x00-\x1f]/.test(name))throw new ScalencyError('Saisis le nom exact de ta marque.')
   checked(await db.from('scalency_settings').upsert({id:profileKey(id),value:{name:name.trim()}}))
   return {brand:name.trim()}
+}
+export async function saveQuickSize(db,id,input){
+  if(typeof input!=='string'||input.trim().length>80||/[\x00-\x1f\x7f]/.test(input))throw new ScalencyError('Saisis une taille de 80 caractères maximum.')
+  await activeAccount(db,id)
+  const label=input.trim()
+  const size=/^(?:[2-9]x[sl]|x{0,4}[sl]|m)$/i.test(label)?label.toUpperCase():label
+  const settings=db.from('scalency_settings')
+  if(size)checked(await settings.upsert({id:sizeKey(id),value:{size}}))
+  else checked(await settings.delete().eq('id',sizeKey(id)))
+  return {default_size:size}
+}
+async function accountSize(db,id){
+  return checked(await db.from('scalency_settings').select('value').eq('id',sizeKey(id)).maybeSingle())?.value?.size||''
 }
 export async function accountBrand(db,id){
   await activeAccount(db,id)
@@ -43,12 +59,13 @@ export async function prepareQuickDraft(db,user,req,row,photosFor,review){
   const {fields}=row
   if(!fields.sku?.trim()||!/^\d{1,5}(?:[.]\d{1,2})?$/.test(fields.price)||Number(fields.price)<=0||!row.photos.length)throw new ScalencyError('Ajoute les photos, le SKU et un prix positif.')
   const photos=row.photos.length<=8?row.photos:[...row.photos.slice(0,6),...row.photos.slice(-2)]
-  const [brand,presets,catalogs,source,urls]=await Promise.all([
+  const [brand,presets,catalogs,source,urls,defaultSize]=await Promise.all([
     accountBrand(db,fields.account_id),readListingSettings(db,fields.account_id),listingCatalogs(db),
-    draftSource(db,row.stock_item_id,row.catalog_product_id,fields.sku),photosFor(db,photos,300)
+    draftSource(db,row.stock_item_id,row.catalog_product_id,fields.sku),photosFor(db,photos,300),
+    fields.size_text?'':accountSize(db,fields.account_id)
   ])
   const product=source.product
-  const size=fields.size_text||source.stock?.size||''
+  const size=fields.size_text||source.stock?.size||defaultSize
   const settings={...presets.effective,condition:vintedCondition,package:'Petit',no_brand:false,description_footer:''}
   const facts=listingFacts(product,size)
   const result=await generateListingText({...row,fields:{...fields,size_text:size,seo_condition:bioCondition}},urls,catalogs,listingColors,

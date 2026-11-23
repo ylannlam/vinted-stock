@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {quickIssues} from '../src/lib/scalencyQuick.js'
+import {quickProfiles,saveQuickBrand,saveQuickSize} from './scalency-quick.js'
 import {draftPayload} from './scalency-api.js'
 const options={catalog:{id:10},conditions:[{id:2}],size_groups:[{sizes:[{id:3,title:'S'}]}],package_sizes:[{id:1,title:'Petit'}]}
 const fields={account_id:'account1',sku:'piece',price:'25',title:'Robe rouge',description:'Robe rouge cintrée.',status_id:2,catalog_id:10,size_id:3,color_ids:[7],package_size_id:1,brand_id:null,brand_title:'Marque du compte'}
@@ -22,4 +23,35 @@ test('Une catégorie hors ligne ou une caractéristique obligatoire manquante do
   assert.ok(quickIssues(fields,{...options,offline:true}).includes('Catégorie Vinted'))
   const attr={code:'type',title:'Type',required:true,options:[{id:8}]}
   assert.ok(quickIssues(fields,{...options,attributes:[attr]}).includes('Type'))
+})
+
+test('la taille par compte se relit et se retire indépendamment de la marque',async()=>{
+  const profiles=[{remote_id:'compte-a',payload:{linked:true,login:'A'}},{remote_id:'compte-b',payload:{linked:true,login:'B'}}]
+  const settings=new Map([['listing-brand:compte-a',{name:'Maison A'}]])
+  const db={from(table){
+    let selected
+    const q={
+      select(){return q},
+      eq(key,value){if(key==='remote_id')selected=value;return q},
+      order:async()=>({data:profiles}),
+      maybeSingle:async()=>({data:profiles.find(p=>p.remote_id===selected)}),
+      like:async(key,pattern)=>({data:[...settings].filter(([id])=>id.startsWith(pattern.slice(0,-1))).map(([id,value])=>({id,value}))}),
+      upsert:async({id,value})=>{settings.set(id,value);return {data:null}},
+      delete:()=>({eq:async(key,id)=>{settings.delete(id);return {data:null}}})
+    }
+    assert.ok(['scalency_records','scalency_settings'].includes(table))
+    return q
+  }}
+  const read=async()=>(await quickProfiles(db,{id:'vendeur'})).accounts
+  await saveQuickSize(db,'compte-a',' xl ')
+  await saveQuickSize(db,'compte-b','38')
+  await saveQuickBrand(db,'compte-a','Atelier A')
+  assert.deepEqual(await read(),[
+    {id:'compte-a',login:'A',brand:'Atelier A',default_size:'XL'},
+    {id:'compte-b',login:'B',brand:'',default_size:'38'}
+  ])
+  await assert.rejects(saveQuickSize(db,'compte-inconnu','L'),/relié/)
+  await assert.rejects(saveQuickSize(db,'compte-a','X'.repeat(81)),/taille/)
+  await saveQuickSize(db,'compte-a','')
+  assert.deepEqual((await read()).map(a=>[a.brand,a.default_size]),[['Atelier A',''],['','38']])
 })

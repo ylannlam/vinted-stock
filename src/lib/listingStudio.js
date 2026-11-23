@@ -1,3 +1,4 @@
+export const clothingSizeSuggestions=['XXS','XS','S','M','L','XL','XXL','3XL','Taille unique']
 export const MAX_LISTING_PHOTOS=20
 export const MAX_LISTING_PHOTO_BYTES=8_000_000
 export const listingStateLabels={draft:'Brouillon',preparing:'Envoi en cours',scheduled:'En attente de publication',published:'Publiée',attention:'À vérifier',vinted_draft:'Brouillon sur Vinted'}

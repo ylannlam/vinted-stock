@@ -3,7 +3,7 @@ import {collections,remote,remoteId,ScalencyError,snapshot,shippable,draftPayloa
 import {verifiedPhotos,listingFields,listingAiToken,generateListingText} from './listing-studio-core.js'
 import {ASSET_BUCKET} from './resources.js'
 import {readListingSettings} from './listing-settings.js'
-import {prepareQuickDraft,quickProfiles,saveQuickBrand,verifyQuickFields} from './scalency-quick.js'
+import {prepareQuickDraft,quickProfiles,saveQuickBrand,saveQuickSize,verifyQuickFields} from './scalency-quick.js'
 import {bioCondition,conditionForCatalog,withBioCondition} from '../src/lib/scalencyQuick.js'
 import {listingFacts} from '../src/lib/library.js'
 import {nextHistoryPage} from './scalency-history.js'
@@ -221,6 +221,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
     const {enableWebhook}=await import('./scalency-webhook.js')
     return res.json(await enableWebhook(db))
   }
+  if(action==='quick-size')return res.json(await saveQuickSize(db,b.account,b.size))
   if(action==='quick-brand')return res.json(await saveQuickBrand(db,b.account,b.name))
   if(action==='save'||action==='save-review'||action==='batch-create'){
     if(action==='batch-create'&&(b.owner!==user.id||b.version!=null))fail('Session différente. Rouvre l’atelier avec le compte d’origine.',409)

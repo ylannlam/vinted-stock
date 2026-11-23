@@ -74,6 +74,7 @@ export default function ScalencyBatchStudio({params}){
     document.addEventListener('visibilitychange',tick)
     return()=>{clearInterval(timer);document.removeEventListener('visibilitychange',tick)}
   },[inProgress,reload])
+  function updateProfile(id,changes){setProfiles(rows=>rows.map(a=>a.id===id?{...a,...changes}:a))}
   function choose(id){
     userPicked.current=true;setAccount(id);setSelected({});setReview(false);setData(null);setPage(0);setReceipts([]);setNotice('')
     if(owner)try{localStorage.setItem('scalency-last-account:'+owner,id)}catch{}
@@ -121,10 +122,10 @@ export default function ScalencyBatchStudio({params}){
     }finally{lock.current=false;setSending(false);setReview(false);reload()}
   }
   return <main className="sc-work bs-work"><header className="sc-head"><div><p>Stock Vinted / Scalency</p><h1>Atelier d’annonces</h1></div><a href="#publication">Suivi des publications</a></header>
-    <fieldset className="bs-account" disabled={saving||sending||!!editor}><ScalencyQuickAccount accounts={profiles} account={account} onSelect={choose} onSaved={(id,brand)=>setProfiles(old=>old.map(a=>a.id===id?{...a,brand}:a))}/></fieldset>
+    <fieldset className="bs-account" disabled={saving||sending||!!editor}><ScalencyQuickAccount accounts={profiles} account={account} onSelect={choose} onSaved={updateProfile}/></fieldset>
     {error&&<p role="alert" className="sc-error">{error} <button onClick={reload}>Réessayer</button></p>}
     {notice&&<p className="bs-notice" role="status">{notice}</p>}
-    {editor&&<ScalencyDraft key={editor} detailed id={editor==='new'?null:editor} initialAccount={account} piece={params.piece} product={params.product} sku={params.sku}
+    {editor&&<ScalencyDraft key={editor} detailed id={editor==='new'?null:editor} initialAccount={account} onProfileSaved={updateProfile} piece={params.piece} product={params.product} sku={params.sku}
       onClose={closeEditor} onGenerate={generate} onReviewed={savedEdit}
       onQueued={r=>{window.location.hash='publication'+(r?.job?.id?'?job='+r.job.id:'')}}/>}
     <div hidden={!!editor} className={'bs-layout'+(review?' bs-review-layout':'')}>

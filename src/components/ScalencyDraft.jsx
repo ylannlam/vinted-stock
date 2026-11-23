@@ -14,7 +14,7 @@ function ChoosePiece({onChoose,busy}){
   return <section className="sc-panel"><label className="sc-field"><span>Choisir la pièce physique</span><select disabled={busy} value="" onChange={e=>{if(e.target.value)onChoose(e.target.value)}}><option value="">Emplacement · catégorie · taille</option>{rows.map(r=><option key={r.id} value={r.id}>{[r.emplacement,r.category,r.size].filter(Boolean).join(' · ')}</option>)}</select></label>{total>36&&<div className="sc-tools"><button disabled={!page||busy} onClick={()=>setPage(p=>p-1)}>Précédent</button><span>{page+1} / {Math.ceil(total/36)}</span><button disabled={(page+1)*36>=total||busy} onClick={()=>setPage(p=>p+1)}>Suivant</button></div>}{error&&<p role="alert">{error}</p>}</section>
 }
 function Field({label,children}){return <label className="sc-field"><span>{label}</span>{children}</label>}
-export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onGenerate,onReviewed,initialAccount,detailed=false}){
+export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onGenerate,onReviewed,onProfileSaved,initialAccount,detailed=false}){
   const [fields,setFields]=useState({...emptyListing(),sku:sku||''}),[photos,setPhotos]=useState([]),[version,setVersion]=useState(null)
   const [accounts,setAccounts]=useState([]),[cats,setCats]=useState([]),[cursor,setCursor]=useState(null),[options,setOptions]=useState(null)
   const [search,setSearch]=useState(''),[date,setDate]=useState(''),[approved,setApproved]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState(''),[ready,setReady]=useState(!id)
@@ -22,17 +22,26 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
   const [choosing,setChoosing]=useState(false)
   const [source,setSource]=useState({piece:piece||null,product:product||null,label:''}),[savedState,setSavedState]=useState('draft')
  const uid=useRef(id||crypto.randomUUID()),gate=useRef(false),localUrls=useRef([])
+  const sizeOrigin=useRef('default'),accountChosen=useRef(false)
+  const defaultSize=profiles.find(a=>a.id===fields.account_id)?.default_size||''
+  useEffect(()=>{
+    if(id||version!==null||sizeOrigin.current!=='default')return
+    setFields(f=>{
+      const sizeId=matchingSize(defaultSize,options)
+      return f.size_text===defaultSize&&f.size_id===sizeId?f:{...f,size_text:defaultSize,size_id:sizeId}
+    })
+  },[id,version,fields.account_id,defaultSize,options])
   useEffect(()=>()=>localUrls.current.forEach(URL.revokeObjectURL),[])
   useEffect(()=>{let live=true
     const apply=(row)=>{if(!live)return;setFields({...emptyListing(),...row.fields});setVersion(row.version);setPhotos(row.photos.map((p,i)=>({...p,url:row.urls[i]})));setReady(true);setSavedState(row.state);setSource({piece:row.stock_item_id,product:row.catalog_product_id,label:''})}
-    if(!id&&(piece||product||sku)){setReady(false);query('draft-source',{...(piece?{piece}:{}),...(product?{product}:{}),...(sku?{sku}:{})}).then(r=>{if(!live)return;setSource({piece:r.stock?.id||null,product:r.product?.id||null,label:[r.product?.title,r.stock?.emplacement].filter(Boolean).join(' · ')});setFields(f=>({...f,sku:sku||r.product?.supplier_sku||'',size_text:r.stock?.size||'',price:r.product?.sale_price==null?'':String(r.product.sale_price)}));setReady(true)}).catch(e=>{if(live)setError(e.message)})}
+    if(!id&&(piece||product||sku)){setReady(false);query('draft-source',{...(piece?{piece}:{}),...(product?{product}:{}),...(sku?{sku}:{})}).then(r=>{if(!live)return;setSource({piece:r.stock?.id||null,product:r.product?.id||null,label:[r.product?.title,r.stock?.emplacement].filter(Boolean).join(' · ')});if(r.stock?.size&&sizeOrigin.current!=='manual')sizeOrigin.current='stock';setFields(f=>({...f,sku:sku||r.product?.supplier_sku||'',size_text:sizeOrigin.current==='stock'&&r.stock?.size?r.stock.size:f.size_text,price:r.product?.sale_price==null?'':String(r.product.sale_price)}));setReady(true)}).catch(e=>{if(live)setError(e.message)})}
     if(id)query('draft',{id}).then(apply).catch(e=>live&&setError(e.message))
     query('quick-profiles').then(r=>{
       if(!live)return
       setProfiles(r.accounts);setOwner(r.owner)
       let last='';try{last=localStorage.getItem('scalency-last-account:'+r.owner)||''}catch{}
       if(!id){const found=r.accounts.find(a=>a.id===(initialAccount||last))||(r.accounts.length===1?r.accounts[0]:null)
-        if(found)setFields(f=>({...f,account_id:found.id}))}
+        if(found&&!accountChosen.current)setFields(f=>({...f,account_id:found.id}))}
     }).catch(e=>live&&setError(e.message))
     query('accounts').then(r=>live&&setAccounts(r.rows.map(x=>x.payload).filter(a=>a.linked))).catch(e=>live&&setError(e.message))
     query('catalogs').then(r=>{if(live){setCats(r.data||[]);setCursor(r.next_cursor)}}).catch(e=>live&&setError(e.message))
@@ -40,6 +49,7 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
   },[id,piece,product,sku])
   useEffect(()=>{let live=true;setOptions(null);if(fields.catalog_id)query('category',{id:fields.catalog_id}).then(r=>{if(live){setOptions(r);if(savedState==='draft')setFields(f=>f.catalog_id===fields.catalog_id?{...withBioCondition(f),status_id:conditionForCatalog(r)}:f)}}).catch(e=>live&&setError(e.message));return()=>{live=false}},[fields.catalog_id,savedState])
   const edit=(key,value)=>{
+    if(key==='size_text')sizeOrigin.current='manual'
     setFields(f=>{
       const next={...f,[key]:value}
       if(key==='size_text')Object.assign(next,updateSeoDetails(f,{size:value}))
@@ -52,7 +62,8 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
   async function validate(){const v=await save();await act('validate',{id:uid.current,version:v,schedule:date?new Date(date).toISOString():null});setApproved(true);setMessage('Scalency a validé cette annonce. Tu peux confirmer sa publication.')}
   async function upload(files){setApproved(false);if(files.length+photos.length>20)throw Error('20 photos maximum.');for(const f of files){validateListingPhoto(f);const p=await uploadListingPhoto(f);const url=URL.createObjectURL(f);localUrls.current.push(url);setPhotos(old=>[...old,{...p,url}])}}
   function selectAccount(account){
-    setFields(f=>({...f,account_id:account,brand_id:null,brand_title:''}));setPrepared(false);setApproved(false);setMessage('')
+    accountChosen.current=true
+    setFields(f=>({...f,account_id:account,...(quick?{brand_id:null,brand_title:''}:{})}));setPrepared(false);setApproved(false);setMessage('')
     if(owner)try{localStorage.setItem('scalency-last-account:'+owner,account)}catch{}
   }
   async function quickSend(){
@@ -69,15 +80,17 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
     {error&&<p role="alert" className="sc-error">{error}</p>}{message&&<p role="status" className="sc-success">{message}</p>}
     {source.label&&<p className="sc-success">{source.label}</p>}{(id||version!==null)&&<ScalencyRelations entity="draft" id={uid.current} revision={version}/>}
     <fieldset disabled={busy||!ready||savedState!=='draft'}>{savedState==='draft'&&<div className="sc-mode"><button aria-pressed={quick} onClick={()=>{setQuick(true);setApproved(false)}}>Saisie rapide</button><button aria-pressed={!quick} onClick={()=>{setQuick(false);setApproved(false)}}>Formulaire détaillé</button></div>}
-    {quickEditable&&<ScalencyQuickAccount accounts={profiles} account={fields.account_id} onSelect={selectAccount} onSaved={(id,brand)=>{setPrepared(false);setProfiles(rows=>rows.map(a=>a.id===id?{...a,brand}:a))}}/>}
+    {quickEditable&&<ScalencyQuickAccount accounts={profiles} account={fields.account_id} onSelect={selectAccount} onSaved={(key,changes)=>{setPrepared(false);setProfiles(rows=>rows.map(a=>a.id===key?{...a,...changes}:a));onProfileSaved?.(key,changes)}}/>}
     {!quick&&savedState==='draft'&&<div className="sc-tools"><button onClick={()=>setChoosing(v=>!v)}>{choosing?'Fermer la sélection':source.piece?'Changer de pièce':'Choisir une pièce du stock'}</button>{source.piece&&<button onClick={()=>{setSource(s=>({...s,piece:null,label:''}));setApproved(false)}}>Détacher la pièce</button>}</div>}
     {choosing&&<ChoosePiece busy={busy} onChoose={pieceId=>run(async()=>{
       const r=await query('draft-source',{piece:pieceId})
       setSource({piece:r.stock.id,product:r.product?.id||null,label:[r.product?.title,r.stock.emplacement,r.stock.size].filter(Boolean).join(' · ')})
-      setFields(f=>({...f,sku:r.product?.supplier_sku||'',size_text:r.stock.size||'',size_id:matchingSize(r.stock.size||'',options)||null,price:f.price||String(r.product?.sale_price??'')}))
+      sizeOrigin.current=r.stock.size?'stock':'default'
+      const size=r.stock.size||defaultSize
+      setFields(f=>({...f,sku:r.product?.supplier_sku||'',size_text:size,size_id:matchingSize(size,options)||null,price:f.price||String(r.product?.sale_price??'')}))
       setApproved(false);setChoosing(false)
     })}/>}<div className="sc-fields">
-      {!quick&&<Field label="Compte Vinted"><select value={fields.account_id} onChange={e=>edit('account_id',e.target.value)}><option value="">Choisir un compte relié</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.login}</option>)}</select></Field>}
+      {!quick&&<Field label="Compte Vinted"><select value={fields.account_id} onChange={e=>selectAccount(e.target.value)}><option value="">Choisir un compte relié</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.login}</option>)}</select></Field>}
       <Field label="SKU"><input value={fields.sku} onChange={e=>{setPrepared(false);edit('sku',e.target.value)}}/></Field>
       <Field label="Prix (€)"><input type="number" min=".01" step=".01" value={fields.price} onChange={e=>edit('price',e.target.value)}/></Field>
       {<Field label="Taille sur l’étiquette"><input value={fields.size_text} onChange={e=>{edit('size_text',e.target.value);const m=matchingSize(e.target.value,options);edit('size_id',m||null)}}/></Field>}

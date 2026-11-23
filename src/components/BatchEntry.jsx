@@ -1,11 +1,14 @@
 import {useEffect,useRef,useState} from 'react'
 import {queueIntake} from '../lib/batchIntake'
-import {emptyListing,validateListingPhoto} from '../lib/listingStudio'
+import {clothingSizeSuggestions,emptyListing,validateListingPhoto} from '../lib/listingStudio'
 
 import BatchPhotoOrder from './BatchPhotoOrder'
 
 export default function BatchEntry({account,owner,onQueued,onDetailed,onBusy}){
-  const [sku,setSku]=useState(''),[price,setPrice]=useState(''),[size,setSize]=useState('M')
+  const [sku,setSku]=useState(''),[price,setPrice]=useState('')
+  const [sizeOverride,setSizeOverride]=useState(null)
+  const size=sizeOverride&&sizeOverride.account===account?.id?sizeOverride.value:account?.default_size||'M'
+  useEffect(()=>setSizeOverride(null),[account?.id])
   const [photos,setPhotos]=useState([]),[busy,setBusy]=useState(false),[error,setError]=useState('')
   const urls=useRef(new Set()),gate=useRef(false),id=useRef(crypto.randomUUID()),skuInput=useRef(null)
   useEffect(()=>()=>{for(const url of urls.current)URL.revokeObjectURL(url)},[])
@@ -43,7 +46,7 @@ export default function BatchEntry({account,owner,onQueued,onDetailed,onBusy}){
       const fields={...emptyListing(),sku:sku.trim(),price,size_text:size.trim(),account_id:account.id}
       await queueIntake(owner,id.current,fields,photos.map(p=>p.file))
       onQueued(fields.sku)
-      photos.forEach(p=>release(p.url));setPhotos([]);setSku('');setPrice('');setSize('M');id.current=crypto.randomUUID()
+      photos.forEach(p=>release(p.url));setPhotos([]);setSku('');setPrice('');setSizeOverride(null);id.current=crypto.randomUUID()
       requestAnimationFrame(()=>skuInput.current?.focus())
     }catch(e){setError(e.message)}
     finally{gate.current=false;setBusy(false);onBusy(false)}
@@ -52,7 +55,7 @@ export default function BatchEntry({account,owner,onQueued,onDetailed,onBusy}){
     <form onSubmit={start}><fieldset disabled={busy}>
       <label className="sc-field"><span>SKU</span><input ref={skuInput} required maxLength={200} value={sku} onChange={e=>setSku(e.target.value)} placeholder="Référence de la pièce"/></label>
       <div className="bs-pair"><label className="sc-field"><span>Prix (€)</span><input type="number" required min=".01" max="99999.99" step=".01" inputMode="decimal" value={price} onChange={e=>setPrice(e.target.value)} placeholder="0,00"/></label>
-      <label className="sc-field"><span>Taille sur l’étiquette</span><input list="bs-sizes" required maxLength={80} value={size} onChange={e=>setSize(e.target.value)}/><datalist id="bs-sizes">{['XXS','XS','S','M','L','XL','XXL','3XL','Taille unique'].map(s=><option key={s} value={s}/>)}</datalist></label></div>
+      <label className="sc-field"><span>Taille sur l’étiquette</span><input list="bs-sizes" required maxLength={80} value={size} onChange={e=>setSizeOverride({account:account?.id,value:e.target.value})}/><datalist id="bs-sizes">{clothingSizeSuggestions.map(s=><option key={s} value={s}/>)}</datalist></label></div>
       <label className="bs-drop" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();add([...e.dataTransfer.files])}}>
         <strong>Ajouter les photos</strong><span>Glisse-les ici ou choisis tes fichiers</span>
         <input type="file" aria-label="Ajouter les photos" multiple accept="image/jpeg,image/png,image/webp" onChange={e=>{add([...e.target.files]);e.target.value=''}}/>
