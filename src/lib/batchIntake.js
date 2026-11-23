@@ -3,6 +3,7 @@ import {uploadListingPhoto} from './api'
 
 const eventName='stock-vinted-intake'
 const running=new Set()
+const buffered=new Map()
 let opening
 
 function database(){
@@ -30,14 +31,38 @@ const put=entry=>transaction('readwrite',store=>store.put(entry))
 const remove=id=>transaction('readwrite',store=>store.delete(id))
 const changed=(owner,server=false)=>window.dispatchEvent(new CustomEvent(eventName,{detail:{owner,server}}))
 
-export async function queueIntake(owner,id,fields,files){
-  if(!owner)throw Error('Attends le chargement de ton compte.')
+// Only entries which have not yet reached durable storage need protection on tab close.
+function protectUnsaved(event){
+  event.preventDefault()
+  event.returnValue=''
+}
+function releaseBuffered(id){
+  buffered.delete(id)
+  if(!buffered.size)window.removeEventListener('beforeunload',protectUnsaved)
+}
+async function persist(entry){
   try{
-    await put({owner,id,fields,created:Date.now(),stage:'upload',photos:files.map(file=>({file}))})
-  }catch{throw Error('Les photos n’ont pas pu être enregistrées sur cet appareil. Elles restent dans le formulaire.')}
-  changed(owner)
+    await put({...entry,stage:'upload'})
+    releaseBuffered(entry.id)
+  }catch{
+    // A full/private browser can still transfer the original files from this open tab.
+    entry.stage='upload'
+  }
+  changed(entry.owner)
+}
+export function queueIntake(owner,id,fields,files){
+  if(!owner)throw Error('Attends le chargement de ton compte.')
+  const entry={owner,id,fields,created:Date.now(),stage:'saving',photos:files.map(file=>({file}))}
+  if(!buffered.size)window.addEventListener('beforeunload',protectUnsaved)
+  buffered.set(id,entry)
+  // Yield to the form reset, focus and scroll before the browser clones large image files.
+  setTimeout(()=>{changed(owner);void persist(entry)},0)
 }
 export async function retryIntake(owner,id){
+  const local=buffered.get(id)
+  if(local?.owner===owner&&local.stage==='error'){
+    local.stage='upload';local.error='';changed(owner);return
+  }
   const entry=await transaction('readonly',store=>store.get(id))
   if(entry?.owner===owner&&entry.stage==='error'){
     await put({...entry,stage:'upload',error:''})
@@ -45,7 +70,8 @@ export async function retryIntake(owner,id){
   }
 }
 async function processEntry(owner,id){
-  const entry=await transaction('readonly',store=>store.get(id))
+  const memory=buffered.get(id)
+  const entry=memory||await transaction('readonly',store=>store.get(id))
   if(!entry||entry.owner!==owner||entry.stage==='error')return
   try{
     // Three simultaneous transfers at most. Keep every successful path in its cover position.
@@ -59,10 +85,12 @@ async function processEntry(owner,id){
     const uploads=await Promise.allSettled(Array.from({length:Math.min(3,entry.photos.length)},upload))
     const failed=uploads.find(result=>result.status==='rejected')
     if(failed)throw failed.reason
-    await put(entry)
+    if(!memory)await put(entry)
     const saved=await act('batch-create',{id,owner,fields:entry.fields,photos:entry.photos.map(p=>p.uploaded)})
     if(saved.state==='draft'&&!saved.batch){
-      entry.stage='generating';await put(entry);changed(owner,true)
+      entry.stage='generating'
+      if(!memory)await put(entry)
+      changed(owner,true)
       try{await act('batch-generate',{id,version:saved.version})}
       catch(error){
         // A lost response may still have produced a durable draft. Its server status wins.
@@ -70,30 +98,38 @@ async function processEntry(owner,id){
         if(!current.batch&&current.state==='draft')throw error
       }
     }
-    await remove(id)
+    if(memory)releaseBuffered(id)
+    else await remove(id)
   }catch(error){
-    await put({...entry,stage:'error',error:error.message||'Connexion interrompue.'})
+    entry.stage='error';entry.error=error.message||'Connexion interrompue.'
+    if(!memory)await put(entry)
   }finally{changed(owner,true)}
 }
 export function watchIntake(owner,onRows,onServer,onError){
   let live=true,revision=0
   async function refresh(){
     const stamp=++revision
-    try{
-      const entries=(await list(owner)).sort((a,b)=>a.created-b.created)
+    let saved=[]
+    try{saved=await list(owner)}
+    catch(error){
       if(!live||stamp!==revision)return
-      onRows(entries.map(({id,fields,stage,error})=>({id,fields,stage,error})))
-      for(const entry of entries){
-        if(running.size>=2)break
-        if(entry.stage==='error'||running.has(entry.id))continue
-        running.add(entry.id)
-        const run=()=>processEntry(owner,entry.id)
-        const task=navigator.locks?navigator.locks.request('stock-vinted:'+entry.id,run):run()
-        task.catch(error=>{if(live)onError(error.message)}).finally(()=>{
-          running.delete(entry.id);changed(owner)
-        })
-      }
-    }catch(error){if(live)onError(error.message||'Les envois locaux sont indisponibles.')}
+      if(![...buffered.values()].some(e=>e.owner===owner))onError(error.message||'Le stockage local est indisponible.')
+    }
+    if(!live||stamp!==revision)return
+    const byId=new Map(saved.map(entry=>[entry.id,entry]))
+    for(const entry of buffered.values())if(entry.owner===owner)byId.set(entry.id,entry)
+    const entries=[...byId.values()].sort((a,b)=>a.created-b.created)
+    onRows(entries.map(({id,fields,stage,error})=>({id,fields,stage,error})))
+    for(const entry of entries){
+      if(running.size>=2)break
+      if(entry.stage==='saving'||entry.stage==='error'||running.has(entry.id))continue
+      running.add(entry.id)
+      const run=()=>processEntry(owner,entry.id)
+      const task=navigator.locks?navigator.locks.request('stock-vinted:'+entry.id,run):run()
+      task.catch(error=>{if(live)onError(error.message)}).finally(()=>{
+        running.delete(entry.id);changed(owner)
+      })
+    }
   }
   function update(event){
     if(event.detail.owner===owner){if(event.detail.server)onServer();refresh()}

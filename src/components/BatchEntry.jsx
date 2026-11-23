@@ -1,19 +1,19 @@
 import {useEffect,useRef,useState} from 'react'
+import {flushSync} from 'react-dom'
 import {queueIntake} from '../lib/batchIntake'
 import {clothingSizeSuggestions,emptyListing,validateListingPhoto} from '../lib/listingStudio'
 
 import BatchPhotoOrder from './BatchPhotoOrder'
 
-export default function BatchEntry({account,owner,onQueued,onDetailed,onBusy}){
+export default function BatchEntry({account,owner,onQueued,onDetailed}){
   const [sku,setSku]=useState(''),[price,setPrice]=useState('')
   const [sizeOverride,setSizeOverride]=useState(null)
   const size=sizeOverride&&sizeOverride.account===account?.id?sizeOverride.value:account?.default_size||'M'
   useEffect(()=>setSizeOverride(null),[account?.id])
-  const [photos,setPhotos]=useState([]),[busy,setBusy]=useState(false),[error,setError]=useState('')
-  const urls=useRef(new Set()),gate=useRef(false),id=useRef(crypto.randomUUID()),skuInput=useRef(null)
+  const [photos,setPhotos]=useState([]),[error,setError]=useState('')
+  const urls=useRef(new Set()),skuInput=useRef(null)
   useEffect(()=>()=>{for(const url of urls.current)URL.revokeObjectURL(url)},[])
   function add(files){
-    if(gate.current)return
     try{
       if(photos.length+files.length>20)throw Error('Tu peux ajouter jusqu’à 20 photos par annonce.')
       files.forEach(validateListingPhoto)
@@ -23,7 +23,6 @@ export default function BatchEntry({account,owner,onQueued,onDetailed,onBusy}){
   }
   function release(url){URL.revokeObjectURL(url);urls.current.delete(url)}
   function movePhoto(source,target){
-    if(gate.current)return
     setPhotos(current=>{
       const from=current.findIndex(p=>p.url===source),to=current.findIndex(p=>p.url===target)
       if(from<0||to<0||from===to)return current
@@ -34,25 +33,26 @@ export default function BatchEntry({account,owner,onQueued,onDetailed,onBusy}){
     })
   }
   function removePhoto(photo){
-    if(gate.current)return
     release(photo.url)
     setPhotos(current=>current.filter(p=>p.url!==photo.url))
   }
-  async function start(event){
+  function start(event){
     event.preventDefault()
-    if(gate.current||!account?.brand||!photos.length)return
-    gate.current=true;setBusy(true);onBusy(true);setError('')
+    if(!account?.brand||!photos.length||!sku.trim())return
+    const fields={...emptyListing(),sku:sku.trim(),price,size_text:size.trim(),account_id:account.id}
     try{
-      const fields={...emptyListing(),sku:sku.trim(),price,size_text:size.trim(),account_id:account.id}
-      await queueIntake(owner,id.current,fields,photos.map(p=>p.file))
+      queueIntake(owner,crypto.randomUUID(),fields,photos.map(photo=>photo.file))
+    }catch(error){setError(error.message);return}
+    flushSync(()=>{
+      setPhotos([]);setSku('');setPrice('');setSizeOverride(null);setError('')
       onQueued(fields.sku)
-      photos.forEach(p=>release(p.url));setPhotos([]);setSku('');setPrice('');setSizeOverride(null);id.current=crypto.randomUUID()
-      requestAnimationFrame(()=>skuInput.current?.focus())
-    }catch(e){setError(e.message)}
-    finally{gate.current=false;setBusy(false);onBusy(false)}
+    })
+    skuInput.current?.focus({preventScroll:true})
+    skuInput.current?.scrollIntoView({block:'center',behavior:'instant'})
+    photos.forEach(photo=>release(photo.url))
   }
-  return <section className="bs-panel bs-entry"><div className="bs-panel-head"><h2>Nouvelle annonce</h2><button type="button" className="bs-link" disabled={busy} onClick={onDetailed}>Formulaire détaillé</button></div>
-    <form onSubmit={start}><fieldset disabled={busy}>
+  return <section className="bs-panel bs-entry"><div className="bs-panel-head"><h2>Nouvelle annonce</h2><button type="button" className="bs-link" onClick={onDetailed}>Formulaire détaillé</button></div>
+    <form onSubmit={start}><fieldset>
       <label className="sc-field"><span>SKU</span><input ref={skuInput} required maxLength={200} value={sku} onChange={e=>setSku(e.target.value)} placeholder="Référence de la pièce"/></label>
       <div className="bs-pair"><label className="sc-field"><span>Prix (€)</span><input type="number" required min=".01" max="99999.99" step=".01" inputMode="decimal" value={price} onChange={e=>setPrice(e.target.value)} placeholder="0,00"/></label>
       <label className="sc-field"><span>Taille sur l’étiquette</span><input list="bs-sizes" required maxLength={80} value={size} onChange={e=>setSizeOverride({account:account?.id,value:e.target.value})}/><datalist id="bs-sizes">{clothingSizeSuggestions.map(s=><option key={s} value={s}/>)}</datalist></label></div>
@@ -60,10 +60,10 @@ export default function BatchEntry({account,owner,onQueued,onDetailed,onBusy}){
         <strong>Ajouter les photos</strong><span>Glisse-les ici ou choisis tes fichiers</span>
         <input type="file" aria-label="Ajouter les photos" multiple accept="image/jpeg,image/png,image/webp" onChange={e=>{add([...e.target.files]);e.target.value=''}}/>
       </label>
-      {photos.length>0&&<BatchPhotoOrder photos={photos} busy={busy} onMove={movePhoto} onRemove={removePhoto}/>}
+      {photos.length>0&&<BatchPhotoOrder photos={photos} onMove={movePhoto} onRemove={removePhoto}/>}
       <p className="bs-meta">{photos.length>1?'Glisse les photos pour changer leur ordre.':'La première photo sera la couverture.'} Colis petit.</p>
       {error&&<p className="sc-error" role="alert">{error}</p>}
-      <button className="sc-primary bs-submit" disabled={!account?.brand||!sku.trim()||!(Number(price)>0)||!size.trim()||!photos.length}>{busy?'Enregistrement…':'Remplir l’annonce'}</button>
+      <button className="sc-primary bs-submit" disabled={!account?.brand||!sku.trim()||!(Number(price)>0)||!size.trim()||!photos.length}>Remplir l’annonce</button>
     </fieldset></form>
   </section>
 }
