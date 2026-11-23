@@ -23,8 +23,9 @@ export async function batchImages(db,userId,photos){
   }
   return images
 }
-export function reviewMetadata(options,missing){
-  return {status:missing.length?'review':'ready',missing,category:options?.catalog?.title||options?.ancestors?.at(-1)?.title||''}
+export function reviewMetadata(options,missing,fields){
+  return {status:missing.length?'review':'ready',missing,category:options?.catalog?.title||options?.ancestors?.at(-1)?.title||'',
+    condition:options?.conditions?.find(c=>c.id===fields?.status_id)?.title||''}
 }
 export async function reviewEditedDraft(db,fields,photos){
   const options=fields.catalog_id?await remote('catalogs/'+remoteId(fields.catalog_id)):null
@@ -34,7 +35,7 @@ export async function reviewEditedDraft(db,fields,photos){
     try{if(fields.brand_id||fields.brand_title!==await accountBrand(db,fields.account_id))missing.push('Marque du compte')}
     catch(e){if(!(e instanceof ScalencyError)||e.status!==409)throw e;missing.push(e.message)}
   }
-  return reviewMetadata(options,missing)
+  return reviewMetadata(options,missing,fields)
 }
 export function checkBatchSubmission(row,account){
   if(!account||row.fields.account_id!==account)throw new ScalencyError('Cette annonce appartient à un autre compte.',409)

@@ -18,7 +18,7 @@ function Cover({row}){
 function ReviewRow({row,onEdit,disabled}){
   const f=row.fields
   return <article className="bs-review-item"><div className="bs-review-head"><Cover row={row}/><div><h3>{f.title}</h3><p>{f.sku} · {f.size_text} · {formatMoney(f.price)}</p></div></div>
-    <p>{[row.batch?.category||'Catégorie '+f.catalog_id,f.brand_title,(f.color_ids||[]).map(id=>listingColors.find(c=>c.id===id)?.title).filter(Boolean).join(' / '),'Petit colis'].filter(Boolean).join(' · ')}</p>
+    <p>{[row.batch?.category||'Catégorie '+f.catalog_id,f.brand_title,(f.color_ids||[]).map(id=>listingColors.find(c=>c.id===id)?.title).filter(Boolean).join(' / '),row.batch?.condition,'Petit colis',row.count&&row.count+' photo'+(row.count>1?'s':'')].filter(Boolean).join(' · ')}</p>
     <details><summary>Lire la bio</summary><p className="bs-bio">{f.description}</p></details>
     <button className="bs-link" disabled={disabled} onClick={()=>onEdit(row.id)}>Modifier la fiche</button>
   </article>
@@ -30,6 +30,7 @@ export default function ScalencyBatchStudio({params}){
   const [local,setLocal]=useState({}),[saving,setSaving]=useState(false),[revision,setRevision]=useState(0)
   const [editor,setEditor]=useState(params.draft||(params.piece||params.product||params.sku?'new':''))
   const lock=useRef(false),active=useRef(true),userPicked=useRef(false),pending=useRef(new Set())
+  const returnToReview=useRef(false)
   const login=profiles.find(a=>a.id===account)
   const reload=useCallback(()=>setRevision(n=>n+1),[])
   useEffect(()=>{active.current=true;return()=>{active.current=false}},[])
@@ -79,7 +80,20 @@ export default function ScalencyBatchStudio({params}){
       .finally(()=>{pending.current.delete(row.id);if(active.current){setLocal(all=>{const next={...all};delete next[row.id];return next});reload()}})
   }
   function toggle(row){setSelected(prev=>{const next={...prev};if(next[row.id])delete next[row.id];else next[row.id]=row;return next})}
-  function edit(id){setEditor(id);setReview(false)}
+  function edit(id){returnToReview.current=review;setEditor(id);setReview(false)}
+  function closeEditor(){setEditor('');setReview(returnToReview.current);returnToReview.current=false;reload()}
+  function savedEdit(row){
+    closeEditor()
+    if(account!==row.fields.account_id)choose(row.fields.account_id)
+    else setSelected(prev=>{
+      if(!prev[row.id])return prev
+      const next={...prev}
+      if(row.batch?.status==='ready')next[row.id]={...prev[row.id],fields:row.fields,version:row.version,batch:row.batch,count:row.photos.length}
+      else delete next[row.id]
+      return next
+    })
+    setNotice(row.batch?.missing?.length?'À compléter : '+row.batch.missing.join(', '):'Fiche enregistrée pour le récapitulatif.')
+  }
   const chosen=Object.values(selected).filter(r=>account&&r.fields.account_id===account)
   const rows=data?.rows||[],ready=rows.filter(r=>account&&r.fields.account_id===account&&stage(r)==='ready'&&!local[r.id])
   const drafts=[...Object.values(local).filter(r=>(!account||r.fields.account_id===account)&&!rows.some(x=>x.id===r.id)),...rows]
@@ -104,7 +118,7 @@ export default function ScalencyBatchStudio({params}){
     {error&&<p role="alert" className="sc-error">{error} <button onClick={reload}>Réessayer</button></p>}
     {notice&&<p className="bs-notice" role="status">{notice}</p>}
     {editor&&<ScalencyDraft key={editor} detailed id={editor==='new'?null:editor} initialAccount={account} piece={params.piece} product={params.product} sku={params.sku}
-      onClose={()=>{setEditor('');reload()}} onGenerate={generate} onReviewed={r=>{setEditor('');choose(r.fields.account_id);setNotice(r.batch?.missing?.length?'À compléter : '+r.batch.missing.join(', '):'Fiche enregistrée pour le récapitulatif.');reload()}}
+      onClose={closeEditor} onGenerate={generate} onReviewed={savedEdit}
       onQueued={r=>{window.location.hash='publication'+(r?.job?.id?'?job='+r.job.id:'')}}/>}
     <div hidden={!!editor} className={'bs-layout'+(review?' bs-review-layout':'')}>
       <div hidden={review}><BatchEntry account={login} onBusy={setSaving} onSaved={generate} onDetailed={()=>edit('new')}/></div>

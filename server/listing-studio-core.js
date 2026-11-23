@@ -163,7 +163,13 @@ export async function generateListingText(row,urls,catalogs,colors,{fetcher=fetc
  ].join('\n'):listingInstructions(settings)
  const text=JSON.stringify({informations_vendeur:{taille:row.fields.size_text,notes:row.fields.notes},...(shein?.details?.length?{fiche_fournisseur:{caracteristiques:shein.details.slice(0,30)}}:{}),exemples_de_titres_vendus_sur_ce_compte:examples.own||[],exemples_de_titres_vendus_sur_les_autres_comptes:examples.others||[],categories:choices.map(c=>`${c.id} ${c.label}`),couleurs:colors})
  let response
- try{response=await fetcher('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({model,messages:[{role:'system',content:system},{role:'user',content:[{type:'text',text},...urls.slice(0,quick?8:3).map(url=>({type:'image_url',image_url:{url,detail:'auto'}}))]}],max_tokens:2600,reasoning_effort:model.includes('lite')?'minimal':'low',response_format:{type:'json_schema',json_schema:{name:'vinted_listing',strict:true,schema}}}),signal:AbortSignal.timeout(45000)})}catch{throw new AppError('La rédaction a pris trop de temps. Tes photos sont enregistrées ; réessaie.',504)}
+ const deadline=Date.now()+65000
+ for(let attempt=0;attempt<3;attempt++){
+   try{response=await fetcher('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({model,messages:[{role:'system',content:system},{role:'user',content:[{type:'text',text},...urls.slice(0,quick?8:3).map(url=>({type:'image_url',image_url:{url,detail:'auto'}}))]}],max_tokens:2600,reasoning_effort:model.includes('lite')?'minimal':'low',response_format:{type:'json_schema',json_schema:{name:'vinted_listing',strict:true,schema}}}),signal:AbortSignal.timeout(Math.min(45000,deadline-Date.now()))})}catch{throw new AppError('La rédaction a pris trop de temps. Tes photos sont enregistrées ; réessaie.',504)}
+   if(response.status!==503||attempt===2||Date.now()+10000>=deadline)break
+   await response.body?.cancel()
+   await new Promise(resolve=>setTimeout(resolve,(attempt+1)*2800+Math.random()*1700))
+ }
  const body=await response.json().catch(()=>null)
  if(!response.ok){
   const detail=String((Array.isArray(body)?body[0]:body)?.error?.message||'')
