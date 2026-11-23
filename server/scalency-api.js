@@ -20,7 +20,12 @@ export async function remote(path, {method='GET', body, query={}, pdf=false, fet
   const data = await response.json().catch(()=>null)
   if (!response.ok || !data || pdf) {
     const message = data?.error?.message || (response.status===429?'Limite Scalency atteinte. Réessaie après une minute.':'Scalency n’a pas confirmé la demande.')
-    throw new ScalencyError(message,response.ok?502:response.status)
+    const error = new ScalencyError(message,response.ok?502:response.status)
+    if (response.status===429) {
+      const seconds = Number(response.headers.get('Retry-After'))
+      error.retryAfterSeconds = Number.isFinite(seconds) && seconds>0 ? Math.ceil(seconds) : 60
+    }
+    throw error
   }
   return data
 }

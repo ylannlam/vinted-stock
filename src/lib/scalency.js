@@ -4,7 +4,11 @@ export async function query(view,fields={},body){
   const response=await authenticatedFetch('/api/sales?'+params,body?{method:'POST',body:JSON.stringify(body)}:{})
   if(response.ok&&view==='label')return response.blob()
   const result=await response.json().catch(()=>({}))
-  if(!response.ok)throw new Error(result.error||'Connexion interrompue. Actualise les données.')
+  if(!response.ok){
+    const error=new Error(result.error||'Connexion interrompue. Actualise les données.')
+    if(response.status===429 && result.retryAfterSeconds>0)error.retryAfterSeconds=result.retryAfterSeconds
+    throw error
+  }
   return result
 }
 export const act=(action,fields={})=>query('',{},{action,...fields})

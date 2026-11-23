@@ -1,5 +1,6 @@
 import {useCallback,useEffect,useRef,useState} from 'react'
 import {act,query,formatMoney} from '../lib/scalency'
+import {submitBatchDraft} from '../lib/submitBatchDraft'
 import {retryIntake,watchIntake} from '../lib/batchIntake'
 import {listingColors} from '../lib/scalencyQuick'
 import BatchEntry from './BatchEntry'
@@ -148,13 +149,32 @@ export default function ScalencyBatchStudio({params}){
     lock.current=true;setSending(true);setReceipts([]);setNotice('')
     try{
       for(const row of chosen){
+        if(!active.current)break
         let receipt
         try{
-          const result=await act('batch-submit',{id:row.id,account,version:row.version})
+          const result=await submitBatchDraft(
+            ()=>{
+              setNotice('')
+              return act('batch-submit',{id:row.id,account,version:row.version})
+            },
+            seconds=>{
+              const time=new Date(Date.now()+seconds*1000).toLocaleTimeString('fr-FR')
+              setNotice('Limite Scalency atteinte. Reprise automatique à '+time+' pour '+row.fields.sku+'. Garde cet onglet ouvert.')
+            },
+            ()=>active.current
+          )
           if(!result.job?.id)throw Error('Mise en file à vérifier dans le suivi.')
           receipt={sku:row.fields.sku,job:result.job.id}
           setSelected(prev=>{const next={...prev};delete next[row.id];return next})
-        }catch(e){receipt={sku:row.fields.sku,error:e.message}}
+        }catch(e){
+          if(!active.current)break
+          receipt={sku:row.fields.sku,error:e.message}
+          if(e.retryAfterSeconds){
+            setReceipts(prev=>[...prev,receipt])
+            setNotice('Scalency limite encore les envois. Les annonces restantes sont sélectionnées pour une reprise ultérieure.')
+            break
+          }
+        }
         setReceipts(prev=>[...prev,receipt])
       }
     }finally{lock.current=false;setSending(false);setReview(false);reload()}

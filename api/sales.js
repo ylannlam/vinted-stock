@@ -46,7 +46,13 @@ export default async function handler(req, res) {
     if(req.query?.scope==='scalency'){
       const {scalencyHandler}=await import('../server/scalency-workspace.js')
       try{return await scalencyHandler(req,res,auth)}
-      catch(error){return res.status(error.status||503).json({error:error.status?error.message:'Les données sont temporairement indisponibles. Actualise la page.'})}
+      catch(error){
+        if(error.retryAfterSeconds){
+          res.setHeader('Retry-After',String(error.retryAfterSeconds))
+          if(req.body?.action==='batch-submit')console.warn('scalency_batch_rate_limited',{retryAfterSeconds:error.retryAfterSeconds})
+        }
+        return res.status(error.status||503).json({error:error.status?error.message:'Les données sont temporairement indisponibles. Actualise la page.',retryAfterSeconds:error.retryAfterSeconds})
+      }
     }
     if(req.method==='POST'&&(!req.body?.action||['automation','dotb_costs','shipping_label','refresh_photos'].includes(req.body.action)))return res.status(409).json({error:'La gestion Vinted se fait désormais dans Scalency.'})
     if (req.method === 'GET') {
