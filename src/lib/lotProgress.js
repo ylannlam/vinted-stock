@@ -1,6 +1,7 @@
 import {publicationDate,publicationProgress} from './publicationTracking.js'
 
 export function lotProgress(entry){
+  if(entry.status==='stopped'||entry.job?.status==='cancelled')return {group:'stopped',label:'Arrêtée',detail:entry.message||entry.job?.reason}
   if(entry.status==='failed')return {group:'problem',label:'À corriger',detail:entry.message}
   if(entry.status==='uncertain')return {group:'check',label:'À vérifier',detail:entry.message}
   if(entry.status==='queued'){

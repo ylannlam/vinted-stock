@@ -57,7 +57,7 @@ export async function verifyQuickFields(db,fields,options){
 }
 export async function prepareQuickDraft(db,user,req,row,photosFor,review){
   const {fields}=row
-  if(!fields.sku?.trim()||!/^\d{1,5}(?:[.]\d{1,2})?$/.test(fields.price)||Number(fields.price)<=0||!row.photos.length)throw new ScalencyError('Ajoute les photos, le SKU et un prix positif.')
+  if(!/^\d{1,5}(?:[.]\d{1,2})?$/.test(fields.price)||Number(fields.price)<=0||!row.photos.length)throw new ScalencyError('Ajoute les photos et un prix positif.')
   const photos=row.photos.length<=8?row.photos:[...row.photos.slice(0,6),...row.photos.slice(-2)]
   const [brand,presets,catalogs,source,urls,defaultSize]=await Promise.all([
     accountBrand(db,fields.account_id),readListingSettings(db,fields.account_id),listingCatalogs(db),

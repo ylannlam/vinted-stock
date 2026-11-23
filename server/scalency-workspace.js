@@ -10,6 +10,7 @@ import {listingFacts} from '../src/lib/library.js'
 import {matchingSize} from '../src/lib/listingStudio.js'
 import {updateSeoDetails} from '../src/lib/vintedSeo.js'
 import {nextHistoryPage} from './scalency-history.js'
+import {managePublication} from './scalency-publication-actions.js'
 import {publicationTracking} from './scalency-publications.js'
 import {batchDrafts,batchImages,checkBatchSubmission,reviewEditedDraft,reviewMetadata} from './scalency-batch.js'
 import {acceptPublicationLot,publicationLots,retryLotEntry,reviewDuplicates} from './scalency-lots.js'
@@ -208,6 +209,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
     fail('Vue inconnue.',404)
   }
   if(req.method!=='POST')fail('Méthode invalide.',405)
+  if(action==='manage-publication')return res.json(await managePublication(db,user,b,saveRecords))
   if(action==='accept-lot')return res.json(await acceptPublicationLot(db,user,b))
   if(action==='retry-lot-entry')return res.json(await retryLotEntry(db,user,b))
   if(action==='lot-duplicates')return res.json(await reviewDuplicates(db,user,b))

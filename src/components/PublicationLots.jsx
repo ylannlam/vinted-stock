@@ -4,7 +4,7 @@ import {publicationDate} from '../lib/publicationTracking'
 import {lotProgress} from '../lib/lotProgress'
 import './PublicationLots.css'
 
-const groups={waiting:'en préparation',queue:'en file ou en cours',live:'publiée',problem:'à corriger',check:'à vérifier'}
+const groups={waiting:'en préparation',queue:'en file ou en cours',live:'publiée',problem:'à corriger',check:'à vérifier',stopped:'arrêtée(s)'}
 
 function Lot({lot,open,onRetry,busy}){
   const [expanded,setExpanded]=useState(open),[filter,setFilter]=useState('')
@@ -21,7 +21,8 @@ function Lot({lot,open,onRetry,busy}){
       <b>{e.progress.label}</b>{e.progress.detail&&<p>{e.progress.detail}</p>}
       <div className="lot-links">{e.editable&&<a href={'#annonces?draft='+e.draft_id}>Corriger la fiche</a>}
         {e.retryable&&<button disabled={busy} onClick={()=>onRetry(e.id)}>Relancer cette annonce</button>}
-        {e.job_id&&<a href={'#publication?job='+e.job_id}>Suivre sur Scalency</a>}
+        {['pending','working','dispatched'].includes(e.status)&&<a href={'#publication?tab=queue&account='+encodeURIComponent(lot.account)+'&draft='+encodeURIComponent(e.draft_id)}>Gérer la mise en ligne</a>}
+        {e.job_id&&<a href={'#publication?job='+e.job_id}>Gérer la publication</a>}
         {e.job?.status==='done'&&/^\d+$/.test(String(e.job.new_item_id))&&<a href={'https://www.vinted.fr/items/'+e.job.new_item_id} target="_blank" rel="noreferrer">Voir sur Vinted</a>}</div>
       </div></div>)}
   </article>
@@ -55,7 +56,7 @@ export default function PublicationLots({account,lotId}){
     {!data&&!error&&<p>Chargement des lots…</p>}
     {data&&!data.lots.length&&<p className="sc-muted">{lotId?'Lot introuvable.':'Les prochains lots validés dans l’atelier apparaîtront ici.'}</p>}
     {data?.lots.map(l=><Lot key={l.id} lot={l} open={!!lotId} onRetry={retry} busy={busy}/>)}
-    {lotId&&<a href="#publication">Voir tous les lots</a>}
+    {lotId&&<a href="#publication?tab=lots">Voir tous les lots</a>}
     {data&&data.total>data.pageSize&&<div className="sc-tools"><button disabled={!page} onClick={()=>setPage(p=>p-1)}>Précédent</button><button disabled={(page+1)*data.pageSize>=data.total} onClick={()=>setPage(p=>p+1)}>Suivant</button></div>}
   </section>
 }

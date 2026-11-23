@@ -38,7 +38,7 @@ export default function BatchEntry({account,owner,onQueued,onDetailed}){
   }
   function start(event){
     event.preventDefault()
-    if(!account?.brand||!photos.length||!sku.trim())return
+    if(!account?.brand||!photos.length)return
     const fields={...emptyListing(),sku:sku.trim(),price,size_text:size.trim(),account_id:account.id}
     try{
       queueIntake(owner,crypto.randomUUID(),fields,photos.map(photo=>photo.file))
@@ -53,7 +53,7 @@ export default function BatchEntry({account,owner,onQueued,onDetailed}){
   }
   return <section className="bs-panel bs-entry"><div className="bs-panel-head"><h2>Nouvelle annonce</h2><button type="button" className="bs-link" onClick={onDetailed}>Formulaire détaillé</button></div>
     <form onSubmit={start}><fieldset>
-      <label className="sc-field"><span>SKU</span><input ref={skuInput} required maxLength={200} value={sku} onChange={e=>setSku(e.target.value)} placeholder="Référence de la pièce"/></label>
+      <label className="sc-field"><span>SKU (facultatif)</span><input ref={skuInput} maxLength={200} value={sku} onChange={e=>setSku(e.target.value)} placeholder="Référence de la pièce"/></label>
       <div className="bs-pair"><label className="sc-field"><span>Prix (€)</span><input type="number" required min=".01" max="99999.99" step=".01" inputMode="decimal" value={price} onChange={e=>setPrice(e.target.value)} placeholder="0,00"/></label>
       <label className="sc-field"><span>Taille sur l’étiquette</span><input list="bs-sizes" required maxLength={80} value={size} onChange={e=>setSizeOverride({account:account?.id,value:e.target.value})}/><datalist id="bs-sizes">{clothingSizeSuggestions.map(s=><option key={s} value={s}/>)}</datalist></label></div>
       <label className="bs-drop" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();add([...e.dataTransfer.files])}}>
@@ -63,7 +63,7 @@ export default function BatchEntry({account,owner,onQueued,onDetailed}){
       {photos.length>0&&<BatchPhotoOrder photos={photos} onMove={movePhoto} onRemove={removePhoto}/>}
       <p className="bs-meta">{photos.length>1?'Glisse les photos pour changer leur ordre.':'La première photo sera la couverture.'} Colis petit.</p>
       {error&&<p className="sc-error" role="alert">{error}</p>}
-      <button className="sc-primary bs-submit" disabled={!account?.brand||!sku.trim()||!(Number(price)>0)||!size.trim()||!photos.length}>Remplir l’annonce</button>
+      <button className="sc-primary bs-submit" disabled={!account?.brand||!(Number(price)>0)||!size.trim()||!photos.length}>Remplir l’annonce</button>
     </fieldset></form>
   </section>
 }

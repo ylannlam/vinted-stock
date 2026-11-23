@@ -47,7 +47,7 @@ function ReviewRow({row,onEdit,onDiscard,onSave,onQuick,quick,disabled,duplicate
     try{const saved=await act('lot-review-edit',{id:row.id,account:f.account_id,version:row.version,price,size});onSave(saved)}
     catch(e){setError(e.message)}finally{setBusy(false)}
   }
-  return <article className="bs-review-item"><div className="bs-review-head"><Cover row={row}/><div><h3>{f.title}</h3><p>{f.sku} · {f.size_text} · {formatMoney(f.price)}</p></div></div>
+  return <article className="bs-review-item"><div className="bs-review-head"><Cover row={row}/><div><h3>{f.title}</h3><p>{f.sku&&f.sku+' · '}{f.size_text} · {formatMoney(f.price)}</p></div></div>
     <p>{[row.batch?.category||'Catégorie '+f.catalog_id,f.brand_title,(f.color_ids||[]).map(id=>listingColors.find(c=>c.id===id)?.title).filter(Boolean).join(' / '),row.batch?.condition,'Petit colis',row.count&&row.count+' photo'+(row.count>1?'s':'')].filter(Boolean).join(' · ')}</p>
     <details><summary>Lire la bio</summary><p className="bs-bio">{f.description}</p></details>
     {duplicates?.map((d,i)=><p className="bs-problem" key={i}>{d.label}{d.url&&<> · <a href={d.url}>Voir l’annonce</a></>}</p>)}
@@ -190,7 +190,7 @@ export default function ScalencyBatchStudio({params}){
       onClose={closeEditor} onGenerate={generate} onReviewed={savedEdit}
       onQueued={r=>{window.location.hash='publication'+(r?.job?.id?'?job='+r.job.id:'')}}/>}
     <div hidden={!!editor} className={'bs-layout'+(review?' bs-review-layout':'')}>
-      <div hidden={review}><BatchEntry account={login} owner={owner} onQueued={sku=>{setPage(0);setNotice('Préparation lancée pour '+sku+'. Tu peux saisir la suivante.')}} onDetailed={()=>edit('new')}/></div>
+      <div hidden={review}><BatchEntry account={login} owner={owner} onQueued={sku=>{setPage(0);setNotice((sku?'Préparation lancée pour '+sku:'Préparation lancée')+'. Tu peux saisir la suivante.')}} onDetailed={()=>edit('new')}/></div>
       <section className="bs-panel bs-list"><div className="bs-panel-head"><div><h2>{review?'Récapitulatif du lot':'Annonces du compte'}</h2>
         <p className="bs-meta">{review?chosen.length+' sélectionnée(s) pour '+(login?.login||'ce compte'):login?login.login+' · '+(data?.total??'…')+' brouillon(s)':'Tous les brouillons · choisis un compte pour préparer un lot'}</p></div>
         {!review&&<button className="bs-link" onClick={reload}>Actualiser</button>}</div>
@@ -201,7 +201,7 @@ export default function ScalencyBatchStudio({params}){
         <><div className="bs-actions"><button disabled={!ready.length} onClick={()=>setSelected(prev=>({...prev,...Object.fromEntries(ready.map(r=>[r.id,r]))}))}>Sélectionner les prêtes</button>
         <button className="sc-primary" disabled={!chosen.length} onClick={()=>{setReview(true)}}>Relire la sélection ({chosen.length})</button>
         {chosen.length>0&&<button type="button" className="bs-link bs-danger" onClick={()=>setDiscarding(chosen)}>Supprimer la sélection ({chosen.length})</button>}</div>
-        {intake.map(t=><article key={t.id} className="bs-row"><div className="bs-row-body"><h3>{t.fields.sku}</h3>
+        {intake.map(t=><article key={t.id} className="bs-row"><div className="bs-row-body"><h3>{t.fields.sku||'Annonce en préparation'}</h3>
           <p className="bs-meta">{t.fields.size_text} · {formatMoney(t.fields.price)}</p>
           <span className={'bs-badge '+(t.stage==='error'?'error':'running')}>{t.stage==='error'?'À reprendre':t.stage==='generating'?'Remplissage…':t.stage==='saving'?'En préparation…':'Envoi des photos…'}</span>
           {t.stage==='error'&&<p className="bs-problem">{t.error}</p>}</div>
@@ -216,7 +216,7 @@ export default function ScalencyBatchStudio({params}){
             {(state==='review'||state==='error')&&<p className="bs-problem">{row.batch?.missing?.join(' · ')||'Remplissage interrompu, tu peux le relancer.'}</p>}
             </div><div className="bs-row-tools"><button disabled={state==='running'} className="bs-link" onClick={()=>edit(row.id)}>Modifier</button>
             {state==='ready'&&<button type="button" className="bs-link bs-danger" onClick={()=>setDiscarding([row])}>Supprimer</button>}
-            {state!=='running'&&state!=='ready'&&login?.brand&&f.account_id===account&&row.count>0&&f.sku&&Number(f.price)>0&&<button className="bs-link" onClick={()=>generate(row)}>{state==='error'?'Réessayer':'Remplir'}</button>}</div></article>
+            {state!=='running'&&state!=='ready'&&login?.brand&&f.account_id===account&&row.count>0&&Number(f.price)>0&&<button className="bs-link" onClick={()=>generate(row)}>{state==='error'?'Réessayer':'Remplir'}</button>}</div></article>
         })}
         {data&&data.total>data.pageSize&&<div className="bs-actions"><button disabled={!page} onClick={()=>setPage(p=>p-1)}>Précédent</button><span>{page+1} / {Math.ceil(data.total/data.pageSize)}</span><button disabled={(page+1)*data.pageSize>=data.total} onClick={()=>setPage(p=>p+1)}>Suivant</button></div>}</>}
       </section>

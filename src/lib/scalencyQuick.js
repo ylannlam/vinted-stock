@@ -26,7 +26,6 @@ export const listingColors=Object.entries({
 export function quickIssues(fields,options){
   const missing=[]
   if(!fields.account_id)missing.push('Compte Vinted')
-  if(!fields.sku?.trim())missing.push('SKU')
   if(!(Number(fields.price)>0))missing.push('Prix')
   if(!fields.title?.trim())missing.push('Titre')
   if(!fields.description?.trim())missing.push('Bio')

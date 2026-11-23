@@ -6,7 +6,7 @@ export function publicationDate(value){
 
 export function publicationProgress(job,now=Date.now()){
   const earliest=Date.parse(job.not_before)
-  if(job.status==='queued'){
+  if(['queued','pending','waiting','scheduled'].includes(job.status)){
     if(earliest>now)return {label:'Planifiée',tone:'planned',detail:'Départ au plus tôt le '+publicationDate(job.not_before)}
     return {label:'En file',tone:'pending',detail:'En attente du passage de Scalency. Heure de publication à confirmer.'}
   }

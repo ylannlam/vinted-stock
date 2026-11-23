@@ -91,13 +91,13 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
       setApproved(false);setChoosing(false)
     })}/>}<div className="sc-fields">
       {!quick&&<Field label="Compte Vinted"><select value={fields.account_id} onChange={e=>selectAccount(e.target.value)}><option value="">Choisir un compte relié</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.login}</option>)}</select></Field>}
-      <Field label="SKU"><input value={fields.sku} onChange={e=>{setPrepared(false);edit('sku',e.target.value)}}/></Field>
+      <Field label="SKU (facultatif)"><input value={fields.sku} onChange={e=>{setPrepared(false);edit('sku',e.target.value)}}/></Field>
       <Field label="Prix (€)"><input type="number" min=".01" step=".01" value={fields.price} onChange={e=>edit('price',e.target.value)}/></Field>
       {<Field label="Taille sur l’étiquette"><input value={fields.size_text} onChange={e=>{edit('size_text',e.target.value);const m=matchingSize(e.target.value,options);edit('size_id',m||null)}}/></Field>}
     </div><Field label="Photos, dans l’ordre de publication"><input type="file" multiple accept="image/png,image/jpeg,image/webp" onChange={e=>{const files=[...e.target.files];e.target.value='';setPrepared(false);run(()=>upload(files))}}/></Field>
     <div className="sc-photos">{photos.map((p,i)=><div key={p.path}><img src={p.url} alt={'Photo '+(i+1)}/><button onClick={()=>{setPhotos(photos.filter(x=>x.path!==p.path));setApproved(false);setPrepared(false)}}>Retirer</button></div>)}</div>
     {quickEditable&&<div className="sc-quick-submit"><p>Petit colis · {fields.account_id&&selectedBrand?'Publication sur '+(profiles.find(a=>a.id===fields.account_id)?.login||'ce compte'):'Choisis le compte et sa marque'}</p>
-      <button className="sc-primary" disabled={!selectedBrand||!fields.sku.trim()||!(Number(fields.price)>0)||!photos.length} onClick={()=>run(async()=>{try{await quickSend()}catch(e){setMessage('Le brouillon est conservé.');setReview(true);throw e}})}>{busy?'Préparation en cours…':'Remplir l’annonce'}</button>
+      <button className="sc-primary" disabled={!selectedBrand||!(Number(fields.price)>0)||!photos.length} onClick={()=>run(async()=>{try{await quickSend()}catch(e){setMessage('Le brouillon est conservé.');setReview(true);throw e}})}>{busy?'Préparation en cours…':'Remplir l’annonce'}</button>
       <button onClick={()=>setReview(v=>!v)}>{review?'Masquer les détails':'Afficher les détails'}</button></div>}
     {(!quick||review)&&<><div className="sc-tools">{!quick&&<button onClick={()=>run(async()=>{const v=await save();const r=await act('generate',{id:uid.current,version:v});edit('title',r.title);edit('description',r.description);setMessage('Texte préparé. Tu peux le relire et le modifier.')})}>Rédiger le titre et la bio</button>}</div>
     <Field label="Titre"><input maxLength={100} value={fields.title} onChange={e=>edit('title',e.target.value)}/></Field>
