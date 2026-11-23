@@ -7,7 +7,7 @@ import {prepareQuickDraft,quickProfiles,saveQuickBrand,verifyQuickFields} from '
 import {listingFacts} from '../src/lib/library.js'
 import {nextHistoryPage} from './scalency-history.js'
 import {publicationTracking} from './scalency-publications.js'
-import {batchDrafts,checkBatchSubmission,reviewEditedDraft,reviewMetadata} from './scalency-batch.js'
+import {batchDrafts,batchImages,checkBatchSubmission,reviewEditedDraft,reviewMetadata} from './scalency-batch.js'
 import {catalogProduct,connectedRecords,draftSource} from './scalency-relations.js'
 const fail=(message,status)=>{throw new ScalencyError(message,status)}
 const checked=r=>{if(r.error)throw r.error;return r.data}
@@ -240,7 +240,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
       if(row.payload?.batch?.status==='running'&&Date.now()-Date.parse(row.payload.batch.started)<600000)fail('Cette annonce est déjà en cours de remplissage.',409)
       const locked=checked(await db.from('listing_drafts').update({payload,version,updated_at:started}).eq('owner_id',user.id).eq('id',row.id).eq('state','draft').eq('version',row.version).select('id').maybeSingle())
       if(!locked)fail('Le brouillon a changé. Actualise la liste.',409)
-      try{return res.json(await prepareQuickDraft(db,user,req,{...row,payload,version},photosFor,reviewMetadata))}
+      try{return res.json(await prepareQuickDraft(db,user,req,{...row,payload,version},(db,photos)=>batchImages(db,user.id,photos),reviewMetadata))}
       catch(error){
         const batch={status:'error',missing:[error.message||'Le remplissage a été interrompu.']}
         checked(await db.from('listing_drafts').update({payload:{...payload,batch},version:version+1,updated_at:now()}).eq('owner_id',user.id).eq('id',row.id).eq('state','draft').eq('version',version))

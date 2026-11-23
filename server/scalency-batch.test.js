@@ -1,7 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {scalencyHandler} from './scalency-workspace.js'
-import {reviewMetadata} from './scalency-batch.js'
+import {batchImages,reviewMetadata} from './scalency-batch.js'
+
+test('la génération transmet les octets des photos privées de leur propriétaire',async()=>{
+  const owner='79eafe37-47f9-42eb-835b-de39800f5288',path=owner+'/d130e154-92e7-4bd9-92e4-2f38db67d3a7.png'
+  const db={storage:{from:()=>({download:async p=>{assert.equal(p,path);return {data:new Blob(['photo'])}}})}}
+  assert.deepEqual(await batchImages(db,owner,[{path,type:'image/png',size:5}]),['data:image/png;base64,cGhvdG8='])
+  await assert.rejects(batchImages(db,'8bfada63-c207-4c9d-bf8b-b66c11d70391',[{path}]),/photo/)
+})
 
 // Exercise the normal route, including validation, reservation and queue receipts,
 // without creating any jobs on a seller account.

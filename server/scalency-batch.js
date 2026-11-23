@@ -4,6 +4,25 @@ import {quickIssues} from '../src/lib/scalencyQuick.js'
 import {ASSET_BUCKET,ownedAsset} from './resources.js'
 
 const checked=r=>{if(r.error)throw r.error;return r.data}
+export async function batchImages(db,userId,photos){
+  const compact=photos.reduce((sum,photo)=>sum+Number(photo.size||8000000),0)>12000000
+  const images=[]
+  for(const photo of photos){
+    if(!ownedAsset(photo.path,userId))throw new ScalencyError('Cette photo ne fait pas partie de ton envoi.',403)
+    const file=checked(await db.storage.from(ASSET_BUCKET).download(photo.path))
+    let bytes=Buffer.from(await file.arrayBuffer()),type=photo.type
+    if(compact){
+      const {loadImage,createCanvas}=await import('@napi-rs/canvas')
+      const image=await loadImage(bytes),scale=Math.min(1,1152/Math.max(image.width,image.height))
+      const canvas=createCanvas(Math.max(1,Math.round(image.width*scale)),Math.max(1,Math.round(image.height*scale)))
+      const ctx=canvas.getContext('2d')
+      ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(image,0,0,canvas.width,canvas.height)
+      bytes=await canvas.encode('jpeg',80);type='image/jpeg'
+    }
+    images.push('data:'+type+';base64,'+bytes.toString('base64'))
+  }
+  return images
+}
 export function reviewMetadata(options,missing){
   return {status:missing.length?'review':'ready',missing,category:options?.catalog?.title||options?.ancestors?.at(-1)?.title||''}
 }

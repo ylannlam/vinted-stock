@@ -166,7 +166,9 @@ export async function generateListingText(row,urls,catalogs,colors,{fetcher=fetc
  try{response=await fetcher('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({model,messages:[{role:'system',content:system},{role:'user',content:[{type:'text',text},...urls.slice(0,quick?8:3).map(url=>({type:'image_url',image_url:{url,detail:'auto'}}))]}],max_tokens:2600,reasoning_effort:model.includes('lite')?'minimal':'low',response_format:{type:'json_schema',json_schema:{name:'vinted_listing',strict:true,schema}}}),signal:AbortSignal.timeout(45000)})}catch{throw new AppError('La rédaction a pris trop de temps. Tes photos sont enregistrées ; réessaie.',504)}
  const body=await response.json().catch(()=>null)
  if(!response.ok){
-  const type=body?.error?.type||body?.error?.code
+  const detail=String((Array.isArray(body)?body[0]:body)?.error?.message||'')
+  const reason=['quota','image','fetch','thinking','reasoning','schema','unsupported','invalid','overloaded','model','key','billing'].filter(k=>detail.toLowerCase().includes(k))
+  console.warn('listing_ai_request_failed',{status:response.status,reason})
   const message=response.status===429?'Le quota Gemini est atteint. Patiente ou vérifie les limites de ton projet Google AI Studio.':[401,403].includes(response.status)?'La clé Gemini doit être vérifiée dans les réglages du site.':response.status===404?'Le modèle Gemini demandé n’est pas disponible pour cette clé.':'Gemini est momentanément indisponible. Ton brouillon est conservé.'
   throw new AppError(message,response.status===429?429:503)
  }
