@@ -11,7 +11,7 @@ export async function batchImages(db,userId,photos){
     if(!ownedAsset(photo.path,userId))throw new ScalencyError('Cette photo ne fait pas partie de ton envoi.',403)
     const file=checked(await db.storage.from(ASSET_BUCKET).download(photo.path))
     let bytes=Buffer.from(await file.arrayBuffer()),type=photo.type
-    if(compact){
+    if(compact||bytes.length>5*1024*1024){
       const {loadImage,createCanvas}=await import('@napi-rs/canvas')
       const image=await loadImage(bytes),scale=Math.min(1,1152/Math.max(image.width,image.height))
       const canvas=createCanvas(Math.max(1,Math.round(image.width*scale)),Math.max(1,Math.round(image.height*scale)))

@@ -65,7 +65,7 @@ export async function prepareQuickDraft(db,user,req,row,photosFor,review){
   const copy=composeVintedSeo(result.seoParts,{size:sizeText,condition:fields.seo_condition,measures:listingFacts(product,sizeText)?.measures})
   const safe=listingFields({...next,...copy,seo_condition:fields.seo_condition||''},{scalency:true})
   const missing=quickIssues(safe,options)
-  const metadata=review?{payload:{...row.payload,scalency_source:'stock-vinted',batch:review(options,missing,safe)}}:{}
+  const metadata=review?{payload:{...row.payload,scalency_source:'stock-vinted',batch:{...review(options,missing,safe),ai_model:result.usage?.model||null}}}:{}
   const saved=checked(await db.from('listing_drafts').update({...metadata,fields:safe,catalog_product_id:product?.id||null,version:row.version+1,updated_at:new Date().toISOString()}).eq('id',row.id).eq('owner_id',user.id).eq('version',row.version).eq('state','draft').select('id,fields,version').maybeSingle())
   if(!saved)throw new ScalencyError('Le brouillon a été modifié. Rouvre-le.',409)
   return {...saved,missing}

@@ -50,3 +50,37 @@ test('Scalency sélectionne le bal pour une robe volumineuse et conserve la cat�
    assert.equal(result.catalog_id,expected)
  }
 })
+
+test('Claude prépare une fiche à partir de photos privées, sans clé Gemini',async()=>{
+ const fetcher=async(url,request)=>{
+   assert.equal(url,'https://api.oneprovider.dev/v1/messages')
+   assert.equal(request.headers['x-api-key'],'one-test')
+   const body=JSON.parse(request.body)
+   const [photo,remote]=body.messages[0].content
+   assert.deepEqual(photo.source,{type:'base64',media_type:'image/png',data:'cGhvdG8='})
+   assert.deepEqual(remote.source,{type:'url',url:'https://example.test/image'})
+   assert.ok(body.tools[0].input_schema.required.includes('hashtags'))
+   return Response.json({model:body.model,content:[{type:'tool_use',name:'vinted_listing',input:{
+     ...parts,is_dress:true,is_ball_gown:false,catalog_id:null,color_ids:[],label_size:'',review_notes:''}}]})
+ }
+ const result=await generateListingText({fields:{size_text:'XL'}},['data:image/png;base64,cGhvdG8=','https://example.test/image'],[],[],{quick:true,fetcher,oneProviderKey:'one-test',token:''})
+ assert.match(result.usage.model,/^claude-/)
+ assert.equal(result.catalog_id,1778)
+ assert.equal(result.title,'Robe bordeaux taille XL')
+ assert.equal(result.description.match(/#/g).length,16)
+})
+
+test('Une indisponibilité de Claude passe la même fiche à Gemini avec sa propre clé',async()=>{
+ const hosts=[]
+ const fetcher=async(url,request)=>{
+   hosts.push(new URL(url).host)
+   if(hosts.length===1)return new Response('',{status:503})
+   assert.equal(request.headers.Authorization,'Bearer gemini-test')
+   assert.equal(request.headers['x-api-key'],undefined)
+   return Response.json({choices:[{message:{content:JSON.stringify({...parts,is_dress:true,is_ball_gown:true,color_ids:[]})}}],usage:{prompt_tokens:123,completion_tokens:42}})
+ }
+ const result=await generateListingText({fields:{size_text:'S'}},[],[],[],{fetcher,oneProviderKey:'one-test',token:'gemini-test',quick:true})
+ assert.deepEqual(hosts,['api.oneprovider.dev','generativelanguage.googleapis.com'])
+ assert.equal(result.catalog_id,1777)
+ assert.match(result.usage.model,/gemini/)
+})
