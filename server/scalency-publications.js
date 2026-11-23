@@ -64,7 +64,7 @@ async function jobRows(db,user,jobs){
     items.length?db.from('scalency_records').select('remote_id,account,payload').eq('kind','items').in('remote_id',items):{data:[]},
     items.length?db.from('scalency_commands').select('request_id,result').in('request_id',jobs.filter(j=>j.new_item_id).map(j=>removalKey(j.account_id,j.new_item_id))):{data:[]}
   ])
-  const byJob=new Map(checked(drafts).map(d=>[d.payload.scalency_job_id,d]))
+  const byJob=new Map(checked(drafts).map(d=>[String(d.payload.scalency_job_id),d]))
   const byItem=new Map(checked(stock).map(d=>[removalKey(d.account,d.remote_id),d.payload]))
   const removals=new Map(checked(requests).map(r=>[r.request_id,r.result]))
   const links=await covers(db,user.id,[...byJob.values()].map(d=>d.photos?.[0]?.path))
