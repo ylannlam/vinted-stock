@@ -7,6 +7,7 @@ import {prepareQuickDraft,quickProfiles,saveQuickBrand,verifyQuickFields} from '
 import {listingFacts} from '../src/lib/library.js'
 import {nextHistoryPage} from './scalency-history.js'
 import {publicationTracking} from './scalency-publications.js'
+import {batchDrafts,checkBatchSubmission,reviewEditedDraft,reviewMetadata} from './scalency-batch.js'
 import {catalogProduct,connectedRecords,draftSource} from './scalency-relations.js'
 const fail=(message,status)=>{throw new ScalencyError(message,status)}
 const checked=r=>{if(r.error)throw r.error;return r.data}
@@ -113,7 +114,7 @@ async function photosFor(db,photos,seconds){
   return checked(await db.storage.from(ASSET_BUCKET).createSignedUrls(photos.map(p=>p.path),seconds)).map(x=>{if(!x.signedUrl)fail('Une photo est indisponible.',409);return x.signedUrl})
 }
 async function getDraft(db,user,id){
-  const row=checked(await db.from('listing_drafts').select(draftCols).eq('id',remoteId(id)).eq('owner_id',user.id).maybeSingle())
+  const row=checked(await db.from('listing_drafts').select(draftCols+',payload').eq('id',remoteId(id)).eq('owner_id',user.id).maybeSingle())
   if(!row)fail('Brouillon introuvable.',404)
   return row
 }
@@ -126,6 +127,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
   const q=req.query, b=req.body||{}, action=req.method==='GET'?q.view:b.action
   if(role!=='admin'&&!['home','orders','items','order','label','pack','stock','link','relations','product'].includes(action)&&!(action==='sync'&&['orders','items'].includes(b.kind)))fail('Réservé à l’administrateur.',403)
   if(req.method==='GET'){
+    if(action==='batch-drafts')return res.json(await batchDrafts(db,user,q))
     if(action==='publication-tracking')return res.json(await publicationTracking(db,user,q))
     if(action==='quick-profiles')return res.json(await quickProfiles(db,user))
     if(action==='relations')return res.json(await connectedRecords(db,user,role,q))
@@ -164,7 +166,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
     }
     if(action==='drafts')return res.json(await drafts(db,user,q))
     if(action==='draft'){
-      const row=await getDraft(db,user,q.id)
+      const {payload,...row}=await getDraft(db,user,q.id)
       return res.json({...row,urls:await photosFor(db,row.photos,3600)})
     }
     if(action==='catalogs')return res.json(await remote('catalogs',{query:{limit:100,cursor:q.cursor}}))
@@ -211,29 +213,48 @@ export async function scalencyHandler(req,res,{db,user,role}){
     return res.json(await enableWebhook(db))
   }
   if(action==='quick-brand')return res.json(await saveQuickBrand(db,b.account,b.name))
-  if(action==='save'){
+  if(action==='save'||action==='save-review'){
     const id=remoteId(b.id), fields=listingFields(b.fields,{scalency:true}),photos=await verifiedPhotos(db,user.id,b.photos)
     const row={fields,photos,updated_at:now()}
+    const previous=b.version==null?null:await getDraft(db,user,id)
+    if(action==='save-review'||previous?.payload?.batch){
+      const batch=action==='save-review'?await reviewEditedDraft(db,fields,photos):null
+      row.payload={...previous?.payload,scalency_source:'stock-vinted',batch}
+    }
     if(Object.hasOwn(b,'piece')||Object.hasOwn(b,'product')){
       const source=await draftSource(db,b.piece,b.product,fields.sku)
       row.stock_item_id=source.stock?.id||null
       row.catalog_product_id=source.product?.id||null
     }
-    let result=b.version==null?await db.from('listing_drafts').insert({...row,id,owner_id:user.id,payload:{scalency_source:'stock-vinted'}}).select(draftCols).single():
+    let result=b.version==null?await db.from('listing_drafts').insert({payload:{scalency_source:'stock-vinted'},...row,id,owner_id:user.id}).select(draftCols).single():
       await db.from('listing_drafts').update({...row,version:b.version+1}).eq('id',id).eq('owner_id',user.id).eq('state','draft').eq('version',b.version).select(draftCols).maybeSingle()
     if(!checked(result))fail('Ce brouillon a changé. Rouvre-le avant de continuer.',409)
-    return res.json(result.data)
+    return res.json({...result.data,batch:row.payload?.batch})
   }
-  if(['generate','autofill','autopost','validate','publish','quick-publish'].includes(action)){
+  if(['generate','autofill','autopost','validate','publish','quick-publish','batch-generate','batch-submit'].includes(action)){
     let row=await getDraft(db,user,b.id)
     if(row.version!==b.version||row.state!=='draft')fail('Ce brouillon a changé. Actualise avant de continuer.',409)
+    if(action==='batch-generate'){
+      const started=now(),version=row.version+1
+      const payload={...row.payload,scalency_source:'stock-vinted',batch:{status:'running',started}}
+      if(row.payload?.batch?.status==='running'&&Date.now()-Date.parse(row.payload.batch.started)<600000)fail('Cette annonce est déjà en cours de remplissage.',409)
+      const locked=checked(await db.from('listing_drafts').update({payload,version,updated_at:started}).eq('owner_id',user.id).eq('id',row.id).eq('state','draft').eq('version',row.version).select('id').maybeSingle())
+      if(!locked)fail('Le brouillon a changé. Actualise la liste.',409)
+      try{return res.json(await prepareQuickDraft(db,user,req,{...row,payload,version},photosFor,reviewMetadata))}
+      catch(error){
+        const batch={status:'error',missing:[error.message||'Le remplissage a été interrompu.']}
+        checked(await db.from('listing_drafts').update({payload:{...payload,batch},version:version+1,updated_at:now()}).eq('owner_id',user.id).eq('id',row.id).eq('state','draft').eq('version',version))
+        throw error
+      }
+    }
+    if(action==='batch-submit')checkBatchSubmission(row,b.account)
     if(action==='autofill')return res.json(await prepareQuickDraft(db,user,req,row,photosFor))
     if(action==='autopost'){
       const prepared=await prepareQuickDraft(db,user,req,row,photosFor)
       if(prepared.missing.length)return res.json(prepared)
       row={...row,...prepared}
     }
-    if(action==='quick-publish'||action==='autopost')await verifyQuickFields(db,row.fields)
+    if(['quick-publish','autopost','batch-submit'].includes(action))await verifyQuickFields(db,row.fields)
     if(action==='generate'){
       const urls=await photosFor(db,row.photos.slice(0,3),300)
       if(!urls.length)fail('Ajoute une photo du vêtement.')

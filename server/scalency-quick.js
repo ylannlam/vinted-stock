@@ -40,7 +40,7 @@ export async function verifyQuickFields(db,fields){
   const missing=quickIssues(fields,options)
   if(missing.length)throw new ScalencyError('À compléter : '+missing.join(', ')+'.',409)
 }
-export async function prepareQuickDraft(db,user,req,row,photosFor){
+export async function prepareQuickDraft(db,user,req,row,photosFor,review){
   const {fields}=row
   if(!fields.sku?.trim()||!/^\d{1,5}(?:[.]\d{1,2})?$/.test(fields.price)||Number(fields.price)<=0||!row.photos.length)throw new ScalencyError('Ajoute les photos, le SKU et un prix positif.')
   const [brand,presets,catalogs,source]=await Promise.all([accountBrand(db,fields.account_id),readListingSettings(db,fields.account_id),listingCatalogs(db),draftSource(db,row.stock_item_id,row.catalog_product_id,fields.sku)])
@@ -65,7 +65,8 @@ export async function prepareQuickDraft(db,user,req,row,photosFor){
   const copy=composeVintedSeo(result.seoParts,{size:sizeText,condition:fields.seo_condition,measures:listingFacts(product,sizeText)?.measures})
   const safe=listingFields({...next,...copy,seo_condition:fields.seo_condition||''},{scalency:true})
   const missing=quickIssues(safe,options)
-  const saved=checked(await db.from('listing_drafts').update({fields:safe,catalog_product_id:product?.id||null,version:row.version+1,updated_at:new Date().toISOString()}).eq('id',row.id).eq('owner_id',user.id).eq('version',row.version).eq('state','draft').select('id,fields,version').maybeSingle())
+  const metadata=review?{payload:{...row.payload,scalency_source:'stock-vinted',batch:review(options,missing)}}:{}
+  const saved=checked(await db.from('listing_drafts').update({...metadata,fields:safe,catalog_product_id:product?.id||null,version:row.version+1,updated_at:new Date().toISOString()}).eq('id',row.id).eq('owner_id',user.id).eq('version',row.version).eq('state','draft').select('id,fields,version').maybeSingle())
   if(!saved)throw new ScalencyError('Le brouillon a été modifié. Rouvre-le.',409)
   return {...saved,missing}
 }

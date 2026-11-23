@@ -3,6 +3,7 @@ import {query,act,formatDate,formatMoney} from '../lib/scalency'
 import ScalencyQuickAccount from './ScalencyQuickAccount'
 import ScalencyDraft from './ScalencyDraft'
 import PublicationTracker from './PublicationTracker'
+import ScalencyBatchStudio from './ScalencyBatchStudio'
 import ScalencyRelations from './ScalencyRelations'
 import '../scalency.css'
 
@@ -42,6 +43,7 @@ function Details({kind,row,close,reload,admin}){
  </article>
 }
 export default function ScalencyWorkspace({kind,admin,params={}}){
+ if(kind==='drafts'&&admin)return <ScalencyBatchStudio params={params}/>
  if(kind==='jobs'&&admin&&!params.id&&!params.filter&&params.section!=='actions')return <PublicationTracker params={params}/>
  return <WorkspaceList kind={kind} admin={admin} params={params}/>
 }
