@@ -1,11 +1,10 @@
 import {useEffect,useRef,useState} from 'react'
-import {act} from '../lib/scalency'
-import {uploadListingPhoto} from '../lib/api'
+import {queueIntake} from '../lib/batchIntake'
 import {emptyListing,validateListingPhoto} from '../lib/listingStudio'
 
 import BatchPhotoOrder from './BatchPhotoOrder'
 
-export default function BatchEntry({account,onSaved,onDetailed,onBusy}){
+export default function BatchEntry({account,owner,onQueued,onDetailed,onBusy}){
   const [sku,setSku]=useState(''),[price,setPrice]=useState(''),[size,setSize]=useState('M')
   const [photos,setPhotos]=useState([]),[busy,setBusy]=useState(false),[error,setError]=useState('')
   const urls=useRef(new Set()),gate=useRef(false),id=useRef(crypto.randomUUID()),skuInput=useRef(null)
@@ -41,14 +40,9 @@ export default function BatchEntry({account,onSaved,onDetailed,onBusy}){
     if(gate.current||!account?.brand||!photos.length)return
     gate.current=true;setBusy(true);onBusy(true);setError('')
     try{
-      const paths=[]
-      for(const photo of photos){
-        if(!photo.uploaded)photo.uploaded=await uploadListingPhoto(photo.file)
-        paths.push(photo.uploaded)
-      }
       const fields={...emptyListing(),sku:sku.trim(),price,size_text:size.trim(),account_id:account.id}
-      const saved=await act('save',{id:id.current,version:null,fields,photos:paths})
-      onSaved(saved)
+      await queueIntake(owner,id.current,fields,photos.map(p=>p.file))
+      onQueued(fields.sku)
       photos.forEach(p=>release(p.url));setPhotos([]);setSku('');setPrice('');setSize('M');id.current=crypto.randomUUID()
       requestAnimationFrame(()=>skuInput.current?.focus())
     }catch(e){setError(e.message)}
@@ -66,7 +60,7 @@ export default function BatchEntry({account,onSaved,onDetailed,onBusy}){
       {photos.length>0&&<BatchPhotoOrder photos={photos} busy={busy} onMove={movePhoto} onRemove={removePhoto}/>}
       <p className="bs-meta">{photos.length>1?'Glisse les photos pour changer leur ordre.':'La première photo sera la couverture.'} Colis petit.</p>
       {error&&<p className="sc-error" role="alert">{error}</p>}
-      <button className="sc-primary bs-submit" disabled={!account?.brand||!sku.trim()||!(Number(price)>0)||!size.trim()||!photos.length}>{busy?'Enregistrement des photos…':'Remplir l’annonce'}</button>
+      <button className="sc-primary bs-submit" disabled={!account?.brand||!sku.trim()||!(Number(price)>0)||!size.trim()||!photos.length}>{busy?'Enregistrement…':'Remplir l’annonce'}</button>
     </fieldset></form>
   </section>
 }

@@ -1,5 +1,6 @@
 import {useCallback,useEffect,useRef,useState} from 'react'
 import {act,query,formatMoney} from '../lib/scalency'
+import {retryIntake,watchIntake} from '../lib/batchIntake'
 import {listingColors} from '../lib/scalencyQuick'
 import BatchEntry from './BatchEntry'
 import ScalencyDraft from './ScalencyDraft'
@@ -28,11 +29,16 @@ export default function ScalencyBatchStudio({params}){
   const [page,setPage]=useState(0),[data,setData]=useState(null),[error,setError]=useState(''),[notice,setNotice]=useState('')
   const [selected,setSelected]=useState({}),[review,setReview]=useState(false),[sending,setSending]=useState(false),[receipts,setReceipts]=useState([])
   const [local,setLocal]=useState({}),[saving,setSaving]=useState(false),[revision,setRevision]=useState(0)
+  const [transfers,setTransfers]=useState([])
   const [editor,setEditor]=useState(params.draft||(params.piece||params.product||params.sku?'new':''))
   const lock=useRef(false),active=useRef(true),userPicked=useRef(false),pending=useRef(new Set())
   const returnToReview=useRef(false)
   const login=profiles.find(a=>a.id===account)
   const reload=useCallback(()=>setRevision(n=>n+1),[])
+  useEffect(()=>{
+    setTransfers([])
+    if(owner)return watchIntake(owner,setTransfers,reload,setError)
+  },[owner,reload])
   useEffect(()=>{active.current=true;return()=>{active.current=false}},[])
   useEffect(()=>{
     let live=true
@@ -96,7 +102,8 @@ export default function ScalencyBatchStudio({params}){
   }
   const chosen=Object.values(selected).filter(r=>account&&r.fields.account_id===account)
   const rows=data?.rows||[],ready=rows.filter(r=>account&&r.fields.account_id===account&&stage(r)==='ready'&&!local[r.id])
-  const drafts=[...Object.values(local).filter(r=>(!account||r.fields.account_id===account)&&!rows.some(x=>x.id===r.id)),...rows]
+  const intake=transfers.filter(t=>(!account||t.fields.account_id===account)&&(t.stage==='error'||!rows.some(row=>row.id===t.id&&row.batch)))
+  const drafts=[...Object.values(local).filter(r=>(!account||r.fields.account_id===account)&&!rows.some(x=>x.id===r.id)),...rows.filter(row=>!intake.some(t=>t.id===row.id))]
   async function submit(){
     if(lock.current||!review||!chosen.length)return
     lock.current=true;setSending(true);setReceipts([]);setNotice('')
@@ -121,7 +128,7 @@ export default function ScalencyBatchStudio({params}){
       onClose={closeEditor} onGenerate={generate} onReviewed={savedEdit}
       onQueued={r=>{window.location.hash='publication'+(r?.job?.id?'?job='+r.job.id:'')}}/>}
     <div hidden={!!editor} className={'bs-layout'+(review?' bs-review-layout':'')}>
-      <div hidden={review}><BatchEntry account={login} onBusy={setSaving} onSaved={generate} onDetailed={()=>edit('new')}/></div>
+      <div hidden={review}><BatchEntry account={login} owner={owner} onBusy={setSaving} onQueued={sku=>{setPage(0);setNotice('Annonce '+sku+' enregistrée sur cet appareil. Tu peux saisir la suivante.')}} onDetailed={()=>edit('new')}/></div>
       <section className="bs-panel bs-list"><div className="bs-panel-head"><div><h2>{review?'Récapitulatif du lot':'Annonces du compte'}</h2>
         <p className="bs-meta">{review?chosen.length+' sélectionnée(s) pour '+(login?.login||'ce compte'):login?login.login+' · '+(data?.total??'…')+' brouillon(s)':'Tous les brouillons · choisis un compte pour préparer un lot'}</p></div>
         {!review&&<button className="bs-link" onClick={reload}>Actualiser</button>}</div>
@@ -130,7 +137,13 @@ export default function ScalencyBatchStudio({params}){
         <p className="bs-meta">Scalency gère le départ de chaque annonce. Garde cet onglet ouvert pendant l’envoi du lot.</p></>:
         <><div className="bs-actions"><button disabled={!ready.length} onClick={()=>setSelected(prev=>({...prev,...Object.fromEntries(ready.map(r=>[r.id,r]))}))}>Sélectionner les prêtes</button>
         <button className="sc-primary" disabled={!chosen.length||saving} onClick={()=>{setReceipts([]);setReview(true)}}>Relire la sélection ({chosen.length})</button></div>
-        {!data&&!drafts.length?<p>Chargement des brouillons…</p>:!drafts.length?<p className="bs-empty">Les annonces que tu prépares pour ce compte apparaîtront ici.</p>:drafts.map(row=>{
+        {intake.map(t=><article key={t.id} className="bs-row"><div className="bs-row-body"><h3>{t.fields.sku}</h3>
+          <p className="bs-meta">{t.fields.size_text} · {formatMoney(t.fields.price)}</p>
+          <span className={'bs-badge '+(t.stage==='error'?'error':'running')}>{t.stage==='error'?'À reprendre':t.stage==='generating'?'Remplissage…':'Envoi des photos…'}</span>
+          {t.stage==='error'&&<p className="bs-problem">{t.error}</p>}</div>
+          {t.stage==='error'&&<button className="bs-link" onClick={()=>retryIntake(owner,t.id).catch(e=>setError(e.message))}>Réessayer</button>}
+        </article>)}
+        {!data&&!drafts.length&&!intake.length?<p>Chargement des brouillons…</p>:!drafts.length&&!intake.length?<p className="bs-empty">Les annonces que tu prépares pour ce compte apparaîtront ici.</p>:drafts.map(row=>{
           const state=local[row.id]?'running':stage(row),f=row.fields
           return <article className="bs-row" key={row.id}><input type="checkbox" aria-label={'Sélectionner '+(f.sku||f.title||'ce brouillon')} checked={!!selected[row.id]} disabled={!account||f.account_id!==account||state!=='ready'} onChange={()=>toggle(row)}/>
             <Cover row={row}/><div className="bs-row-body"><h3>{f.title||f.sku||'Brouillon sans titre'}</h3>

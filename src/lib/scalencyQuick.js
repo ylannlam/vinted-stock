@@ -1,3 +1,23 @@
+export const vintedCondition='Très bon état'
+export const bioCondition='Neuf'
+
+export function conditionForCatalog(options){
+  return options?.conditions?.find(c=>(c.title||c.name)===vintedCondition)?.id??null
+}
+
+export function withBioCondition(fields){
+  let description=fields.description||''
+  if(description.trim()){
+    const label=/(^|\|\s*|\n)[ÉE]tat\s*:\s*[^|\r\n]+/i
+    if(label.test(description))description=description.replace(label,(_,prefix)=>prefix+'État : '+bioCondition+(prefix.includes('|')?' ':'')).trimEnd()
+    else {
+      const tags=description.search(/(?:^|\n)\s*#[\p{L}\p{N}_]+/u)
+      description=tags<0?description.trimEnd()+'\n\nÉtat : '+bioCondition:description.slice(0,tags).trimEnd()+'\n\nÉtat : '+bioCondition+'\n\n'+description.slice(tags).trimStart()
+    }
+  }
+  return {...fields,seo_condition:bioCondition,description}
+}
+
 // Identifiants des couleurs du catalogue Vinted français.
 export const listingColors=Object.entries({
   1:'Noir',2:'Marron',3:'Gris',4:'Beige',5:'Rose',6:'Violet',7:'Rouge',8:'Jaune',9:'Bleu',10:'Vert',11:'Orange',12:'Blanc',13:'Argenté',14:'Doré',15:'Multicolore',16:'Kaki',17:'Turquoise',20:'Crème',21:'Abricot',22:'Corail',23:'Bordeaux',24:'Vieux rose',25:'Lilas',26:'Bleu clair',27:'Bleu marine',28:'Vert foncé',29:'Moutarde',30:'Menthe',32:'Transparent'

@@ -31,8 +31,8 @@ function database(tables){
 }
 test('le lot envoie une seule fois les versions relues du même compte',async t=>{
   const account='compte',user={id:'proprietaire'}
-  const options={catalog:{id:10,title:'Robes de soirée'},conditions:[{id:2}],size_groups:[{sizes:[{id:3,title:'S'}]}],package_sizes:[{id:1,title:'Petit'}]}
-  const fields={account_id:account,brand_title:'Maison',sku:'ref',price:'25',size_text:'S',title:'Robe noire S',description:'Robe noire à sequins.',catalog_id:10,status_id:2,size_id:3,color_ids:[1],package_size_id:1}
+  const options={catalog:{id:10,title:'Robes de soirée'},conditions:[{id:2,title:'Très bon état'},{id:6,title:'Neuf sans étiquette'}],size_groups:[{sizes:[{id:3,title:'S'}]}],package_sizes:[{id:1,title:'Petit'}]}
+  const fields={account_id:account,brand_title:'Maison',sku:'ref',price:'25',size_text:'S',title:'Robe noire S',description:'Robe noire à sequins.',catalog_id:10,status_id:6,size_id:3,color_ids:[1],package_size_id:1}
   const drafts=Array.from({length:10},(_,i)=>({id:'draft-'+i,owner_id:user.id,version:3,state:'draft',fields:{...fields,sku:'ref-'+i},photos:[{path:'photo'}],payload:{batch:reviewMetadata(options,[])}}))
   const db=database({listing_drafts:drafts,scalency_settings:[{id:'listing-brand:'+account,value:{name:'Maison'}}],
     scalency_records:[{kind:'accounts',remote_id:account,payload:{linked:true}}],scalency_product_keys:[],scalency_commands:[]})
@@ -42,6 +42,8 @@ test('le lot envoie une seule fois les versions relues du même compte',async t=
   t.mock.method(globalThis,'fetch',async(url,request)=>{
     if(url.pathname.endsWith('/catalogs/10'))return Response.json(options)
     assert.ok(url.pathname.endsWith('/items'));const body=JSON.parse(request.body)
+    assert.equal(body.status_id,2)
+    assert.match(body.description,/État : Neuf/)
     if(body.dry_run)return Response.json({dry_run:true,would_queue:true})
     posts++;return Response.json({job:{id:posts,status:'queued',type:'publish',account_id:account}})
   })

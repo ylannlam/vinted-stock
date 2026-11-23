@@ -4,6 +4,7 @@ import {verifiedPhotos,listingFields,listingAiToken,generateListingText} from '.
 import {ASSET_BUCKET} from './resources.js'
 import {readListingSettings} from './listing-settings.js'
 import {prepareQuickDraft,quickProfiles,saveQuickBrand,verifyQuickFields} from './scalency-quick.js'
+import {bioCondition,conditionForCatalog,withBioCondition} from '../src/lib/scalencyQuick.js'
 import {listingFacts} from '../src/lib/library.js'
 import {nextHistoryPage} from './scalency-history.js'
 import {publicationTracking} from './scalency-publications.js'
@@ -113,6 +114,14 @@ async function photosFor(db,photos,seconds){
   if(!photos.length)return []
   return checked(await db.storage.from(ASSET_BUCKET).createSignedUrls(photos.map(p=>p.path),seconds)).map(x=>{if(!x.signedUrl)fail('Une photo est indisponible.',409);return x.signedUrl})
 }
+async function catalogConditions(fields){
+  return fields.catalog_id?remote('catalogs/'+remoteId(fields.catalog_id)):null
+}
+function applyCondition(fields,options){
+  const next={...withBioCondition(fields),status_id:conditionForCatalog(options)}
+  if(next.description.length>2000)fail('Raccourcis la bio pour conserver la ligne d’état dans les 2 000 caractères.')
+  return next
+}
 async function getDraft(db,user,id){
   const row=checked(await db.from('listing_drafts').select(draftCols+',payload').eq('id',remoteId(id)).eq('owner_id',user.id).maybeSingle())
   if(!row)fail('Brouillon introuvable.',404)
@@ -213,12 +222,15 @@ export async function scalencyHandler(req,res,{db,user,role}){
     return res.json(await enableWebhook(db))
   }
   if(action==='quick-brand')return res.json(await saveQuickBrand(db,b.account,b.name))
-  if(action==='save'||action==='save-review'){
-    const id=remoteId(b.id), fields=listingFields(b.fields,{scalency:true}),photos=await verifiedPhotos(db,user.id,b.photos)
+  if(action==='save'||action==='save-review'||action==='batch-create'){
+    if(action==='batch-create'&&(b.owner!==user.id||b.version!=null))fail('Session différente. Rouvre l’atelier avec le compte d’origine.',409)
+    const id=remoteId(b.id), input=listingFields(b.fields,{scalency:true})
+    const [options,photos]=await Promise.all([catalogConditions(input),verifiedPhotos(db,user.id,b.photos)])
+    const fields=applyCondition(input,options)
     const row={fields,photos,updated_at:now()}
     const previous=b.version==null?null:await getDraft(db,user,id)
     if(action==='save-review'||previous?.payload?.batch){
-      const batch=action==='save-review'?await reviewEditedDraft(db,fields,photos):null
+      const batch=action==='save-review'?await reviewEditedDraft(db,fields,photos,options):null
       row.payload={...previous?.payload,scalency_source:'stock-vinted',batch}
     }
     if(Object.hasOwn(b,'piece')||Object.hasOwn(b,'product')){
@@ -228,6 +240,10 @@ export async function scalencyHandler(req,res,{db,user,role}){
     }
     let result=b.version==null?await db.from('listing_drafts').insert({payload:{scalency_source:'stock-vinted'},...row,id,owner_id:user.id}).select(draftCols).single():
       await db.from('listing_drafts').update({...row,version:b.version+1}).eq('id',id).eq('owner_id',user.id).eq('state','draft').eq('version',b.version).select(draftCols).maybeSingle()
+    if(action==='batch-create'&&result.error?.code==='23505'){
+      const existing=await getDraft(db,user,id)
+      return res.json({id,version:existing.version,state:existing.state,batch:existing.payload?.batch||null})
+    }
     if(!checked(result))fail('Ce brouillon a changé. Rouvre-le avant de continuer.',409)
     return res.json({...result.data,batch:row.payload?.batch})
   }
@@ -254,16 +270,19 @@ export async function scalencyHandler(req,res,{db,user,role}){
       if(prepared.missing.length)return res.json(prepared)
       row={...row,...prepared}
     }
-    if(['quick-publish','autopost','batch-submit'].includes(action))await verifyQuickFields(db,row.fields)
     if(action==='generate'){
       const urls=await photosFor(db,row.photos.slice(0,3),300)
       if(!urls.length)fail('Ajoute une photo du vêtement.')
       const presets=await readListingSettings(db,row.fields.account_id||null)
       const source=await draftSource(db,null,row.catalog_product_id,row.fields.sku)
       const facts=listingFacts(source.product,row.fields.size_text||'')
-      const result=await generateListingText(row,urls,[],[],{token:listingAiToken(req),settings:presets.effective,quick:true,shein:facts})
+      const result=await generateListingText({...row,fields:{...row.fields,seo_condition:bioCondition}},urls,[],[],{token:listingAiToken(req),settings:presets.effective,quick:true,shein:facts})
       return res.json({title:result.title,description:result.description})
     }
+    const options=await catalogConditions(row.fields)
+    row.fields=applyCondition(row.fields,options)
+    if(!row.fields.status_id)fail('Très bon état indisponible pour cette catégorie.',409)
+    if(['quick-publish','autopost','batch-submit'].includes(action))await verifyQuickFields(db,row.fields,options)
     const at=b.schedule?new Date(b.schedule):null
     if(at&&(!Number.isFinite(at.getTime())||at<=new Date()||at.getTime()-Date.now()>30*86400000))fail('Choisis une date future dans les 30 prochains jours.')
     const payload=draftPayload(row,await photosFor(db,row.photos,35*86400),row.fields.account_id,at?.toISOString())
@@ -279,7 +298,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
     const preview=await validatePayload()
     if(action==='validate')return res.json(preview)
     const result=await once(db,user,'publish',row.id,async()=>{
-      const locked=checked(await db.from('listing_drafts').update({state:'preparing',message:'Transmission à Scalency'}).eq('id',row.id).eq('state','draft').eq('version',row.version).select('id').maybeSingle())
+      const locked=checked(await db.from('listing_drafts').update({state:'preparing',fields:row.fields,message:'Transmission à Scalency'}).eq('id',row.id).eq('state','draft').eq('version',row.version).select('id').maybeSingle())
       if(!locked)fail('Le brouillon a changé. Rouvre-le.',409)
       try{
         const queued=await remote('items',{method:'POST',body:payload})

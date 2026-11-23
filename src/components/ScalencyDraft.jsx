@@ -2,7 +2,7 @@ import {useState,useEffect,useRef} from 'react'
 import ListingSeoOutput from './ListingSeoOutput'
 import {updateSeoDetails} from '../lib/vintedSeo'
 import ScalencyQuickAccount from './ScalencyQuickAccount'
-import {listingColors} from '../lib/scalencyQuick'
+import {listingColors,vintedCondition,withBioCondition,conditionForCatalog} from '../lib/scalencyQuick'
 import ScalencyRelations from './ScalencyRelations'
 import {act,query} from '../lib/scalency'
 import {uploadListingPhoto} from '../lib/api'
@@ -38,15 +38,11 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
     query('catalogs').then(r=>{if(live){setCats(r.data||[]);setCursor(r.next_cursor)}}).catch(e=>live&&setError(e.message))
     return()=>{live=false}
   },[id,piece,product,sku])
-  useEffect(()=>{let live=true;setOptions(null);if(fields.catalog_id)query('category',{id:fields.catalog_id}).then(r=>{if(live)setOptions(r)}).catch(e=>live&&setError(e.message));return()=>{live=false}},[fields.catalog_id])
+  useEffect(()=>{let live=true;setOptions(null);if(fields.catalog_id)query('category',{id:fields.catalog_id}).then(r=>{if(live){setOptions(r);if(savedState==='draft')setFields(f=>f.catalog_id===fields.catalog_id?{...withBioCondition(f),status_id:conditionForCatalog(r)}:f)}}).catch(e=>live&&setError(e.message));return()=>{live=false}},[fields.catalog_id,savedState])
   const edit=(key,value)=>{
     setFields(f=>{
       const next={...f,[key]:value}
       if(key==='size_text')Object.assign(next,updateSeoDetails(f,{size:value}))
-      if(key==='status_id'){
-        next.seo_condition=options?.conditions?.find(c=>c.id===value)?.title||''
-        Object.assign(next,updateSeoDetails(f,{condition:next.seo_condition}))
-      }
       return next
     })
     setApproved(false);setMessage('')
@@ -96,7 +92,7 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
     <div className="sc-fields"><Field label="Rechercher une catégorie"><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Ex. Robes"/></Field>
     <Field label="Catégorie Vinted"><select value={fields.catalog_id||''} onChange={e=>{edit('catalog_id',Number(e.target.value)||null);edit('size_id',null);edit('status_id',null)}}><option value="">Choisir</option>{fields.catalog_id&&!cats.some(c=>c.id===fields.catalog_id)&&<option value={fields.catalog_id}>{options?.ancestors?.at(-1)?.title||fields.catalog_id}</option>}{cats.filter(c=>!search||c.title?.toLowerCase().includes(search.toLowerCase())||c.id===fields.catalog_id).map(c=><option value={c.id} key={c.id}>{c.title} · {c.id}</option>)}</select></Field></div>
     {cursor&&<button onClick={()=>run(async()=>{const r=await query('catalogs',{cursor});setCats(old=>[...old,...r.data]);setCursor(r.next_cursor)})}>Charger plus de catégories</button>}
-    <div className="sc-fields"><Field label="État"><select value={fields.status_id||''} onChange={e=>edit('status_id',Number(e.target.value)||null)}><option value="">Choisir</option>{(options?.conditions||[]).map(c=><option key={c.id} value={c.id}>{c.title||c.name}</option>)}</select></Field>
+    <div className="sc-fields"><Field label="État Vinted"><input readOnly value={savedState==='draft'?(options&&!conditionForCatalog(options)?'Indisponible dans cette catégorie':vintedCondition):(options?.conditions?.find(c=>c.id===fields.status_id)?.title||'')}/></Field>
     <Field label="Taille Vinted"><select value={fields.size_id||''} onChange={e=>{const id=Number(e.target.value)||null;edit('size_id',id);edit('size_text',sizes.find(s=>s.id===id)?.title.split('/')[0]?.trim()||'')}}><option value="">Choisir</option>{sizes.map((s,i)=><option key={s.id+'-'+i} value={s.id}>{s.title}</option>)}</select></Field>
     <div className="sc-field"><span>Couleurs (deux maximum)</span><span className="sc-colors">{listingColors.map(c=><label key={c.id}><input type="checkbox" checked={fields.color_ids?.includes(c.id)||false} disabled={!fields.color_ids?.includes(c.id)&&fields.color_ids?.length>=2} onChange={e=>edit('color_ids',e.target.checked?[...(fields.color_ids||[]),c.id]:fields.color_ids.filter(id=>id!==c.id))}/>{c.title}</label>)}</span></div>
     {(options?.attributes||[]).filter(a=>a.required).map(a=><Field key={a.code} label={a.title}><select value={fields.item_attributes?.find(x=>x.code===a.code)?.ids[0]||''} onChange={e=>edit('item_attributes',[...fields.item_attributes.filter(x=>x.code!==a.code),...(e.target.value?[{code:a.code,ids:[Number(e.target.value)]}]:[])])}><option value="">Choisir</option>{(a.options||[]).map(v=><option value={v.id} key={v.id}>{v.title}</option>)}</select></Field>)}

@@ -1,6 +1,6 @@
-import {remote,remoteId,ScalencyError} from './scalency-api.js'
+import {remoteId,ScalencyError} from './scalency-api.js'
 import {accountBrand} from './scalency-quick.js'
-import {quickIssues} from '../src/lib/scalencyQuick.js'
+import {quickIssues,vintedCondition,withBioCondition} from '../src/lib/scalencyQuick.js'
 import {ASSET_BUCKET,ownedAsset} from './resources.js'
 
 const checked=r=>{if(r.error)throw r.error;return r.data}
@@ -27,8 +27,7 @@ export function reviewMetadata(options,missing,fields){
   return {status:missing.length?'review':'ready',missing,category:options?.catalog?.title||options?.ancestors?.at(-1)?.title||'',
     condition:options?.conditions?.find(c=>c.id===fields?.status_id)?.title||''}
 }
-export async function reviewEditedDraft(db,fields,photos){
-  const options=fields.catalog_id?await remote('catalogs/'+remoteId(fields.catalog_id)):null
+export async function reviewEditedDraft(db,fields,photos,options){
   const missing=quickIssues(fields,options)
   if(!photos.length)missing.push('Photos')
   if(fields.account_id){
@@ -50,6 +49,6 @@ export async function batchDrafts(db,user,q){
   const paths=[...new Set(drafts.map(d=>d.photos?.[0]?.path).filter(p=>p&&ownedAsset(p,user.id)))]
   const urls=paths.length?checked(await db.storage.from(ASSET_BUCKET).createSignedUrls(paths,1800)):[]
   const covers=new Map(urls.map(r=>[r.path,r.signedUrl]))
-  return {rows:drafts.map(d=>({id:d.id,version:d.version,fields:d.fields,updated_at:d.updated_at,
-    photo: covers.get(d.photos?.[0]?.path)||null,count:d.photos?.length||0,batch:d.payload?.batch||null})),page,pageSize,total:result.count}
+  return {rows:drafts.map(d=>({id:d.id,version:d.version,fields:d.payload?.batch?.status==='ready'?withBioCondition(d.fields):d.fields,updated_at:d.updated_at,
+    photo: covers.get(d.photos?.[0]?.path)||null,count:d.photos?.length||0,batch:d.payload?.batch?.status==='ready'?{...d.payload.batch,condition:vintedCondition}:d.payload?.batch||null})),page,pageSize,total:result.count}
 }
