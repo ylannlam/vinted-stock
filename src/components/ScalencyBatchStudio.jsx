@@ -14,6 +14,9 @@ function stage(row){
   if(b?.status==='running'&&Date.now()-Date.parse(b.started)>600000)return 'error'
   return labels[b?.status]?b.status:'draft'
 }
+function canDiscard(row){
+  return !!row.fields.account_id&&['draft','ready','review','error'].includes(row.batch?.status??'draft')
+}
 function Cover({row}){
   return row.photo?<img className="bs-cover" src={row.photo} loading="lazy" alt=""/>:<span className="bs-cover bs-placeholder" aria-label="Sans aperçu">—</span>
 }
@@ -32,7 +35,7 @@ function DiscardDialog({rows,onClose,onDiscard}){
     catch(e){setError(e.message);request.current=false;setBusy(false)}
   }
   return <dialog className="bs-discard-dialog" ref={dialog} aria-labelledby="bs-discard-title" onCancel={ev=>{ev.preventDefault();if(!request.current)onClose()}}>
-    <h2 id="bs-discard-title">{rows.length===1?'Supprimer cette annonce prête ?':'Supprimer ces '+rows.length+' annonces prêtes ?'}</h2>
+    <h2 id="bs-discard-title">{rows.length===1?'Supprimer ce brouillon ?':'Supprimer ces '+rows.length+' brouillons ?'}</h2>
     <ul>{rows.map(r=><li key={r.id}><strong>{r.fields.sku}</strong>{r.fields.title&&' · '+r.fields.title}</li>)}</ul>
     <p>La suppression du brouillon est définitive.</p>
     {error&&<p className="sc-error" role="alert">{error}</p>}
@@ -87,7 +90,7 @@ export default function ScalencyBatchStudio({params}){
       setData(r);setError('')
       setSelected(prev=>Object.fromEntries(Object.entries(prev).filter(([id,row])=>{
         const current=r.rows.find(x=>x.id===id)
-        return !current||current.version===row.version&&stage(current)==='ready'
+        return !current||current.version===row.version&&canDiscard(current)
       })))
       if(!r.rows.length&&page)setPage(p=>p-1)
     }).catch(e=>{if(live)setError(e.message)})
@@ -107,6 +110,7 @@ export default function ScalencyBatchStudio({params}){
   }
   function generate(row){
     if(pending.current.has(row.id))return
+    setSelected(prev=>{const next={...prev};delete next[row.id];return next})
     pending.current.add(row.id);setLocal(all=>({...all,[row.id]:row}));setEditor('');setPage(0)
     setNotice('Remplissage lancé pour '+(row.fields.sku||'cette annonce')+'. Tu peux saisir la suivante.');reload()
     act('batch-generate',{id:row.id,version:row.version}).catch(e=>{if(active.current)setNotice('Remplissage de '+(row.fields.sku||'la fiche')+' : '+e.message)})
@@ -127,7 +131,8 @@ export default function ScalencyBatchStudio({params}){
     })
     setNotice(row.batch?.missing?.length?'À compléter : '+row.batch.missing.join(', '):'Fiche enregistrée pour le récapitulatif.')
   }
-  const chosen=Object.values(selected).filter(r=>account&&r.fields.account_id===account)
+  const selection=Object.values(selected).filter(r=>account&&r.fields.account_id===account)
+  const chosen=selection.filter(r=>r.batch?.status==='ready')
   const rows=data?.rows||[],ready=rows.filter(r=>account&&r.fields.account_id===account&&stage(r)==='ready'&&!local[r.id])
   const intake=transfers.filter(t=>(!account||t.fields.account_id===account)&&(t.stage==='error'||!rows.some(row=>row.id===t.id&&row.batch)))
   const drafts=[...Object.values(local).filter(r=>(!account||r.fields.account_id===account)&&!rows.some(x=>x.id===r.id)),...rows.filter(row=>!intake.some(t=>t.id===row.id))]
@@ -196,8 +201,8 @@ export default function ScalencyBatchStudio({params}){
         <div className="bs-actions"><button disabled={sending} onClick={()=>setReview(false)}>Retour à la sélection</button><button className="sc-primary" disabled={sending||!chosen.length} onClick={submit}>{sending?'Mise en file en cours…':'Publier le lot via Scalency ('+chosen.length+')'}</button></div>
         <p className="bs-meta">Scalency gère le départ de chaque annonce. Garde cet onglet ouvert pendant l’envoi du lot.</p></>:
         <><div className="bs-actions"><button disabled={!ready.length} onClick={()=>setSelected(prev=>({...prev,...Object.fromEntries(ready.map(r=>[r.id,r]))}))}>Sélectionner les prêtes</button>
-        <button className="sc-primary" disabled={!chosen.length} onClick={()=>{setReceipts([]);setReview(true)}}>Relire la sélection ({chosen.length})</button>
-        {chosen.length>0&&<button type="button" className="bs-link bs-danger" onClick={()=>setDiscarding(chosen)}>Supprimer la sélection ({chosen.length})</button>}</div>
+        <button className="sc-primary" disabled={!chosen.length} onClick={()=>{setReceipts([]);setReview(true)}}>{selection.length===chosen.length?'Relire la sélection':'Relire les prêtes'} ({chosen.length})</button>
+        {selection.length>0&&<button type="button" className="bs-link bs-danger" onClick={()=>setDiscarding(selection)}>Supprimer la sélection ({selection.length})</button>}</div>
         {intake.map(t=><article key={t.id} className="bs-row"><div className="bs-row-body"><h3>{t.fields.sku}</h3>
           <p className="bs-meta">{t.fields.size_text} · {formatMoney(t.fields.price)}</p>
           <span className={'bs-badge '+(t.stage==='error'?'error':'running')}>{t.stage==='error'?'À reprendre':t.stage==='generating'?'Remplissage…':t.stage==='saving'?'En préparation…':'Envoi des photos…'}</span>
@@ -206,13 +211,14 @@ export default function ScalencyBatchStudio({params}){
         </article>)}
         {!data&&!drafts.length&&!intake.length?<p>Chargement des brouillons…</p>:!drafts.length&&!intake.length?<p className="bs-empty">Les annonces que tu prépares pour ce compte apparaîtront ici.</p>:drafts.map(row=>{
           const state=local[row.id]?'running':stage(row),f=row.fields
-          return <article className="bs-row" key={row.id}><input type="checkbox" aria-label={'Sélectionner '+(f.sku||f.title||'ce brouillon')} checked={!!selected[row.id]} disabled={!account||f.account_id!==account||state!=='ready'} onChange={()=>toggle(row)}/>
+          const removable=!local[row.id]&&canDiscard(row)
+          return <article className="bs-row" key={row.id}><input type="checkbox" aria-label={'Sélectionner '+(f.sku||f.title||'ce brouillon')} checked={!!selected[row.id]} disabled={!account||f.account_id!==account||!removable} onChange={()=>toggle(row)}/>
             <Cover row={row}/><div className="bs-row-body"><h3>{f.title||f.sku||'Brouillon sans titre'}</h3>
             <p className="bs-meta">{[f.sku&&'SKU '+f.sku,f.size_text&&'Taille '+f.size_text,f.price&&formatMoney(f.price),!account&&profiles.find(a=>a.id===f.account_id)?.login].filter(Boolean).join(' · ')}</p>
             <span className={'bs-badge '+state}>{labels[state]}</span>
             {(state==='review'||state==='error')&&<p className="bs-problem">{row.batch?.missing?.join(' · ')||'Remplissage interrompu, tu peux le relancer.'}</p>}
             </div><div className="bs-row-tools"><button disabled={state==='running'} className="bs-link" onClick={()=>edit(row.id)}>Modifier</button>
-            {state==='ready'&&<button type="button" className="bs-link bs-danger" onClick={()=>setDiscarding([row])}>Supprimer</button>}
+            {removable&&<button type="button" className="bs-link bs-danger" onClick={()=>setDiscarding([row])}>Supprimer</button>}
             {state!=='running'&&state!=='ready'&&login?.brand&&f.account_id===account&&row.count>0&&f.sku&&Number(f.price)>0&&<button className="bs-link" onClick={()=>generate(row)}>{state==='error'?'Réessayer':'Remplir'}</button>}</div></article>
         })}
         {data&&data.total>data.pageSize&&<div className="bs-actions"><button disabled={!page} onClick={()=>setPage(p=>p-1)}>Précédent</button><span>{page+1} / {Math.ceil(data.total/data.pageSize)}</span><button disabled={(page+1)*data.pageSize>=data.total} onClick={()=>setPage(p=>p+1)}>Suivant</button></div>}</>}
