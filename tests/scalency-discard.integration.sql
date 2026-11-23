@@ -43,7 +43,24 @@ begin
   exception when raise_exception then
     if sqlerrm<>'ready_draft_changed' then raise;end if;
   end;
-  if public.scalency_discard_ready_drafts(seller,'vt-test',selection)<>2 then raise exception 'Taille de lot inattendue';end if;
+  update public.listing_drafts set payload='{"batch":{"status":"running"}}' where id=a;
+  begin
+    perform public.scalency_discard_ready_drafts(seller,'vt-test',selection);
+    raise exception 'Une génération en cours a été supprimée';
+  exception when raise_exception then
+    if sqlerrm<>'ready_draft_changed' then raise;end if;
+  end;
+  update public.listing_drafts set payload='{}' where id=a;
+  insert into public.scalency_commands(request_id,owner_id,action)
+    values('publish-'||encode(sha256(convert_to(a::text,'UTF8')),'hex'),seller,'publish');
+  begin
+    perform public.scalency_discard_ready_drafts(seller,'vt-test',selection);
+    raise exception 'Un envoi en cours a été supprimé';
+  exception when raise_exception then
+    if sqlerrm<>'ready_draft_changed' then raise;end if;
+  end;
+  delete from public.scalency_commands where owner_id=seller and action='publish';
+  if public.scalency_discard_ready_drafts(seller,'vt-test',selection)<>2 then raise exception 'Lot brouillon simple et annonce prête incomplet';end if;
   if public.scalency_discard_ready_drafts(seller,'vt-test',selection)<>2 then raise exception 'Reprise de suppression invalide';end if;
   perform public.scalency_create_batch_draft(seller,a,fields,'[]');
   if exists(select 1 from public.listing_drafts where id in(a,b)) then raise exception 'Brouillon recréé';end if;
