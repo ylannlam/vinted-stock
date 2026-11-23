@@ -8,7 +8,7 @@ test('Titre, deux paragraphes, mentions et exactement seize hashtags',()=>{
  const {title,description}=composeVintedSeo(parts)
  assert.equal(title,'Robe bordeaux taille M')
  const lines=description.split('\n\n')
- assert.deepEqual(lines.slice(0,3),[parts.sentences.join(' '),'Achat en lot possible, je fais un prix.','Taille : M | État : à préciser | Mesures : sur demande'])
+ assert.deepEqual(lines.slice(0,3),[parts.sentences.join(' '),'Achat en lot possible, je fais un prix.','Taille : M | État : Neuf | Mesures : sur demande'])
  assert.equal(new Set(lines[3].split(' ')).size,16)
  assert.ok(lines[3].endsWith('#tailleM'))
 })
@@ -83,4 +83,12 @@ test('Une indisponibilité de Claude passe la même fiche à Gemini avec sa prop
  assert.deepEqual(hosts,['api.oneprovider.dev','generativelanguage.googleapis.com'])
  assert.equal(result.catalog_id,1777)
  assert.match(result.usage.model,/gemini/)
+})
+
+test('La bio des articles neufs porte le même état avec ou sans étiquette',()=>{
+ for(const condition of [undefined,'Neuf avec étiquette','Neuf sans étiquette']){
+   const result=composeVintedSeo(parts,{condition})
+   assert.ok(result.description.includes('État : Neuf |'))
+   assert.ok(updateSeoDetails(result,{condition:'Neuf avec étiquette'}).description.includes('État : Neuf |'))
+ }
 })

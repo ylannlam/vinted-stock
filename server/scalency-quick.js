@@ -48,9 +48,10 @@ export async function prepareQuickDraft(db,user,req,row,photosFor,review){
   const urls=await photosFor(db,photos,300)
   const product=source.product
   const size=fields.size_text||source.stock?.size||''
-  const settings={...presets.effective,package:'Petit',no_brand:false,description_footer:''}
+  const condition=(fields.seo_condition||presets.effective.condition)==='Neuf avec étiquette'?'Neuf avec étiquette':'Neuf sans étiquette'
+  const settings={...presets.effective,condition,package:'Petit',no_brand:false,description_footer:''}
   const facts=listingFacts(product,size)
-  const result=await generateListingText({...row,fields:{...fields,size_text:size}},urls,catalogs,listingColors,
+  const result=await generateListingText({...row,fields:{...fields,size_text:size,seo_condition:condition}},urls,catalogs,listingColors,
     {token:listingAiToken(req),settings,quick:true,shein:facts?{details:facts.details}:null})
   let stockSize=''
   if(!size&&!result.label_size&&product?.id){
@@ -61,9 +62,9 @@ export async function prepareQuickDraft(db,user,req,row,photosFor,review){
   const sizeText=size||result.label_size||stockSize
   const category=result.catalog_id,options=category?await remote('catalogs/'+remoteId(category)):null
   const next=applyListingPresets({...fields,brand_id:null,brand_title:brand,title:result.title,description:result.description,
-    catalog_id:category,status_id:fields.seo_condition?options?.conditions?.find(c=>c.title===fields.seo_condition)?.id:null,size_id:null,package_size_id:null,size_text:sizeText,color_ids:result.color_ids,item_attributes:[]},options,settings)
-  const copy=composeVintedSeo(result.seoParts,{size:sizeText,condition:fields.seo_condition,measures:listingFacts(product,sizeText)?.measures})
-  const safe=listingFields({...next,...copy,seo_condition:fields.seo_condition||''},{scalency:true})
+    catalog_id:category,status_id:options?.conditions?.find(c=>c.title===condition)?.id||null,size_id:null,package_size_id:null,size_text:sizeText,color_ids:result.color_ids,item_attributes:[]},options,settings)
+  const copy=composeVintedSeo(result.seoParts,{size:sizeText,condition,measures:listingFacts(product,sizeText)?.measures})
+  const safe=listingFields({...next,...copy,seo_condition:condition},{scalency:true})
   const missing=quickIssues(safe,options)
   const metadata=review?{payload:{...row.payload,scalency_source:'stock-vinted',batch:{...review(options,missing,safe),ai_model:result.usage?.model||null}}}:{}
   const saved=checked(await db.from('listing_drafts').update({...metadata,fields:safe,catalog_product_id:product?.id||null,version:row.version+1,updated_at:new Date().toISOString()}).eq('id',row.id).eq('owner_id',user.id).eq('version',row.version).eq('state','draft').select('id,fields,version').maybeSingle())

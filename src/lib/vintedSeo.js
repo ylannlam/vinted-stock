@@ -1,7 +1,11 @@
 import {tidyListingTitle} from './listingSettings.js'
 
 const bundleSentence='Achat en lot possible, je fais un prix.'
-const fallbackCondition='à préciser'
+const publishedCondition=condition=>{
+  const label=condition?.trim()
+  if(!label||label==='Neuf avec étiquette'||label==='Neuf sans étiquette')return 'Neuf'
+  return label
+}
 const sizeValue=value=>{
   const size=String(value||'').replace(/\s+/g,' ').trim()||'M'
   return /^(?:[2-9]?x{0,4}[sl]|m)$/i.test(size)?size.toUpperCase():size
@@ -44,7 +48,7 @@ export function composeVintedSeo(parts,{size,condition,measures=[]}={}){
   if(tags.length!==15)throw Error('La génération doit fournir quinze hashtags distincts avant le hashtag de taille.')
   tags.push(sizeTag(size))
   const measurements=measures.map(m=>m.name+' '+m.value).join(', ')
-  const line='Taille : '+size+' | État : '+(condition?.trim()||fallbackCondition)+' | Mesures : '+(measurements||'sur demande')
+  const line='Taille : '+size+' | État : '+publishedCondition(condition)+' | Mesures : '+(measurements||'sur demande')
   const description=[paragraph,bundleSentence,line,tags.join(' ')].join('\n\n')
   if(description.length>2000)throw Error('La bio dépasse la longueur acceptée par Vinted.')
   if(typeof parts.title!=='string'||parts.title.trim().length<3)throw Error('Titre SEO manquant.')
@@ -56,7 +60,7 @@ export function updateSeoDetails(fields,{size,condition}){
   const match=fields.description?.match(/^Taille : ([^\n|]+?) \| État : ([^\n|]+?) \| Mesures : ([^\n]+)$/m)
   if(!match||!fields.description.includes(bundleSentence))return {}
   const nextSize=sizeValue(size===undefined?match[1]:size)
-  const nextCondition=condition===undefined?match[2]:condition||fallbackCondition
+  const nextCondition=condition===undefined?match[2]:publishedCondition(condition)
   const sizeChanged=nextSize!==match[1]
   const nextLine='Taille : '+nextSize+' | État : '+nextCondition+' | Mesures : '+(sizeChanged?'sur demande':match[3])
   let description=fields.description.replace(match[0],()=>nextLine)
