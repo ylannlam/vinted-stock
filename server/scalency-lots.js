@@ -1,3 +1,4 @@
+import {capacityResult} from './scalency-cadence.js'
 import {requireWorkspaceAccount} from './scalency-account-health.js'
 import {createHash} from 'node:crypto'
 import {remote,remoteId,ScalencyError} from './scalency-api.js'
@@ -24,9 +25,9 @@ export async function acceptPublicationLot(db,user,body){
     if(existing)return {id,count:entries.length}
     throw error
   }
-  const accepted=await db.rpc('scalency_accept_lot',{p_lot:id,p_owner:user.id,p_account:account,p_entries:entries.map(({id,version})=>({id,version}))})
+  const accepted=await db.rpc('scalency_accept_limited_lot',{p_lot:id,p_owner:user.id,p_account:account,p_entries:entries.map(({id,version})=>({id,version}))})
   if(accepted.error?.code==='23505'||['lot_changed','lot_conflict'].includes(accepted.error?.message))throw new ScalencyError('Une fiche a changé ou appartient déjà à un lot. Actualise l’atelier pour relire la sélection.',409)
-  checked(accepted)
+  capacityResult(accepted)
   return {id,count:entries.length}
 }
 

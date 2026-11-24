@@ -1,0 +1,8 @@
+.cadence-card,.cadence-overview{padding:1rem 1.2rem;border:1px solid #cbded9;border-radius:14px;background:white;margin:1rem 0;color:#183932}
+.cadence-card,.cadence-card form{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.cadence-card form{width:100%;justify-content:flex-start;align-items:end}
+.cadence-card label{display:grid;gap:.35rem;font-size:.9rem}
+.cadence-card input{max-width:10rem}.cadence-card p{margin:.25rem 0}
+.cadence-scroll{overflow-x:auto}.cadence-overview table{width:100%;border-collapse:collapse}
+.cadence-overview td,.cadence-overview th{padding:.65rem;text-align:left;border-bottom:1px solid #dfebe8}
+.cadence-overview thead th{font-size:.85rem;color:#46665e}

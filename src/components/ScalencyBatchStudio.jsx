@@ -3,6 +3,7 @@ import {act,query,formatMoney} from '../lib/scalency'
 import {retryIntake,watchIntake} from '../lib/batchIntake'
 import {listingColors} from '../lib/scalencyQuick'
 import {PhotoAccountPanel} from './AccountPhotos'
+import {CadenceSettings,useCadence} from './PublicationCadence'
 import {AccountHealthNotice,preparationBlock,useAccountHealth} from './ScalencyAccountHealth'
 import BatchEntry from './BatchEntry'
 import ScalencyDraft from './ScalencyDraft'
@@ -75,6 +76,8 @@ export default function ScalencyBatchStudio({params}){
   const lock=useRef(false),active=useRef(true),userPicked=useRef(false),pending=useRef(new Set())
   const returnToReview=useRef(false)
   const health=useAccountHealth()
+  const cadence=useCadence()
+  const quota=cadence.rows.find(row=>row.account===account)
   const blocked=preparationBlock(health,account)
   const login=profiles.find(a=>a.id===account)
   const reload=useCallback(()=>setRevision(n=>n+1),[])
@@ -147,6 +150,7 @@ export default function ScalencyBatchStudio({params}){
     setNotice(row.batch?.missing?.length?'À compléter : '+row.batch.missing.join(', '):'Fiche enregistrée pour le récapitulatif.')
   }
   const chosen=Object.values(selected).filter(r=>account&&r.fields.account_id===account)
+  const toQueue=chosen.slice(0,cadence.error?0:(quota?.remaining??0))
   const reviewKey=review?JSON.stringify(chosen.map(r=>[r.id,r.version])):''
   useEffect(()=>{
     let active=true
@@ -179,18 +183,20 @@ export default function ScalencyBatchStudio({params}){
     }finally{lock.current=false;reload()}
   }
   async function submit(){
-    if(blocked||lock.current||!review||!chosen.length)return
+    if(blocked||lock.current||!review||!toQueue.length)return
     lock.current=true;setSending(true);setError('');setNotice('')
     try{
-      const result=await act('accept-lot',{account,entries:chosen.map(({id,version})=>({id,version}))})
-      setLastLot(result.id);setSelected({});setReview(false)
+      const result=await act('accept-lot',{account,entries:toQueue.map(({id,version})=>({id,version}))})
+      setLastLot(result.id);setSelected(Object.fromEntries(chosen.slice(toQueue.length).map(row=>[row.id,row])));setReview(false)
       setNotice('Lot enregistré · '+result.count+' annonce'+(result.count>1?'s':'')+'. Tu peux fermer cet onglet ou changer de compte.')
     }catch(e){setError(e.message)}
-    finally{lock.current=false;setSending(false);reload()}
+    finally{lock.current=false;setSending(false);reload();cadence.refresh()}
   }
   return <main className="sc-work bs-work"><header className="sc-head"><div><p>Stock Vinted / Scalency</p><h1>Atelier d’annonces</h1></div><a href="#publication">Suivi des publications</a></header>
     <fieldset className="bs-account" disabled={sending||!!editor}><ScalencyQuickAccount accounts={profiles} health={health} account={account} onSelect={choose} onSaved={updateProfile}/></fieldset>
     {!editor&&<AccountHealthNotice health={health} id={account} overview/>}
+    {quota&&!editor&&<CadenceSettings key={account} row={quota} blocked={blocked} onSaved={cadence.refresh}/>}
+    {account&&cadence.error&&<p role="alert">Plafond indisponible. <button onClick={cadence.refresh}>Réessayer</button></p>}
     {account&&login&&<PhotoAccountPanel key={account} account={account} login={login.login}/>}
     {error&&<p role="alert" className="sc-error">{error} <button onClick={reload}>Réessayer</button></p>}
     {notice&&<p className="bs-notice" role="status">{notice}{lastLot&&<> · <a href={'#publication?lot='+lastLot}>Suivre le lot</a></>}</p>}
@@ -204,7 +210,9 @@ export default function ScalencyBatchStudio({params}){
         {!review&&<button className="bs-link" onClick={()=>{reload();health.refresh()}}>Actualiser</button>}</div>
       {discarding&&<DiscardDialog rows={discarding} onClose={()=>setDiscarding(null)} onDiscard={discard}/>}
       {review?<>{duplicateCheck&&<p role="status">{duplicateCheck}</p>}{chosen.map(row=><ReviewRow key={row.id} row={row} onEdit={edit} onDiscard={setDiscarding} blocked={!!blocked} disabled={sending||!!quickEdit} onQuick={setQuickEdit} quick={quickEdit===row.id} onSave={saveQuickEdit} duplicates={duplicates[row.id]}/>)}
-        <div className="bs-actions"><button disabled={sending||!!quickEdit} onClick={()=>setReview(false)}>Retour à la sélection</button><button className="sc-primary" disabled={!!blocked||sending||!chosen.length||!!quickEdit||duplicateCheck==='Vérification des doublons…'} onClick={submit}>{sending?'Enregistrement…':'Mettre dans la file ('+chosen.length+')'}</button></div>
+        <p role="status">{blocked||(!quota||cadence.error?'Vérification du plafond…':quota.remaining+' place(s) disponible(s) aujourd’hui.')}</p>
+        {!blocked&&quota&&!cadence.error&&toQueue.length<chosen.length&&<p>Les {toQueue.length} premières fiches du récapitulatif peuvent partir. Les {chosen.length-toQueue.length} autres restent en brouillon.</p>}
+        <div className="bs-actions"><button disabled={sending||!!quickEdit} onClick={()=>setReview(false)}>Retour à la sélection</button><button className="sc-primary" disabled={!!blocked||sending||!toQueue.length||!!quickEdit||duplicateCheck==='Vérification des doublons…'} onClick={submit}>{sending?'Enregistrement…':'Mettre dans la file ('+toQueue.length+')'}</button></div>
         <p className="bs-meta">Scalency gère le départ de chaque annonce. Tu peux fermer cet onglet dès que le lot est enregistré.</p></>:
         <><div className="bs-actions"><button disabled={!ready.length} onClick={()=>setSelected(prev=>({...prev,...Object.fromEntries(ready.map(r=>[r.id,r]))}))}>Sélectionner les prêtes</button>
         <button className="sc-primary" disabled={!chosen.length} onClick={()=>{setReview(true)}}>Relire la sélection ({chosen.length})</button>

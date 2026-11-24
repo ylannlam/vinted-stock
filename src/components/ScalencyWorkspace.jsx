@@ -12,6 +12,7 @@ const destination={orders:'ventes',items:'dressing',jobs:'publication',accounts:
 const go=(kind,params={})=>{window.location.hash=destination[kind]+'?'+new URLSearchParams(params)}
 const filters={items:[['unlinked','À associer'],['withdraw','À retirer']],jobs:[['failed','À vérifier']],orders:[['prepare','À préparer'],['archive','Historique des ventes']],conversations:[['unread','Non lus']]}
 import {AccountHealthNotice,useAccountHealth} from './ScalencyAccountHealth'
+import {CadenceOverview} from './PublicationCadence'
 
 function Picture({url}){return url?<img className="sc-thumb" loading="lazy" src={url} alt=""/>:<span className="sc-thumb blank" aria-hidden="true">◇</span>}
 function Notice({text}){return text?<p className="sc-error" role="alert">{text}</p>:null}
@@ -69,6 +70,7 @@ function WorkspaceList({kind,admin,params}){
  const rowLabel=(r)=>kind==='orders'?[r.status_fr||r.state,r.account,formatDate(r.deadline)]:kind==='items'?[r.sku||'Sans SKU',r.sold?'Vendue':r.status==='active'?'En ligne':'Inactive',formatMoney(r.price)]:kind==='jobs'?[r.type_label,r.status_label||r.status,formatDate(r.not_before)]:kind==='accounts'?[byAccount.get(String(r.id))?.label,r.linked?'Relié':'Non relié',r.agent?.active?'Bot allumé':'Bot inactif']:kind==='conversations'?[r.buyer,r.unread?'Non lu':'Lu',r.preview]:[r.fields?.sku||'Sans SKU',formatDate(r.updated_at)]
  return <main className="sc-work"><header className="sc-head"><div><p>Stock Vinted / Scalency</p><h1>{titles[kind]}</h1>{params.login&&<p>Compte · {params.login} <a href={'#'+destination[kind]}>Tous les comptes</a></p>}</div><div className="sc-tools">{kind==='drafts'?<button className="sc-primary" onClick={()=>setEditor('new')}>＋ Nouvelle annonce</button>:<button disabled={busy} onClick={()=>sync()}>{busy?'Synchronisation…':'Actualiser'}</button>}</div></header>
  {kind==='accounts'&&admin&&<AccountHealthNotice health={health} id={selected?.remote_id} overview/>}
+  {kind==='accounts'&&admin&&!selected&&<CadenceOverview health={health}/>}
  <Notice text={err}/>{kind==='accounts'&&connection&&!connection.webhook&&<button disabled={busy} onClick={async()=>{setBusy(true);try{await act('webhook');setConnection({...connection,webhook:true})}catch(e){setErr(e.message)}finally{setBusy(false)}}}>Activer la réception automatique des ventes</button>}
  {kind==='drafts'&&<p className="sc-pages"><a href="#publication">Suivre mes publications</a></p>}
  {kind==='jobs'&&<p className="sc-pages"><a href="#publication">Voir le suivi des publications</a></p>}

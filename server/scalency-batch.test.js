@@ -14,6 +14,12 @@ test('la génération transmet les octets des photos privées de leur propriéta
 // without creating any jobs on a seller account.
 function database(tables){
   return {storage:{from:()=>({createSignedUrls:async paths=>({data:paths.map(()=>({signedUrl:'https://example.test/photo.jpg'}))})})},
+    rpc(name,p){
+      assert.equal(name,'scalency_reserve_single')
+      const row=tables.listing_drafts.find(r=>r.id===p.p_draft&&r.owner_id===p.p_owner&&r.version===p.p_version&&r.state==='draft'&&r.fields.account_id===p.p_account)
+      if(row)Object.assign(row,{state:'preparing',fields:p.p_fields,scheduled_at:p.p_due})
+      return {data:!!row}
+    },
     from(name){
       const table=tables[name];assert.ok(table,name)
       const filters=[];let patch

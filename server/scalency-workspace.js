@@ -1,3 +1,4 @@
+import {cadenceReport,capacityResult,setCadence} from './scalency-cadence.js'
 import {readAccountHealth,requireWorkspaceAccount} from './scalency-account-health.js'
 import {isId} from './dotb.js'
 import {createHash} from 'node:crypto'
@@ -163,6 +164,11 @@ export async function scalencyHandler(req,res,{db,user,role}){
   const q=req.query, b=req.body||{}, action=req.method==='GET'?q.view:b.action
   if(role!=='admin'&&!['home','orders','items','order','label','pack','stock','link','relations','product'].includes(action)&&!(action==='sync'&&['orders','items'].includes(b.kind)))fail('Réservé à l’administrateur.',403)
   if(req.method==='GET'){
+    if(action==='cadence'){
+      res.setHeader('Cache-Control','private, no-store')
+      await syncPage(db,'jobs')
+      return res.json(await cadenceReport(db))
+    }
     if(action==='batch-drafts')return res.json(await batchDrafts(db,user,q))
     if(action==='publication-lots')return res.json(await publicationLots(db,user,q,saveRecords))
     if(action==='publication-tracking')return res.json(await publicationTracking(db,user,q))
@@ -217,6 +223,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
     fail('Vue inconnue.',404)
   }
   if(req.method!=='POST')fail('Méthode invalide.',405)
+  if(action==='cadence-save')return res.json(await setCadence(db,b))
   if(action==='manage-publication')return res.json(await managePublication(db,user,b,saveRecords))
   if(action==='accept-lot')return res.json(await acceptPublicationLot(db,user,b))
   if(action==='retry-lot-entry')return res.json(await retryLotEntry(db,user,b))
@@ -352,7 +359,8 @@ export async function scalencyHandler(req,res,{db,user,role}){
     const {payload,preview,at}=await prepareScalencyPublication(db,row,{quick:['quick-publish','autopost','batch-submit'].includes(action),schedule:b.schedule})
     if(action==='validate')return res.json(preview)
     const result=await once(db,user,'publish',row.id,async()=>{
-      const locked=checked(await db.from('listing_drafts').update({state:'preparing',fields:row.fields,message:'Transmission à Scalency'}).eq('id',row.id).eq('state','draft').eq('version',row.version).select('id').maybeSingle())
+      const locked=capacityResult(await db.rpc('scalency_reserve_single',{p_account:row.fields.account_id,p_owner:user.id,
+        p_draft:row.id,p_version:row.version,p_fields:row.fields,p_due:at?.toISOString()||null}))
       if(!locked)fail('Le brouillon a changé. Rouvre-le.',409)
       try{
         const queued=await remote('items',{method:'POST',body:payload})
