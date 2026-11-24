@@ -1,5 +1,6 @@
 import {createHash} from 'node:crypto'
 import {AppError,isId} from './dotb.js'
+import {accountBlock} from './scalency-account-health.js'
 import {uploadTarget,ownedAsset,ASSET_BUCKET,checkAssetInfo,ensureAssetBucket} from './resources.js'
 
 const checked=result=>{if(result.error)throw result.error;return result.data}
@@ -22,9 +23,10 @@ function profileId(id){
   const hex=createHash('sha256').update('scalency-photo-account/'+id).digest('hex')
   return [hex.slice(0,8),hex.slice(8,12),'5'+hex.slice(13,16),'8'+hex.slice(17,20),hex.slice(20,32)].join('-')
 }
-export function photoAccounts(remote,register,profiles){
-  const sources=[remote.map(r=>({key:r.remote_id,login:r.payload.login,linked:r.payload.linked===true})),
-    profiles.map(p=>({key:p.id,login:p.login,profile:p})),register.map(r=>({key:r.id,login:r.pseudo}))]
+export function photoAccounts(remote,register,profiles,observations=[]){
+  const bannedIds=new Set(observations.filter(r=>r.value?.status==='banned').map(r=>r.id.slice('profile-ban:'.length)))
+  const sources=[remote.map(r=>({key:r.remote_id,login:r.payload.login,linked:r.payload.linked===true,banned:accountBlock(r.payload)?.kind==='banned'})),
+    profiles.map(p=>({key:p.id,login:p.login,profile:p})),register.map(r=>({key:r.id,login:r.pseudo,banned:['banni_temp','banni_def'].includes(r.statut)}))]
   const ambiguous=new Set()
   for(const list of sources){
     const seen=new Set()
@@ -37,16 +39,18 @@ export function photoAccounts(remote,register,profiles){
     if(!g){g={id:key,login:row.login||row.key,aliases:new Set(),linked:false};groups.push(g)}
     if(i===0){g.remote=row.key;g.linked=row.linked}
     if(row.profile){g.id=row.key;g.profile=row.profile}
+    if(row.banned||bannedIds.has(row.key))g.banned=true
     g.aliases.add(row.key);g.aliases.add(key);byKey.set(key,g)
     if(login&&!ambiguous.has(login))byName.set(login,g)
   }
-  return groups.sort((a,b)=>Number(b.linked)-Number(a.linked)||a.login.localeCompare(b.login,'fr'))
+  return groups.filter(g=>!g.banned).sort((a,b)=>Number(b.linked)-Number(a.linked)||a.login.localeCompare(b.login,'fr'))
 }
 async function directory(db){
   const lists=await Promise.all([
     all(()=>db.from('scalency_records').select('remote_id,payload').eq('kind','accounts').order('remote_id')),
-    all(()=>db.from('vinted_accounts').select('id,pseudo').is('deleted_at',null).order('id')),
-    all(()=>db.from('account_photo_profiles').select(fields).order('id'))
+    all(()=>db.from('vinted_accounts').select('id,pseudo,statut').is('deleted_at',null).order('id')),
+    all(()=>db.from('account_photo_profiles').select(fields).order('id')),
+    all(()=>db.from('scalency_settings').select('id,value').like('id','profile-ban:%').order('id'))
   ])
   return photoAccounts(...lists)
 }
@@ -70,6 +74,7 @@ async function backgrounds(db,ids){
 function present(group,bg,detail=false){
   const p=group.profile||{},prompts={front:p.prompt_front||'',back:p.prompt_back||''}
   return {id:group.id,login:group.login,linked:group.linked,remote:group.remote||null,
+    ...(!detail&&{aliases:[...group.aliases]}),
     name:p.photo_label||bg?.title||'',image:bg?.thumb_url||bg?.image_url||'',hasImage:!!bg?.image_path,hasPrompt:!!prompts.front.trim(),
     ...(detail?{version:p.version||0,label:p.photo_label||'',background_id:bg?.id||null,original:bg?.image_url||'',
       front:prompts.front,back:prompts.back,customFront:p.prompt_front??null,customBack:p.prompt_back??null}:{})}

@@ -17,6 +17,7 @@ import {publicationTracking} from './scalency-publications.js'
 import {batchDrafts,batchImages,checkBatchSubmission,reviewEditedDraft,reviewMetadata} from './scalency-batch.js'
 import {acceptPublicationLot,publicationLots,retryLotEntry,reviewDuplicates} from './scalency-lots.js'
 import {catalogProduct,connectedRecords,draftSource} from './scalency-relations.js'
+import {skuFeed,skuReferences,linkSku} from './scalency-sku.js'
 const fail=(message,status)=>{throw new ScalencyError(message,status)}
 const checked=r=>{if(r.error)throw r.error;return r.data}
 const pageSize=36
@@ -164,6 +165,10 @@ export async function scalencyHandler(req,res,{db,user,role}){
   const q=req.query, b=req.body||{}, action=req.method==='GET'?q.view:b.action
   if(role!=='admin'&&!['home','orders','items','order','label','pack','stock','link','relations','product'].includes(action)&&!(action==='sync'&&['orders','items'].includes(b.kind)))fail('Réservé à l’administrateur.',403)
   if(req.method==='GET'){
+    if(action==='sku-feed'||action==='sku-references'){
+      res.setHeader('Cache-Control','private, no-store')
+      return res.json(action==='sku-feed'?await skuFeed(q.feed,q.cursor||''):await skuReferences(db,user))
+    }
     if(action==='cadence'){
       res.setHeader('Cache-Control','private, no-store')
       await syncPage(db,'jobs')
@@ -223,6 +228,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
     fail('Vue inconnue.',404)
   }
   if(req.method!=='POST')fail('Méthode invalide.',405)
+  if(action==='sku-link')return res.json(await linkSku(db,b))
   if(action==='cadence-save')return res.json(await setCadence(db,b))
   if(action==='manage-publication')return res.json(await managePublication(db,user,b,saveRecords))
   if(action==='accept-lot')return res.json(await acceptPublicationLot(db,user,b))

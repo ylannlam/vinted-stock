@@ -1,5 +1,6 @@
 import {useEffect,useState,useRef} from 'react'
 import {query,act,formatDate,formatMoney} from '../lib/scalency'
+import SkuActivity from './SkuActivity'
 import ScalencyQuickAccount from './ScalencyQuickAccount'
 import ScalencyDraft from './ScalencyDraft'
 import PublicationTracker from './PublicationTracker'
@@ -46,6 +47,7 @@ function Details({kind,row,close,reload,admin}){
  </article>
 }
 export default function ScalencyWorkspace({kind,admin,params={}}){
+ if(kind==='items'&&admin&&params.section==='sku')return <SkuActivity/>
  if(kind==='drafts'&&admin)return <ScalencyBatchStudio params={params}/>
  if(kind==='jobs'&&admin&&!params.id&&!params.filter&&params.section!=='actions')return <PublicationTracker params={params}/>
  return <WorkspaceList kind={kind} admin={admin} params={params}/>
@@ -72,6 +74,7 @@ function WorkspaceList({kind,admin,params}){
  {kind==='accounts'&&admin&&<AccountHealthNotice health={health} id={selected?.remote_id} overview/>}
   {kind==='accounts'&&admin&&!selected&&<CadenceOverview health={health}/>}
  <Notice text={err}/>{kind==='accounts'&&connection&&!connection.webhook&&<button disabled={busy} onClick={async()=>{setBusy(true);try{await act('webhook');setConnection({...connection,webhook:true})}catch(e){setErr(e.message)}finally{setBusy(false)}}}>Activer la réception automatique des ventes</button>}
+ {admin&&['home','items','orders'].includes(kind)&&<p className="sc-pages"><a href="#dressing/sku">Suivi par SKU</a></p>}
  {kind==='drafts'&&<p className="sc-pages"><a href="#publication">Suivre mes publications</a></p>}
  {kind==='jobs'&&<p className="sc-pages"><a href="#publication">Voir le suivi des publications</a></p>}
  {editor?<ScalencyDraft id={editor==='new'?null:editor} sku={params.sku} piece={params.piece} product={params.product} onClose={()=>{setEditor(null);reload()}} onQueued={result=>go('jobs',result?.job?.id?{job:String(result.job.id)}:{})}/>:selected?<Details admin={admin} kind={kind} row={selected} close={()=>{if(params.id)go(kind,params.filter?{filter:params.filter}:{});else setSelected(null)}} reload={reload}/>:kind==='home'?(data?<Home data={data} admin={admin}/>:<p>Chargement du tableau de bord…</p>):<>

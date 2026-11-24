@@ -93,15 +93,21 @@ export function PhotoAccountPanel({account,login,onSaved,autoEdit=false}){
 export default function AccountPhotos({account}){
   const [rows,setRows]=useState([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[search,setSearch]=useState(''),[scope,setScope]=useState('linked'),[incomplete,setIncomplete]=useState(false),[revision,setRevision]=useState(0)
   useEffect(()=>{let live=true;setLoading(true);read('photos').then(r=>{if(live){setRows(r.accounts);setError('');if(!r.accounts.some(a=>a.linked))setScope('all')}}).catch(e=>{if(live)setError(e.message)}).finally(()=>{if(live)setLoading(false)});return()=>{live=false}},[revision])
+  useEffect(()=>{
+    const refresh=()=>{if(document.visibilityState==='visible')setRevision(r=>r+1)}
+    document.addEventListener('visibilitychange',refresh)
+    return ()=>document.removeEventListener('visibilitychange',refresh)
+  },[])
+  const selected=account&&rows.find(r=>r.id===account||r.remote===account||r.aliases?.includes(account))
   const linked=rows.filter(a=>a.linked)
   const shown=rows.filter(r=>(scope==='all'||r.linked)&&(!incomplete||!ready(r))&&normalize([r.login,r.name].join(' ')).includes(normalize(search.trim())))
   return <main className="ap-page"><header><h1>Fonds et prompts</h1><p>Le fond photo et les consignes ChatGPT de chaque compte Vinted.</p></header>
-    {account&&<div className="ap-focus"><a className="ap-link" href={photosLink()}>Retour à la grille</a><PhotoAccountPanel key={account} account={account} onSaved={()=>setRevision(r=>r+1)}/></div>}
+    {selected&&<div className="ap-focus"><a className="ap-link" href={photosLink()}>Retour à la grille</a><PhotoAccountPanel key={selected.id} account={selected.id} onSaved={()=>setRevision(r=>r+1)}/></div>}
     <div className="ap-tools"><label><span>Rechercher</span><input type="search" placeholder="Pseudo ou nom du fond" value={search} onChange={e=>setSearch(e.target.value)}/></label>
       <label><span>Comptes</span><select value={scope} onChange={e=>setScope(e.target.value)}><option value="linked">Reliés à Scalency ({linked.length})</option><option value="all">Tous les comptes ({rows.length})</option></select></label>
       <label className="ap-check"><input type="checkbox" checked={incomplete} onChange={e=>setIncomplete(e.target.checked)}/>À compléter uniquement</label></div>
     {error&&<p role="alert" className="ap-error">{error} <button onClick={()=>setRevision(r=>r+1)}>Réessayer</button></p>}
-    {loading&&!rows.length?<p>Chargement des comptes…</p>:<div className="ap-grid">{shown.map(r=><a key={r.id} className={'ap-card'+(account===r.id?' ap-current':'')} href={photosLink(r.id)} onClick={()=>window.scrollTo(0,0)}>
+    {loading&&!rows.length?<p>Chargement des comptes…</p>:<div className="ap-grid">{shown.map(r=><a key={r.id} className={'ap-card'+(selected?.id===r.id?' ap-current':'')} href={photosLink(r.id)} onClick={()=>window.scrollTo(0,0)}>
       {r.image?<img src={r.image} alt="" loading="lazy"/>:<div className="ap-empty">Aucun fond</div>}<div className="ap-card-info"><strong>{r.login}</strong><span>{r.name||'Fond à choisir'}</span>{!ready(r)&&<small>À compléter</small>}</div></a>)}</div>}
     {!loading&&!error&&!shown.length&&<p>Aucun compte ne correspond à cette recherche.</p>}
   </main>

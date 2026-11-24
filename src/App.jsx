@@ -3,7 +3,6 @@ const VintedAccountsTab=lazy(()=>import('./components/VintedAccountsTab'))
 const ScalencyWorkspace=lazy(()=>import('./components/ScalencyWorkspace'))
 const BudgetTab=lazy(()=>import('./components/BudgetTab'))
 const CatalogueTab=lazy(()=>import('./components/CatalogueTab'))
-const ResourcesTab=lazy(()=>import('./components/ResourcesTab'))
 import { captureDraft } from './lib/catalog'
 import { TAB_ADSPOWER, TAB_LISTINGS, TAB_SALES, TAB_BUDGET, TAB_CATALOG, TAB_RESOURCES, TAB_AGENT } from './constants'
 import { useState, useEffect, useRef, lazy, Suspense } from 'react'
@@ -72,8 +71,10 @@ export default function App() {
 
   useEffect(() => {
     if(profile && profile.role!=='admin' && [TAB_RESOURCES,TAB_BUDGET,TAB_COMPTES_VINTED,TAB_LISTINGS,TAB_AGENT].includes(activeTab))setActiveTab(TAB_HOME)
-    // Les annonces ont quitté l'atelier photo : un ancien lien « atelier ?section=listings » ouvre l'onglet Annonces.
-    if(activeTab===TAB_RESOURCES&&navigationFilters.section==='listings')setActiveTab(TAB_LISTINGS,navigationFilters.profile?{profile:navigationFilters.profile}:{})
+    if(activeTab===TAB_RESOURCES&&profile?.role==='admin'){
+      if(navigationFilters.section==='listings')setActiveTab(TAB_LISTINGS,navigationFilters.profile?{profile:navigationFilters.profile}:{})
+      else setActiveTab(TAB_COMPTES_VINTED,{section:'fonds'})
+    }
   }, [profile,activeTab])
 
   useEffect(() => {
@@ -537,12 +538,11 @@ export default function App() {
         </nav>
         {accountSection==='fonds' ? <AccountPhotos account={navigationFilters.account||''}/> : accountSection==='scalency'
           ? <ScalencyWorkspace key={JSON.stringify(navigationFilters)} kind="accounts" admin={isAdmin} params={navigationFilters}/>
-          : <VintedAccountsTab key={accountSection} initialView={accountSection==='creation'?'isolation':'ready'} onDirections={()=>setActiveTab(TAB_RESOURCES,{section:'accounts'})}/>}
+          : <VintedAccountsTab key={accountSection} initialView={accountSection==='creation'?'isolation':'ready'} onDirections={()=>setActiveTab(TAB_COMPTES_VINTED,{section:'fonds'})}/>}
       </>}
       {({[TAB_HOME]:"home",[TAB_SALES]:"orders",[TAB_LISTINGS]:"drafts",[TAB_PUBLICATION]:"jobs",[TAB_AGENT]:"conversations",[TAB_ADSPOWER]:"items"})[activeTab] && <ScalencyWorkspace key={activeTab+JSON.stringify(navigationFilters)} kind={({[TAB_HOME]:"home",[TAB_SALES]:"orders",[TAB_LISTINGS]:"drafts",[TAB_PUBLICATION]:"jobs",[TAB_AGENT]:"conversations",[TAB_ADSPOWER]:"items"})[activeTab]} admin={isAdmin} params={navigationFilters}/>}
       {activeTab===TAB_HISTORY&&<HistoryTab isAdmin={isAdmin} onRestored={()=>{fetchItems();fetchCommandes()}}/>}
       {activeTab === TAB_BUDGET && isAdmin && <BudgetTab onOpenSale={row=>setActiveTab(TAB_SALES,row.order?{id:row.order,account:row.account}:{id:row.id,filter:'archive'})} />}
-      {activeTab === TAB_RESOURCES && isAdmin && <ResourcesTab key={JSON.stringify(navigationFilters)} initialSection={navigationFilters.section||'fonds'} initialProfile={navigationFilters.profile} onAccounts={()=>setActiveTab(TAB_ADSPOWER)} />}
       {activeTab === TAB_CATALOG && (userRole==='admin'||userRole==='stock') && <CatalogueTab initialProduct={navigationFilters.product} isAdmin={isAdmin} onPreparePhoto={isAdmin?setPhotoArticle:undefined} onCreateListing={isAdmin?sku=>setActiveTab(TAB_LISTINGS,{sku}):undefined} />}
       </PageBoundary></Suspense>
 
@@ -707,7 +707,7 @@ export default function App() {
         </div>
       )}
 
-      {photoArticle&&<Suspense fallback={null}><PhotoPreparation article={photoArticle} onClose={()=>setPhotoArticle(null)} onConfigure={()=>setActiveTab(TAB_RESOURCES,{section:'accounts'})}/></Suspense>}
+      {photoArticle&&<Suspense fallback={null}><PhotoPreparation article={photoArticle} onClose={()=>setPhotoArticle(null)} onConfigure={()=>setActiveTab(TAB_COMPTES_VINTED,{section:'fonds'})}/></Suspense>}
       {showEmplacements && (
         <EmplacementsView
           items={items.filter(i => i.status !== 'envoye')}
