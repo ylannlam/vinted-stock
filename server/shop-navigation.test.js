@@ -17,7 +17,7 @@ test('dressing, sélection, fiches à imprimer et bordereaux sur demande',async(
   const require=createRequire(import.meta.url),React=require('react'),{act}=React,{createRoot}=require('react-dom/client')
   const mod=new Module(fileURLToPath(import.meta.url));mod.paths=Module._nodeModulePaths(rootDir);mod._compile(result.outputFiles[0].text,fileURLToPath(import.meta.url))
   const root=createRoot(document.getElementById('root')),reads=[]
-  const board={drafts:[],emptyOrders:[],groups:[{sku:'TEST-4',key:'test-4',title:'Robe test',sales:[],listings:[{id:'19',account:'Exemple',status:'en ligne',title:'Robe test',photo:'https://example.org/test.jpg',price:32,views:0,favourites:2}]}],
+  const board={drafts:[],emptyOrders:[],groups:[{sku:'TEST-4',key:'test-4',title:'Robe test',sales:[{account:'Exemple',stage:'pending',date:'2026-11-03',qty:1,title:'Robe test'}],listings:[{id:'19',account:'Exemple',status:'en ligne',title:'Robe test',photo:'https://example.org/test.jpg',price:32,views:0,favourites:2}]}],
     sales:[{id:'c1',account:'Exemple',title:'Vente',date:'2026-10-12',state:'ready',status:'label_sent',hasLabel:true,lines:[{id:'v',sku:'TEST-4',title:'Robe test'}]},
       {id:'c2',account:'Exemple',date:'2026-10-12',state:'cancelled',status:'cancelled',hasLabel:true,lines:[{id:'w',title:'Vente annulée'}]}]}
   globalThis.shopExample={query:async(view)=>{reads.push(view);if(view==='shop-board')return board;if(view==='shop-refresh')return {skipped:true};throw Error('indisponible')}}
@@ -42,13 +42,16 @@ test('dressing, sélection, fiches à imprimer et bordereaux sur demande',async(
     await act(async()=>root.render(React.createElement(mod.exports.Wardrobe,{params:{section:'sku'},admin:true})))
     const rankCard=document.querySelector('.shop-grid .shop-rank-card')
     assert.equal(rankCard.querySelector('img').getAttribute('src'),'https://example.org/test.jpg')
-    assert.equal(rankCard.querySelector('.shop-units').textContent,'0 vendu')
+    assert.equal(rankCard.querySelector('.shop-units').textContent,'1 vendu')
     assert.match(rankCard.querySelector('.shop-sku').textContent,/TEST-4/)
-    assert.deepEqual([...rankCard.querySelectorAll('dd')].map(node=>node.textContent),['0','2','1','1'])
+    assert.deepEqual([...rankCard.querySelectorAll('dd')].map(node=>node.textContent),['0','1','1','1','2'])
+    assert.match(rankCard.querySelector('.shop-rank-date').textContent,/3 nov\. 2026/)
+    assert.match(document.querySelector('.shop-subheading').textContent,/1 article vendu avec SKU/)
     await click(rankCard.querySelector('.shop-copy'));assert.equal(document.querySelector('[role=dialog]'),null)
     await click(rankCard.querySelector('.shop-photo-open'));assert.ok(document.querySelector('[role=dialog]'))
     await click(button('Fermer'));await click(button('Tableau'))
     assert.match(document.querySelector('.shop-rank tbody').textContent,/TEST-4/)
+    assert.deepEqual([...document.querySelectorAll('.shop-rank tbody td')].slice(0,3).map(td=>td.textContent),['1','0','1'])
     await click(button('Photos'));assert.ok(document.querySelector('.shop-rank-card .shop-photo'))
     await act(async()=>root.render(React.createElement(mod.exports.SalesDesk,{params:{}})))
     assert.equal(document.querySelectorAll('.shop-sales tbody tr').length,1)

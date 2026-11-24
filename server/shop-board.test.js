@@ -119,3 +119,24 @@ test('les publications historiques et les ventes par pseudo figurent sous le mê
   assert.equal(result.sales[0].lines[0].sku,'TEST-11')
   assert.equal(result.groups.find(g=>g.sku==='TEST-11').completed,1)
 })
+
+test('un article au point relais compte dès la commande et une seule fois après sa clôture',()=>{
+  const accounts=[{id:'a',login:'boutique'},{id:'b',login:'autre'}]
+  const order=(id,account,status,date,quantity)=>example(id,{account,order_date:date,normalized_status:status,status_updated_at:date,
+    items:[{id:id+'-line',sku:'REF-TEST',quantity}],vinted_transaction_id:id})
+  const pending=order('parcel','boutique','ready_for_pickup','2026-11-03',1)
+  const previous=order('paid','boutique','completed','2026-10-14',2)
+  const other=order('other','autre','shipped','2026-11-04',1)
+  const cancelled=order('cancel','boutique','cancelled','2026-11-20',4)
+  const returned=order('return','boutique','refunded','2026-11-23',1)
+  function summary(orders,account){
+    const board=shopBoard({accounts,inventory:[],jobs:[],drafts:[],postedRefs:[],references,orders})
+    const [row]=performanceRows(board.groups,account)
+    return [row.sold,row.completed,row.pending,row.lastSale]
+  }
+  const orders=[previous,pending,other,cancelled,returned]
+  assert.deepEqual(summary(orders,'boutique'),[3,2,1,'2026-11-03'])
+  assert.deepEqual(summary(orders,''),[4,2,2,'2026-11-04'])
+  const finalized={...pending,normalized_status:'completed',status_updated_at:'2026-11-17'}
+  assert.deepEqual(summary([...orders,finalized],'boutique'),[3,3,0,'2026-11-03'])
+})

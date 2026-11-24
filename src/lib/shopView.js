@@ -37,13 +37,14 @@ export function performanceRows(groups,account){
   for(const g of groups){
     const listings=g.listings.filter(r=>!account||r.account===account),sales=g.sales.filter(r=>!account||r.account===account)
     if(!listings.length&&!sales.length)continue
-    const completed=sales.filter(s=>s.stage==='completed'),pending=sales.filter(s=>s.stage==='pending')
+    const completed=sales.filter(s=>s.stage==='completed').reduce((n,s)=>n+s.qty,0)
+    const pending=sales.filter(s=>s.stage==='pending').reduce((n,s)=>n+s.qty,0)
+    const lastSale=sales.reduce((latest,sale)=>timestamp(sale.date)>timestamp(latest)?sale.date:latest,null)
     const lead=listings.find(r=>r.photo)||sales.find(r=>r.photo)
     const likes=listings.filter(r=>r.favourites!=null)
     rows.push({...g,photo:lead?.photo,title:lead?.title||listings[0]?.title||sales[0]?.title||g.title,listings,sales,
       published:listings.length,online:listings.filter(r=>r.status==='en ligne').length,favourites:likes.length?likes.reduce((n,r)=>n+Number(r.favourites),0):null,
-      completed:completed.reduce((n,s)=>n+s.qty,0),pending:pending.reduce((n,s)=>n+s.qty,0),
-      lastSale:completed.map(s=>s.date).filter(Boolean).sort().at(-1)})
+      sold:completed+pending,completed,pending,lastSale})
   }
   return rows
 }
