@@ -1,4 +1,4 @@
-import {readAccountHealth,requireListingAccount} from './scalency-account-health.js'
+import {readAccountHealth,requireWorkspaceAccount} from './scalency-account-health.js'
 import {isId} from './dotb.js'
 import {createHash} from 'node:crypto'
 import {collections,remote,remoteId,ScalencyError,snapshot,shippable,draftPayload} from './scalency-api.js'
@@ -129,7 +129,7 @@ function applyCondition(fields,options){
   return next
 }
 export async function prepareScalencyPublication(db,row,{quick=false,schedule=null}={}){
-  await requireListingAccount(row.fields.account_id)
+  await requireWorkspaceAccount(db,row.fields.account_id)
   const options=await catalogConditions(row.fields)
   row.fields=applyCondition(row.fields,options)
   if(!row.fields.status_id)fail('Très bon état indisponible pour cette catégorie.',409)
@@ -144,7 +144,7 @@ export async function prepareScalencyPublication(db,row,{quick=false,schedule=nu
   async function validatePayload(){
     const preview=await remote('items',{method:'POST',body:{...payload,dry_run:true}})
     if(preview.dry_run!==true||preview.would_queue!==true)fail(preview.reason||'Scalency ne peut pas accepter cette annonce.',409)
-    await requireListingAccount(row.fields.account_id)
+    await requireWorkspaceAccount(db,row.fields.account_id)
     return preview
   }
   return {payload,preview:await validatePayload(),at}
@@ -168,8 +168,8 @@ export async function scalencyHandler(req,res,{db,user,role}){
     if(action==='publication-tracking')return res.json(await publicationTracking(db,user,q))
     if(action==='account-health'){
       res.setHeader('Cache-Control','private, no-store')
-      if(q.account)return res.json(await requireListingAccount(q.account))
-      return res.json(await readAccountHealth())
+      if(q.account)return res.json(await requireWorkspaceAccount(db,q.account))
+      return res.json(await readAccountHealth(db))
     }
     if(action==='quick-profiles')return res.json(await quickProfiles(db,user))
     if(action==='relations')return res.json(await connectedRecords(db,user,role,q))
@@ -225,7 +225,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
     const row=await getDraft(db,user,b.id)
     checkBatchSubmission(row,b.account)
     if(row.state!=='draft'||row.version!==b.version)fail('La fiche a changé. Actualise le récapitulatif.',409)
-    await requireListingAccount(row.fields.account_id)
+    await requireWorkspaceAccount(db,row.fields.account_id)
     const price=String(b.price??'').trim().replace(',','.'),size=String(b.size??'').trim()
     if(!/^\d{1,5}(?:\.\d{1,2})?$/.test(price)||Number(price)<=0||!size||size.length>60)fail('Vérifie le prix et la taille.')
     const options=await catalogConditions(row.fields),fields={...row.fields,price}
@@ -290,7 +290,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
   if(action==='save'||action==='save-review'||action==='batch-create'){
     if(action==='batch-create'&&(b.owner!==user.id||b.version!=null))fail('Session différente. Rouvre l’atelier avec le compte d’origine.',409)
     const id=remoteId(b.id), input=listingFields(b.fields,{scalency:true})
-    if(input.account_id||action==='batch-create')await requireListingAccount(input.account_id)
+    if(input.account_id||action==='batch-create')await requireWorkspaceAccount(db,input.account_id)
     const [options,photos]=await Promise.all([catalogConditions(input),verifiedPhotos(db,user.id,b.photos)])
     const fields=applyCondition(input,options)
     if(action==='batch-create'){
@@ -319,7 +319,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
   if(['generate','autofill','autopost','validate','publish','quick-publish','batch-generate','batch-submit'].includes(action)){
     let row=await getDraft(db,user,b.id)
     if(row.version!==b.version||row.state!=='draft')fail('Ce brouillon a changé. Actualise avant de continuer.',409)
-    if(['generate','autofill','autopost','batch-generate'].includes(action))await requireListingAccount(row.fields.account_id)
+    if(['generate','autofill','autopost','batch-generate'].includes(action))await requireWorkspaceAccount(db,row.fields.account_id)
     if(action==='batch-generate'){
       const started=now(),version=row.version+1
       const payload={...row.payload,scalency_source:'stock-vinted',batch:{status:'running',started}}

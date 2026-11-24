@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {accountBlock,createHealthReader,requireListingAccount} from './scalency-account-health.js'
+import {accountBlock,createHealthReader,requireListingAccount,readAccountHealth} from './scalency-account-health.js'
 
 const now=Date.parse('2026-11-24T07:00:00Z'),end='2026-11-26T07:00:00.000Z'
 const account=(agent={},extra={})=>({id:'demo',login:'boutique-test',linked:true,agent:{paused:null,paused_until:null,publication_pause:null,paused_actions:[],...agent},...extra})
@@ -48,4 +48,17 @@ test('une panne ou une page manquante empêche tout feu vert à partir du cache 
   failed=false;await requireListingAccount('demo',read)
   await assert.rejects(requireListingAccount('absent',read),{status:409})
   await assert.rejects(requireListingAccount('demo',async()=>({accounts:[{id:'demo',block:{kind:'unknown'}}]})),{status:503})
+})
+
+test('une page de bannissement confirmée prime sur une pause publique vide et reste liée au bon profil',async()=>{
+  assert.equal(block({state:{vinted_ban:{status:'banned'}}}).kind,'banned')
+  const read=createHealthReader(async()=>({data:[account(),account({}, {id:'autre'})]}),()=>now)
+  const rows=[{id:'profile-ban:demo',value:{status:'banned',checked_at:end}}]
+  const db={from:()=>({select:()=>({like:async()=>({data:rows})})})}
+  const report=await readAccountHealth(db,read)
+  assert.equal(report.accounts[0].block.observedAt,end)
+  assert.equal(report.accounts[1].block,null)
+  await assert.rejects(requireListingAccount('demo',()=>readAccountHealth(db,read)),{status:423})
+  rows[0].value={status:'cleared'}
+  await requireListingAccount('demo',()=>readAccountHealth(db,read))
 })

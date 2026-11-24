@@ -27,6 +27,8 @@ const publication=/\b(?:publish|publication|publier|create listing|listing creat
 function block(kind,until=null){return {kind,label:labels[kind],until}}
 export function accountBlock(row,now=Date.now()){
   const agent=row.agent||{}
+  const profileBan=row.agent?.state?.vinted_ban||row.state?.vinted_ban
+  if(profileBan?.status==='banned')return block('banned')
   const signals=[signal(row.status,null,now),signal(agent.paused,agent.paused_until,now),signal(agent.publication_pause,null,now)].filter(Boolean)
   if(row.banned===true||row.is_banned===true)return block('banned')
   const banned=signals.find(s=>ban.test(s.reason)&&!(/\b(?:chat|listing|item|buyer)\b/.test(s.reason)&&!(/\b(?:compte|account)\b/.test(s.reason))))
@@ -75,8 +77,27 @@ export function createHealthReader(request=remote,clock=Date.now){
     return pending
   }
 }
-export const readAccountHealth=createHealthReader()
-export async function requireListingAccount(value,read=readAccountHealth){
+const readPublicAccounts=createHealthReader()
+
+// Public account pauses can be empty even when Scalency Desktop saw Vinted's block page.
+export async function readAccountHealth(db,read=readPublicAccounts){
+  const [report,records]=await Promise.all([
+    read(),
+    db.from('scalency_settings').select('id,value').like('id','profile-ban:%')
+  ])
+  if(records.error)throw new ScalencyError(unavailable,503)
+  const observations=new Map(records.data.map(row=>[row.id.slice('profile-ban:'.length),row.value]))
+  return {...report,accounts:report.accounts.map(account=>{
+    const observation=observations.get(account.id)
+    if(observation?.status!=='banned')return account
+    return {...account,block:{...block('banned'),observedAt:observation.checked_at}}
+  })}
+}
+
+export function requireWorkspaceAccount(db,value){
+  return requireListingAccount(value,()=>readAccountHealth(db))
+}
+export async function requireListingAccount(value,read){
   if(!value)throw new ScalencyError('Choisis le compte de publication.',409)
   const id=remoteId(value)
   const report=await read()

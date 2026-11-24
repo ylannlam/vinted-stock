@@ -1,4 +1,4 @@
-import {requireListingAccount} from './scalency-account-health.js'
+import {requireWorkspaceAccount} from './scalency-account-health.js'
 import {createHash} from 'node:crypto'
 import {remote,remoteId,ScalencyError} from './scalency-api.js'
 import {isId} from './dotb.js'
@@ -17,7 +17,7 @@ export function lotKey(owner,account,entries){
 export async function acceptPublicationLot(db,user,body){
   const account=remoteId(body.account),entries=body.entries
   const id=lotKey(user.id,account,entries)
-  try{await requireListingAccount(account)}
+  try{await requireWorkspaceAccount(db,account)}
   catch(error){
     // A retry may arrive after its lot was already accepted, even if the account is now restricted.
     const existing=checked(await db.from('scalency_publication_lots').select('id').eq('id',id).eq('owner_id',user.id).maybeSingle())
