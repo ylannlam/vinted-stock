@@ -1,4 +1,5 @@
 import {remote,snapshot,ScalencyError} from './scalency-api.js'
+import {preserveShopCovers} from './shop-covers.js'
 import {restrictOrderPage} from '../src/lib/shopPeriod.js'
 
 export const shopSources={ventes:['orders',{state:'all',sort:'order_date'}],articles:['items',{}],retraits:['items',{status:'deleted'}],publications:['jobs',{scope:'closed'}],references:['item-refs',{}]}
@@ -28,6 +29,7 @@ export async function refreshShopPage(db,source,cursor='',force=false,request=re
     }
     if(refs.size)check(await db.from('scalency_settings').upsert([...refs.values()]))
   }else{
+    if(kind==='items')await preserveShopCovers(db,page.data,request,at)
     const rows=page.data.filter(r=>kind!=='jobs'||['publish','relist','hide','unhide'].includes(r.type)).map(r=>snapshot(kind,r,at))
     if(rows.length)check(await db.from('scalency_records').upsert(rows,{onConflict:'kind,account,remote_id'}))
   }

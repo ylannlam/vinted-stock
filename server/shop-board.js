@@ -15,13 +15,16 @@ function all(db,table,columns,configure,keys){
   })
 }
 
-export function shopBoard({accounts,inventory,jobs,orders,references,drafts,postedRefs=[]}){
+export function shopBoard({accounts,inventory,jobs,orders,references,drafts,postedRefs=[],listingCovers=[]}){
   const logins=new Map(accounts.map(r=>[String(r.id),r.login]))
   const refs=new Map(postedRefs.map(r=>[identity(r.type,logins.get(r.account)||r.account,r.id),r.sku]))
   const posted=(type,account,id)=>id&&(refs.get(identity(type,logins.get(String(account))||account,id))||refs.get(identity(type,'',id)))
+  const saved=new Map(listingCovers.map(c=>[identity(c.account,c.id),c]))
   const feeds={comptes:accounts,annonces:[],supprimees:[],publications:[],republications:[],commandes:[]}
   for(const record of inventory){
-    const r=record.payload
+    const raw=record.payload
+    const cached=saved.get(identity(raw.account_id,raw.id))
+    const r={...raw,photo_url:raw.photo_url||cached?.photo,sku:raw.sku||cached?.sku,replaced_by:raw.replaced_by||cached?.replaced,sale:raw.sale??cached?.sale}
     const [item]=skuSourceRows('items',[r])
     item.sku=item.sku||posted('listing',item.account,item.id)
     Object.assign(item,{inventory:true,accountId:record.account||r.account_id||r.account,photo:safePhoto(item.photo)||safePhoto(record.photo),seen:record.seen_at,
@@ -78,7 +81,7 @@ export function shopBoard({accounts,inventory,jobs,orders,references,drafts,post
 }
 
 export async function readShopBoard(db,user,admin){
-  const [accts,inventory,jobRows,orderRows,references,drafts,sync,posted]=await Promise.all([
+  const [accts,inventory,jobRows,orderRows,references,drafts,sync,posted,media]=await Promise.all([
     all(db,'scalency_records','remote_id,login:payload->>login',q=>q.eq('kind','accounts'),['remote_id']),
     all(db,'scalency_catalog_inventory','remote_id,account,payload,photo,seen_at,listed_size,size,emplacement',q=>q,['account','remote_id']),
     all(db,'scalency_records','payload',q=>q.eq('kind','jobs').eq('payload->>status','done').in('payload->>type',['publish','relist','hide','unhide']),['account','remote_id']),
@@ -86,7 +89,8 @@ export async function readShopBoard(db,user,admin){
     skuReferences(db,user),
     admin?all(db,'listing_drafts','id,fields,photo:photos->0->>path,updated_at',q=>q.eq('state','draft').eq('owner_id',user.id).not('fields->>account_id','is',null).is('vinted_id',null),['id']):[],
     db.from('scalency_settings').select('id,value').like('id','dressing-read-v1:%'),
-    all(db,'scalency_settings','id,value',q=>q.like('id','dressing-ref:%'),['id'])
+    all(db,'scalency_settings','id,value',q=>q.like('id','dressing-ref:%'),['id']),
+    all(db,'scalency_settings','id,value',q=>q.like('id','dressing-cover:%'),['id'])
   ])
   const photos=[...new Set(drafts.map(r=>r.photo).filter(p=>p&&ownedAsset(p,user.id)))]
   const covers=new Map()
@@ -95,7 +99,7 @@ export async function readShopBoard(db,user,admin){
     for(const r of signed.data||[])if(r.signedUrl)covers.set(r.path,r.signedUrl)
   }
   const dataset=shopBoard({accounts:accts.map(r=>({id:r.remote_id,login:r.login})),inventory,jobs:jobRows.map(r=>r.payload),
-    orders:orderRows.map(r=>r.payload),references,postedRefs:posted.map(r=>r.value),drafts:drafts.map(d=>({id:d.id,account:d.fields.account_id,sku:d.fields.sku,title:d.fields.title,
+    orders:orderRows.map(r=>r.payload),references,listingCovers:media.map(r=>r.value),postedRefs:posted.map(r=>r.value),drafts:drafts.map(d=>({id:d.id,account:d.fields.account_id,sku:d.fields.sku,title:d.fields.title,
       size:d.fields.size_text,price:d.fields.price,photo:covers.get(d.photo),status:'brouillon',seen:d.updated_at,isDraft:true}))})
   const stamps=check(sync).map(r=>r.value?.at).filter(Boolean).sort()
   return {...dataset,checkedAt:stamps.length===5?stamps[0]:null}

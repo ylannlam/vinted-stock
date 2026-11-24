@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {PDFDocument} from 'pdf-lib'
 import {shopBoard} from './shop-board.js'
+import {preserveShopCovers} from './shop-covers.js'
 import {refreshShopPage} from './shop-refresh.js'
 import {restrictOrderPage,salesStart} from '../src/lib/shopPeriod.js'
 import {listingRows,performanceRows,printableLabel,saleBucket,sortListings,textMatch} from '../src/lib/shopView.js'
@@ -67,4 +68,25 @@ test('le PDF groupe les pages originales sans modifier les dimensions des border
   a.addPage([288,432]);a.addPage([288,432]);b.addPage([595,842])
   const merged=await PDFDocument.load(await mergeLabels([await a.save(),await b.save()],true))
   assert.deepEqual(merged.getPages().map(p=>[p.getWidth(),p.getHeight()]),[[288,432],[288,432],[595,842]])
+})
+
+test('une relecture sans photo conserve la couverture du bon compte et ne la transmet pas à un homonyme',()=>{
+  const data=shopBoard({accounts:[{id:'a',login:'test-shop'},{id:'b',login:'other-shop'}],jobs:[],orders:[],drafts:[],references,
+    inventory:[item('same',{photo_url:null}),{account:'b',payload:{account_id:'b',id:'same',title:'Robe',status:'active'}}],
+    listingCovers:[{id:'same',account:'a',photo:'https://example.org/cover.jpg',sku:'REF-9'}]})
+  const rows=listingRows(data)
+  assert.equal(rows.find(r=>r.account==='test-shop').photo,'https://example.org/cover.jpg')
+  assert.equal(rows.find(r=>r.account==='test-shop').sku,'REF-9')
+  assert.equal(rows.find(r=>r.account==='other-shop').photo,null)
+})
+
+test('une fiche détaillée complète un index sans photos et une relecture réutilise cette image',async()=>{
+  const saved=new Map(),calls=[]
+  const db={from:()=>({select:()=>({in:(_column,keys)=>({data:keys.filter(k=>saved.has(k)).map(k=>({id:k,value:saved.get(k)}))})}),
+    upsert:rows=>{for(const r of rows)saved.set(r.id,r.value);return {data:[]}}})}
+  const request=async(path,options)=>{calls.push([path,options.query.account_id]);return {account_id:'a',id:'19',photos:['https://example.org/photo.jpg']}}
+  const entry={account_id:'a',id:'19'}
+  assert.equal((await preserveShopCovers(db,[{...entry}],request,recent))[0].photo_url,'https://example.org/photo.jpg')
+  assert.equal((await preserveShopCovers(db,[{...entry}],request,recent))[0].photo_url,'https://example.org/photo.jpg')
+  assert.deepEqual(calls,[['items/19','a']])
 })
