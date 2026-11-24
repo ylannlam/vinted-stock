@@ -36,9 +36,9 @@ export default function ShopRanking({board,accounts,initialSku='',admin,reread})
   const [page,setPage]=useState(0),[detail,setDetail]=useState(null)
   const [view,setView]=useState('photos')
   const groups=useMemo(()=>performanceRows(board.groups,account),[board,account])
-  const rows=groups.filter(g=>g.key&&(textMatch(g,search)||g.listings.some(r=>textMatch({...r,sku:g.sku},search)))).sort((a,b)=>(b[sort]??-1)-(a[sort]??-1)||b.pending-a.pending||b.online-a.online||a.sku.localeCompare(b.sku,'fr'))
+  const rows=groups.filter(g=>g.key&&g.sold>0&&(textMatch(g,search)||[...g.sales,...g.listings].some(r=>textMatch({...r,sku:g.sku},search)))).sort((a,b)=>(b[sort]??-1)-(a[sort]??-1)||b.pending-a.pending||b.online-a.online||a.sku.localeCompare(b.sku,'fr'))
   const unknown=groups.find(g=>!g.key),missing=board.emptyOrders.filter(r=>!account||r.account===account)
-  const current=groups.find(g=>g.key===detail)
+  const current=groups.find(g=>g.key===detail&&g.sold>0)
   const size=30,here=Math.min(page,Math.max(0,Math.ceil(rows.length/size)-1))
   const visible=rows.slice(here*size,(here+1)*size)
   const update=setter=>value=>{setter(value);setPage(0);setDetail(null)}
@@ -46,6 +46,10 @@ export default function ShopRanking({board,accounts,initialSku='',admin,reread})
   return <><div className="shop-subheading"><h2>Meilleures ventes par SKU</h2><span>{salesPeriodLabel} · {identified} article{identified>1?'s':''} vendu{identified>1?'s':''} avec SKU</span></div>
     <ShopFilters search={search} setSearch={update(setSearch)} hint="SKU ou titre de l’article" account={account} setAccount={update(setAccount)} accounts={accounts}
       sort={sort} setSort={update(setSort)} options={[['sold','Articles vendus'],['completed','Ventes terminées'],['pending','Ventes en cours'],['online','Annonces en ligne'],['favourites','Favoris']]}/>
+    {(unknown?.sold>0||missing.length>0)&&<div className="shop-unmatched">
+      {unknown?.sold>0&&<button onClick={()=>setDetail('')}>Ventes à identifier ({unknown.sold})</button>}
+      {missing.length>0&&<button onClick={()=>setDetail(':orders')}>Commandes sans détail article ({missing.length})</button>}
+    </div>}
     <div className="shop-rank-toolbar">
       <p aria-live="polite">{rows.length} référence{rows.length>1?'s':''}</p>
       <div className="shop-view-switch" role="group" aria-label="Affichage du classement">
@@ -58,10 +62,8 @@ export default function ShopRanking({board,accounts,initialSku='',admin,reread})
     </div>:<div className="shop-rank-scroll"><table className="shop-rank"><caption className="sr-only">Classement par SKU</caption><thead><tr><th>Article et SKU</th><th>Vendus</th><th>Terminées</th><th>En cours</th><th>Publiées</th><th>En ligne</th><th>Favoris</th><th>Dernière vente</th></tr></thead>
     <tbody>{visible.map(g=><tr key={g.key}><th scope="row"><div className="shop-rank-item"><button onClick={()=>setDetail(g.key)}><span className="shop-mini"><ShopCover src={g.photo} title={g.title} small/></span><span><b>{g.sku}</b><small>{g.title||'Article'}</small></span></button><CopySkuButton sku={g.sku}/></div></th>
       <td><strong>{g.sold}</strong></td><td>{g.completed}</td><td>{g.pending}</td><td>{g.published}</td><td>{g.online}</td><td>{g.favourites??'—'}</td><td>{calendar(g.lastSale)}</td></tr>)}</tbody></table></div>}
-    {!rows.length&&<p className="shop-empty">Aucune référence pour cette recherche.</p>}<PageBar page={here} setPage={setPage} total={rows.length} size={size}/>
-    <div className="shop-unmatched">{unknown&&<button onClick={()=>setDetail('')}>À identifier · {unknown.published} annonces · {unknown.sold} article(s) vendu(s) sans SKU</button>}
-      {missing.length>0&&<button onClick={()=>setDetail(':orders')}>{missing.length} commande(s) sans détail article</button>}</div>
-    {(current||detail===':orders'&&missing.length>0)&&<ResourceDialog title={detail===':orders'?'Commandes à vérifier':current.sku||'À identifier'} onClose={()=>setDetail(null)}>
-      <SkuDetail key={detail} row={current} orders={detail===':orders'?missing:[]} onLink={admin?reread:null}/></ResourceDialog>}
+    {!rows.length&&<p className="shop-empty">Aucune vente associée à un SKU pour cette sélection.</p>}<PageBar page={here} setPage={setPage} total={rows.length} size={size}/>
+    {(current||detail===':orders'&&missing.length>0)&&<ResourceDialog title={detail===':orders'?'Commandes à vérifier':current.sku||'Ventes à identifier'} onClose={()=>setDetail(null)}>
+      <SkuDetail key={detail} row={current} orders={detail===':orders'?missing:[]} salesOnly={detail===''} skuOptions={detail===''?board.groups.filter(g=>g.key):[]} onLink={admin?reread:null}/></ResourceDialog>}
   </>
 }

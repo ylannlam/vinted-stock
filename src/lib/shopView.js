@@ -40,7 +40,7 @@ export function performanceRows(groups,account){
     const completed=sales.filter(s=>s.stage==='completed').reduce((n,s)=>n+s.qty,0)
     const pending=sales.filter(s=>s.stage==='pending').reduce((n,s)=>n+s.qty,0)
     const lastSale=sales.reduce((latest,sale)=>timestamp(sale.date)>timestamp(latest)?sale.date:latest,null)
-    const lead=listings.find(r=>r.photo)||sales.find(r=>r.photo)
+    const lead=sales.filter(r=>r.photo).reduce((latest,r)=>!latest||timestamp(r.date)>timestamp(latest.date)?r:latest,null)||listings.find(r=>r.photo)
     const likes=listings.filter(r=>r.favourites!=null)
     rows.push({...g,photo:lead?.photo,title:lead?.title||listings[0]?.title||sales[0]?.title||g.title,listings,sales,
       published:listings.length,online:listings.filter(r=>r.status==='en ligne').length,favourites:likes.length?likes.reduce((n,r)=>n+Number(r.favourites),0):null,
