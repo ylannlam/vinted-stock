@@ -140,3 +140,35 @@ test('un article au point relais compte dès la commande et une seule fois aprè
   const finalized={...pending,normalized_status:'completed',status_updated_at:'2026-11-17'}
   assert.deepEqual(summary([...orders,finalized],'boutique'),[3,3,0,'2026-11-03'])
 })
+
+test('une annonce vendue du dressing garde son statut quand le relevé abrégé omet la vente',()=>{
+  const accounts=[{id:'a',login:'test-shop'},{id:'b',login:'autre'}]
+  const covers=['cancel','unlinked','cleared'].map(id=>({account:'a',id,sale:{state:'en_cours',sold_at:recent}}))
+  covers[1].sale={state:'vendue',sold_at:null}
+  const inventory=[item('cancel',{sold:false}),item('unlinked',{sold:false}),item('cleared',{sold:false,sale:null}),
+    {account:'b',payload:{account_id:'b',id:'cancel',status:'active',sold:false}},item('real',{sold:true})]
+  const orders=[example('prior',{normalized_status:'cancelled',items:[{id:'cancel-line',title:'Robe'}]}),
+    example('paid',{items:[{id:'paid-line',vinted_id:'real',sku:'REF-REAL'}]})]
+  const refs={...references,lines:[{id:'cancel-line',order:'prior',account:'test-shop',listing:'cancel'}]}
+  const board=shopBoard({accounts,inventory,orders,references:refs,listingCovers:covers,drafts:[],jobs:[]})
+  const sold=listingRows(board).filter(r=>r.dressingSold)
+  assert.deepEqual(sold.map(r=>r.id).sort(),['cancel','real','unlinked'])
+  assert.equal(sold.find(r=>r.id==='cancel').orderInfo.status,'cancelled')
+  assert.equal(sold.find(r=>r.id==='unlinked').orderInfo,undefined)
+  assert.deepEqual(board.groups.flatMap(g=>g.sales).map(r=>r.id),['paid'])
+})
+
+test('les lectures détaillées du dressing enregistrent et peuvent effacer le signal de vente',async()=>{
+  const saved=new Map()
+  const db={from:()=>({select:()=>({in:(_column,keys)=>({data:keys.filter(k=>saved.has(k)).map(k=>({id:k,value:saved.get(k)}))})}),
+    upsert:rows=>{for(const r of rows)saved.set(r.id,r.value);return {data:[]}}})}
+  const data={id:'clothing',account_id:'a',status:'inactive',sold:false,photo_url:'https://example.org/item.jpg'}
+  const sale={state:'vendue',transaction_id:null,sold_at:null}
+  const request=async()=>({...data,sold:true,sale})
+  await preserveShopCovers(db,[{...data}],request,recent)
+  assert.deepEqual([...saved.values()][0].sale,sale)
+  await preserveShopCovers(db,[{...data}],request,recent)
+  assert.deepEqual([...saved.values()][0].sale,sale)
+  await preserveShopCovers(db,[{...data,sale:null}],request,recent)
+  assert.equal([...saved.values()][0].sale,null)
+})

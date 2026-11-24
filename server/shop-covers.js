@@ -20,24 +20,41 @@ export async function preserveShopCovers(db, items, request, at) {
   for (const item of items) {
     const key = coverKey(item), old = previous.get(key)
     let photo = coverOf(item)
-    if (!photo && !old?.photo && lookups > 0 && !(Date.parse(at)-Date.parse(old?.checkedAt)<86400000)) {
+    let sale = item.sale
+    const needsPhoto = !photo && !old?.photo && !(Date.parse(at)-Date.parse(old?.checkedAt)<86400000)
+    const needsSale = item.status==='inactive' && sale===undefined && !(Date.parse(at)-Date.parse(old?.saleCheckedAt||old?.checkedAt)<86400000)
+    let saleLookup = false
+    if ((needsPhoto || needsSale) && lookups > 0) {
       lookups--
       try {
         const response = await request('items/' + remoteId(item.id), {query:{account_id:item.account_id}})
         const detail = response.data?.id ? response.data : response
-        if (String(detail.id)===String(item.id) && String(detail.account_id)===String(item.account_id)) photo=coverOf(detail)
-        if (!photo) misses.push({id:key,value:{id:String(item.id),account:String(item.account_id),checkedAt:at}})
+        if (String(detail.id)===String(item.id) && String(detail.account_id)===String(item.account_id)) {
+          photo=photo||coverOf(detail)
+          if (needsSale) {sale=detail.sale;saleLookup=true}
+        }
+        if (needsPhoto && !photo) misses.push({id:key,value:{id:String(item.id),account:String(item.account_id),checkedAt:at}})
       } catch (error) {
         if (error.status===429) lookups=0
-        if (error.status===404) misses.push({id:key,value:{id:String(item.id),account:String(item.account_id),checkedAt:at}})
+        if (error.status===404) {
+          if(needsSale)saleLookup=true
+          if(needsPhoto)misses.push({id:key,value:{id:String(item.id),account:String(item.account_id),checkedAt:at}})
+        }
       }
     }
     let deletedAt=old?.deletedAt || null
     if (item.status==='deleted' && item.deleted_at) deletedAt=item.deleted_at
     if (item.status==='active' && Date.parse(item.updated_at)>Date.parse(deletedAt)) deletedAt=null
-    if ((photo && old?.photo !== photo) || deletedAt !== (old?.deletedAt || null)) {
-      covers.push({id:key,value:{...old,id:String(item.id),account:String(item.account_id),photo:photo||old?.photo||null,deletedAt,checkedAt:at}})
+    if (sale===undefined && item.sold===true && !old?.sale) sale={state:'vendue',transaction_id:null,sold_at:null}
+    const saleChanged=sale!==undefined && (old?.sale===undefined || Boolean(sale)!==Boolean(old.sale) ||
+      ['state','transaction_id','sold_at'].some(field=>sale?.[field]!==old?.sale?.[field]))
+    if ((photo && old?.photo !== photo) || deletedAt !== (old?.deletedAt || null) || saleChanged || saleLookup) {
+      const value={...old,id:String(item.id),account:String(item.account_id),photo:photo||old?.photo||null,deletedAt,checkedAt:at}
+      if (sale!==undefined) value.sale=sale
+      if (saleLookup) value.saleCheckedAt=at
+      covers.push({id:key,value})
     }
+    if (sale!==undefined) item.sale=sale
     if (!item.photo_url && (photo || old?.photo)) item.photo_url=photo || old.photo
   }
   if (misses.length) check(await db.from('scalency_settings').upsert(misses,{onConflict:'id',ignoreDuplicates:true}))

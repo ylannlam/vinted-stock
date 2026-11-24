@@ -8,7 +8,13 @@ import ShopRanking from './ShopRanking'
 import useShopBoard from './useShopBoard'
 import './ShopBoard.css'
 
-function Card({row,selected,toggle,open}){
+const orderLabels={cancelled:'Commande annulée',expired:'Commande expirée',refunded:'Commande remboursée',returning:'Retour en cours',returned:'Article retourné',suspended:'Commande suspendue'}
+function dressingOrderLabel(order){
+  if(order?.stage==='completed')return 'Vente terminée'
+  if(order?.stage==='pending')return 'Vente en cours'
+  return orderLabels[order?.state]||orderLabels[order?.status]||'Commande à vérifier'
+}
+function Card({row,selected,toggle,open,soldView}){
   const name=row.title||'Annonce '+row.id
   return <article className={'shop-card'+(selected?' selected':'')}>
     <div className="shop-photo"><button className="shop-photo-open" aria-label={'Ouvrir '+name} onClick={open}><ShopCover src={row.photo} title={name}/></button>
@@ -18,6 +24,7 @@ function Card({row,selected,toggle,open}){
     <div className="shop-card-body"><button className="shop-card-title" onClick={open}>{name}</button>
       <div className="shop-sku-row"><p className={'shop-sku'+(!row.sku?' missing':'')}>{row.sku?'SKU '+row.sku:'SKU à identifier'}</p><CopySkuButton key={row.sku} sku={row.sku}/></div>
       <p className="shop-card-price"><strong>{price(row.price,row.currency)}</strong><span>{row.account}</span></p>
+      {soldView&&<p className="shop-card-date">{dressingOrderLabel(row.orderInfo)}</p>}
       {!row.isDraft&&<p className="shop-metrics"><span>{row.views??'—'} vues</span><span>♡ {row.favourites??'—'} favoris</span></p>}
       <p className="shop-card-date">{row.date?(row.isDraft?'Modifié le ':row.approx?'Vers le ':'Publié le ')+calendar(row.date):'Date de publication inconnue'}</p>
       {!row.isDraft&&<a className="shop-vinted" href={'https://www.vinted.fr/items/'+encodeURIComponent(row.id)} target="_blank" rel="noreferrer">Voir sur Vinted ↗</a>}
@@ -39,9 +46,9 @@ function ListingDetail({row,admin,reread,onClose}){
       {!row.sku&&admin&&<form className="shop-sku-form" onSubmit={save}><label>Associer un SKU<input value={sku} onChange={e=>setSku(e.target.value)} maxLength={150} required/></label><button className="shop-primary" disabled={busy||!sku.trim()}>Enregistrer</button></form>}</>}
     {error&&<p role="alert">{error}</p>}</div></div></ResourceDialog>
 }
-function Gallery({board,admin,params,reread,accounts}){
-  const all=useMemo(()=>listingRows(board),[board])
-  const [account,setAccount]=useState(params.login||all.find(r=>r.accountId===params.account)?.account||params.account||''),[search,setSearch]=useState('')
+function Gallery({board,admin,params,reread,accounts,soldView}){
+  const all=useMemo(()=>listingRows(board).filter(r=>!soldView||r.dressingSold),[board,soldView])
+  const [account,setAccount]=useState(params.login||all.find(r=>r.accountId===params.account)?.account||params.account||''),[search,setSearch]=useState(params.q||'')
   const [skuFilter,setSkuFilter]=useState('all')
   const [sort,setSort]=useState('recent'),[status,setStatus]=useState('all'),[age,setAge]=useState('all'),[page,setPage]=useState(0)
   const [detail,setDetail]=useState(null),[print,setPrint]=useState(null)
@@ -58,11 +65,11 @@ function Gallery({board,admin,params,reread,accounts}){
     sort={sort} setSort={setSort} options={[[ 'recent','Plus récentes'],['likes','Plus de favoris'],['views','Plus de vues'],['price','Prix décroissant']]}>
     <label><span>Ancienneté</span><select value={age} onChange={e=>update(setAge)(e.target.value)}><option value="all">Toutes les dates</option><option value="new">30 jours ou moins</option><option value="old">Plus de 30 jours</option></select></label>
     <label><span>Référence</span><select value={skuFilter} onChange={e=>update(setSkuFilter)(e.target.value)}><option value="all">Tous les SKU</option><option value="known">Avec SKU</option><option value="missing">SKU à identifier</option></select></label></ShopFilters>
-    <FilterTabs options={statusLabels} counts={counts} value={status} onChange={update(setStatus)} label="État de l’annonce"/>
+    {!soldView&&<FilterTabs options={statusLabels} counts={counts} value={status} onChange={update(setStatus)} label="État de l'annonce"/>}
     <SelectionBar count={picked.length} totalVisible={rows.length} noun="annonces" selection={selection} pageKeys={displayed.map(recordKey)}>
       <button className="shop-primary" disabled={!picked.length} onClick={()=>setPrint(picked.map(r=>({...r,reference:r.isDraft?'Brouillon':'Annonce n° '+r.id})))}>Imprimer les fiches{picked.length?' ('+picked.length+')':''}</button>
     </SelectionBar>
-    {rows.length?<div className="shop-grid">{displayed.map(r=><Card key={recordKey(r)} row={r} selected={selection.keys.has(recordKey(r))} toggle={()=>selection.toggle(recordKey(r))} open={()=>setDetail(r)}/>)}</div>:
+    {rows.length?<div className="shop-grid">{displayed.map(r=><Card key={recordKey(r)} row={r} soldView={soldView} selected={selection.keys.has(recordKey(r))} toggle={()=>selection.toggle(recordKey(r))} open={()=>setDetail(r)}/>)}</div>:
       <p className="shop-empty">Aucune annonce avec ces filtres.</p>}
     <PageBar page={here} setPage={setPage} total={rows.length} size={size}/>
     {detail&&<ListingDetail row={detail} admin={admin} reread={reread} onClose={()=>setDetail(null)}/>}
@@ -71,12 +78,12 @@ function Gallery({board,admin,params,reread,accounts}){
 }
 export default function Wardrobe({params,admin}){
   const {board,busy,error,refresh,reread}=useShopBoard()
-  const ranking=params.section==='sku'
+  const ranking=params.section==='sku',soldView=params.section==='vendues'
   const accounts=useMemo(()=>board?[...new Set([...board.groups.flatMap(g=>[...g.listings,...g.sales].map(r=>r.account)),...board.drafts.map(r=>r.account)])].filter(Boolean).sort():[],[board])
   return <main className="shop-work"><ShopHeader title="Dressing" busy={busy} refresh={refresh}>
-    <nav className="shop-views" aria-label="Dressing"><a href="#dressing" aria-current={!ranking?'page':undefined}>Annonces</a><a href="#dressing/sku" aria-current={ranking?'page':undefined}>Meilleures ventes par SKU</a></nav></ShopHeader>
+    <nav className="shop-views" aria-label="Dressing"><a href="#dressing" aria-current={!ranking&&!soldView?'page':undefined}>Annonces</a><a href="#dressing/vendues" aria-current={soldView?'page':undefined}>Vendues sur Scalency</a><a href="#dressing/sku" aria-current={ranking?'page':undefined}>Meilleures ventes par SKU</a></nav></ShopHeader>
     {error&&<p className="shop-alert" role="alert">{error}</p>}
     {!board&&!error&&<p role="status" className="shop-empty">Chargement du dressing…</p>}
-    {board&&(ranking?<ShopRanking board={board} initialSku={params.sku} accounts={accounts} admin={admin} reread={reread}/>:<Gallery board={board} params={params} accounts={accounts} admin={admin} reread={reread}/>)}
+    {board&&(ranking?<ShopRanking board={board} initialSku={params.sku} accounts={accounts} admin={admin} reread={reread}/>:<Gallery key={soldView?'vendues':'annonces'} soldView={soldView} board={board} params={params} accounts={accounts} admin={admin} reread={reread}/>)}
   </main>
 }

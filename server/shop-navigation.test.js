@@ -66,6 +66,15 @@ test('dressing, sélection, fiches à imprimer et bordereaux sur demande',async(
     assert.equal(document.querySelectorAll('.shop-rank tbody tr').length,1)
     assert.deepEqual([...document.querySelectorAll('.shop-rank tbody td')].slice(0,3).map(td=>td.textContent),['1','0','1'])
     await click(button('Photos'));assert.ok(document.querySelector('.shop-rank-card .shop-photo'))
+    const missingSku=board.groups.find(g=>!g.key)
+    missingSku.listings.push({id:'22',account:'Exemple',status:'vendue',dressingSold:true,title:'Robe rouge à vérifier'},
+      {id:'23',account:'Exemple',status:'vendue',dressingSold:true,title:'Robe noire annulée',orderInfo:{state:'cancelled'}},
+      {id:'24',account:'Exemple',status:'vendue',dressingSold:true,title:'Veste rouge'})
+    await act(async()=>root.render(React.createElement(mod.exports.Wardrobe,{params:{section:'vendues',q:'robe'},admin:true})))
+    assert.equal(document.querySelectorAll('.shop-card').length,2)
+    assert.match(document.querySelector('.shop-grid').textContent,/Commande annulée/)
+    assert.match(document.querySelector('.shop-grid').textContent,/Commande à vérifier/)
+    assert.doesNotMatch(document.querySelector('.shop-grid').textContent,/Robe test|Veste rouge/)
     await act(async()=>root.render(React.createElement(mod.exports.SalesDesk,{params:{}})))
     assert.equal(document.querySelectorAll('.shop-sales tbody tr').length,1)
     await click(document.querySelector('.sale-product .shop-copy'));assert.deepEqual(copies,Array(4).fill('TEST-4'))

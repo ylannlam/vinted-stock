@@ -31,6 +31,7 @@ export function buildSkuActivity(feeds,references={},accountFilter='',periodOnly
     const a=listing(r.account,r.id,r.title)
     if(!a)continue
     a.status=r.sold?'vendue':r.hidden||r.status==='hidden'?'masquée':r.status==='active'?'en ligne':r.status==='deleted'?'supprimée':'inactive'
+    a.dressingSold=r.sold===true
     Object.assign(a,{inventory:r.inventory,accountId:r.accountId,photo:r.photo,price:r.price,currency:r.currency,views:r.views,favourites:r.favourites,
       published:r.published,estimated:false,age:r.age,seen:r.seen,size:r.size,location:r.location})
     if(r.sku)a.postedSku=clean(r.sku)
@@ -73,8 +74,14 @@ export function buildSkuActivity(feeds,references={},accountFilter='',periodOnly
       const sku=clean(manual.get(identity('sale',key(account),r.id,line.id)))||clean(line.sku)||clean(ref?.sku)||clean(line.productSku)
       evidence(ad,sku)
       if(ad&&!ad.photo)ad.photo=line.photo
+      if(ad){
+        matched.add(ad)
+        if(!ad.orderInfo||String(r.date||'')>String(ad.orderInfo.date||'')){
+          ad.orderInfo={date:r.date,status:r.status,state:r.state,stage}
+        }
+      }
       if(!stage)continue
-      if(ad){matched.add(ad);if(['en ligne','historique','inactive','masquée'].includes(ad.status))ad.status='vendue'}
+      if(ad&&['en ligne','historique','inactive','masquée'].includes(ad.status))ad.status='vendue'
       const qty=Number(line.quantity??1)
       if(!Number.isSafeInteger(qty)||qty<=0)continue
       sales.push({sku,ad,id:r.id,lineId:clean(line.id),listingId:ad?.id,photo:line.photo||ad?.photo,account,title:line.title||r.title,date:r.date,stage,qty})
@@ -123,7 +130,7 @@ export function buildSkuActivity(feeds,references={},accountFilter='',periodOnly
     if(!g.title&&a.title)g.title=a.title
     g.published++
     if(a.status==='en ligne')g.online++
-    g.listings.push({id:a.id,title:a.title,account:a.account,status:a.status,inventory:a.inventory,accountId:a.accountId,photo:a.photo,price:a.price,currency:a.currency,
+    g.listings.push({id:a.id,title:a.title,account:a.account,status:a.status,dressingSold:a.dressingSold,orderInfo:a.orderInfo,inventory:a.inventory,accountId:a.accountId,photo:a.photo,price:a.price,currency:a.currency,
       size:a.size,location:a.location,views:a.views,favourites:a.favourites,published:a.published,estimated:a.estimated,age:a.age,seen:a.seen})
   }
   for(const {ad,sku,...s} of sales)if(allowed(s.account)){
