@@ -99,3 +99,23 @@ test('un retrait confirmé conserve l’annonce hors ligne après une lecture ab
   assert.equal(rows.find(r=>r.id==='retired').state,'offline')
   assert.equal(rows.find(r=>r.id==='restored').state,'live')
 })
+
+test('les publications historiques et les ventes par pseudo figurent sous le même compte',()=>{
+  const historical='account-archived'
+  const result=shopBoard({
+    accounts:[{id:'b',login:'boutique-actuelle'}],
+    publicationAccounts:[{id:historical,login:'ancienne-boutique'},{id:'b',login:'ancien-pseudo'}],
+    inventory:[{account:'b',payload:{id:'22',account_id:'b',status:'active',title:'Manteau'}}],
+    jobs:[{id:'job1',type:'publish',status:'done',account_id:historical,new_item_id:'11',done_at:recent}],
+    orders:[example('vente',{account:'ancienne-boutique',items:[{id:'line1',vinted_id:'11',title:'Robe'}]})],
+    drafts:[{id:'draft',account:historical}],
+    references:{...references,drafts:[{id:'12',account:historical,sku:'TEST-12',published:recent}],
+      manual:[{kind:'listing',id:'11',account:historical,line:'',sku:'TEST-11'}]}
+  })
+  const rows=listingRows(result)
+  assert.deepEqual([...new Set(rows.map(r=>r.account))].sort(),['ancienne-boutique','boutique-actuelle'])
+  assert.equal(rows.filter(r=>r.account==='ancienne-boutique'&&r.state!=='draft').length,2)
+  assert.equal(result.drafts[0].accountId,historical)
+  assert.equal(result.sales[0].lines[0].sku,'TEST-11')
+  assert.equal(result.groups.find(g=>g.sku==='TEST-11').completed,1)
+})

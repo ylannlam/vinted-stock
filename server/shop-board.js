@@ -15,12 +15,14 @@ function all(db,table,columns,configure,keys){
   })
 }
 
-export function shopBoard({accounts,inventory,jobs,orders,references,drafts,postedRefs=[],listingCovers=[]}){
-  const logins=new Map(accounts.map(r=>[String(r.id),r.login]))
-  const refs=new Map(postedRefs.map(r=>[identity(r.type,logins.get(r.account)||r.account,r.id),r.sku]))
-  const posted=(type,account,id)=>id&&(refs.get(identity(type,logins.get(String(account))||account,id))||refs.get(identity(type,'',id)))
+export function shopBoard({accounts,publicationAccounts=[],inventory,jobs,orders,references,drafts,postedRefs=[],listingCovers=[]}){
+  // Publication receipts can outlive the account in the current Scalency directory.
+  const logins=new Map([...publicationAccounts,...accounts].filter(r=>r.id&&r.login?.trim()).map(r=>[String(r.id),r.login.trim()]))
+  const login=id=>logins.get(String(id))||id
+  const refs=new Map(postedRefs.map(r=>[identity(r.type,login(r.account),r.id),r.sku]))
+  const posted=(type,account,id)=>id&&(refs.get(identity(type,login(account),id))||refs.get(identity(type,'',id)))
   const saved=new Map(listingCovers.map(c=>[identity(c.account,c.id),c]))
-  const feeds={comptes:accounts,annonces:[],supprimees:[],publications:[],republications:[],commandes:[]}
+  const feeds={comptes:Array.from(logins,([id,login])=>({id,login})),annonces:[],supprimees:[],publications:[],republications:[],commandes:[]}
   for(const record of inventory){
     const raw=record.payload
     const cached=saved.get(identity(raw.account_id,raw.id))
@@ -48,14 +50,15 @@ export function shopBoard({accounts,inventory,jobs,orders,references,drafts,post
   const recent=new Map()
   for(const r of orders){
     if(!inSalesPeriod(r.order_date))continue
-    const k=identity(r.account,r.vinted_transaction_id||r.id),prior=recent.get(k)
+    const k=identity(login(r.account),r.vinted_transaction_id||r.id),prior=recent.get(k)
     if(!prior||Date.parse(r.status_updated_at||r.order_date)>Date.parse(prior.status_updated_at||prior.order_date))recent.set(k,r)
   }
   feeds.commandes=skuSourceRows('orders',[...recent.values()])
   for(const order of feeds.commandes)for(const line of order.lines){
     line.sku=line.sku||posted('line',order.account,line.id)||posted('listing',order.account,line.listing)
   }
-  const report=buildSkuActivity(feeds,references,'',true)
+  const manual=references.manual.map(ref=>({...ref,account:login(ref.account)}))
+  const report=buildSkuActivity(feeds,{...references,manual},'',true)
   const listings=new Map(),soldLines=new Map()
   for(const g of report.rows){
     for(const ad of g.listings){ad.photo=safePhoto(ad.photo);listings.set(identity(ad.account,ad.id),{...ad,sku:g.sku})}
@@ -64,10 +67,10 @@ export function shopBoard({accounts,inventory,jobs,orders,references,drafts,post
       if(sale.lineId)soldLines.set(identity(sale.account,sale.id,sale.lineId),g.sku)
     }
   }
-  const exactLines=new Map(references.lines.map(r=>[identity(r.account,r.order,r.id),r]))
-  const manualLines=new Map(references.manual.filter(r=>r.kind==='sale').map(r=>[identity(r.account,r.id,r.line),r.sku]))
+  const exactLines=new Map(references.lines.map(r=>[identity(login(r.account),r.order,r.id),r]))
+  const manualLines=new Map(manual.filter(r=>r.kind==='sale').map(r=>[identity(r.account,r.id,r.line),r.sku]))
   const sales=[...recent.values()].map(r=>{
-    const account=logins.get(String(r.account))||r.account
+    const account=login(r.account)
     const lines=(r.items||[]).map(i=>{
       const k=identity(account,r.id,i.id),ref=exactLines.get(k)
       const ad=listings.get(identity(account,i.vinted_id||ref?.listing))
@@ -78,11 +81,11 @@ export function shopBoard({accounts,inventory,jobs,orders,references,drafts,post
       label:r.status_fr,deadline:r.deadline,hasLabel:r.has_label===true,printed:r.printed_at,packed:r.packed_at,
       amount:r.subtotal,currency:r.currency,carrier:r.carrier,lines}
   })
-  return {groups:report.rows,emptyOrders:report.emptyOrders,sales,drafts:drafts.map(d=>({...d,accountId:d.account,account:logins.get(String(d.account))||d.account}))}
+  return {groups:report.rows,emptyOrders:report.emptyOrders,sales,drafts:drafts.map(d=>({...d,accountId:d.account,account:login(d.account)}))}
 }
 
 export async function readShopBoard(db,user,admin){
-  const [accts,inventory,jobRows,orderRows,references,drafts,sync,posted,media]=await Promise.all([
+  const [accts,inventory,jobRows,orderRows,references,drafts,sync,posted,media,publicationAccounts]=await Promise.all([
     all(db,'scalency_records','remote_id,login:payload->>login',q=>q.eq('kind','accounts'),['remote_id']),
     all(db,'scalency_catalog_inventory','remote_id,account,payload,photo,seen_at,listed_size,size,emplacement',q=>q,['account','remote_id']),
     all(db,'scalency_records','payload',q=>q.eq('kind','jobs').eq('payload->>status','done').in('payload->>type',['publish','relist','hide','unhide']),['account','remote_id']),
@@ -91,7 +94,8 @@ export async function readShopBoard(db,user,admin){
     admin?all(db,'listing_drafts','id,fields,photo:photos->0->>path,updated_at',q=>q.eq('state','draft').eq('owner_id',user.id).not('fields->>account_id','is',null).is('vinted_id',null),['id']):[],
     db.from('scalency_settings').select('id,value').like('id','dressing-read-v1:%'),
     all(db,'scalency_settings','id,value',q=>q.like('id','dressing-ref:%'),['id']),
-    all(db,'scalency_settings','id,value',q=>q.like('id','dressing-cover:%'),['id'])
+    all(db,'scalency_settings','id,value',q=>q.like('id','dressing-cover:%'),['id']),
+    all(db,'publication_accounts','id,login',q=>q.not('login','is',null),['id'])
   ])
   const photos=[...new Set(drafts.map(r=>r.photo).filter(p=>p&&ownedAsset(p,user.id)))]
   const covers=new Map()
@@ -99,7 +103,7 @@ export async function readShopBoard(db,user,admin){
     const signed=await db.storage.from(ASSET_BUCKET).createSignedUrls(photos.slice(offset,offset+100),3600)
     for(const r of signed.data||[])if(r.signedUrl)covers.set(r.path,r.signedUrl)
   }
-  const dataset=shopBoard({accounts:accts.map(r=>({id:r.remote_id,login:r.login})),inventory,jobs:jobRows.map(r=>r.payload),
+  const dataset=shopBoard({publicationAccounts,accounts:accts.map(r=>({id:r.remote_id,login:r.login})),inventory,jobs:jobRows.map(r=>r.payload),
     orders:orderRows.map(r=>r.payload),references,listingCovers:media.map(r=>r.value),postedRefs:posted.map(r=>r.value),drafts:drafts.map(d=>({id:d.id,account:d.fields.account_id,sku:d.fields.sku,title:d.fields.title,
       size:d.fields.size_text,price:d.fields.price,photo:covers.get(d.photo),status:'brouillon',seen:d.updated_at,isDraft:true}))})
   const stamps=check(sync).map(r=>r.value?.at).filter(Boolean).sort()
