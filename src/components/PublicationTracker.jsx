@@ -2,6 +2,7 @@ import {useEffect,useRef,useState} from 'react'
 import {act,query} from '../lib/scalency'
 import {publicationDate,publicationProgress} from '../lib/publicationTracking'
 import PublicationLots from './PublicationLots'
+import DailyPublicationCount from './DailyPublicationCount'
 import './PublicationTracker.css'
 
 const tabs=[['queue','À publier'],['drafts','Brouillons'],['live','Mises en ligne'],['history','Historique'],['lots','Par lot']]
@@ -109,6 +110,7 @@ export default function PublicationTracker({params}){
   const pageCount=Math.ceil((data?.draftTotal||0)/(data?.pageSize||20))
   return <main className="sc-work pt-work pub-console">
     <header className="pub-header"><div><h1>Publications</h1><p>Suivi des annonces sur Stock Vinted et Scalency</p></div><a className="pub-primary" href="#annonces?nouvelle=1">+ Nouvelle annonce</a></header>
+    <DailyPublicationCount/>
     <nav className="pub-tabs" aria-label="Étapes de publication">{tabs.map(([value,label])=><a key={value} aria-current={!job&&tab===value?'page':undefined} href={pageLink(value,account)}>{label}</a>)}</nav>
     <div className="pub-filters">{!job&&!draft&&tab!=='lots'&&<label>Rechercher<input type="search" placeholder="Titre ou SKU" maxLength={120} value={input} onChange={e=>{setInput(e.target.value);setSelection({})}}/></label>}
       {!job&&!draft&&!params.lot&&<label>Compte<select value={account} onChange={e=>{window.location.hash=pageLink(tab,e.target.value)}}><option value="">Tous les comptes</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.login}</option>)}</select></label>}

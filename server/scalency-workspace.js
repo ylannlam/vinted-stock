@@ -18,6 +18,7 @@ import {batchDrafts,batchImages,checkBatchSubmission,reviewEditedDraft,reviewMet
 import {acceptPublicationLot,publicationLots,retryLotEntry,reviewDuplicates} from './scalency-lots.js'
 import {catalogProduct,connectedRecords,draftSource} from './scalency-relations.js'
 import {skuFeed,skuReferences,linkSku} from './scalency-sku.js'
+import {parisDay,validDay} from '../src/lib/publications.js'
 const fail=(message,status)=>{throw new ScalencyError(message,status)}
 const checked=r=>{if(r.error)throw r.error;return r.data}
 const pageSize=36
@@ -165,6 +166,16 @@ export async function scalencyHandler(req,res,{db,user,role}){
   const q=req.query, b=req.body||{}, action=req.method==='GET'?q.view:b.action
   if(role!=='admin'&&!['home','orders','items','order','label','pack','stock','link','relations','product'].includes(action)&&!(action==='sync'&&['orders','items'].includes(b.kind)))fail('Réservé à l’administrateur.',403)
   if(req.method==='GET'){
+    if(action==='daily-publications'){
+      if(!validDay(q.day))fail('Choisis un jour valide.',400)
+      res.setHeader('Cache-Control','private, no-store')
+      let syncDelayed=false
+      if(q.reconcile==='1'&&q.day===parisDay()){
+        try{await syncPage(db,'jobs')}catch{syncDelayed=true}
+      }
+      const report=checked(await db.rpc('scalency_publications_on_day',{p_day:q.day}))
+      return res.json({...report,syncDelayed})
+    }
     if(action==='sku-feed'||action==='sku-references'){
       res.setHeader('Cache-Control','private, no-store')
       return res.json(action==='sku-feed'?await skuFeed(q.feed,q.cursor||''):await skuReferences(db,user))

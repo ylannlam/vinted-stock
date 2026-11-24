@@ -2,6 +2,7 @@ import {useEffect,useMemo,useRef,useState} from 'react'
 import {act,query} from '../lib/scalency'
 import {buildSkuActivity,skuFeeds} from '../lib/skuActivity'
 import './SkuActivity.css'
+import DailyPublicationCount from './DailyPublicationCount'
 
 const sources={comptes:'Comptes',annonces:'Annonces',supprimees:'Annonces supprimées',publications:'Publications',republications:'Republications',commandes:'Commandes'}
 const columns=[['published','Déjà publiées'],['online','En ligne'],['completed','Ventes terminées'],['pending','Ventes en cours']]
@@ -83,6 +84,7 @@ export default function SkuActivity(){
   const link=value=>setData(prev=>({...prev,refs:{...prev.refs,manual:[...(prev.refs.manual||[]),value]}}))
   return <main className="sc-work sku-work"><header className="sc-head"><div><a href="#dressing">Dressing</a><h1>Suivi par SKU</h1>{data&&<small>Scalency · Actualisé à {data.stamp.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</small>}</div>
     <button disabled={!!progress} onClick={()=>setRevision(v=>v+1)}>Actualiser depuis Scalency</button></header>
+    <DailyPublicationCount/>
     {progress&&<p role="status">{progress}</p>}{error&&<p role="alert" className="sc-error">Lecture incomplète. {error}</p>}
     {report&&<><div className="sku-tools"><label>Compte<select value={account} onChange={e=>{setAccount(e.target.value);setPage(0);setSelected(null)}}><option value="">Tous les comptes</option>{report.accounts.map(a=><option key={a}>{a}</option>)}</select></label></div>
     <div className="sku-metrics">{columns.map(([k,label])=><div key={k}><span>{label}</span><strong>{number(totals[k])}</strong></div>)}</div>
