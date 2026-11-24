@@ -1,4 +1,5 @@
 import {useMemo,useState} from 'react'
+import CopySkuButton from './CopySkuButton'
 import {calendar,performanceRows,textMatch} from '../lib/shopView'
 import {salesPeriodLabel} from '../lib/shopPeriod'
 import {ShopCover,ShopFilters,PageBar} from './ShopControls'
@@ -19,7 +20,7 @@ export default function ShopRanking({board,accounts,initialSku='',admin,reread})
     <ShopFilters search={search} setSearch={update(setSearch)} hint="SKU ou titre de l’article" account={account} setAccount={update(setAccount)} accounts={accounts}
       sort={sort} setSort={update(setSort)} options={[[ 'completed','Ventes terminées'],['pending','Ventes en cours'],['online','Annonces en ligne'],['favourites','Favoris']]}/>
     <div className="shop-rank-scroll"><table className="shop-rank"><caption>Classement de {rows.length} références</caption><thead><tr><th>Article et SKU</th><th>Vendus</th><th>En cours</th><th>Publiées</th><th>En ligne</th><th>Favoris</th><th>Dernière vente</th></tr></thead>
-    <tbody>{rows.slice(here*size,(here+1)*size).map(g=><tr key={g.key}><th scope="row"><button onClick={()=>setDetail(g.key)}><span className="shop-mini"><ShopCover src={g.photo} title={g.title} small/></span><span><b>{g.sku}</b><small>{g.title||'Article'}</small></span></button></th>
+    <tbody>{rows.slice(here*size,(here+1)*size).map(g=><tr key={g.key}><th scope="row"><div className="shop-rank-item"><button onClick={()=>setDetail(g.key)}><span className="shop-mini"><ShopCover src={g.photo} title={g.title} small/></span><span><b>{g.sku}</b><small>{g.title||'Article'}</small></span></button><CopySkuButton sku={g.sku}/></div></th>
       <td><strong>{g.completed}</strong></td><td>{g.pending}</td><td>{g.published}</td><td>{g.online}</td><td>{g.favourites??'—'}</td><td>{calendar(g.lastSale)}</td></tr>)}</tbody></table></div>
     {!rows.length&&<p className="shop-empty">Aucune référence pour cette recherche.</p>}<PageBar page={here} setPage={setPage} total={rows.length} size={size}/>
     <div className="shop-unmatched">{unknown&&<button onClick={()=>setDetail('')}>À identifier · {unknown.published} annonces · {unknown.completed} article(s) vendu(s) sans SKU</button>}

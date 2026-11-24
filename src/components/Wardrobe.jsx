@@ -1,4 +1,5 @@
 import {useMemo,useState} from 'react'
+import CopySkuButton from './CopySkuButton'
 import {act} from '../lib/scalency'
 import {calendar,listingRows,price,recordKey,sortListings,statusLabels,textMatch} from '../lib/shopView'
 import {FilterTabs,PageBar,PrintArticles,SelectionBar,ShopCover,ShopFilters,ShopHeader,useShopSelection} from './ShopControls'
@@ -15,7 +16,7 @@ function Card({row,selected,toggle,open}){
       <span className={'shop-badge '+row.state}>{statusLabels[row.state]?.replace('Vendues','Vendue').replace('Masquées','Masquée').replace('Brouillons','Brouillon')}</span>
     </div>
     <div className="shop-card-body"><button className="shop-card-title" onClick={open}>{name}</button>
-      <p className={'shop-sku'+(!row.sku?' missing':'')}>{row.sku?'SKU '+row.sku:'SKU à identifier'}</p>
+      <div className="shop-sku-row"><p className={'shop-sku'+(!row.sku?' missing':'')}>{row.sku?'SKU '+row.sku:'SKU à identifier'}</p><CopySkuButton key={row.sku} sku={row.sku}/></div>
       <p className="shop-card-price"><strong>{price(row.price,row.currency)}</strong><span>{row.account}</span></p>
       {!row.isDraft&&<p className="shop-metrics"><span>{row.views??'—'} vues</span><span>♡ {row.favourites??'—'} favoris</span></p>}
       <p className="shop-card-date">{row.date?(row.isDraft?'Modifié le ':row.approx?'Vers le ':'Publié le ')+calendar(row.date):'Date de publication inconnue'}</p>
@@ -30,7 +31,7 @@ function ListingDetail({row,admin,reread,onClose}){
     catch(err){setError(err.message)}finally{setBusy(false)}}
   return <ResourceDialog title={row.title||'Fiche article'} onClose={onClose}><div className="shop-product-detail"><div className="shop-detail-photo"><ShopCover title={row.title} src={row.photo}/></div>
     <div><strong>{price(row.price,row.currency)}</strong><p>{row.account} · {row.status}</p><dl>
-    {[['SKU',row.sku],['Taille',row.size],['Emplacement',row.location],['Numéro',row.id],['Vues',row.views],['Favoris',row.favourites]].map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v==null||v===''?'—':v}</dd></div>)}</dl>
+    {[['SKU',row.sku],['Taille',row.size],['Emplacement',row.location],['Numéro',row.id],['Vues',row.views],['Favoris',row.favourites]].map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v==null||v===''?'—':v}{k==='SKU'&&<CopySkuButton sku={v}/>}</dd></div>)}</dl>
     {row.sku&&<a href={'#dressing/sku?'+new URLSearchParams({sku:row.sku})}>Voir les ventes de ce SKU</a>}
     {row.isDraft?<a href={'#annonces?'+new URLSearchParams({account:row.accountId||'',draft:row.id})}>Modifier le brouillon</a>:<>
       <a href={'https://www.vinted.fr/items/'+encodeURIComponent(row.id)} target="_blank" rel="noreferrer">Ouvrir sur Vinted ↗</a>

@@ -1,4 +1,5 @@
 import {useMemo,useState} from 'react'
+import CopySkuButton from './CopySkuButton'
 import useShopBoard from './useShopBoard'
 import {FilterTabs,PageBar,PrintArticles,SelectionBar,ShopCover,ShopFilters,ShopHeader,useShopSelection} from './ShopControls'
 import BatchLabelsDialog from './BatchLabelsDialog'
@@ -50,7 +51,7 @@ function SalesGrid({board,params}){
         return <tr key={key(r)} className={checked?'picked':''}><td className="sale-tick"><input type="checkbox" checked={checked} aria-label={'Sélectionner la commande '+r.id} onChange={()=>selection.toggle(key(r))}/></td>
           <td className="sale-products">{lines.map((line,i)=><div className="sale-product" key={line.id||i}><div className="shop-mini"><ShopCover src={line.photo} title={line.title} small/></div><div>
             <a href={'#ventes?'+new URLSearchParams({id:r.id,account:r.accountId||r.account})}>{line.title||r.title||'Commande'}</a>
-            <small>{[line.sku?'SKU '+line.sku:'SKU à identifier',line.size&&'Taille '+line.size,line.quantity>1&&'× '+line.quantity].filter(Boolean).join(' · ')}</small></div></div>)}</td>
+            <small>{[line.sku?'SKU '+line.sku:'SKU à identifier',line.size&&'Taille '+line.size,line.quantity>1&&'× '+line.quantity].filter(Boolean).join(' · ')}<CopySkuButton key={line.sku} sku={line.sku}/></small></div></div>)}</td>
           <td className="sale-account"><b>{r.account}</b><small>{r.estimated?'Vers le ':''}{calendar(r.date)}</small></td>
           <td className="sale-state"><span className={'shop-badge '+bucket}>{r.label||salesLabels[bucket]}</span>
             {bucket==='dispatch'&&<small>{r.deadline?'À envoyer avant le '+calendar(r.deadline):'Échéance inconnue'}</small>}
