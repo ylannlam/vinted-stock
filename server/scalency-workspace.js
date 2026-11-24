@@ -19,6 +19,9 @@ import {acceptPublicationLot,publicationLots,retryLotEntry,reviewDuplicates} fro
 import {catalogProduct,connectedRecords,draftSource} from './scalency-relations.js'
 import {skuFeed,skuReferences,linkSku} from './scalency-sku.js'
 import {parisDay,validDay} from '../src/lib/publications.js'
+import {readShopBoard} from './shop-board.js'
+import {refreshShopPage} from './shop-refresh.js'
+import {salesStart,restrictOrderPage} from '../src/lib/shopPeriod.js'
 const fail=(message,status)=>{throw new ScalencyError(message,status)}
 const checked=r=>{if(r.error)throw r.error;return r.data}
 const pageSize=36
@@ -52,7 +55,10 @@ export async function syncPage(db,kind,{older=false,force=false}={}){
   if(older&&state?.complete)return state
   if(!older&&!force&&state&&Date.now()-Date.parse(state.updated_at)<60000)return state
   const stamp=now()
-  const result=await remote(kind,{query:{limit:100,cursor:older?state?.cursor_value:null}})
+  const options={limit:100,cursor:older?state?.cursor_value:null}
+  if(kind==='orders')Object.assign(options,{state:'all',sort:'order_date'})
+  const page=await remote(kind,{query:options})
+  const result=kind==='orders'?restrictOrderPage(page):page
   await saveRecords(db,kind,result.data||[],stamp)
   const next={kind,updated_at:stamp,...(!state||older?{cursor_value:result.next_cursor||null,complete:!result.has_more}:{})}
   if(!state)checked(await db.from('scalency_sync').upsert(next,{onConflict:'kind',ignoreDuplicates:true}))
@@ -66,6 +72,7 @@ export async function syncPage(db,kind,{older=false,force=false}={}){
 async function list(db,kind,q){
   const page=Math.max(0,Math.min(100000,parseInt(q.page,10)||0))
   let read=db.from(kind==='items'?'scalency_catalog_inventory':table).select('*',{count:'exact'}).eq('kind',kind)
+  if(kind==='orders')read=read.gte('sort_at',salesStart)
   const term=value(q,'search').replace(/[%_\\]/g,' ')
   if(term)read=read.ilike(kind==='accounts'?'payload->>login':'payload->>title','%'+term+'%')
   if(q.account)read=read.eq('account',value(q,'account'))
@@ -164,8 +171,10 @@ async function drafts(db,user,q){
 }
 export async function scalencyHandler(req,res,{db,user,role}){
   const q=req.query, b=req.body||{}, action=req.method==='GET'?q.view:b.action
-  if(role!=='admin'&&!['home','orders','items','order','label','pack','stock','link','relations','product'].includes(action)&&!(action==='sync'&&['orders','items'].includes(b.kind)))fail('Réservé à l’administrateur.',403)
+  if(role!=='admin'&&!['shop-board','shop-refresh','home','orders','items','order','label','pack','stock','link','relations','product'].includes(action)&&!(action==='sync'&&['orders','items'].includes(b.kind)))fail('Réservé à l’administrateur.',403)
   if(req.method==='GET'){
+    if(action==='shop-board')return res.json(await readShopBoard(db,user,role==='admin'))
+    if(action==='shop-refresh')return res.json(await refreshShopPage(db,q.source,q.cursor||'',q.force==='1'))
     if(action==='daily-publications'){
       if(!validDay(q.day))fail('Choisis un jour valide.',400)
       res.setHeader('Cache-Control','private, no-store')
@@ -199,7 +208,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
     if(action==='draft-source')return res.json(await draftSource(db,q.piece,q.product,q.sku))
     if(action==='orders'&&q.filter==='archive'){
       const page=Math.max(0,parseInt(q.page)||0)
-      let read=db.from('workspace_sales').select('id,source,account_login,actual_cost,notes,location,sale_date,order_status,listing_photo_url',{count:'exact'})
+      let read=db.from('workspace_sales').select('id,source,account_login,actual_cost,notes,location,sale_date,order_status,listing_photo_url',{count:'exact'}).gte('sale_date',salesStart)
       if(q.focus)read=read.eq('id',value(q,'focus'))
       const result=await read.order('sale_date',{ascending:false}).order('id').range(page*pageSize,(page+1)*pageSize-1)
       checked(result)

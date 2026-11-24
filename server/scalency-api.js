@@ -31,15 +31,20 @@ export async function remote(path, {method='GET', body, query={}, pdf=false, fet
 }
 const select = (row,fields) => Object.fromEntries(fields.filter(k=>row[k]!==undefined).map(k=>[k,row[k]]))
 const fields = {
-  items:'id account_id title price status sold sku location supplier_link photo_url updated_at replaced_by views favourites sale',
+  items:'id account_id title price currency status sold sku location supplier_link photo_url updated_at replaced_by views favourites sale age_days deleted_at published_at is_hidden',
   accounts:'id login country linked agent',
-  orders:'id account title order_date normalized_status status_fr state deadline subtotal currency packed_at has_label carrier vinted_transaction_id note',
+  orders:'id account title order_date order_date_estimated status_updated_at printed_at normalized_status status_fr state deadline subtotal currency packed_at has_label carrier vinted_transaction_id note',
   jobs:'id account_id status status_label type type_label reason title item_id new_item_id not_before done_at updated_at created_at',
   conversations:'id account_id login buyer title price cur thumb preview at unread todo sold offer'
 }
 export function snapshot(kind,row,seenAt=new Date().toISOString()) {
   const payload = select(row,fields[kind].split(' '))
-  if (kind==='orders') payload.items=(row.items||[]).map(i=>select(i,'id title thumbnail sku selling_price purchase_price supplier_link location vinted_id state'.split(' ')))
+  if (kind==='jobs' && row.refs?.sku) payload.refs={sku:row.refs.sku}
+  if (kind==='orders') payload.items=(row.items||[]).map(i=>{
+    const line=select(i,'id title thumbnail sku quantity selling_price purchase_price supplier_link location vinted_id state'.split(' '))
+    if(i.link_method==='sku'&&i.product?.skus?.length===1&&typeof i.product.skus[0]==='string')line.product_sku=i.product.skus[0]
+    return line
+  })
   return {kind,account:String(row.account_id||row.account||''),remote_id:remoteId(row.id),payload,
     seen_at:seenAt,sort_at:row.order_date||row.updated_at||row.at||row.created_at||null}
 }

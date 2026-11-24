@@ -1,4 +1,5 @@
 import {remote,snapshot,collections} from './scalency-api.js'
+import {restrictOrderPage} from '../src/lib/shopPeriod.js'
 
 const check=result=>{if(result.error)throw result.error;return result.data}
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms))
@@ -10,7 +11,8 @@ export async function nextHistoryPage(db,kind){
   const state=check(await db.from('scalency_sync').select('cursor_value,complete').eq('kind',kind).maybeSingle())
   if(!state||state.complete)return {complete:!!state?.complete,imported:0}
   const seen=new Date().toISOString()
-  const page=await remote(kind,{query:{limit:100,cursor:state.cursor_value}})
+  const response=await remote(kind,{query:{limit:100,cursor:state.cursor_value,...(kind==='orders'?{state:'all',sort:'order_date'}:{})}})
+  const page=kind==='orders'&&Array.isArray(response.data)?restrictOrderPage(response):response
   if(!Array.isArray(page.data)||page.has_more&&(!page.next_cursor||page.next_cursor===state.cursor_value))throw Error('Curseur Scalency invalide.')
   const rows=page.data.map(row=>snapshot(kind,row,seen))
   if(rows.length) check(await db.from('scalency_records').upsert(rows,{onConflict:'kind,account,remote_id'}))

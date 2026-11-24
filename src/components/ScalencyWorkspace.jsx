@@ -1,6 +1,7 @@
 import {useEffect,useState,useRef} from 'react'
 import {query,act,formatDate,formatMoney} from '../lib/scalency'
-import SkuActivity from './SkuActivity'
+import Wardrobe from './Wardrobe'
+import SalesDesk from './SalesDesk'
 import DailyPublicationCount from './DailyPublicationCount'
 import ScalencyQuickAccount from './ScalencyQuickAccount'
 import ScalencyDraft from './ScalencyDraft'
@@ -48,7 +49,9 @@ function Details({kind,row,close,reload,admin}){
  </article>
 }
 export default function ScalencyWorkspace({kind,admin,params={}}){
- if(kind==='items'&&admin&&params.section==='sku')return <SkuActivity/>
+ const stockWorkflow=params.draft||params.piece||params.product||params.nouvelle==='1'||(params.sku&&params.section!=='sku')||['unlinked','withdraw'].includes(params.filter)
+ if(kind==='items'&&!params.id&&!stockWorkflow)return <Wardrobe params={params} admin={admin}/>
+ if(kind==='orders'&&!params.id&&params.filter!=='archive')return <SalesDesk params={params}/>
  if(kind==='drafts'&&admin)return <ScalencyBatchStudio params={params}/>
  if(kind==='jobs'&&admin&&!params.id&&!params.filter&&params.section!=='actions')return <PublicationTracker params={params}/>
  return <WorkspaceList kind={kind} admin={admin} params={params}/>
