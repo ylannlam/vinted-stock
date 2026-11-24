@@ -1,17 +1,23 @@
-import {useCallback,useEffect,useState} from 'react'
+import {useCallback,useEffect,useRef,useState} from 'react'
 import {act,query} from '../lib/scalency'
 import './PublicationCadence.css'
 
 export function useCadence(){
   const [rows,setRows]=useState([]),[error,setError]=useState(''),[revision,setRevision]=useState(0)
+  const saveVersion=useRef(0)
+  const applySaved=useCallback((account,capacity)=>{
+    saveVersion.current++
+    setRows(previous=>previous.map(row=>row.account===account?{...row,...capacity}:row))
+  },[])
   const refresh=useCallback(()=>setRevision(n=>n+1),[])
   useEffect(()=>{
     let live=true,reading=false
     async function read(){
       if(reading)return
       reading=true
-      try{const result=await query('cadence');if(live){setRows(result);setError('')}}
-      catch(e){if(live)setError(e.message)}
+      const version=saveVersion.current
+      try{const result=await query('cadence');if(live&&version===saveVersion.current){setRows(result);setError('')}}
+      catch(e){if(live&&version===saveVersion.current)setError(e.message)}
       finally{reading=false}
     }
     const tick=()=>{if(document.visibilityState==='visible')read()}
@@ -20,28 +26,44 @@ export function useCadence(){
     document.addEventListener('visibilitychange',tick)
     return ()=>{live=false;clearInterval(timer);document.removeEventListener('visibilitychange',tick)}
   },[revision])
-  return {rows,error,refresh}
+  return {rows,error,refresh,applySaved}
 }
 const rhythm=r=>r.mode==='normal'?'Normal':!r.starter_day?'Démarrage · première publication à venir':r.starter_day<=3?'Démarrage · jour '+r.starter_day+'/3':'Démarrage · 3 jours écoulés'
 
 export function CadenceSettings({row,onSaved,blocked}){
   const [editing,setEditing]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('')
-  const [mode,setMode]=useState(''),[starter,setStarter]=useState(''),[normal,setNormal]=useState('')
-  function open(){setMode(row.mode);setStarter(row.starter_limit);setNormal(row.normal_limit);setError('');setEditing(true)}
+  const [mode,setMode]=useState(row.mode),[limit,setLimit]=useState(''),[saved,setSaved]=useState(false)
+  function selectMode(value){
+    setMode(value)
+    setLimit(String(value==='starter'?row.starter_limit:row.normal_limit))
+  }
+  function open(){selectMode(row.mode);setError('');setSaved(false);setEditing(true)}
   async function save(ev){
     ev.preventDefault()
     if(busy)return
     setBusy(true);setError('')
-    try{await act('cadence-save',{account:row.account,mode,starter:Number(starter),normal:Number(normal)});setEditing(false);onSaved()}
+    try{
+      const capacity=await act('cadence-save',{
+        account:row.account,mode,
+        starter:mode==='starter'?Number(limit):row.starter_limit,
+        normal:mode==='normal'?Number(limit):row.normal_limit
+      })
+      onSaved(row.account,capacity)
+      setEditing(false)
+      setSaved(true)
+    }
     catch(e){setError(e.message)}finally{setBusy(false)}
   }
   return <section className="cadence-card">
-    <div><strong>{rhythm(row)}</strong><p>{blocked||('Places restantes : '+row.remaining+' sur '+row.day_limit+' · '+row.posted+' publiée(s) · '+row.reserved+' en file')}</p></div>
-    {!editing&&<button type="button" onClick={open}>{row.mode==='starter'&&row.starter_day>3?'Choisir le rythme':'Régler le plafond'}</button>}
-    {editing&&<form onSubmit={save}><label>Rythme actif<select value={mode} onChange={e=>setMode(e.target.value)}><option value="starter">Démarrage</option><option value="normal">Normal</option></select></label>
-      <label>Plafond en démarrage<input type="number" required step="1" min="0" max="2147483647" value={starter} onChange={e=>setStarter(e.target.value)}/></label>
-      <label>Plafond normal<input type="number" required step="1" min="0" max="2147483647" value={normal} onChange={e=>setNormal(e.target.value)}/></label>
-      <button disabled={busy}>Enregistrer</button><button type="button" disabled={busy} onClick={()=>setEditing(false)}>Annuler</button>
+    <div><strong>Plafond quotidien de {row.login}</strong>
+      <p>{row.day_limit} {row.day_limit===1?'annonce':'annonces'} par jour · {rhythm(row)}</p>
+      <p>{blocked||('Places restantes : '+row.remaining+' · '+row.posted+' publiée(s) · '+row.reserved+' en file')}</p>
+      {saved&&<p role="status">Plafond enregistré.</p>}
+    </div>
+    {!editing&&<button type="button" onClick={open}>Régler le plafond</button>}
+    {editing&&<form onSubmit={save}><label>Rythme actif<select disabled={busy} value={mode} onChange={e=>selectMode(e.target.value)}><option value="starter">Démarrage</option><option value="normal">Normal</option></select></label>
+      <label>Annonces par jour<input type="number" autoFocus required step="1" min="0" max="2147483647" disabled={busy} value={limit} onChange={e=>setLimit(e.target.value)}/></label>
+      <button disabled={busy}>{busy?'Enregistrement…':'Enregistrer'}</button><button type="button" disabled={busy} onClick={()=>setEditing(false)}>Annuler</button>
       {error&&<p role="alert">{error}</p>}</form>}
   </section>
 }

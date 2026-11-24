@@ -195,9 +195,9 @@ export default function ScalencyBatchStudio({params}){
   return <main className="sc-work bs-work"><header className="sc-head"><div><p>Stock Vinted / Scalency</p><h1>Atelier d’annonces</h1></div><a href="#publication">Suivi des publications</a></header>
     <fieldset className="bs-account" disabled={sending||!!editor}><ScalencyQuickAccount accounts={profiles} health={health} account={account} onSelect={choose} onSaved={updateProfile}/></fieldset>
     {!editor&&<AccountHealthNotice health={health} id={account} overview/>}
-    {quota&&!editor&&<CadenceSettings key={account} row={quota} blocked={blocked} onSaved={cadence.refresh}/>}
+    {quota&&!editor&&<CadenceSettings key={'cadence-'+account} row={quota} blocked={blocked} onSaved={cadence.applySaved}/>}
     {account&&cadence.error&&<p role="alert">Plafond indisponible. <button onClick={cadence.refresh}>Réessayer</button></p>}
-    {account&&login&&<PhotoAccountPanel key={account} account={account} login={login.login}/>}
+    {account&&login&&<PhotoAccountPanel key={'photos-'+account} account={account} login={login.login}/>}
     {error&&<p role="alert" className="sc-error">{error} <button onClick={reload}>Réessayer</button></p>}
     {notice&&<p className="bs-notice" role="status">{notice}{lastLot&&<> · <a href={'#publication?lot='+lastLot}>Suivre le lot</a></>}</p>}
     {editor&&<ScalencyDraft key={editor} sharedHealth={health} detailed id={editor==='new'?null:editor} initialAccount={account} onProfileSaved={updateProfile} piece={params.piece} product={params.product} sku={params.sku}
