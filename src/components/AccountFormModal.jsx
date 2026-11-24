@@ -59,8 +59,9 @@ export default function AccountFormModal({ account, onClose, onSave, error }) {
           {/* Pseudo — toujours visible */}
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="text-xs font-semibold text-gray-500 mb-1 block">N° AdsPower</label>
+              <label htmlFor="account-scalency-number" className="text-xs font-semibold text-gray-500 mb-1 block">N° Scalency</label>
               <input
+                id="account-scalency-number"
                 value={form.ads_power_num}
                 onChange={e => set('ads_power_num', e.target.value.replace(/\D/g, ''))}
                 placeholder="01"
