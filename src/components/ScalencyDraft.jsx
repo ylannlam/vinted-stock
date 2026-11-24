@@ -8,21 +8,26 @@ import {act,query} from '../lib/scalency'
 import {uploadListingPhoto} from '../lib/api'
 import {emptyListing,validateListingPhoto,listingSizes,matchingSize} from '../lib/listingStudio'
 
+import {AccountHealthNotice,preparationBlock,useAccountHealth} from './ScalencyAccountHealth'
+
 function ChoosePiece({onChoose,busy}){
   const [page,setPage]=useState(0),[rows,setRows]=useState([]),[total,setTotal]=useState(0),[error,setError]=useState('')
   useEffect(()=>{let live=true;query('stock',{page}).then(r=>{if(live){setRows(r.rows);setTotal(r.total);setError('')}}).catch(e=>{if(live)setError(e.message)});return()=>{live=false}},[page])
   return <section className="sc-panel"><label className="sc-field"><span>Choisir la pièce physique</span><select disabled={busy} value="" onChange={e=>{if(e.target.value)onChoose(e.target.value)}}><option value="">Emplacement · catégorie · taille</option>{rows.map(r=><option key={r.id} value={r.id}>{[r.emplacement,r.category,r.size].filter(Boolean).join(' · ')}</option>)}</select></label>{total>36&&<div className="sc-tools"><button disabled={!page||busy} onClick={()=>setPage(p=>p-1)}>Précédent</button><span>{page+1} / {Math.ceil(total/36)}</span><button disabled={(page+1)*36>=total||busy} onClick={()=>setPage(p=>p+1)}>Suivant</button></div>}{error&&<p role="alert">{error}</p>}</section>
 }
 function Field({label,children}){return <label className="sc-field"><span>{label}</span>{children}</label>}
-export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onGenerate,onReviewed,onProfileSaved,initialAccount,detailed=false}){
+export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onGenerate,onReviewed,onProfileSaved,initialAccount,sharedHealth,detailed=false}){
   const [fields,setFields]=useState({...emptyListing(),sku:sku||''}),[photos,setPhotos]=useState([]),[version,setVersion]=useState(null)
-  const [accounts,setAccounts]=useState([]),[cats,setCats]=useState([]),[cursor,setCursor]=useState(null),[options,setOptions]=useState(null)
+  const [cats,setCats]=useState([]),[cursor,setCursor]=useState(null),[options,setOptions]=useState(null)
   const [search,setSearch]=useState(''),[date,setDate]=useState(''),[approved,setApproved]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState(''),[ready,setReady]=useState(!id)
   const [quick,setQuick]=useState(!id&&!detailed),[prepared,setPrepared]=useState(false),[review,setReview]=useState(false),[profiles,setProfiles]=useState([]),[owner,setOwner]=useState('')
   const [choosing,setChoosing]=useState(false)
   const [source,setSource]=useState({piece:piece||null,product:product||null,label:''}),[savedState,setSavedState]=useState('draft')
  const uid=useRef(id||crypto.randomUUID()),gate=useRef(false),localUrls=useRef([])
   const sizeOrigin=useRef('default'),accountChosen=useRef(false)
+  const ownHealth=useAccountHealth(!sharedHealth)
+  const health=sharedHealth||ownHealth
+  const blocked=preparationBlock(health,fields.account_id)
   const defaultSize=profiles.find(a=>a.id===fields.account_id)?.default_size||''
   useEffect(()=>{
     if(id||version!==null||sizeOrigin.current!=='default')return
@@ -43,7 +48,6 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
       if(!id){const found=r.accounts.find(a=>a.id===(initialAccount||last))||(r.accounts.length===1?r.accounts[0]:null)
         if(found&&!accountChosen.current)setFields(f=>({...f,account_id:found.id}))}
     }).catch(e=>live&&setError(e.message))
-    query('accounts').then(r=>live&&setAccounts(r.rows.map(x=>x.payload).filter(a=>a.linked))).catch(e=>live&&setError(e.message))
     query('catalogs').then(r=>{if(live){setCats(r.data||[]);setCursor(r.next_cursor)}}).catch(e=>live&&setError(e.message))
     return()=>{live=false}
   },[id,piece,product,sku])
@@ -60,7 +64,7 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
   async function run(fn){if(gate.current)return;gate.current=true;setBusy(true);setError('');try{await fn()}catch(e){setError(e.message)}finally{gate.current=false;setBusy(false)}}
   async function save(reviewForBatch=false){const r=await act(reviewForBatch?'save-review':'save',{id:uid.current,version,fields,piece:source.piece,product:source.product,photos:photos.map(({url,...p})=>p)});setVersion(r.version);if(reviewForBatch)onReviewed?.(r);return r.version}
   async function validate(){const v=await save();await act('validate',{id:uid.current,version:v,schedule:date?new Date(date).toISOString():null});setApproved(true);setMessage('Scalency a validé cette annonce. Tu peux confirmer sa publication.')}
-  async function upload(files){setApproved(false);if(files.length+photos.length>20)throw Error('20 photos maximum.');for(const f of files){validateListingPhoto(f);const p=await uploadListingPhoto(f);const url=URL.createObjectURL(f);localUrls.current.push(url);setPhotos(old=>[...old,{...p,url}])}}
+  async function upload(files){await query('account-health',{account:fields.account_id});setApproved(false);if(files.length+photos.length>20)throw Error('20 photos maximum.');for(const f of files){validateListingPhoto(f);const p=await uploadListingPhoto(f);const url=URL.createObjectURL(f);localUrls.current.push(url);setPhotos(old=>[...old,{...p,url}])}}
   function selectAccount(account){
     accountChosen.current=true
     setFields(f=>({...f,account_id:account,...(quick?{brand_id:null,brand_title:''}:{})}));setPrepared(false);setApproved(false);setMessage('')
@@ -80,7 +84,11 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
     {error&&<p role="alert" className="sc-error">{error}</p>}{message&&<p role="status" className="sc-success">{message}</p>}
     {source.label&&<p className="sc-success">{source.label}</p>}{(id||version!==null)&&<ScalencyRelations entity="draft" id={uid.current} revision={version}/>}
     <fieldset disabled={busy||!ready||savedState!=='draft'}>{savedState==='draft'&&<div className="sc-mode"><button aria-pressed={quick} onClick={()=>{setQuick(true);setApproved(false)}}>Saisie rapide</button><button aria-pressed={!quick} onClick={()=>{setQuick(false);setApproved(false)}}>Formulaire détaillé</button></div>}
-    {quickEditable&&<ScalencyQuickAccount accounts={profiles} account={fields.account_id} onSelect={selectAccount} onSaved={(key,changes)=>{setPrepared(false);setProfiles(rows=>rows.map(a=>a.id===key?{...a,...changes}:a));onProfileSaved?.(key,changes)}}/>}
+    {quickEditable&&<ScalencyQuickAccount accounts={profiles} health={health} account={fields.account_id} onSelect={selectAccount} onSaved={(key,changes)=>{setPrepared(false);setProfiles(rows=>rows.map(a=>a.id===key?{...a,...changes}:a));onProfileSaved?.(key,changes)}}/>}
+      {!quick&&<Field label="Compte Vinted"><select value={fields.account_id} onChange={e=>selectAccount(e.target.value)}><option value="">Choisir un compte relié</option>{profiles.map(a=><option key={a.id} value={a.id}>{a.login}</option>)}</select></Field>}
+    <AccountHealthNotice health={health} id={fields.account_id}/>
+    {!fields.account_id&&<p>Choisis le compte de publication pour préparer la fiche.</p>}
+    <fieldset disabled={!!blocked}>
     {!quick&&savedState==='draft'&&<div className="sc-tools"><button onClick={()=>setChoosing(v=>!v)}>{choosing?'Fermer la sélection':source.piece?'Changer de pièce':'Choisir une pièce du stock'}</button>{source.piece&&<button onClick={()=>{setSource(s=>({...s,piece:null,label:''}));setApproved(false)}}>Détacher la pièce</button>}</div>}
     {choosing&&<ChoosePiece busy={busy} onChoose={pieceId=>run(async()=>{
       const r=await query('draft-source',{piece:pieceId})
@@ -90,7 +98,7 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
       setFields(f=>({...f,sku:r.product?.supplier_sku||'',size_text:size,size_id:matchingSize(size,options)||null,price:f.price||String(r.product?.sale_price??'')}))
       setApproved(false);setChoosing(false)
     })}/>}<div className="sc-fields">
-      {!quick&&<Field label="Compte Vinted"><select value={fields.account_id} onChange={e=>selectAccount(e.target.value)}><option value="">Choisir un compte relié</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.login}</option>)}</select></Field>}
+
       <Field label="SKU (facultatif)"><input value={fields.sku} onChange={e=>{setPrepared(false);edit('sku',e.target.value)}}/></Field>
       <Field label="Prix (€)"><input type="number" min=".01" step=".01" value={fields.price} onChange={e=>edit('price',e.target.value)}/></Field>
       {<Field label="Taille sur l’étiquette"><input value={fields.size_text} onChange={e=>{edit('size_text',e.target.value);const m=matchingSize(e.target.value,options);edit('size_id',m||null)}}/></Field>}
@@ -113,7 +121,7 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
     <Field label="Format du colis"><select value={fields.package_size_id||''} onChange={e=>edit('package_size_id',Number(e.target.value)||null)}><option value="">Choisir</option>{(options?.package_sizes||[]).map(s=><option key={s.id} value={s.id}>{s.title||s.name||s.id}</option>)}</select></Field>
     {<Field label="Programmer (facultatif)"><input type="datetime-local" value={date} onChange={e=>{setDate(e.target.value);setApproved(false)}}/></Field>}</div>
     <div className="sc-tools">{onReviewed&&!date?<button className="sc-primary" onClick={()=>run(()=>save(true))}>Enregistrer pour le récapitulatif</button>:<button onClick={()=>run(async()=>{await save();setMessage('Brouillon enregistré sur ton site.')})}>Enregistrer le brouillon</button>}
-    {!quick&&(approved?<button className="sc-primary" onClick={()=>run(async()=>{const result=await act('publish',{id:uid.current,version,schedule:date?new Date(date).toISOString():null});onQueued(result)})}>Confirmer la mise en file</button>:<button className="sc-primary" onClick={()=>run(validate)}>Vérifier avec Scalency</button>)}</div></>}</fieldset>
+    {!quick&&(approved?<button className="sc-primary" onClick={()=>run(async()=>{const result=await act('publish',{id:uid.current,version,schedule:date?new Date(date).toISOString():null});onQueued(result)})}>Confirmer la mise en file</button>:<button className="sc-primary" onClick={()=>run(validate)}>Vérifier avec Scalency</button>)}</div></>}</fieldset></fieldset>
     <ListingSeoOutput title={fields.title} description={fields.description}/>
   </article>
 }

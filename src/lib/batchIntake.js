@@ -1,4 +1,4 @@
-import {act} from './scalency'
+import {act,query} from './scalency'
 import {uploadListingPhoto} from './api'
 
 const eventName='stock-vinted-intake'
@@ -74,6 +74,7 @@ async function processEntry(owner,id){
   const entry=memory||await transaction('readonly',store=>store.get(id))
   if(!entry||entry.owner!==owner||entry.stage==='error')return
   try{
+    await query('account-health',{account:entry.fields.account_id})
     // Three simultaneous transfers at most. Keep every successful path in its cover position.
     let next=0
     async function upload(){

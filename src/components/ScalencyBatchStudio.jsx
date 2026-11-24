@@ -3,6 +3,7 @@ import {act,query,formatMoney} from '../lib/scalency'
 import {retryIntake,watchIntake} from '../lib/batchIntake'
 import {listingColors} from '../lib/scalencyQuick'
 import {PhotoAccountPanel} from './AccountPhotos'
+import {AccountHealthNotice,preparationBlock,useAccountHealth} from './ScalencyAccountHealth'
 import BatchEntry from './BatchEntry'
 import ScalencyDraft from './ScalencyDraft'
 import ScalencyQuickAccount from './ScalencyQuickAccount'
@@ -40,7 +41,7 @@ function DiscardDialog({rows,onClose,onDiscard}){
       <button type="button" className="bs-confirm-discard" disabled={busy} onClick={confirm}>{busy?'Suppression…':'Confirmer la suppression'}</button></div>
   </dialog>
 }
-function ReviewRow({row,onEdit,onDiscard,onSave,onQuick,quick,disabled,duplicates}){
+function ReviewRow({row,onEdit,onDiscard,onSave,onQuick,quick,disabled,blocked,duplicates}){
   const f=row.fields
   const [price,setPrice]=useState(f.price),[size,setSize]=useState(f.size_text),[error,setError]=useState(''),[busy,setBusy]=useState(false)
   async function save(){
@@ -55,10 +56,10 @@ function ReviewRow({row,onEdit,onDiscard,onSave,onQuick,quick,disabled,duplicate
     {quick&&<form className="bs-inline-edit" onSubmit={e=>{e.preventDefault();if(!busy)save()}}>
       <label>Prix (€)<input required inputMode="decimal" value={price} onChange={e=>setPrice(e.target.value)}/></label>
       <label>Taille<input required value={size||''} onChange={e=>setSize(e.target.value)}/></label>
-      <button disabled={busy}>{busy?'Enregistrement…':'Enregistrer'}</button><button type="button" disabled={busy} onClick={()=>onQuick('')}>Annuler</button>
+      <button disabled={busy||blocked}>{busy?'Enregistrement…':'Enregistrer'}</button><button type="button" disabled={busy} onClick={()=>onQuick('')}>Annuler</button>
       {error&&<p className="bs-problem" role="alert">{error}</p>}</form>}
     <div className="bs-actions"><button className="bs-link" disabled={disabled} onClick={()=>onEdit(row.id)}>Modifier la fiche</button>
-      {!quick&&<button className="bs-link" disabled={disabled} onClick={()=>{setPrice(f.price);setSize(f.size_text);setError('');onQuick(row.id)}}>Corriger le prix ou la taille</button>}
+      {!quick&&<button className="bs-link" disabled={disabled||blocked} onClick={()=>{setPrice(f.price);setSize(f.size_text);setError('');onQuick(row.id)}}>Corriger le prix ou la taille</button>}
       <button className="bs-link bs-danger" disabled={disabled} onClick={()=>onDiscard([row])}>Supprimer</button></div>
   </article>
 }
@@ -73,6 +74,8 @@ export default function ScalencyBatchStudio({params}){
   const [editor,setEditor]=useState(params.draft||(params.piece||params.product||params.sku?'new':''))
   const lock=useRef(false),active=useRef(true),userPicked=useRef(false),pending=useRef(new Set())
   const returnToReview=useRef(false)
+  const health=useAccountHealth()
+  const blocked=preparationBlock(health,account)
   const login=profiles.find(a=>a.id===account)
   const reload=useCallback(()=>setRevision(n=>n+1),[])
   useEffect(()=>{
@@ -120,6 +123,8 @@ export default function ScalencyBatchStudio({params}){
     if(owner)try{localStorage.setItem('scalency-last-account:'+owner,id)}catch{}
   }
   function generate(row){
+    const reason=preparationBlock(health,row.fields.account_id)
+    if(reason){setError(reason);return}
     if(pending.current.has(row.id))return
     pending.current.add(row.id);setLocal(all=>({...all,[row.id]:row}));setEditor('');setPage(0)
     setNotice('Remplissage lancé pour '+(row.fields.sku||'cette annonce')+'. Tu peux saisir la suivante.');reload()
@@ -174,7 +179,7 @@ export default function ScalencyBatchStudio({params}){
     }finally{lock.current=false;reload()}
   }
   async function submit(){
-    if(lock.current||!review||!chosen.length)return
+    if(blocked||lock.current||!review||!chosen.length)return
     lock.current=true;setSending(true);setError('');setNotice('')
     try{
       const result=await act('accept-lot',{account,entries:chosen.map(({id,version})=>({id,version}))})
@@ -184,21 +189,22 @@ export default function ScalencyBatchStudio({params}){
     finally{lock.current=false;setSending(false);reload()}
   }
   return <main className="sc-work bs-work"><header className="sc-head"><div><p>Stock Vinted / Scalency</p><h1>Atelier d’annonces</h1></div><a href="#publication">Suivi des publications</a></header>
-    <fieldset className="bs-account" disabled={sending||!!editor}><ScalencyQuickAccount accounts={profiles} account={account} onSelect={choose} onSaved={updateProfile}/></fieldset>
+    <fieldset className="bs-account" disabled={sending||!!editor}><ScalencyQuickAccount accounts={profiles} health={health} account={account} onSelect={choose} onSaved={updateProfile}/></fieldset>
+    {!editor&&<AccountHealthNotice health={health} id={account} overview/>}
     {account&&login&&<PhotoAccountPanel key={account} account={account} login={login.login}/>}
     {error&&<p role="alert" className="sc-error">{error} <button onClick={reload}>Réessayer</button></p>}
     {notice&&<p className="bs-notice" role="status">{notice}{lastLot&&<> · <a href={'#publication?lot='+lastLot}>Suivre le lot</a></>}</p>}
-    {editor&&<ScalencyDraft key={editor} detailed id={editor==='new'?null:editor} initialAccount={account} onProfileSaved={updateProfile} piece={params.piece} product={params.product} sku={params.sku}
+    {editor&&<ScalencyDraft key={editor} sharedHealth={health} detailed id={editor==='new'?null:editor} initialAccount={account} onProfileSaved={updateProfile} piece={params.piece} product={params.product} sku={params.sku}
       onClose={closeEditor} onGenerate={generate} onReviewed={savedEdit}
       onQueued={r=>{window.location.hash='publication'+(r?.job?.id?'?job='+r.job.id:'')}}/>}
     <div hidden={!!editor} className={'bs-layout'+(review?' bs-review-layout':'')}>
-      <div hidden={review}><BatchEntry account={login} owner={owner} onQueued={sku=>{setPage(0);setNotice((sku?'Préparation lancée pour '+sku:'Préparation lancée')+'. Tu peux saisir la suivante.')}} onDetailed={()=>edit('new')}/></div>
+      <div hidden={review}><BatchEntry blocked={!!blocked} account={login} owner={owner} onQueued={sku=>{setPage(0);setNotice((sku?'Préparation lancée pour '+sku:'Préparation lancée')+'. Tu peux saisir la suivante.')}} onDetailed={()=>edit('new')}/></div>
       <section className="bs-panel bs-list"><div className="bs-panel-head"><div><h2>{review?'Récapitulatif du lot':'Annonces du compte'}</h2>
         <p className="bs-meta">{review?chosen.length+' sélectionnée(s) pour '+(login?.login||'ce compte'):login?login.login+' · '+(data?.total??'…')+' brouillon(s)':'Tous les brouillons · choisis un compte pour préparer un lot'}</p></div>
-        {!review&&<button className="bs-link" onClick={reload}>Actualiser</button>}</div>
+        {!review&&<button className="bs-link" onClick={()=>{reload();health.refresh()}}>Actualiser</button>}</div>
       {discarding&&<DiscardDialog rows={discarding} onClose={()=>setDiscarding(null)} onDiscard={discard}/>}
-      {review?<>{duplicateCheck&&<p role="status">{duplicateCheck}</p>}{chosen.map(row=><ReviewRow key={row.id} row={row} onEdit={edit} onDiscard={setDiscarding} disabled={sending||!!quickEdit} onQuick={setQuickEdit} quick={quickEdit===row.id} onSave={saveQuickEdit} duplicates={duplicates[row.id]}/>)}
-        <div className="bs-actions"><button disabled={sending||!!quickEdit} onClick={()=>setReview(false)}>Retour à la sélection</button><button className="sc-primary" disabled={sending||!chosen.length||!!quickEdit||duplicateCheck==='Vérification des doublons…'} onClick={submit}>{sending?'Enregistrement…':'Mettre dans la file ('+chosen.length+')'}</button></div>
+      {review?<>{duplicateCheck&&<p role="status">{duplicateCheck}</p>}{chosen.map(row=><ReviewRow key={row.id} row={row} onEdit={edit} onDiscard={setDiscarding} blocked={!!blocked} disabled={sending||!!quickEdit} onQuick={setQuickEdit} quick={quickEdit===row.id} onSave={saveQuickEdit} duplicates={duplicates[row.id]}/>)}
+        <div className="bs-actions"><button disabled={sending||!!quickEdit} onClick={()=>setReview(false)}>Retour à la sélection</button><button className="sc-primary" disabled={!!blocked||sending||!chosen.length||!!quickEdit||duplicateCheck==='Vérification des doublons…'} onClick={submit}>{sending?'Enregistrement…':'Mettre dans la file ('+chosen.length+')'}</button></div>
         <p className="bs-meta">Scalency gère le départ de chaque annonce. Tu peux fermer cet onglet dès que le lot est enregistré.</p></>:
         <><div className="bs-actions"><button disabled={!ready.length} onClick={()=>setSelected(prev=>({...prev,...Object.fromEntries(ready.map(r=>[r.id,r]))}))}>Sélectionner les prêtes</button>
         <button className="sc-primary" disabled={!chosen.length} onClick={()=>{setReview(true)}}>Relire la sélection ({chosen.length})</button>
@@ -207,7 +213,7 @@ export default function ScalencyBatchStudio({params}){
           <p className="bs-meta">{t.fields.size_text} · {formatMoney(t.fields.price)}</p>
           <span className={'bs-badge '+(t.stage==='error'?'error':'running')}>{t.stage==='error'?'À reprendre':t.stage==='generating'?'Remplissage…':t.stage==='saving'?'En préparation…':'Envoi des photos…'}</span>
           {t.stage==='error'&&<p className="bs-problem">{t.error}</p>}</div>
-          {t.stage==='error'&&<button className="bs-link" onClick={()=>retryIntake(owner,t.id).catch(e=>setError(e.message))}>Réessayer</button>}
+          {t.stage==='error'&&<button className="bs-link" disabled={!!preparationBlock(health,t.fields.account_id)} onClick={()=>retryIntake(owner,t.id).catch(e=>setError(e.message))}>Réessayer</button>}
         </article>)}
         {!data&&!drafts.length&&!intake.length?<p>Chargement des brouillons…</p>:!drafts.length&&!intake.length?<p className="bs-empty">Les annonces que tu prépares pour ce compte apparaîtront ici.</p>:drafts.map(row=>{
           const state=local[row.id]?'running':stage(row),f=row.fields
@@ -218,7 +224,7 @@ export default function ScalencyBatchStudio({params}){
             {(state==='review'||state==='error')&&<p className="bs-problem">{row.batch?.missing?.join(' · ')||'Remplissage interrompu, tu peux le relancer.'}</p>}
             </div><div className="bs-row-tools"><button disabled={state==='running'} className="bs-link" onClick={()=>edit(row.id)}>Modifier</button>
             {state==='ready'&&<button type="button" className="bs-link bs-danger" onClick={()=>setDiscarding([row])}>Supprimer</button>}
-            {state!=='running'&&state!=='ready'&&login?.brand&&f.account_id===account&&row.count>0&&Number(f.price)>0&&<button className="bs-link" onClick={()=>generate(row)}>{state==='error'?'Réessayer':'Remplir'}</button>}</div></article>
+            {state!=='running'&&state!=='ready'&&login?.brand&&f.account_id===account&&row.count>0&&Number(f.price)>0&&<button className="bs-link" disabled={!!blocked} onClick={()=>generate(row)}>{state==='error'?'Réessayer':'Remplir'}</button>}</div></article>
         })}
         {data&&data.total>data.pageSize&&<div className="bs-actions"><button disabled={!page} onClick={()=>setPage(p=>p-1)}>Précédent</button><span>{page+1} / {Math.ceil(data.total/data.pageSize)}</span><button disabled={(page+1)*data.pageSize>=data.total} onClick={()=>setPage(p=>p+1)}>Suivant</button></div>}</>}
       </section>

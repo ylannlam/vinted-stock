@@ -11,6 +11,8 @@ const titles={home:'Vue d’ensemble',orders:'Ventes & expédition',items:'Annon
 const destination={orders:'ventes',items:'dressing',jobs:'publication',accounts:'comptes',conversations:'messages',drafts:'annonces',home:'accueil'}
 const go=(kind,params={})=>{window.location.hash=destination[kind]+'?'+new URLSearchParams(params)}
 const filters={items:[['unlinked','À associer'],['withdraw','À retirer']],jobs:[['failed','À vérifier']],orders:[['prepare','À préparer'],['archive','Historique des ventes']],conversations:[['unread','Non lus']]}
+import {AccountHealthNotice,useAccountHealth} from './ScalencyAccountHealth'
+
 function Picture({url}){return url?<img className="sc-thumb" loading="lazy" src={url} alt=""/>:<span className="sc-thumb blank" aria-hidden="true">◇</span>}
 function Notice({text}){return text?<p className="sc-error" role="alert">{text}</p>:null}
 function Home({data,admin}){
@@ -49,6 +51,7 @@ export default function ScalencyWorkspace({kind,admin,params={}}){
 }
 function WorkspaceList({kind,admin,params}){
  const [data,setData]=useState(null),[search,setSearch]=useState(''),[filter,setFilter]=useState(params.filter||''),[page,setPage]=useState(0),[rev,setRev]=useState(0),[busy,setBusy]=useState(false),[err,setErr]=useState(''),[selected,setSelected]=useState(null),[editor,setEditor]=useState(params.draft||(params.sku||params.piece||params.product||params.nouvelle==='1'?'new':null)),[connection,setConnection]=useState(null)
+ const health=useAccountHealth(kind==='accounts'&&admin)
  const opened=useRef(false),syncing=useRef(false)
  const reload=()=>setRev(n=>n+1)
  useEffect(()=>{let live=true;const timer=setTimeout(()=>{query(kind,{search,filter,page,...(params.account?{account:params.account}:{}),...(params.id&&kind!=='home'?{focus:params.id}:{})}).then(r=>{if(!live)return;setData(r);if(params.id&&!opened.current){let found=r.rows?.find(x=>x.remote_id===params.id);if(found){setSelected(found);opened.current=true}}}).catch(e=>live&&setErr(e.message))},search?200:0);return()=>{live=false;clearTimeout(timer)}},[kind,filter,page,search,rev,params.id,params.account])
@@ -62,8 +65,10 @@ function WorkspaceList({kind,admin,params}){
  useEffect(()=>{sync(false,false);if(admin&&kind==='accounts')query('connection').then(setConnection).catch(e=>setErr(e.message))
    const timer=setInterval(()=>{if(document.visibilityState==='visible')sync(false,false)},120000);return()=>clearInterval(timer)
  },[kind,admin])
- const rowLabel=(r)=>kind==='orders'?[r.status_fr||r.state,r.account,formatDate(r.deadline)]:kind==='items'?[r.sku||'Sans SKU',r.sold?'Vendue':r.status==='active'?'En ligne':'Inactive',formatMoney(r.price)]:kind==='jobs'?[r.type_label,r.status_label||r.status,formatDate(r.not_before)]:kind==='accounts'?[r.linked?'Relié':'Non relié',r.agent?.active?'Bot allumé':'Bot inactif']:kind==='conversations'?[r.buyer,r.unread?'Non lu':'Lu',r.preview]:[r.fields?.sku||'Sans SKU',formatDate(r.updated_at)]
+ const byAccount=new Map(health.report?.accounts.map(a=>[a.id,a.block]))
+ const rowLabel=(r)=>kind==='orders'?[r.status_fr||r.state,r.account,formatDate(r.deadline)]:kind==='items'?[r.sku||'Sans SKU',r.sold?'Vendue':r.status==='active'?'En ligne':'Inactive',formatMoney(r.price)]:kind==='jobs'?[r.type_label,r.status_label||r.status,formatDate(r.not_before)]:kind==='accounts'?[byAccount.get(String(r.id))?.label,r.linked?'Relié':'Non relié',r.agent?.active?'Bot allumé':'Bot inactif']:kind==='conversations'?[r.buyer,r.unread?'Non lu':'Lu',r.preview]:[r.fields?.sku||'Sans SKU',formatDate(r.updated_at)]
  return <main className="sc-work"><header className="sc-head"><div><p>Stock Vinted / Scalency</p><h1>{titles[kind]}</h1>{params.login&&<p>Compte · {params.login} <a href={'#'+destination[kind]}>Tous les comptes</a></p>}</div><div className="sc-tools">{kind==='drafts'?<button className="sc-primary" onClick={()=>setEditor('new')}>＋ Nouvelle annonce</button>:<button disabled={busy} onClick={()=>sync()}>{busy?'Synchronisation…':'Actualiser'}</button>}</div></header>
+ {kind==='accounts'&&admin&&<AccountHealthNotice health={health} id={selected?.remote_id} overview/>}
  <Notice text={err}/>{kind==='accounts'&&connection&&!connection.webhook&&<button disabled={busy} onClick={async()=>{setBusy(true);try{await act('webhook');setConnection({...connection,webhook:true})}catch(e){setErr(e.message)}finally{setBusy(false)}}}>Activer la réception automatique des ventes</button>}
  {kind==='drafts'&&<p className="sc-pages"><a href="#publication">Suivre mes publications</a></p>}
  {kind==='jobs'&&<p className="sc-pages"><a href="#publication">Voir le suivi des publications</a></p>}

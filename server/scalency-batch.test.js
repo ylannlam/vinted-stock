@@ -40,6 +40,10 @@ test('le lot envoie une seule fois les versions relues du même compte',async t=
   t.after(()=>{if(previous===undefined)delete process.env.SCALENCY_API_KEY;else process.env.SCALENCY_API_KEY=previous})
   let posts=0
   t.mock.method(globalThis,'fetch',async(url,request)=>{
+    if(url.pathname.endsWith('/accounts'))return Response.json({data:[
+      {id:account,linked:true,agent:{publication_pause:null}},
+      {id:'restreint',linked:true,agent:{publication_pause:{reason:'restriction Vinted'}}}
+    ]})
     if(url.pathname.endsWith('/catalogs/10'))return Response.json(options)
     assert.ok(url.pathname.endsWith('/items'));const body=JSON.parse(request.body)
     assert.equal(body.status_id,2)
@@ -53,6 +57,12 @@ test('le lot envoie une seule fois les versions relues du même compte',async t=
   drafts[0].payload.batch=reviewMetadata(options,['Taille'])
   await assert.rejects(send('draft-0'),/Vérifie/);assert.equal(posts,0)
   drafts[0].payload.batch=reviewMetadata(options,[])
+  drafts[0].fields.account_id='restreint'
+  for(const action of ['batch-generate','generate','autofill','autopost','validate','publish','batch-submit']){
+    await assert.rejects(send(drafts[0].id,{action,account:'restreint'}),{status:423})
+  }
+  assert.equal(drafts[0].state,'draft');assert.equal(drafts[0].version,3);assert.equal(posts,0)
+  drafts[0].fields.account_id=account
   for(const row of drafts){const result=await send(row.id);assert.ok(result.job.id)}
   assert.ok(drafts.every(r=>r.state==='scheduled'))
   await assert.rejects(send('draft-0'),/changé/)

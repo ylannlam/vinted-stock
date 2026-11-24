@@ -1,3 +1,4 @@
+import {requireListingAccount} from './scalency-account-health.js'
 import {createHash} from 'node:crypto'
 import {remote,remoteId,ScalencyError} from './scalency-api.js'
 import {isId} from './dotb.js'
@@ -16,6 +17,13 @@ export function lotKey(owner,account,entries){
 export async function acceptPublicationLot(db,user,body){
   const account=remoteId(body.account),entries=body.entries
   const id=lotKey(user.id,account,entries)
+  try{await requireListingAccount(account)}
+  catch(error){
+    // A retry may arrive after its lot was already accepted, even if the account is now restricted.
+    const existing=checked(await db.from('scalency_publication_lots').select('id').eq('id',id).eq('owner_id',user.id).maybeSingle())
+    if(existing)return {id,count:entries.length}
+    throw error
+  }
   const accepted=await db.rpc('scalency_accept_lot',{p_lot:id,p_owner:user.id,p_account:account,p_entries:entries.map(({id,version})=>({id,version}))})
   if(accepted.error?.code==='23505'||['lot_changed','lot_conflict'].includes(accepted.error?.message))throw new ScalencyError('Une fiche a changé ou appartient déjà à un lot. Actualise l’atelier pour relire la sélection.',409)
   checked(accepted)
