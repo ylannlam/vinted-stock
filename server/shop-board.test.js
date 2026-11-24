@@ -90,3 +90,12 @@ test('une fiche détaillée complète un index sans photos et une relecture réu
   assert.equal((await preserveShopCovers(db,[{...entry}],request,recent))[0].photo_url,'https://example.org/photo.jpg')
   assert.deepEqual(calls,[['items/19','a']])
 })
+
+test('un retrait confirmé conserve l’annonce hors ligne après une lecture abrégée',()=>{
+  const data=shopBoard({accounts:[{id:'a',login:'test-shop'}],jobs:[],orders:[],drafts:[],references,
+    inventory:[item('retired'),item('restored',{updated_at:'2026-11-10T12:00:00Z'})],
+    listingCovers:['retired','restored'].map(id=>({id,account:'a',deletedAt:recent}))})
+  const rows=listingRows(data)
+  assert.equal(rows.find(r=>r.id==='retired').state,'offline')
+  assert.equal(rows.find(r=>r.id==='restored').state,'live')
+})

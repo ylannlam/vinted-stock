@@ -32,8 +32,11 @@ export async function preserveShopCovers(db, items, request, at) {
         if (error.status===404) misses.push({id:key,value:{id:String(item.id),account:String(item.account_id),checkedAt:at}})
       }
     }
-    if (photo && old?.photo !== photo) {
-      covers.push({id:key,value:{...old,id:String(item.id),account:String(item.account_id),photo,checkedAt:at}})
+    let deletedAt=old?.deletedAt || null
+    if (item.status==='deleted' && item.deleted_at) deletedAt=item.deleted_at
+    if (item.status==='active' && Date.parse(item.updated_at)>Date.parse(deletedAt)) deletedAt=null
+    if ((photo && old?.photo !== photo) || deletedAt !== (old?.deletedAt || null)) {
+      covers.push({id:key,value:{...old,id:String(item.id),account:String(item.account_id),photo:photo||old?.photo||null,deletedAt,checkedAt:at}})
     }
     if (!item.photo_url && (photo || old?.photo)) item.photo_url=photo || old.photo
   }

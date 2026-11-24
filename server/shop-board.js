@@ -24,7 +24,8 @@ export function shopBoard({accounts,inventory,jobs,orders,references,drafts,post
   for(const record of inventory){
     const raw=record.payload
     const cached=saved.get(identity(raw.account_id,raw.id))
-    const r={...raw,photo_url:raw.photo_url||cached?.photo,sku:raw.sku||cached?.sku,replaced_by:raw.replaced_by||cached?.replaced,sale:raw.sale??cached?.sale}
+    const removed=cached?.deletedAt && !(Date.parse(raw.updated_at)>Date.parse(cached.deletedAt))
+    const r={...raw,status:removed?'deleted':raw.status,photo_url:raw.photo_url||cached?.photo,sku:raw.sku||cached?.sku,replaced_by:raw.replaced_by||cached?.replaced,sale:raw.sale??cached?.sale}
     const [item]=skuSourceRows('items',[r])
     item.sku=item.sku||posted('listing',item.account,item.id)
     Object.assign(item,{inventory:true,accountId:record.account||r.account_id||r.account,photo:safePhoto(item.photo)||safePhoto(record.photo),seen:record.seen_at,
