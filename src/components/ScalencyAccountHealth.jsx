@@ -38,7 +38,11 @@ export function AccountHealthNotice({health,id,overview=false}){
   const selected=entries.find(a=>a.id===String(id))
   const warning=id?preparationBlock(health,id):''
   const others=overview?entries.filter(a=>a.id!==String(id)&&['banned','restricted','blocked','publication'].includes(a.block?.kind)):[]
-  if(!warning&&!others.length&&!health.error)return null
+  if(!warning&&!others.length&&!health.error){
+    if(!selected)return null
+    return <p className="sc-account-clear" role="status"><strong>{selected.login}</strong> · Aucune restriction de publication signalée par Scalency
+      {' · '}<time dateTime={health.report.checkedAt}>{new Intl.DateTimeFormat('fr-FR',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Paris'}).format(new Date(health.report.checkedAt))}</time></p>
+  }
   return <aside className="sc-account-warning" aria-live="polite">
     {warning&&<p><strong>{selected?.login&&selected.login+' · '}{warning}</strong>{health.report||health.error?' — Préparation et mise en file suspendues.':''}
       {selected?.block?.until&&' Fin indiquée par Scalency le '+when(selected.block.until)+' (heure de Paris).'}</p>}
