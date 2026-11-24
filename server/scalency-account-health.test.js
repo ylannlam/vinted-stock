@@ -62,3 +62,20 @@ test('une page de bannissement confirmée prime sur une pause publique vide et r
   rows[0].value={status:'cleared'}
   await requireListingAccount('demo',()=>readAccountHealth(db,read))
 })
+
+test('une restriction du journal bloque malgré les pauses publiques vides et sa levée ne supprime jamais un ban',async()=>{
+  const read=createHealthReader(async()=>({data:[account()]}),()=>now)
+  const rows=[{id:'profile-restriction:demo',value:{status:'restricted',checked_at:end}}]
+  const db={from:()=>({select:()=>({like:async(_,pattern)=>({data:rows.filter(r=>r.id.startsWith(pattern.slice(0,-1)))})})})}
+  const current=async()=>(await readAccountHealth(db,read)).accounts[0].block?.kind
+  assert.equal(await current(),'restricted')
+  rows[0].value.until='2000-01-01T00:00:00Z'
+  assert.equal(await current(),undefined)
+  delete rows[0].value.until
+  rows.push({id:'profile-ban:demo',value:{status:'banned',checked_at:end}})
+  assert.equal(await current(),'banned')
+  rows[0].value.status='cleared'
+  assert.equal(await current(),'banned')
+  rows[1].value.status='cleared'
+  assert.equal(await current(),undefined)
+})

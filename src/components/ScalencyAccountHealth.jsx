@@ -45,7 +45,7 @@ export function AccountHealthNotice({health,id,overview=false}){
   }
   return <aside className="sc-account-warning" aria-live="polite">
     {warning&&<p><strong>{selected?.login&&selected.login+' · '}{warning}</strong>{health.report||health.error?' — Préparation et mise en file suspendues.':''}
-      {selected?.block?.observedAt&&' Blocage constaté sur le profil Vinted le '+when(selected.block.observedAt)+' (heure de Paris).'}
+      {selected?.block?.observedAt&&' Blocage constaté par Scalency le '+when(selected.block.observedAt)+' (heure de Paris).'}
       {selected?.block?.until&&' Fin indiquée par Scalency le '+when(selected.block.until)+' (heure de Paris).'}</p>}
     {others.map(a=><p key={a.id}><strong>{a.login}</strong> · {a.block.label}</p>)}
     {health.error&&<p>La vérification auprès de Scalency a échoué.</p>}

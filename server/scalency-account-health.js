@@ -81,16 +81,19 @@ const readPublicAccounts=createHealthReader()
 
 // Public account pauses can be empty even when Scalency Desktop saw Vinted's block page.
 export async function readAccountHealth(db,read=readPublicAccounts){
-  const [report,records]=await Promise.all([
-    read(),
-    db.from('scalency_settings').select('id,value').like('id','profile-ban:%')
-  ])
-  if(records.error)throw new ScalencyError(unavailable,503)
-  const observations=new Map(records.data.map(row=>[row.id.slice('profile-ban:'.length),row.value]))
+  const getRecords=prefix=>db.from('scalency_settings').select('id,value').like('id',prefix+':%')
+  const [report,bans,restrictions]=await Promise.all([read(),getRecords('profile-ban'),getRecords('profile-restriction')])
+  if(bans.error||restrictions.error)throw new ScalencyError(unavailable,503)
+  const observations=new Map([...bans.data,...restrictions.data].map(row=>[row.id,row.value]))
+  const now=Date.now()
   return {...report,accounts:report.accounts.map(account=>{
-    const observation=observations.get(account.id)
-    if(observation?.status!=='banned')return account
-    return {...account,block:{...block('banned'),observedAt:observation.checked_at}}
+    const ban=observations.get('profile-ban:'+account.id)
+    if(ban?.status==='banned')return {...account,block:{...block('banned'),observedAt:ban.checked_at}}
+    const restriction=observations.get('profile-restriction:'+account.id)
+    if(account.block?.kind==='banned'||restriction?.status!=='restricted')return account
+    const end=date(restriction.until)
+    if(end!==null&&end<=now)return account
+    return {...account,block:{...block('restricted',restriction.until||null),observedAt:restriction.checked_at}}
   })}
 }
 
