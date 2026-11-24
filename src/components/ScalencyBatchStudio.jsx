@@ -4,7 +4,7 @@ import {retryIntake,watchIntake} from '../lib/batchIntake'
 import {listingColors} from '../lib/scalencyQuick'
 import {PhotoAccountPanel} from './AccountPhotos'
 import {CadenceSettings,useCadence} from './PublicationCadence'
-import {AccountHealthNotice,preparationBlock,useAccountHealth} from './ScalencyAccountHealth'
+import {AccountHealthNotice,isBanned,preparationBlock,publicationProfiles,useAccountHealth} from './ScalencyAccountHealth'
 import BatchEntry from './BatchEntry'
 import ScalencyDraft from './ScalencyDraft'
 import ScalencyQuickAccount from './ScalencyQuickAccount'
@@ -65,7 +65,7 @@ function ReviewRow({row,onEdit,onDiscard,onSave,onQuick,quick,disabled,blocked,d
   </article>
 }
 export default function ScalencyBatchStudio({params}){
-  const [profiles,setProfiles]=useState([]),[owner,setOwner]=useState(''),[account,setAccount]=useState(params.account||'')
+  const [profiles,setProfiles]=useState([]),[owner,setOwner]=useState(''),[requestedAccount,setAccount]=useState(params.account||'')
   const [page,setPage]=useState(0),[data,setData]=useState(null),[error,setError]=useState(''),[notice,setNotice]=useState('')
   const [selected,setSelected]=useState({}),[review,setReview]=useState(false),[sending,setSending]=useState(false),[lastLot,setLastLot]=useState('')
   const [local,setLocal]=useState({}),[revision,setRevision]=useState(0)
@@ -76,6 +76,9 @@ export default function ScalencyBatchStudio({params}){
   const lock=useRef(false),active=useRef(true),userPicked=useRef(false),pending=useRef(new Set())
   const returnToReview=useRef(false)
   const health=useAccountHealth()
+  const banned=isBanned(health,requestedAccount)
+  const account=health.report&&!banned?requestedAccount:''
+  const availableProfiles=publicationProfiles(profiles,health)
   const cadence=useCadence()
   const quota=cadence.rows.find(row=>row.account===account)
   const blocked=preparationBlock(health,account)
@@ -121,10 +124,13 @@ export default function ScalencyBatchStudio({params}){
     return()=>{clearInterval(timer);document.removeEventListener('visibilitychange',tick)}
   },[inProgress,reload])
   function updateProfile(id,changes){setProfiles(rows=>rows.map(a=>a.id===id?{...a,...changes}:a))}
-  function choose(id){
+  const choose=useCallback(id=>{
     userPicked.current=true;setAccount(id);setSelected({});setReview(false);setData(null);setPage(0);setLastLot('');setNotice('')
     if(owner)try{localStorage.setItem('scalency-last-account:'+owner,id)}catch{}
-  }
+  },[owner])
+  useEffect(()=>{
+    if(banned)choose('')
+  },[banned,choose])
   function generate(row){
     const reason=preparationBlock(health,row.fields.account_id)
     if(reason){setError(reason);return}
@@ -193,8 +199,8 @@ export default function ScalencyBatchStudio({params}){
     finally{lock.current=false;setSending(false);reload();cadence.refresh()}
   }
   return <main className="sc-work bs-work"><header className="sc-head"><div><p>Stock Vinted / Scalency</p><h1>Atelier d’annonces</h1></div><a href="#publication">Suivi des publications</a></header>
-    <fieldset className="bs-account" disabled={sending||!!editor}><ScalencyQuickAccount accounts={profiles} health={health} account={account} onSelect={choose} onSaved={updateProfile}/></fieldset>
-    {!editor&&<AccountHealthNotice health={health} id={account} overview/>}
+    <fieldset className="bs-account" disabled={sending||!!editor||!health.report}><ScalencyQuickAccount accounts={availableProfiles} health={health} account={account} onSelect={choose} onSaved={updateProfile}/></fieldset>
+    {!editor&&<AccountHealthNotice health={health} id={account} overview showOtherBans={false}/>}
     {quota&&!editor&&<CadenceSettings key={'cadence-'+account} row={quota} blocked={blocked} onSaved={cadence.applySaved}/>}
     {account&&cadence.error&&<p role="alert">Plafond indisponible. <button onClick={cadence.refresh}>Réessayer</button></p>}
     {account&&login&&<PhotoAccountPanel key={'photos-'+account} account={account} login={login.login}/>}

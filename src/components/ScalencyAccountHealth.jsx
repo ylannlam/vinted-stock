@@ -24,6 +24,12 @@ export function useAccountHealth(enabled=true){
   },[enabled,revision])
   return {report,error,refresh}
 }
+export function isBanned(health,id){
+  return !!id&&!!health.report?.accounts.some(a=>a.id===String(id)&&a.block?.kind==='banned')
+}
+export function publicationProfiles(profiles,health){
+  return health.report?profiles.filter(profile=>!isBanned(health,profile.id)):[]
+}
 export function preparationBlock(health,id){
   if(!id)return 'Choisis le compte de publication.'
   const current=health.report?.accounts.find(a=>a.id===String(id))
@@ -33,11 +39,12 @@ export function preparationBlock(health,id){
   return current?'':'Compte introuvable dans Scalency'
 }
 const when=value=>new Intl.DateTimeFormat('fr-FR',{dateStyle:'short',timeStyle:'short',timeZone:'Europe/Paris'}).format(new Date(value))
-export function AccountHealthNotice({health,id,overview=false}){
+export function AccountHealthNotice({health,id,overview=false,showOtherBans=true}){
   const entries=health.report?.accounts||[]
   const selected=entries.find(a=>a.id===String(id))
   const warning=id?preparationBlock(health,id):''
-  const others=overview?entries.filter(a=>a.id!==String(id)&&['banned','restricted','blocked','publication'].includes(a.block?.kind)):[]
+  const others=overview?entries.filter(a=>a.id!==String(id)&&
+    (a.block?.kind==='banned'?showOtherBans:['restricted','blocked','publication'].includes(a.block?.kind))):[]
   if(!warning&&!others.length&&!health.error){
     if(!selected)return null
     return <p className="sc-account-clear" role="status"><strong>{selected.login}</strong> · Aucun blocage de publication connu de l’atelier

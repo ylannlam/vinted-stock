@@ -8,7 +8,7 @@ import {act,query} from '../lib/scalency'
 import {uploadListingPhoto} from '../lib/api'
 import {emptyListing,validateListingPhoto,listingSizes,matchingSize} from '../lib/listingStudio'
 
-import {AccountHealthNotice,preparationBlock,useAccountHealth} from './ScalencyAccountHealth'
+import {AccountHealthNotice,isBanned,preparationBlock,publicationProfiles,useAccountHealth} from './ScalencyAccountHealth'
 
 function ChoosePiece({onChoose,busy}){
   const [page,setPage]=useState(0),[rows,setRows]=useState([]),[total,setTotal]=useState(0),[error,setError]=useState('')
@@ -27,7 +27,16 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
   const sizeOrigin=useRef('default'),accountChosen=useRef(false)
   const ownHealth=useAccountHealth(!sharedHealth)
   const health=sharedHealth||ownHealth
+  const availableProfiles=publicationProfiles(profiles,health)
+  const banned=isBanned(health,fields.account_id)
+  const pickerAccount=health.report&&!banned?fields.account_id:''
   const blocked=preparationBlock(health,fields.account_id)
+  useEffect(()=>{
+    if(!banned||id||version!==null)return
+    accountChosen.current=true
+    setFields(f=>({...f,account_id:''}))
+    setPrepared(false);setApproved(false);setMessage('')
+  },[banned,id,version])
   const defaultSize=profiles.find(a=>a.id===fields.account_id)?.default_size||''
   useEffect(()=>{
     if(id||version!==null||sizeOrigin.current!=='default')return
@@ -84,8 +93,8 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
     {error&&<p role="alert" className="sc-error">{error}</p>}{message&&<p role="status" className="sc-success">{message}</p>}
     {source.label&&<p className="sc-success">{source.label}</p>}{(id||version!==null)&&<ScalencyRelations entity="draft" id={uid.current} revision={version}/>}
     <fieldset disabled={busy||!ready||savedState!=='draft'}>{savedState==='draft'&&<div className="sc-mode"><button aria-pressed={quick} onClick={()=>{setQuick(true);setApproved(false)}}>Saisie rapide</button><button aria-pressed={!quick} onClick={()=>{setQuick(false);setApproved(false)}}>Formulaire détaillé</button></div>}
-    {quickEditable&&<ScalencyQuickAccount accounts={profiles} health={health} account={fields.account_id} onSelect={selectAccount} onSaved={(key,changes)=>{setPrepared(false);setProfiles(rows=>rows.map(a=>a.id===key?{...a,...changes}:a));onProfileSaved?.(key,changes)}}/>}
-      {!quick&&<Field label="Compte Vinted"><select value={fields.account_id} onChange={e=>selectAccount(e.target.value)}><option value="">Choisir un compte relié</option>{profiles.map(a=><option key={a.id} value={a.id}>{a.login}</option>)}</select></Field>}
+    {quickEditable&&<ScalencyQuickAccount accounts={availableProfiles} health={health} account={pickerAccount} onSelect={selectAccount} onSaved={(key,changes)=>{setPrepared(false);setProfiles(rows=>rows.map(a=>a.id===key?{...a,...changes}:a));onProfileSaved?.(key,changes)}}/>}
+      {!quick&&<Field label="Compte Vinted"><select disabled={!health.report} value={savedState==='draft'?pickerAccount:fields.account_id} onChange={e=>selectAccount(e.target.value)}><option value="">Choisir un compte relié</option>{(savedState==='draft'?availableProfiles:profiles).map(a=><option key={a.id} value={a.id}>{a.login}</option>)}</select></Field>}
     <AccountHealthNotice health={health} id={fields.account_id}/>
     {!fields.account_id&&<p>Choisis le compte de publication pour préparer la fiche.</p>}
     <fieldset disabled={!!blocked}>

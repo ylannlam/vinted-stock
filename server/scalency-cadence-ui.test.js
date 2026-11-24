@@ -26,13 +26,16 @@ test('le plafond reste unique et les modifications suivent le compte et le rythm
     day_limit:10, remaining:10, posted:0, reserved:0
   }))
   const accounts = rows.map(({account,login}) => ({id:account,login,brand:'Marque'}))
+  accounts.push({id:'banni',login:'profil-banni'},{id:'restreint',login:'profil-restreint'})
+  const bans = new Set(['banni'])
   const writes = []
   let pendingSave
   const api = {
     async query(view) {
       if(view === 'cadence') return structuredClone(rows)
       if(view === 'quick-profiles') return {accounts}
-      if(view === 'account-health') return {accounts,checkedAt:new Date().toISOString()}
+      if(view === 'account-health') return {accounts:accounts.map(a=>({...a,block:
+        bans.has(a.id)?{kind:'banned',label:'Compte banni'}:a.id==='restreint'?{kind:'restricted',label:'Compte restreint'}:null})),checkedAt:new Date().toISOString()}
       if(view === 'batch-drafts') return {rows:[],total:0}
       throw Error(view)
     },
@@ -58,12 +61,19 @@ test('le plafond reste unique et les modifications suivent le compte et le rythm
     return require(id)
   }
   mod._compile(compiled.outputFiles[0].text,source)
-  await React.act(async () => root.render(React.createElement(mod.exports.default,{params:{account:'alice'}})))
+  await React.act(async () => root.render(React.createElement(mod.exports.default,{params:{account:'banni'}})))
   const card = () => document.querySelector('.cadence-card')
   const change = (field,value) => React.act(async () => Simulate.change(field,{target:{value}}))
   const choose = value => change(document.querySelector('.bs-account select'),value)
   const edit = () => React.act(async () => Simulate.click(card().querySelector('button')))
+  const options = () => Array.from(document.querySelectorAll('.bs-account select option'),o=>o.value)
+  const refresh = () => React.act(async () => Simulate.click(Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Actualiser')))
 
+  assert.equal(card(),null)
+  assert.ok(!options().includes('banni'))
+  assert.ok(!document.body.textContent.includes('profil-banni'))
+  assert.ok(options().includes('restreint'))
+  await choose('alice')
   await edit()
   for(const login of ['brune','clara','alice']) {
     await choose(login)
@@ -94,6 +104,12 @@ test('le plafond reste unique et les modifications suivent le compte et le rythm
   await edit()
   assert.equal(card().querySelector('input').value,'0')
   assert.equal(card().querySelector('select').value,'starter')
-  await choose('')
+  bans.add('brune')
+  await refresh()
+  assert.ok(!options().includes('brune'))
+  assert.equal(card(),null)
+  bans.delete('brune')
+  await refresh()
+  assert.ok(options().includes('brune'))
   assert.equal(card(),null)
 })
