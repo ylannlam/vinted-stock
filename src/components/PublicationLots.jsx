@@ -19,6 +19,7 @@ function Lot({lot,open,onRetry,busy,focused}){
       {e.photo&&<img src={e.photo} alt="" loading="lazy"/>}
       <div><strong>{e.title||e.sku}</strong><p className="pt-meta">{[e.sku&&'SKU '+e.sku,e.size_text&&'Taille '+e.size_text,e.job_id&&'N° '+e.job_id].filter(Boolean).join(' · ')}</p>
       <b>{e.progress.label}</b>{e.progress.detail&&<p>{e.progress.detail}</p>}
+      {e.scheduled_for&&<p>Horaire prévu · {publicationDate(e.scheduled_for)} (Paris)</p>}
       <div className="lot-links">{e.editable&&<a href={(focused?'#alicia/annonces':'#annonces')+'?draft='+e.draft_id}>Corriger la fiche</a>}
         {e.retryable&&<button disabled={busy} onClick={()=>onRetry(e.id)}>Relancer cette annonce</button>}
         {!focused&&['pending','working','dispatched'].includes(e.status)&&<a href={'#publication?tab=queue&account='+encodeURIComponent(lot.account)+'&draft='+encodeURIComponent(e.draft_id)}>Gérer la mise en ligne</a>}

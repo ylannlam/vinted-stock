@@ -11,6 +11,8 @@ export function lotProgress(entry){
     return {group,...progress}
   }
   const resume=entry.status==='pending'&&entry.message&&Date.parse(entry.next_attempt)>Date.now()
+  if(entry.status==='pending'&&Date.parse(entry.scheduled_for)>Date.now()&&!resume)
+    return {group:'waiting',label:'Programmée',detail:''}
   return {group:'waiting',label:resume?'En pause':entry.status==='sending'?'Transmission à Scalency':'En préparation',
     detail:resume?entry.message+' Prochain essai à partir du '+publicationDate(entry.next_attempt)+'.':entry.message||''}
 }

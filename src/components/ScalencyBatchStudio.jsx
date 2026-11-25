@@ -9,6 +9,7 @@ import BatchEntry from './BatchEntry'
 import ScalencyDraft from './ScalencyDraft'
 import ScalencyQuickAccount from './ScalencyQuickAccount'
 import PublicationAccountPicker from './PublicationAccountPicker'
+import LotWindowPlanner from './LotWindowPlanner'
 import './ScalencyBatchStudio.css'
 
 const labels={draft:'Brouillon',running:'Remplissage…',ready:'Prête à relire',review:'À compléter',error:'À reprendre'}
@@ -72,6 +73,7 @@ export default function ScalencyBatchStudio({params,focused=false}){
   const [selected,setSelected]=useState({}),[review,setReview]=useState(false),[sending,setSending]=useState(false),[lastLot,setLastLot]=useState('')
   const [local,setLocal]=useState({}),[revision,setRevision]=useState(0)
   const [discarding,setDiscarding]=useState(null)
+  const [scheduled,setScheduled]=useState(false)
   const [quickEdit,setQuickEdit]=useState(''),[duplicates,setDuplicates]=useState({}),[duplicateCheck,setDuplicateCheck]=useState('')
   const [transfers,setTransfers]=useState([])
   const [editor,setEditor]=useState(params.draft||(params.piece||params.product||params.sku?'new':''))
@@ -127,6 +129,7 @@ export default function ScalencyBatchStudio({params,focused=false}){
   },[inProgress,reload])
   function updateProfile(id,changes){setProfiles(rows=>rows.map(a=>a.id===id?{...a,...changes}:a))}
   const choose=useCallback(id=>{
+    setScheduled(false)
     userPicked.current=true;setAccount(id);setSelected({});setReview(false);setData(null);setPage(0);setLastLot('');setNotice('')
     if(owner)try{localStorage.setItem('scalency-last-account:'+owner,id)}catch{}
   },[owner])
@@ -190,16 +193,19 @@ export default function ScalencyBatchStudio({params,focused=false}){
       setDiscarding(null)
     }finally{lock.current=false;reload()}
   }
-  async function submit(){
-    if(blocked||lock.current||!review||!toQueue.length)return
+  async function submit(entries,windowPlan=null){
+    if(blocked||lock.current||!review||!entries.length)return
     lock.current=true;setSending(true);setError('');setNotice('')
     try{
-      const result=await act('accept-lot',{account,entries:toQueue.map(({id,version})=>({id,version}))})
-      setLastLot(result.id);setSelected(Object.fromEntries(chosen.slice(toQueue.length).map(row=>[row.id,row])));setReview(false)
-      setNotice('Lot enregistré · '+result.count+' annonce'+(result.count>1?'s':'')+'. Tu peux fermer cet onglet ou changer de compte.')
+      const result=await act('accept-lot',{account,entries:entries.map(({id,version})=>({id,version})),...(windowPlan?{window:windowPlan}:{})})
+      setLastLot(result.id);setSelected(Object.fromEntries(chosen.slice(entries.length).map(row=>[row.id,row])));setReview(false);setScheduled(false)
+      setNotice(windowPlan?'Lot programmé · '+result.count+' annonce(s) le '+windowPlan.day.split('-').reverse().join('/')+' entre '+windowPlan.from+' et '+windowPlan.to+' (Paris).':
+        'Lot enregistré · '+result.count+' annonce'+(result.count>1?'s':'')+'. Tu peux fermer cet onglet ou changer de compte.')
     }catch(e){setError(e.message)}
     finally{lock.current=false;setSending(false);reload();cadence.refresh()}
   }
+  const reviewRows=review&&chosen.map(row=><ReviewRow key={row.id} row={row} onEdit={edit} onDiscard={setDiscarding} blocked={blocked}
+    disabled={sending||!!quickEdit} onQuick={setQuickEdit} quick={quickEdit===row.id} onSave={saveQuickEdit} duplicates={duplicates[row.id]}/>)
   return <main className="sc-work bs-work"><header className="sc-head"><div><p>{focused?'Espace Alicia':'Stock Vinted / Scalency'}</p><h1>Atelier d’annonces</h1></div><a href={focused?'#alicia/suivi':'#publication'}>Suivi des publications</a></header>
     <fieldset className="bs-account" disabled={sending||!!editor||!health.report}>
       {!editor&&<PublicationAccountPicker profiles={availableProfiles} loadingProfiles={loadedProfiles===null} account={account} onSelect={choose} health={health} cadence={cadence}/>}
@@ -221,11 +227,19 @@ export default function ScalencyBatchStudio({params,focused=false}){
         <p className="bs-meta">{review?chosen.length+' sélectionnée(s) pour '+(login?.login||'ce compte'):login?login.login+' · '+(data?.total??'…')+' brouillon(s)':'Tous les brouillons · choisis un compte pour préparer un lot'}</p></div>
         {!review&&<button className="bs-link" onClick={()=>{reload();health.refresh();cadence.refresh()}}>Actualiser</button>}</div>
       {discarding&&<DiscardDialog rows={discarding} onClose={()=>setDiscarding(null)} onDiscard={discard}/>}
-      {review?<>{duplicateCheck&&<p role="status">{duplicateCheck}</p>}{chosen.map(row=><ReviewRow key={row.id} row={row} onEdit={edit} onDiscard={setDiscarding} blocked={!!blocked} disabled={sending||!!quickEdit} onQuick={setQuickEdit} quick={quickEdit===row.id} onSave={saveQuickEdit} duplicates={duplicates[row.id]}/>)}
+      {review?<>{duplicateCheck&&<p role="status">{duplicateCheck}</p>}
+        <div className="bs-actions" role="group" aria-label="Quand publier le lot ?">
+          <button type="button" aria-pressed={!scheduled} disabled={sending||!!quickEdit} onClick={()=>setScheduled(false)}>Mettre en file maintenant</button>
+          <button type="button" aria-pressed={scheduled} disabled={sending||!!quickEdit} onClick={()=>setScheduled(true)}>Choisir un créneau</button>
+        </div>
+        {scheduled?<details><summary>Relire les fiches sélectionnées ({chosen.length})</summary>{reviewRows}</details>:reviewRows}
+        {scheduled?<LotWindowPlanner account={account} chosen={chosen} revision={revision} onSubmit={submit} sending={sending}
+          disabled={!!blocked||!!quickEdit||duplicateCheck==='Vérification des doublons…'}/>:<>
         <p role="status">{blocked||(!quota||cadence.error?'Vérification du plafond…':quota.remaining+' place(s) disponible(s) aujourd’hui.')}</p>
         {!blocked&&quota&&!cadence.error&&toQueue.length<chosen.length&&<p>Les {toQueue.length} premières fiches du récapitulatif peuvent partir. Les {chosen.length-toQueue.length} autres restent en brouillon.</p>}
-        <div className="bs-actions"><button disabled={sending||!!quickEdit} onClick={()=>setReview(false)}>Retour à la sélection</button><button className="sc-primary" disabled={!!blocked||sending||!toQueue.length||!!quickEdit||duplicateCheck==='Vérification des doublons…'} onClick={submit}>{sending?'Enregistrement…':'Mettre dans la file ('+toQueue.length+')'}</button></div>
-        <p className="bs-meta">Scalency gère le départ de chaque annonce. Tu peux fermer cet onglet dès que le lot est enregistré.</p></>:
+        <button className="sc-primary" disabled={!!blocked||sending||!toQueue.length||!!quickEdit||duplicateCheck==='Vérification des doublons…'} onClick={()=>submit(toQueue)}>{sending?'Enregistrement…':'Mettre dans la file ('+toQueue.length+')'}</button>
+        <p className="bs-meta">Scalency gère le départ de chaque annonce. Tu peux fermer cet onglet dès que le lot est enregistré.</p></>}
+        <button className="bs-link" disabled={sending||!!quickEdit} onClick={()=>setReview(false)}>Retour à la sélection</button></>:
         <><div className="bs-actions"><button disabled={!ready.length} onClick={()=>setSelected(prev=>({...prev,...Object.fromEntries(ready.map(r=>[r.id,r]))}))}>Sélectionner les prêtes</button>
         <button className="sc-primary" disabled={!chosen.length} onClick={()=>{setReview(true)}}>Relire la sélection ({chosen.length})</button>
         {chosen.length>0&&<button type="button" className="bs-link bs-danger" onClick={()=>setDiscarding(chosen)}>Supprimer la sélection ({chosen.length})</button>}</div>

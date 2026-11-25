@@ -14,6 +14,12 @@
 .bs-account-state.done{background:#dcf2e4;color:#205e3b}.bs-account-state.blocked{background:#fae9e5;color:#873c2a}
 .bs-account-state.neutral{background:#edf0ee;color:#495750}
 .bs-account-counts{font-size:.85rem;font-weight:450;color:#40574e;font-variant-numeric:tabular-nums}
+.bs-work .bs-actions button[aria-pressed=true]{background:#e4f3ea;border-color:#087258;color:#185d45}
+.bs-window{padding:1rem;margin:.75rem 0;border:1px solid #c8ded5;border-radius:12px;background:#f5faf7}
+.bs-window fieldset{display:flex;flex-wrap:wrap;gap:.75rem;border:0;padding:0;margin:0;min-width:0}
+.bs-window legend{font-weight:650;margin-bottom:.6rem}.bs-window label{display:grid;gap:.2rem}
+.bs-window-times{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,11rem),1fr));gap:.4rem .75rem;margin:.9rem 0;padding:0;list-style:none}
+.bs-window-times li{display:flex;gap:.45rem;align-items:baseline;overflow-wrap:anywhere}.bs-window-times time{font-weight:650;font-variant-numeric:tabular-nums}
 @media(min-width:320px) and (max-width:600px){.bs-daily-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.bs-work button.bs-account-choice{padding:.6rem}}
 .bs-work .sc-quick-account{background:#e7f2ee;border:1px solid #c6ded5;border-radius:14px;padding:10px 18px 13px;gap:12px 22px;margin:0 0 20px}
 .bs-work .sc-quick-account .sc-field{margin:0}.bs-work .sc-quick-account>div{display:flex;gap:8px;align-items:center;flex-wrap:wrap}

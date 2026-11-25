@@ -1,4 +1,5 @@
 import {capacityResult} from './scalency-cadence.js'
+import {lotSchedule} from '../src/lib/lotSchedule.js'
 import {requireWorkspaceAccount} from './scalency-account-health.js'
 import {createHash} from 'node:crypto'
 import {remote,remoteId,ScalencyError} from './scalency-api.js'
@@ -8,16 +9,21 @@ import {ASSET_BUCKET,ownedAsset} from './resources.js'
 const checked=result=>{if(result.error)throw result.error;return result.data}
 const waitMessage='En attente de la confirmation de Scalency. Vérifie la file avant toute nouvelle tentative.'
 
-export function lotKey(owner,account,entries){
+export function lotKey(owner,account,entries,window=null){
   if(!Array.isArray(entries)||!entries.length||entries.length>100||entries.some(e=>!isId(e?.id)||!Number.isSafeInteger(e.version)||e.version<1)
     ||new Set(entries.map(e=>e.id)).size!==entries.length)throw new ScalencyError('Sélectionne entre 1 et 100 annonces prêtes de ce compte.')
-  const versions=entries.map(e=>[e.id,e.version]).sort((a,b)=>a[0].localeCompare(b[0]))
-  return createHash('sha256').update(JSON.stringify([owner,account,versions])).digest('hex')
+  const versions=entries.map(e=>[e.id,e.version])
+  const key=window?[owner,account,versions,window.day,window.from,window.to]:[owner,account,versions.sort((a,b)=>a[0].localeCompare(b[0]))]
+  return createHash('sha256').update(JSON.stringify(key)).digest('hex')
 }
 
 export async function acceptPublicationLot(db,user,body){
   const account=remoteId(body.account),entries=body.entries
-  const id=lotKey(user.id,account,entries)
+  const id=lotKey(user.id,account,entries,body.window)
+  let plan
+  if(body.window!=null){
+    try{plan=lotSchedule(body.window,entries.length)}catch(error){throw new ScalencyError(error.message)}
+  }
   try{await requireWorkspaceAccount(db,account)}
   catch(error){
     // A retry may arrive after its lot was already accepted, even if the account is now restricted.
@@ -25,7 +31,9 @@ export async function acceptPublicationLot(db,user,body){
     if(existing)return {id,count:entries.length}
     throw error
   }
-  const accepted=await db.rpc('scalency_accept_limited_lot',{p_lot:id,p_owner:user.id,p_account:account,p_entries:entries.map(({id,version})=>({id,version}))})
+  const accepted=await db.rpc('scalency_accept_limited_lot',{p_lot:id,p_owner:user.id,p_account:account,
+    p_entries:entries.map(({id,version},i)=>plan?{id,version,at:plan.times[i],until:plan.end}:{id,version})})
+  if(accepted.error?.message==='lot_window')throw new ScalencyError('Choisis un créneau futur dans les 30 prochains jours.',409)
   if(accepted.error?.code==='23505'||['lot_changed','lot_conflict'].includes(accepted.error?.message))throw new ScalencyError('Une fiche a changé ou appartient déjà à un lot. Actualise l’atelier pour relire la sélection.',409)
   capacityResult(accepted)
   return {id,count:entries.length}
@@ -33,9 +41,10 @@ export async function acceptPublicationLot(db,user,body){
 
 export async function retryLotEntry(db,user,{id}){
   if(!isId(id))throw new ScalencyError('Annonce inconnue.')
-  const item=checked(await db.from('scalency_lot_entries').select('draft_id,reviewed_version,status,lot:scalency_publication_lots!inner(owner_id,account)')
+  const item=checked(await db.from('scalency_lot_entries').select('draft_id,reviewed_version,status,scheduled_for,lot:scalency_publication_lots!inner(owner_id,account)')
     .eq('id',id).eq('lot.owner_id',user.id).maybeSingle())
   if(!item||item.status!=='failed')throw new ScalencyError('Cette annonce doit être vérifiée dans son suivi.',409)
+  if(item.scheduled_for)throw new ScalencyError('Choisis un nouveau créneau depuis l’atelier.',409)
   return acceptPublicationLot(db,user,{account:item.lot.account,entries:[{id:item.draft_id,version:item.reviewed_version+2}]})
 }
 
@@ -111,8 +120,12 @@ export async function consumeLotTicket(db,{id,ticket},preparePublication,saveRec
   if(!isId(id)||!isId(ticket))throw new ScalencyError('Accès refusé.',403)
   const entry=checked(await db.from('scalency_lot_entries').update({status:'working'})
     .eq('id',id).eq('token',ticket).eq('status','dispatched').gt('lease_until',new Date().toISOString())
-    .select('draft_id,reviewed_version,lot_id,attempts').maybeSingle())
+    .select('draft_id,reviewed_version,lot_id,attempts,window_end').maybeSingle())
   if(!entry)return false
+  function checkWindow(){
+    if(entry.window_end&&Date.parse(entry.window_end)<=Date.now())
+      throw new ScalencyError('Créneau terminé. Choisis un nouveau créneau pour ce brouillon.')
+  }
   const finish=async(status,message,delay=60,job=null)=>{
     const saved=checked(await db.rpc('scalency_finish_lot_entry',{p_id:id,p_token:ticket,p_status:status,p_message:message,p_delay:delay,p_job:job}))
     if(!saved)throw new Error('lot_lease_expired')
@@ -120,6 +133,7 @@ export async function consumeLotTicket(db,{id,ticket},preparePublication,saveRec
   const job=await runLotEntry({
     attempt:entry.attempts+1,finish,
     prepare:async()=>{
+      checkWindow()
       checked(await db.from('scalency_lot_entries').update({attempts:entry.attempts+1}).eq('id',id).eq('token',ticket))
       const lot=checked(await db.from('scalency_publication_lots').select('owner_id,account').eq('id',entry.lot_id).single())
       const owner=checked(await db.from('profiles').select('role').eq('id',lot.owner_id).maybeSingle())
@@ -133,7 +147,7 @@ export async function consumeLotTicket(db,{id,ticket},preparePublication,saveRec
     },
     authorizeSend:async()=>!!checked(await db.from('scalency_lot_entries').update({status:'sending',lease_until:new Date(Date.now()+150000).toISOString()})
       .eq('id',id).eq('token',ticket).eq('status','working').gt('lease_until',new Date().toISOString()).select('id').maybeSingle()),
-    publish:body=>remote('items',{method:'POST',body})
+    publish:body=>{checkWindow();return remote('items',{method:'POST',body})}
   })
   if(job)await saveRecords(db,'jobs',[job])
   return true
@@ -141,7 +155,7 @@ export async function consumeLotTicket(db,{id,ticket},preparePublication,saveRec
 
 export async function publicationLots(db,user,q,saveRecords){
   const page=Math.max(0,parseInt(q.page,10)||0),pageSize=5
-  let read=db.from('scalency_publication_lots').select('id,account,created_at,entries:scalency_lot_entries(id,position,draft_id,reviewed_version,sku,title,size_text,cover_path,status,job_id,message,next_attempt)',{count:'exact'}).eq('owner_id',user.id)
+  let read=db.from('scalency_publication_lots').select('id,account,created_at,entries:scalency_lot_entries(id,position,draft_id,reviewed_version,sku,title,size_text,cover_path,status,job_id,message,next_attempt,scheduled_for,window_end)',{count:'exact'}).eq('owner_id',user.id)
   if(q.account)read=read.eq('account',remoteId(q.account))
   if(q.lot)read=read.eq('id',remoteId(q.lot))
   const result=await read.order('created_at',{ascending:false}).order('id').range(page*pageSize,(page+1)*pageSize-1)
@@ -168,6 +182,6 @@ export async function publicationLots(db,user,q,saveRecords){
   return {lots:lots.map(l=>({...l,login:logins.get(l.account)||l.account,entries:l.entries.sort((a,b)=>a.position-b.position).map(e=>{
     const {cover_path,reviewed_version,...row}=e,d=byDraft.get(e.draft_id)
     return {...row,photo:photos.get(cover_path)||null,job:byJob.get(e.job_id)?.payload,
-      editable:d?.state==='draft',retryable:d?.state==='draft'&&d.version===reviewed_version+2}
+      editable:d?.state==='draft',retryable:!e.scheduled_for&&d?.state==='draft'&&d.version===reviewed_version+2}
   })})),total:result.count,pageSize}
 }

@@ -194,6 +194,11 @@ export async function scalencyHandler(req,res,{db,user,role}){
       await syncPage(db,'jobs')
       return res.json(await cadenceReport(db))
     }
+    if(action==='lot-capacity'){
+      if(!validDay(q.day))fail('Choisis un jour valide.',400)
+      res.setHeader('Cache-Control','private, no-store')
+      return res.json(capacityResult(await db.rpc('scalency_daily_capacity',{p_account:remoteId(q.account),p_day:q.day})))
+    }
     if(action==='batch-drafts')return res.json(await batchDrafts(db,user,q))
     if(action==='publication-lots')return res.json(await publicationLots(db,user,q,saveRecords))
     if(action==='publication-tracking')return res.json(await publicationTracking(db,user,q))
