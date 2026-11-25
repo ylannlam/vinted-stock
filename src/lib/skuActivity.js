@@ -71,7 +71,7 @@ export function buildSkuActivity(feeds,references={},accountFilter='',periodOnly
       if(line.id)seen.add(clean(line.id))
       const ref=refLines.get(identity(key(account),r.id,line.id))
       const ad=listing(account,line.listing||ref?.listing||(lines.length===1&&linked.length===1?linked[0].id:null),line.title||r.title)
-      const sku=clean(manual.get(identity('sale',key(account),r.id,line.id)))||clean(line.sku)||clean(ref?.sku)||clean(line.productSku)
+      const sku=clean(ad&&references.listingSku?.(account,ad.id))||clean(manual.get(identity('sale',key(account),r.id,line.id)))||clean(line.sku)||clean(ref?.sku)||clean(line.productSku)
       evidence(ad,sku)
       if(ad&&!ad.photo)ad.photo=line.photo
       if(ad){
@@ -93,7 +93,7 @@ export function buildSkuActivity(feeds,references={},accountFilter='',periodOnly
       sales.push({ad:a,id:'',listingId:a.id,photo:a.photo,account:a.account,title:a.title,date:a.soldAt,stage:a.saleState==='terminee'?'completed':'pending',qty:1})
   }
   for(const a of ads.values()){
-    const override=manual.get(identity('listing',key(a.account),a.id,''))
+    const override=references.listingSku?.(a.account,a.id)||manual.get(identity('listing',key(a.account),a.id,''))
     if(override){a.skus=new Map([[key(override),override]]);a.postedSku=override}
   }
   // Reposts can form chains. Transfer a reference only when the whole chain agrees.

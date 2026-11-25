@@ -10,7 +10,7 @@ test('dressing, sélection, fiches à imprimer et bordereaux sur demande',async(
   const result=await build({stdin:{contents:"export {default as Wardrobe} from './src/components/Wardrobe';export {default as SalesDesk} from './src/components/SalesDesk'",resolveDir:rootDir},
     bundle:true,platform:'node',packages:'external',write:false,jsx:'automatic',loader:{'.css':'empty'},plugins:[{name:'private-board',setup(b){
       b.onResolve({filter:/^\.\.\/lib\/scalency$/},()=>({path:'scalency',namespace:'mock'}))
-      b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:"export const query=(...args)=>globalThis.shopExample.query(...args);export const act=()=>{throw Error('unexpected write')}"}))
+      b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:"export const query=(...args)=>globalThis.shopExample.query(...args);export const act=(...args)=>globalThis.shopExample.write(...args)"}))
     }}]})
   const {window}=parseHTML('<html><body><div id="root"></div></body></html>')
   globalThis.window=window;globalThis.document=window.document;globalThis.IS_REACT_ACT_ENVIRONMENT=true
@@ -20,7 +20,7 @@ test('dressing, sélection, fiches à imprimer et bordereaux sur demande',async(
   const board={drafts:[],emptyOrders:[],groups:[{sku:'TEST-4',key:'test-4',title:'Robe test',sales:[{account:'Exemple',stage:'pending',date:'2026-11-03',qty:1,title:'Robe test'}],listings:[{id:'19',account:'Exemple',status:'en ligne',title:'Robe test',photo:'https://example.org/test.jpg',price:32,views:0,favourites:2}]}],
     sales:[{id:'c1',account:'Exemple',title:'Vente',date:'2026-10-12',state:'ready',status:'label_sent',hasLabel:true,lines:[{id:'v',sku:'TEST-4',title:'Robe test'}]},
       {id:'c2',account:'Exemple',date:'2026-10-12',state:'cancelled',status:'cancelled',hasLabel:true,lines:[{id:'w',title:'Vente annulée'}]}]}
-  globalThis.shopExample={query:async(view)=>{reads.push(view);if(view==='shop-board')return board;if(view==='shop-refresh')return {skipped:true};throw Error('indisponible')}}
+  globalThis.shopExample={query:async(view)=>{reads.push(view);if(view==='shop-board')return {...board};if(view==='shop-refresh')return {skipped:true};throw Error('indisponible')}}
   const copies=[]
   const originalClipboard=Object.getOwnPropertyDescriptor(navigator,'clipboard')
   Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async value=>{copies.push(value)}}})
@@ -67,7 +67,7 @@ test('dressing, sélection, fiches à imprimer et bordereaux sur demande',async(
     assert.deepEqual([...document.querySelectorAll('.shop-rank tbody td')].slice(0,3).map(td=>td.textContent),['1','0','1'])
     await click(button('Photos'));assert.ok(document.querySelector('.shop-rank-card .shop-photo'))
     const missingSku=board.groups.find(g=>!g.key)
-    missingSku.listings.push({id:'22',account:'Exemple',status:'vendue',dressingSold:true,title:'Robe rouge à vérifier'},
+    missingSku.listings.push({id:'22',account:'Exemple',accountId:'vt-88',status:'vendue',dressingSold:true,title:'Robe rouge à vérifier'},
       {id:'23',account:'Exemple',status:'vendue',dressingSold:true,title:'Robe noire annulée',orderInfo:{state:'cancelled'}},
       {id:'24',account:'Exemple',status:'vendue',dressingSold:true,title:'Veste rouge'})
     await act(async()=>root.render(React.createElement(mod.exports.Wardrobe,{params:{section:'vendues',q:'robe'},admin:true})))
@@ -75,6 +75,27 @@ test('dressing, sélection, fiches à imprimer et bordereaux sur demande',async(
     assert.match(document.querySelector('.shop-grid').textContent,/Commande annulée/)
     assert.match(document.querySelector('.shop-grid').textContent,/Commande à vérifier/)
     assert.doesNotMatch(document.querySelector('.shop-grid').textContent,/Robe test|Veste rouge/)
+    await click(document.querySelector('[aria-label="Renseigner le SKU de Robe rouge à vérifier"]'))
+    const field=document.querySelector('.shop-sku-form input')
+    const {Simulate}=require('react-dom/test-utils')
+    await act(async()=>{field.value='  SKU-22  ';Simulate.change(field)})
+    globalThis.shopExample.write=async()=>{throw Error('Scalency indisponible')}
+    const submit=()=>act(async()=>Simulate.submit(document.querySelector('.shop-sku-form')))
+    await submit()
+    assert.match(document.querySelector('.shop-sku-form [role=alert]').textContent,/indisponible/)
+    assert.equal(field.value.trim(),'SKU-22')
+    globalThis.shopExample.write=async(action,payload)=>{
+      assert.equal(action,'listing-sku')
+      assert.deepEqual(payload,{id:'22',accountId:'vt-88',sku:'SKU-22'})
+      const listing=missingSku.listings.find(r=>r.id==='22')
+      missingSku.listings=missingSku.listings.filter(r=>r!==listing)
+      board.groups.push({key:'sku-22',sku:'SKU-22',listings:[listing],sales:[]})
+      return {sku:'SKU-22',cachePending:false}
+    }
+    await submit()
+    assert.equal(document.querySelector('[role=dialog]'),null)
+    assert.match(document.querySelector('.shop-grid').textContent,/SKU-22/)
+    assert.match(document.querySelector('.shop-sku-notice').textContent,/enregistré sur Scalency/)
     await act(async()=>root.render(React.createElement(mod.exports.SalesDesk,{params:{}})))
     assert.equal(document.querySelectorAll('.shop-sales tbody tr').length,1)
     await click(document.querySelector('.sale-product .shop-copy'));assert.deepEqual(copies,Array(4).fill('TEST-4'))
