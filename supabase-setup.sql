@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS public.vinted_accounts (
   password          TEXT,
   methode_connexion TEXT        CHECK (methode_connexion IN ('google', 'apple', 'email')),
   telephone         TEXT,
-  telephone_type    TEXT        CHECK (telephone_type IN ('onoff', 'autre')),
+  telephone_type    TEXT        CHECK (telephone_type IN ('lyca', 'onoff', 'autre')),
   telephone_email   TEXT,
   statut            TEXT        DEFAULT 'actif' CHECK (statut IN ('actif', 'banni_temp', 'banni_def', 'suspendu')),
   notes             TEXT,

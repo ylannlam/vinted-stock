@@ -45,8 +45,10 @@ export default function VintedAccountsTab({client=supabase,onDirections,initialV
   async function handleSave(form){
     const ok=await mutate(async()=>{
       const {id,...raw}=form
-      const fields=Object.fromEntries(Object.entries(raw).map(([k,v])=>[k,v===''?null:v]))
-      if(id)await updateAccount(id,fields)
+      const fields=Object.fromEntries(Object.entries(raw)
+        .filter(([key,value])=>key!=='password' && (!id || value!==editAccount[key]))
+        .map(([key,value])=>[key,value===''?null:value]))
+      if(id){if(Object.keys(fields).length)await updateAccount(id,fields)}
       else {const {data,error}=await client.from('vinted_accounts').insert(fields).select().single();if(error)throw error;setAccounts(prev=>[data,...prev])}
     },'Compte enregistré.')
     if(ok){setEditAccount(undefined);setView(accountGroup(form));setSearch('');setDueOnly(false)}

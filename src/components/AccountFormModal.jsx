@@ -5,10 +5,9 @@ const EMPTY = {
   ads_power_num: '',
   pseudo: '',
   email: '',
-  password: '',
-  methode_connexion: 'email',
+  methode_connexion: 'google',
   telephone: '',
-  telephone_type: 'onoff',
+  telephone_type: 'lyca',
   telephone_email: '',
   statut: 'en_preparation',
   deban_at: '',
@@ -19,10 +18,12 @@ const EMPTY = {
 }
 
 export default function AccountFormModal({ account, onClose, onSave, error }) {
-  const [form, setForm] = useState(account ? { ...EMPTY, ...account } : { ...EMPTY, ...initialCreation(), is_shadowbanned:false })
+  const [form, setForm] = useState(() => {
+    if (!account) return { ...EMPTY, ...initialCreation(), is_shadowbanned: false }
+    const keys = [...Object.keys(EMPTY), 'id', 'created_at', 'is_ready', 'is_shadowbanned']
+    return Object.fromEntries(keys.map(key => [key, account[key]]))
+  })
   const [saving, setSaving] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
-  const [showDetails, setShowDetails] = useState(!!account)
 
   function set(key, value) {
     setForm(prev => ({ ...prev, [key]: value }))
@@ -32,9 +33,20 @@ export default function AccountFormModal({ account, onClose, onSave, error }) {
     e.preventDefault()
     if (!form.pseudo.trim()) return
     setSaving(true)
-    await onSave({...form, is_ready: !form.is_shadowbanned && (form.creation_stage ? form.creation_stage === 'ready' : form.is_ready || false),
-      statut: form.creation_stage === 'blocked' && !['banni_temp','banni_def','suspendu'].includes(form.statut) ? 'suspendu' : form.creation_stage === 'ready' && form.statut === 'en_preparation' ? 'actif' : form.statut})
-    setSaving(false)
+    try {
+      const fields = { ...form }
+      if (form.telephone_type === 'onoff') {
+        fields.telephone_email = (form.telephone_email || '').trim()
+      } else if (!account || form.telephone_type !== account.telephone_type) {
+        fields.telephone_email = null
+      }
+      if (!account || form.creation_stage !== account.creation_stage || form.is_shadowbanned !== account.is_shadowbanned) {
+        fields.is_ready = !form.is_shadowbanned && (form.creation_stage ? form.creation_stage === 'ready' : !!form.is_ready)
+      }
+      await onSave(fields)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -83,14 +95,16 @@ export default function AccountFormModal({ account, onClose, onSave, error }) {
           </div>
 
           <section className="border border-gray-200 rounded-xl p-3 space-y-3">
-            <h3 className="text-xs font-semibold text-gray-600">Création et isolement sur téléphone</h3>
+            <h3 className="text-xs font-semibold text-gray-600">{account ? 'Création et isolement sur téléphone' : 'En préparation · Jour 1'}</h3>
             <p className="text-xs text-gray-500">Jour 1 : 1re annonce après 2 h. Jour 2 : 2e annonce. Jour 3 : prêt à passer sur proxy.</p>
-            <label className="flex gap-2 items-center text-sm text-gray-700"><input type="checkbox" checked={!!form.is_shadowbanned} onChange={e=>set('is_shadowbanned',e.target.checked)}/>Shadowban · compte abandonné</label>
-            <label className="block text-xs text-gray-500">Étape
-              <select aria-label="Étape de création" className="w-full mt-1 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white" value={form.creation_stage || ''} onChange={e=>setForm(prev=>({...prev,creation_stage:e.target.value,statut:e.target.value==='blocked'?'suspendu':e.target.value==='ready'?'actif':'en_preparation',creation_next_at:['post1','post2','wait'].includes(e.target.value)?new Date(Date.now()+(e.target.value==='post1'?7200000:86400000)).toISOString():null}))}>
-                <option value="">Sans suivi d’annonces</option>{CREATION_STAGES.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}
-              </select>
-            </label>
+            {account && <>
+              <label className="flex gap-2 items-center text-sm text-gray-700"><input type="checkbox" checked={!!form.is_shadowbanned} onChange={e=>set('is_shadowbanned',e.target.checked)}/>Shadowban · compte abandonné</label>
+              <label className="block text-xs text-gray-500">Étape
+                <select aria-label="Étape de création" className="w-full mt-1 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white" value={form.creation_stage || ''} onChange={e=>setForm(prev=>({...prev,creation_stage:e.target.value,statut:e.target.value==='blocked'?prev.statut:e.target.value==='ready'?'actif':'en_preparation',creation_next_at:['post1','post2','wait'].includes(e.target.value)?new Date(Date.now()+(e.target.value==='post1'?7200000:86400000)).toISOString():null}))}>
+                  <option value="">Sans suivi d’annonces</option>{CREATION_STAGES.filter(stage => stage.value !== 'blocked' || form.creation_stage === 'blocked').map(s=><option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+              </label>
+            </>}
             {['post1','post2','wait'].includes(form.creation_stage)&&<label className="block text-xs text-gray-500">Prochaine échéance
               <input aria-label="Prochaine échéance" type="datetime-local" className="w-full mt-1 border border-gray-200 rounded-lg px-3 py-2 text-sm" value={localDateInput(form.creation_next_at)} onChange={e=>set('creation_next_at',e.target.value?new Date(e.target.value).toISOString():null)}/>
             </label>}
@@ -100,117 +114,77 @@ export default function AccountFormModal({ account, onClose, onSave, error }) {
             </div>
           </section>
 
-          {/* Accordéon détails */}
-          {!showDetails && !account && (
-            <button
-              type="button"
-              onClick={() => setShowDetails(true)}
-              className="w-full py-2 border border-dashed border-gray-200 rounded-xl text-xs text-gray-400 hover:text-teal-500 hover:border-teal-300 transition-colors"
-            >
-              + Ajouter les détails (email, mot de passe, téléphone…)
-            </button>
+          <div>
+            <label htmlFor="account-email" className="text-xs font-semibold text-gray-500 mb-1 block">
+              {form.methode_connexion === 'google' ? 'Adresse e-mail Google' : 'Adresse e-mail du compte'}
+            </label>
+            <input id="account-email" value={form.email || ''} onChange={e => set('email', e.target.value)} type="email"
+              placeholder="email@example.com"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-teal-400" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="account-phone" className="text-xs font-semibold text-gray-500 mb-1 block">Téléphone</label>
+              <input id="account-phone" type="tel" value={form.telephone || ''} onChange={e => set('telephone', e.target.value)}
+                placeholder="+33 6 00 00 00 00"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-teal-400" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">Opérateur</label>
+              <div className="flex gap-2 h-[42px]">
+                {['lyca', 'onoff'].map(t => (
+                  <button key={t} type="button" aria-pressed={form.telephone_type === t} onClick={() => set('telephone_type', t)}
+                    className={`flex-1 rounded-xl text-sm font-medium border transition-colors capitalize ${form.telephone_type === t ? 'bg-teal-500 text-white border-teal-500' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}>
+                    {t === 'lyca' ? 'Lyca' : 'Onoff'}
+                  </button>
+                ))}
+              </div>
+              {form.telephone_type === 'autre' && <p className="mt-1 text-xs text-gray-500">Opérateur enregistré · Autre</p>}
+            </div>
+          </div>
+
+          {form.telephone_type === 'onoff' && (
+            <div>
+              <label htmlFor="onoff-email" className="text-xs font-semibold text-gray-500 mb-1 block">Adresse e-mail du compte Onoff *</label>
+              <input id="onoff-email" required value={form.telephone_email || ''} onChange={e => set('telephone_email', e.target.value)}
+                type="email" placeholder="email@example.com"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-teal-400" />
+            </div>
           )}
 
-          {showDetails && (
-            <>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 mb-1 block">Email</label>
-                  <input value={form.email} onChange={e => set('email', e.target.value)} type="email"
-                    placeholder="email@example.com"
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-teal-400" />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 mb-1 block">Mot de passe</label>
-                  <div className="relative">
-                    <input value={form.password} onChange={e => set('password', e.target.value)}
-                      type={showPassword ? 'text' : 'password'} placeholder="••••••••"
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-teal-400 pr-9" />
-                    <button type="button" onClick={() => setShowPassword(v => !v)}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                      {showPassword
-                        ? <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
-                        : <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-                      }
-                    </button>
-                  </div>
-                </div>
+          {account && <>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">Statut</label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { value: 'en_preparation', label: 'En préparation', color: 'bg-purple-50 text-purple-700 border-purple-200', active: 'bg-purple-500 text-white border-purple-500' },
+                  { value: 'actif',          label: 'Actif',          color: 'bg-green-50 text-green-700 border-green-200',    active: 'bg-green-500 text-white border-green-500' },
+                  { value: 'banni_temp',     label: 'Banni temp.',    color: 'bg-orange-50 text-orange-700 border-orange-200', active: 'bg-orange-500 text-white border-orange-500' },
+                  { value: 'banni_def',      label: 'Banni déf.',     color: 'bg-red-50 text-red-700 border-red-200',          active: 'bg-red-500 text-white border-red-500' },
+                ].map(s => (
+                  <button key={s.value} type="button" onClick={() => setForm(prev=>({...prev,statut:s.value,...(['banni_temp','banni_def'].includes(s.value)?{creation_stage:'blocked',creation_next_at:null}:s.value==='actif'?{creation_stage:'ready',creation_next_at:null}:prev.creation_stage==='blocked'||prev.creation_stage==='ready'?{creation_stage:'post1',creation_next_at:new Date(Date.now()+7200000).toISOString()}:{} )}))}
+                    className={`py-2 rounded-xl text-sm font-medium border transition-colors ${form.statut === s.value ? s.active : s.color}`}>
+                    {s.label}
+                  </button>
+                ))}
               </div>
-
-              <div>
-                <label className="text-xs font-semibold text-gray-500 mb-1 block">Méthode de connexion</label>
-                <div className="flex gap-2">
-                  {['email', 'google', 'apple'].map(m => (
-                    <button key={m} type="button" onClick={() => set('methode_connexion', m)}
-                      className={`flex-1 py-2 rounded-xl text-sm font-medium border transition-colors capitalize ${form.methode_connexion === m ? 'bg-teal-500 text-white border-teal-500' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}>
-                      {m}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 mb-1 block">Téléphone</label>
-                  <input value={form.telephone} onChange={e => set('telephone', e.target.value)}
-                    placeholder="+33 6 00 00 00 00"
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-teal-400" />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 mb-1 block">Type</label>
-                  <div className="flex gap-2 h-[42px]">
-                    {['onoff', 'autre'].map(t => (
-                      <button key={t} type="button" onClick={() => set('telephone_type', t)}
-                        className={`flex-1 rounded-xl text-sm font-medium border transition-colors capitalize ${form.telephone_type === t ? 'bg-teal-500 text-white border-teal-500' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}>
-                        {t}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {form.telephone_type === 'onoff' && (
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 mb-1 block">Email du compte OnOff</label>
-                  <input value={form.telephone_email} onChange={e => set('telephone_email', e.target.value)}
-                    type="email" placeholder="email@onoff.app"
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-teal-400" />
-                </div>
+              {form.statut === 'en_preparation' && (
+                <p className="text-[11px] text-purple-600 mt-1.5 leading-snug">
+                  Compte en cours de préparation. Le suivi des annonces est renseigné ci-dessus.
+                </p>
               )}
+            </div>
 
-              <div>
-                <label className="text-xs font-semibold text-gray-500 mb-1 block">Statut</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { value: 'en_preparation', label: 'En préparation', color: 'bg-purple-50 text-purple-700 border-purple-200', active: 'bg-purple-500 text-white border-purple-500' },
-                    { value: 'actif',          label: 'Actif',          color: 'bg-green-50 text-green-700 border-green-200',    active: 'bg-green-500 text-white border-green-500' },
-                    { value: 'banni_temp',     label: 'Banni temp.',    color: 'bg-orange-50 text-orange-700 border-orange-200', active: 'bg-orange-500 text-white border-orange-500' },
-                    { value: 'banni_def',      label: 'Banni déf.',     color: 'bg-red-50 text-red-700 border-red-200',          active: 'bg-red-500 text-white border-red-500' },
-                    { value: 'suspendu',       label: 'Suspendu',       color: 'bg-gray-50 text-gray-600 border-gray-200',       active: 'bg-gray-500 text-white border-gray-500' },
-                  ].map(s => (
-                    <button key={s.value} type="button" onClick={() => setForm(prev=>({...prev,statut:s.value,...(['banni_temp','banni_def','suspendu'].includes(s.value)?{creation_stage:'blocked',creation_next_at:null}:s.value==='actif'?{creation_stage:'ready',creation_next_at:null}:prev.creation_stage==='blocked'||prev.creation_stage==='ready'?{creation_stage:'post1',creation_next_at:new Date(Date.now()+7200000).toISOString()}:{} )}))}
-                      className={`py-2 rounded-xl text-sm font-medium border transition-colors ${form.statut === s.value ? s.active : s.color}`}>
-                      {s.label}
-                    </button>
-                  ))}
-                </div>
-                {form.statut === 'en_preparation' && (
-                  <p className="text-[11px] text-purple-600 mt-1.5 leading-snug">
-                    Compte en cours de préparation. Le suivi des annonces est renseigné ci-dessus.
-                  </p>
-                )}
-              </div>
+            <p className="text-xs text-slate-500">Passer le compte dans Bloqués démarre 5 jours d’attente. Le passer dans Prêts démarre 2 jours avant le rappel de changement de mot de passe.</p>
+          </>}
 
-              <p className="text-xs text-slate-500">Passer le compte dans Bloqués démarre 5 jours d’attente. Le passer dans Prêts démarre 2 jours avant le rappel de changement de mot de passe.</p>
-
-              <div>
-                <label className="text-xs font-semibold text-gray-500 mb-1 block">Notes</label>
-                <textarea value={form.notes} onChange={e => set('notes', e.target.value)}
-                  placeholder="Informations supplémentaires..." rows={3}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-teal-400 resize-none" />
-              </div>
-            </>
-          )}
+          <div>
+            <label className="text-xs font-semibold text-gray-500 mb-1 block">Notes</label>
+            <textarea value={form.notes} onChange={e => set('notes', e.target.value)}
+              placeholder="Informations supplémentaires..." rows={3}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-teal-400 resize-none" />
+          </div>
 
           <button
             type="submit"
