@@ -1,5 +1,5 @@
 import {useState,useEffect} from 'react'
-import {TAB_ALICIA,TAB_ADSPOWER,TAB_LISTINGS,TAB_HOME,TAB_HISTORY,TAB_SALES,TAB_BUDGET,TAB_CATALOG,TAB_TOUT,TAB_A_RECEVOIR,TAB_A_ENVOYER,TAB_A_ENVOYER_LOT,TAB_ENVOYES,TAB_COMPTES_VINTED,TAB_PUBLICATION,TAB_AGENT} from '../constants'
+import {TAB_SPACES,TAB_ADSPOWER,TAB_LISTINGS,TAB_HOME,TAB_HISTORY,TAB_SALES,TAB_BUDGET,TAB_CATALOG,TAB_TOUT,TAB_A_RECEVOIR,TAB_A_ENVOYER,TAB_A_ENVOYER_LOT,TAB_ENVOYES,TAB_COMPTES_VINTED,TAB_PUBLICATION,TAB_AGENT} from '../constants'
 export default function CategoryTabs({active,onChange,items=[],commandes=[],userRole,sentCount=0}){
  const [menu,setMenu]=useState(false)
  useEffect(()=>setMenu(false),[active])
@@ -7,7 +7,7 @@ export default function CategoryTabs({active,onChange,items=[],commandes=[],user
  if(userRole==='employe')return null
  const admin=userRole==='admin',stockTabs=[TAB_TOUT,TAB_A_RECEVOIR,TAB_A_ENVOYER,TAB_A_ENVOYER_LOT,TAB_ENVOYES]
  const primary=[[TAB_HOME,'Accueil'],[TAB_TOUT,'Stock physique'],[TAB_SALES,'Ventes'],[TAB_ADSPOWER,'Dressing'],...(admin?[[TAB_LISTINGS,'Annonces'],[TAB_PUBLICATION,'Publication'],[TAB_AGENT,'Messages'],[TAB_COMPTES_VINTED,'Comptes']]:[])]
- const other=[[TAB_CATALOG,'Catalogue fournisseur'],...(admin?[[TAB_ALICIA,'Espace Alicia'],[TAB_BUDGET,'Budget']]:[]),[TAB_HISTORY,'Historique & corbeille']]
+ const other=[[TAB_CATALOG,'Catalogue fournisseur'],...(admin?[[TAB_SPACES,'Changer d’espace'],[TAB_BUDGET,'Budget']]:[]),[TAB_HISTORY,'Historique & corbeille']]
  // Rubrique du menu « Plus » ouverte : le bouton Plus porte son nom pour qu'on sache où l'on est.
  const current=other.find(([id])=>id===active)
  const tabClass=id=>`workspace-nav-link px-3 py-3 text-sm font-medium rounded-lg transition ${active===id||(id===TAB_TOUT&&stockTabs.includes(active))?'is-active bg-teal-700 text-white':'text-slate-500 hover:bg-slate-50'}`
