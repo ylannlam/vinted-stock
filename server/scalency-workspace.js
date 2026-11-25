@@ -20,7 +20,7 @@ import {catalogProduct,connectedRecords,draftSource} from './scalency-relations.
 import {skuFeed,skuReferences,linkSku} from './scalency-sku.js'
 import {parisDay,validDay} from '../src/lib/publications.js'
 import {readShopBoard} from './shop-board.js'
-import {refreshShopPage} from './shop-refresh.js'
+import {refreshShopPage,saveListingSku} from './shop-refresh.js'
 import {salesStart,restrictOrderPage} from '../src/lib/shopPeriod.js'
 const fail=(message,status)=>{throw new ScalencyError(message,status)}
 const checked=r=>{if(r.error)throw r.error;return r.data}
@@ -248,6 +248,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
     fail('Vue inconnue.',404)
   }
   if(req.method!=='POST')fail('Méthode invalide.',405)
+  if(action==='listing-sku')return res.json(await saveListingSku(db,b))
   if(action==='sku-link')return res.json(await linkSku(db,b))
   if(action==='cadence-save')return res.json(await setCadence(db,b))
   if(action==='manage-publication')return res.json(await managePublication(db,user,b,saveRecords))

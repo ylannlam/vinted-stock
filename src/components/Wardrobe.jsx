@@ -14,7 +14,7 @@ function dressingOrderLabel(order){
   if(order?.stage==='pending')return 'Vente en cours'
   return orderLabels[order?.state]||orderLabels[order?.status]||'Commande à vérifier'
 }
-function Card({row,selected,toggle,open,soldView}){
+function Card({row,selected,toggle,open,soldView,onEditSku}){
   const name=row.title||'Annonce '+row.id
   return <article className={'shop-card'+(selected?' selected':'')}>
     <div className="shop-photo"><button className="shop-photo-open" aria-label={'Ouvrir '+name} onClick={open}><ShopCover src={row.photo} title={name}/></button>
@@ -22,7 +22,8 @@ function Card({row,selected,toggle,open,soldView}){
       <span className={'shop-badge '+row.state}>{statusLabels[row.state]?.replace('Vendues','Vendue').replace('Masquées','Masquée').replace('Brouillons','Brouillon')}</span>
     </div>
     <div className="shop-card-body"><button className="shop-card-title" onClick={open}>{name}</button>
-      <div className="shop-sku-row"><p className={'shop-sku'+(!row.sku?' missing':'')}>{row.sku?'SKU '+row.sku:'SKU à identifier'}</p><CopySkuButton key={row.sku} sku={row.sku}/></div>
+      <div className="shop-sku-row">{(row.sku||!onEditSku)&&<p className={'shop-sku'+(!row.sku?' missing':'')}>{row.sku?'SKU '+row.sku:'SKU à identifier'}</p>}<CopySkuButton key={row.sku} sku={row.sku}/>
+        {onEditSku&&<button type="button" className="shop-edit-sku" aria-label={(row.sku?'Modifier':'Renseigner')+' le SKU de '+name} onClick={onEditSku}>{row.sku?'Modifier':'Renseigner le SKU'}</button>}</div>
       <p className="shop-card-price"><strong>{price(row.price,row.currency)}</strong><span>{row.account}</span></p>
       {soldView&&<p className="shop-card-date">{dressingOrderLabel(row.orderInfo)}</p>}
       {!row.isDraft&&<p className="shop-metrics"><span>{row.views??'—'} vues</span><span>♡ {row.favourites??'—'} favoris</span></p>}
@@ -31,11 +32,27 @@ function Card({row,selected,toggle,open,soldView}){
     </div>
   </article>
 }
-function ListingDetail({row,admin,reread,onClose}){
-  const [sku,setSku]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('')
-  async function save(e){e.preventDefault();if(!sku.trim()||busy)return;setBusy(true)
-    try{await act('sku-link',{kind:'listing',account:row.account,id:row.id,sku:sku.trim()});await reread();onClose()}
-    catch(err){setError(err.message)}finally{setBusy(false)}}
+function SkuEditor({row,onSaved,onClose}){
+  const [sku,setSku]=useState(row.sku||''),[busy,setBusy]=useState(false),[error,setError]=useState('')
+  async function save(event){
+    event.preventDefault()
+    if(busy||!sku.trim())return
+    setBusy(true);setError('')
+    try{
+      const result=await act('listing-sku',{id:row.id,accountId:row.accountId,sku:sku.trim()})
+      onSaved(row,result)
+    }catch(err){setError(err.message);setBusy(false)}
+  }
+  return <ResourceDialog title={row.sku?'Modifier le SKU':'Renseigner le SKU'} busy={busy} onClose={()=>{if(!busy)onClose()}}>
+    <p>{row.title||'Annonce '+row.id} · {row.account}</p>
+    <form className="shop-sku-form" onSubmit={save}>
+      <label>SKU<input required autoFocus maxLength={200} value={sku} disabled={busy} onChange={e=>setSku(e.target.value)}/></label>
+      {error&&<p className="shop-alert" role="alert">{error}</p>}
+      <button className="shop-primary" disabled={busy||!sku.trim()}>{busy?'Enregistrement…':'Enregistrer sur Scalency'}</button>
+    </form>
+  </ResourceDialog>
+}
+function ListingDetail({row,onEditSku,onClose}){
   return <ResourceDialog title={row.title||'Fiche article'} onClose={onClose}><div className="shop-product-detail"><div className="shop-detail-photo"><ShopCover title={row.title} src={row.photo}/></div>
     <div><strong>{price(row.price,row.currency)}</strong><p>{row.account} · {row.status}</p><dl>
     {[['SKU',row.sku],['Taille',row.size],['Emplacement',row.location],['Numéro',row.id],['Vues',row.views],['Favoris',row.favourites]].map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v==null||v===''?'—':v}{k==='SKU'&&<CopySkuButton sku={v}/>}</dd></div>)}</dl>
@@ -43,8 +60,8 @@ function ListingDetail({row,admin,reread,onClose}){
     {row.isDraft?<a href={'#annonces?'+new URLSearchParams({account:row.accountId||'',draft:row.id})}>Modifier le brouillon</a>:<>
       <a href={'https://www.vinted.fr/items/'+encodeURIComponent(row.id)} target="_blank" rel="noreferrer">Ouvrir sur Vinted ↗</a>
       {row.inventory&&<a href={'#dressing?'+new URLSearchParams({id:row.id,account:row.accountId})}>Voir la fiche stock</a>}
-      {!row.sku&&admin&&<form className="shop-sku-form" onSubmit={save}><label>Associer un SKU<input value={sku} onChange={e=>setSku(e.target.value)} maxLength={150} required/></label><button className="shop-primary" disabled={busy||!sku.trim()}>Enregistrer</button></form>}</>}
-    {error&&<p role="alert">{error}</p>}</div></div></ResourceDialog>
+      {onEditSku&&<button type="button" className="shop-edit-sku" onClick={onEditSku}>{row.sku?'Modifier le SKU':'Renseigner le SKU'}</button>}</>}
+    </div></div></ResourceDialog>
 }
 function Gallery({board,admin,params,reread,accounts,soldView}){
   const all=useMemo(()=>listingRows(board).filter(r=>!soldView||r.dressingSold),[board,soldView])
@@ -52,6 +69,17 @@ function Gallery({board,admin,params,reread,accounts,soldView}){
   const [skuFilter,setSkuFilter]=useState('all')
   const [sort,setSort]=useState('recent'),[status,setStatus]=useState('all'),[age,setAge]=useState('all'),[page,setPage]=useState(0)
   const [detail,setDetail]=useState(null),[print,setPrint]=useState(null)
+  const [editingSku,setEditingSku]=useState(null),[notice,setNotice]=useState('')
+  function editSku(row){setDetail(null);setNotice('');setEditingSku(row)}
+  async function savedSku(row,result){
+    setEditingSku(null)
+    const confirmed='SKU '+result.sku+' enregistré sur Scalency pour '+(row.title||'l’annonce '+row.id)+'.'
+    setNotice(confirmed)
+    if(!result.cachePending){
+      try{await reread();return}catch{}
+    }
+    setNotice(confirmed+' Actualise le dressing pour mettre la carte à jour.')
+  }
   const selection=useShopSelection()
   const update=setter=>value=>{setter(value);setPage(0);selection.clear()}
   const cutoff=Date.now()-30*86400000
@@ -69,10 +97,12 @@ function Gallery({board,admin,params,reread,accounts,soldView}){
     <SelectionBar count={picked.length} totalVisible={rows.length} noun="annonces" selection={selection} pageKeys={displayed.map(recordKey)}>
       <button className="shop-primary" disabled={!picked.length} onClick={()=>setPrint(picked.map(r=>({...r,reference:r.isDraft?'Brouillon':'Annonce n° '+r.id})))}>Imprimer les fiches{picked.length?' ('+picked.length+')':''}</button>
     </SelectionBar>
-    {rows.length?<div className="shop-grid">{displayed.map(r=><Card key={recordKey(r)} row={r} soldView={soldView} selected={selection.keys.has(recordKey(r))} toggle={()=>selection.toggle(recordKey(r))} open={()=>setDetail(r)}/>)}</div>:
+    {notice&&<p className="shop-sku-notice" role="status">{notice}</p>}
+    {rows.length?<div className="shop-grid">{displayed.map(r=><Card key={recordKey(r)} row={r} soldView={soldView} selected={selection.keys.has(recordKey(r))} toggle={()=>selection.toggle(recordKey(r))} open={()=>setDetail(r)} onEditSku={admin&&!r.isDraft?()=>editSku(r):undefined}/>)}</div>:
       <p className="shop-empty">Aucune annonce avec ces filtres.</p>}
     <PageBar page={here} setPage={setPage} total={rows.length} size={size}/>
-    {detail&&<ListingDetail row={detail} admin={admin} reread={reread} onClose={()=>setDetail(null)}/>}
+    {detail&&<ListingDetail row={detail} onEditSku={admin&&!detail.isDraft?()=>editSku(detail):undefined} onClose={()=>setDetail(null)}/>}
+    {editingSku&&<SkuEditor row={editingSku} onSaved={savedSku} onClose={()=>setEditingSku(null)}/>}
     {print&&<PrintArticles rows={print} onClose={()=>setPrint(null)}/>}
   </>
 }

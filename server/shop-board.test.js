@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {PDFDocument} from 'pdf-lib'
 import {shopBoard} from './shop-board.js'
 import {preserveShopCovers} from './shop-covers.js'
-import {refreshShopPage} from './shop-refresh.js'
+import {refreshShopPage,saveListingSku} from './shop-refresh.js'
 import {restrictOrderPage,salesStart} from '../src/lib/shopPeriod.js'
 import {listingRows,performanceRows,printableLabel,saleBucket,sortListings,textMatch} from '../src/lib/shopView.js'
 import {mergeLabels} from '../src/lib/batchLabels.js'
@@ -13,6 +13,60 @@ const recent='2026-10-20T12:30:00Z'
 const references={ads:[],lines:[],manual:[],drafts:[]}
 const example=(id,options={})=>({id,account:'test-shop',title:'Robe',order_date:recent,normalized_status:'completed',state:'shipped',items:[],...options})
 const item=(id,options={})=>({account:'a',seen_at:recent,payload:{id,account_id:'a',title:'Robe',status:'active',photo_url:'https://example.org/image.jpg',...options}})
+
+test('saisie du SKU d’une annonce vendue : une seule référence envoyée et confirmée',async()=>{
+  const writes=[]
+  const db={from:()=>({
+    select:()=>({in:()=>({data:[]})}),
+    upsert:rows=>({select:()=>{writes.push(...rows);return {data:rows.map(({id})=>({id}))}}})
+  })}
+  const body={id:'123',accountId:'vt-99',sku:'  Ref-4  '}
+  const ref={vinted_id:123,account_id:'vt-99',sku:'Ref-4',updated_at:recent}
+  const result=await saveListingSku(db,body,async(path,options)=>{
+    assert.equal(path,'items/123')
+    assert.deepEqual(options,{method:'PATCH',body:{sku:'Ref-4',account_id:'vt-99'}})
+    return ref
+  })
+  assert.deepEqual(result,{sku:'Ref-4',cachePending:false})
+  assert.equal(writes[0].value.id,'123')
+  assert.equal(writes[0].value.account,'vt-99')
+  assert.equal(writes[0].value.sku,'Ref-4')
+  for(const mismatch of [{vinted_id:'321'},{account_id:'other'},{sku:'autre'}]){
+    await assert.rejects(saveListingSku(db,body,async()=>({...ref,...mismatch})),/pas confirmé/)
+  }
+  await assert.rejects(saveListingSku(db,body,async()=>{throw Error('Scalency indisponible')}),/indisponible/)
+  assert.equal(writes.length,1)
+  assert.deepEqual(await saveListingSku({},body,async()=>ref),{sku:'Ref-4',cachePending:true})
+  for(const invalid of [{id:'brouillon'},{sku:'  '},{sku:'S'.repeat(201)}]){
+    await assert.rejects(saveListingSku(db,{...body,...invalid},()=>assert.fail()),/Vérifie/)
+  }
+})
+
+test('un SKU Scalency confirmé remplace le SKU local dans le dressing et sa vente exacte',()=>{
+  const board=shopBoard({accounts:[{id:'a',login:'test-shop'},{id:'b',login:'autre'}],jobs:[],drafts:[],
+    references:{...references,manual:[{kind:'listing',account:'test-shop',id:'123',line:'',sku:'LOCAL'}]},
+    inventory:[item('123',{sku:'AVANT',sold:true}),{account:'b',payload:{id:'123',account_id:'b',sku:'AUTRE'}}],
+    orders:[example('vendue',{items:[{id:'ligne',vinted_id:'123',sku:'AVANT'}]})],
+    postedRefs:[{type:'listing',id:'123',account:'a',sku:'APRES'}]})
+  const rows=listingRows(board)
+  assert.equal(rows.find(r=>r.account==='test-shop').sku,'APRES')
+  assert.equal(rows.find(r=>r.account==='autre').sku,'AUTRE')
+  assert.equal(board.sales[0].lines[0].sku,'APRES')
+  assert.equal(board.groups.find(g=>g.sku==='APRES').completed,1)
+})
+
+test('une ancienne page de références ne remplace pas une saisie plus récente',async()=>{
+  const saved={type:'listing',id:'123',account:'a',sku:'NOUVEAU',updatedAt:recent}
+  const key='dressing-ref:'+JSON.stringify(['listing','a','123'])
+  const db={from:()=>({
+    select:()=>({in:()=>({data:[{id:key,value:saved}]})}),
+    update:()=>assert.fail('La référence récente doit être conservée'),
+    upsert:row=>{assert.equal(row.id,'dressing-read-v1:references');return {error:null}}
+  })}
+  await refreshShopPage(db,'references','',true,async()=>({
+    has_more:false,data:[{vinted_id:'123',account_id:'a',sku:'ANCIEN',updated_at:before}]
+  }))
+})
 
 test('la date de vente à Paris détermine les résultats et le dernier curseur',()=>{
   const orders=[example('first',{order_date:salesStart}),example('old',{order_date:before,deadline:recent}),example('undated',{order_date:null}),example('after')]

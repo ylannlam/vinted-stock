@@ -57,10 +57,10 @@ export function shopBoard({accounts,publicationAccounts=[],inventory,jobs,orders
   }
   feeds.commandes=skuSourceRows('orders',[...recent.values()])
   for(const order of feeds.commandes)for(const line of order.lines){
-    line.sku=line.sku||posted('line',order.account,line.id)||posted('listing',order.account,line.listing)
+    line.sku=posted('listing',order.account,line.listing)||posted('line',order.account,line.id)||line.sku
   }
   const manual=references.manual.map(ref=>({...ref,account:login(ref.account)}))
-  const report=buildSkuActivity(feeds,{...references,manual},'',true)
+  const report=buildSkuActivity(feeds,{...references,manual,listingSku:(account,id)=>posted('listing',account,id)},'',true)
   const listings=new Map(),soldLines=new Map()
   for(const g of report.rows){
     for(const ad of g.listings){ad.photo=safePhoto(ad.photo);listings.set(identity(ad.account,ad.id),{...ad,sku:g.sku})}
@@ -76,7 +76,7 @@ export function shopBoard({accounts,publicationAccounts=[],inventory,jobs,orders
     const lines=(r.items||[]).map(i=>{
       const k=identity(account,r.id,i.id),ref=exactLines.get(k)
       const ad=listings.get(identity(account,i.vinted_id||ref?.listing))
-      return {id:i.id,title:i.title||r.title,sku:manualLines.get(k)||soldLines.get(k)||i.sku||posted('line',account,i.id)||posted('listing',account,i.vinted_id)||ref?.sku||i.product_sku||ad?.sku,
+      return {id:i.id,title:i.title||r.title,sku:posted('listing',account,i.vinted_id||ref?.listing)||posted('line',account,i.id)||manualLines.get(k)||soldLines.get(k)||i.sku||ref?.sku||i.product_sku||ad?.sku,
         photo:safePhoto(i.thumbnail)||ad?.photo,size:ad?.size,quantity:i.quantity??1,location:i.location||ad?.location}
     })
     return {id:r.id,accountId:r.account,account,title:r.title,date:r.order_date,estimated:!!r.order_date_estimated,status:r.normalized_status,state:r.state,
