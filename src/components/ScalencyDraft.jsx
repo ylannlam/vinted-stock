@@ -16,7 +16,7 @@ function ChoosePiece({onChoose,busy}){
   return <section className="sc-panel"><label className="sc-field"><span>Choisir la pièce physique</span><select disabled={busy} value="" onChange={e=>{if(e.target.value)onChoose(e.target.value)}}><option value="">Emplacement · catégorie · taille</option>{rows.map(r=><option key={r.id} value={r.id}>{[r.emplacement,r.category,r.size].filter(Boolean).join(' · ')}</option>)}</select></label>{total>36&&<div className="sc-tools"><button disabled={!page||busy} onClick={()=>setPage(p=>p-1)}>Précédent</button><span>{page+1} / {Math.ceil(total/36)}</span><button disabled={(page+1)*36>=total||busy} onClick={()=>setPage(p=>p+1)}>Suivant</button></div>}{error&&<p role="alert">{error}</p>}</section>
 }
 function Field({label,children}){return <label className="sc-field"><span>{label}</span>{children}</label>}
-export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onGenerate,onReviewed,onProfileSaved,initialAccount,sharedHealth,detailed=false}){
+export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onGenerate,onReviewed,onProfileSaved,initialAccount,sharedHealth,detailed=false,focused=false}){
   const [fields,setFields]=useState({...emptyListing(),sku:sku||''}),[photos,setPhotos]=useState([]),[version,setVersion]=useState(null)
   const [cats,setCats]=useState([]),[cursor,setCursor]=useState(null),[options,setOptions]=useState(null)
   const [search,setSearch]=useState(''),[date,setDate]=useState(''),[approved,setApproved]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState(''),[ready,setReady]=useState(!id)
@@ -91,14 +91,14 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
   const quickEditable=quick&&savedState==='draft'
   return <article className="sc-editor"><div className="sc-title"><h2>{id?(savedState==='draft'?'Modifier le brouillon':'Fiche annonce'):'Nouvelle annonce'}</h2><button onClick={onClose} disabled={busy}>Fermer</button></div>
     {error&&<p role="alert" className="sc-error">{error}</p>}{message&&<p role="status" className="sc-success">{message}</p>}
-    {source.label&&<p className="sc-success">{source.label}</p>}{(id||version!==null)&&<ScalencyRelations entity="draft" id={uid.current} revision={version}/>}
+    {source.label&&<p className="sc-success">{source.label}</p>}{!focused&&(id||version!==null)&&<ScalencyRelations entity="draft" id={uid.current} revision={version}/>}
     <fieldset disabled={busy||!ready||savedState!=='draft'}>{savedState==='draft'&&<div className="sc-mode"><button aria-pressed={quick} onClick={()=>{setQuick(true);setApproved(false)}}>Saisie rapide</button><button aria-pressed={!quick} onClick={()=>{setQuick(false);setApproved(false)}}>Formulaire détaillé</button></div>}
-    {quickEditable&&<ScalencyQuickAccount accounts={availableProfiles} health={health} account={pickerAccount} onSelect={selectAccount} onSaved={(key,changes)=>{setPrepared(false);setProfiles(rows=>rows.map(a=>a.id===key?{...a,...changes}:a));onProfileSaved?.(key,changes)}}/>}
+    {quickEditable&&<ScalencyQuickAccount readOnly={focused} accounts={availableProfiles} health={health} account={pickerAccount} onSelect={selectAccount} onSaved={(key,changes)=>{setPrepared(false);setProfiles(rows=>rows.map(a=>a.id===key?{...a,...changes}:a));onProfileSaved?.(key,changes)}}/>}
       {!quick&&<Field label="Compte Vinted"><select disabled={!health.report} value={savedState==='draft'?pickerAccount:fields.account_id} onChange={e=>selectAccount(e.target.value)}><option value="">Choisir un compte relié</option>{(savedState==='draft'?availableProfiles:profiles).map(a=><option key={a.id} value={a.id}>{a.login}</option>)}</select></Field>}
     <AccountHealthNotice health={health} id={fields.account_id}/>
     {!fields.account_id&&<p>Choisis le compte de publication pour préparer la fiche.</p>}
     <fieldset disabled={!!blocked}>
-    {!quick&&savedState==='draft'&&<div className="sc-tools"><button onClick={()=>setChoosing(v=>!v)}>{choosing?'Fermer la sélection':source.piece?'Changer de pièce':'Choisir une pièce du stock'}</button>{source.piece&&<button onClick={()=>{setSource(s=>({...s,piece:null,label:''}));setApproved(false)}}>Détacher la pièce</button>}</div>}
+    {!focused&&!quick&&savedState==='draft'&&<div className="sc-tools"><button onClick={()=>setChoosing(v=>!v)}>{choosing?'Fermer la sélection':source.piece?'Changer de pièce':'Choisir une pièce du stock'}</button>{source.piece&&<button onClick={()=>{setSource(s=>({...s,piece:null,label:''}));setApproved(false)}}>Détacher la pièce</button>}</div>}
     {choosing&&<ChoosePiece busy={busy} onChoose={pieceId=>run(async()=>{
       const r=await query('draft-source',{piece:pieceId})
       setSource({piece:r.stock.id,product:r.product?.id||null,label:[r.product?.title,r.stock.emplacement,r.stock.size].filter(Boolean).join(' · ')})
@@ -128,9 +128,9 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
     {(options?.attributes||[]).filter(a=>a.required).map(a=><Field key={a.code} label={a.title}><select value={fields.item_attributes?.find(x=>x.code===a.code)?.ids[0]||''} onChange={e=>edit('item_attributes',[...fields.item_attributes.filter(x=>x.code!==a.code),...(e.target.value?[{code:a.code,ids:[Number(e.target.value)]}]:[])])}><option value="">Choisir</option>{(a.options||[]).map(v=><option value={v.id} key={v.id}>{v.title}</option>)}</select></Field>)}
     <Field label="Marque"><input readOnly={quick} value={quick?selectedBrand||'':fields.brand_title||''} onChange={e=>{edit('brand_id',null);edit('brand_title',e.target.value)}}/></Field>
     <Field label="Format du colis"><select value={fields.package_size_id||''} onChange={e=>edit('package_size_id',Number(e.target.value)||null)}><option value="">Choisir</option>{(options?.package_sizes||[]).map(s=><option key={s.id} value={s.id}>{s.title||s.name||s.id}</option>)}</select></Field>
-    {<Field label="Programmer (facultatif)"><input type="datetime-local" value={date} onChange={e=>{setDate(e.target.value);setApproved(false)}}/></Field>}</div>
+    {!focused&&<Field label="Programmer (facultatif)"><input type="datetime-local" value={date} onChange={e=>{setDate(e.target.value);setApproved(false)}}/></Field>}</div>
     <div className="sc-tools">{onReviewed&&!date?<button className="sc-primary" onClick={()=>run(()=>save(true))}>Enregistrer pour le récapitulatif</button>:<button onClick={()=>run(async()=>{await save();setMessage('Brouillon enregistré sur ton site.')})}>Enregistrer le brouillon</button>}
-    {!quick&&(approved?<button className="sc-primary" onClick={()=>run(async()=>{const result=await act('publish',{id:uid.current,version,schedule:date?new Date(date).toISOString():null});onQueued(result)})}>Confirmer la mise en file</button>:<button className="sc-primary" onClick={()=>run(validate)}>Vérifier avec Scalency</button>)}</div></>}</fieldset></fieldset>
+    {!focused&&!quick&&(approved?<button className="sc-primary" onClick={()=>run(async()=>{const result=await act('publish',{id:uid.current,version,schedule:date?new Date(date).toISOString():null});onQueued(result)})}>Confirmer la mise en file</button>:<button className="sc-primary" onClick={()=>run(validate)}>Vérifier avec Scalency</button>)}</div></>}</fieldset></fieldset>
     <ListingSeoOutput title={fields.title} description={fields.description}/>
   </article>
 }

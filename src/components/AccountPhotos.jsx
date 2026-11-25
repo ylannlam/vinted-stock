@@ -5,7 +5,7 @@ import ResourceDialog from './ResourceDialog'
 import './AccountPhotos.css'
 
 const read=(view,account)=>creativeAccountsRequest('GET',undefined,'?'+new URLSearchParams({view,...(account?{account}:{})}))
-const photosLink=id=>'#comptes/fonds'+(id?'?account='+encodeURIComponent(id):'')
+
 const normalize=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
 const ready=row=>row.hasImage&&row.hasPrompt
 
@@ -90,7 +90,8 @@ export function PhotoAccountPanel({account,login,onSaved,autoEdit=false}){
   </section>
 }
 
-export default function AccountPhotos({account}){
+export default function AccountPhotos({account,base='#comptes/fonds'}){
+  const photosLink=id=>base+(id?'?account='+encodeURIComponent(id):'')
   const [rows,setRows]=useState([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[search,setSearch]=useState(''),[scope,setScope]=useState('linked'),[incomplete,setIncomplete]=useState(false),[revision,setRevision]=useState(0)
   useEffect(()=>{let live=true;setLoading(true);read('photos').then(r=>{if(live){setRows(r.accounts);setError('');if(!r.accounts.some(a=>a.linked))setScope('all')}}).catch(e=>{if(live)setError(e.message)}).finally(()=>{if(live)setLoading(false)});return()=>{live=false}},[revision])
   useEffect(()=>{

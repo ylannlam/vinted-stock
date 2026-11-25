@@ -1,3 +1,6 @@
+const AliciaSpace=lazy(()=>import('./components/AliciaSpace'))
+import SpaceChooser from './components/SpaceChooser'
+import {TAB_SPACES,TAB_ALICIA} from './constants'
 const AccountPhotos=lazy(()=>import('./components/AccountPhotos'))
 const VintedAccountsTab=lazy(()=>import('./components/VintedAccountsTab'))
 const ScalencyWorkspace=lazy(()=>import('./components/ScalencyWorkspace'))
@@ -132,7 +135,7 @@ export default function App() {
       fetchItems()
       fetchCommandes()
     }
-    if (role === 'employe') {
+    if (role === 'employe' && activeTab!==TAB_SPACES) {
       setActiveTab(TAB_WORKSPACE)
     }
   }, [profile,activeTab,user?.id])
@@ -415,8 +418,13 @@ export default function App() {
 
   async function handleLogout() {
     await supabase.auth.signOut()
+    if(window.matchMedia?.('(min-width: 768px)').matches)setActiveTab(TAB_SPACES)
     setItems([])
     setProfile(null)
+  }
+
+  if(activeTab===TAB_SPACES){
+    return <SpaceChooser onChoose={space=>setActiveTab(space==='alicia'?TAB_ALICIA:TAB_HOME)}/>
   }
 
   // --- Loading state ---
@@ -460,6 +468,16 @@ export default function App() {
   const accountSection = ['registre','creation','fonds'].includes(navigationFilters.section) ? navigationFilters.section : 'scalency'
   const isAdmin = userRole === 'admin'
   const isEmploye = userRole === 'employe'
+
+  if (activeTab===TAB_ALICIA && !isAdmin){
+    return <main className="min-h-screen grid place-items-center"><div><p>Ce compte n’a pas accès à l’atelier de publication.</p><a href="#espaces">Changer d’espace</a></div></main>
+  }
+  if (isAdmin && activeTab===TAB_ALICIA) {
+    return <div className="min-h-screen workspace-shell"><Header profile={profile} onLogout={handleLogout}/>
+      <Suspense fallback={<p className="p-6">Chargement de l’espace Alicia…</p>}><PageBoundary>
+        <AliciaSpace params={navigationFilters}/>
+      </PageBoundary></Suspense></div>
+  }
 
   // Employe: show workspace only
   if (isEmploye) {
