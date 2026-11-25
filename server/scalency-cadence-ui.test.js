@@ -25,14 +25,20 @@ test('le plafond reste unique et les modifications suivent le compte et le rythm
     account, login:account, mode:'normal', normal_limit:10, starter_limit:4,
     day_limit:10, remaining:10, posted:0, reserved:0
   }))
-  const accounts = rows.map(({account,login}) => ({id:account,login,brand:'Marque'}))
-  accounts.push({id:'banni',login:'profil-banni'},{id:'restreint',login:'profil-restreint'})
+  Object.assign(rows[0],{posted:2,reserved:3,remaining:5})
+  Object.assign(rows[1],{reserved:10,remaining:0})
+  Object.assign(rows[2],{posted:10,remaining:0})
+  const accounts = rows.map(({account,login}) => ({id:account,login,brand:'Marque'})).reverse()
+  accounts.push({id:'banni',login:'profil-banni'},{id:'restreint',login:'profil-restreint'},{id:'inconnu',login:'sans-suivi'})
   const bans = new Set(['banni'])
   const writes = []
-  let pendingSave
+  let pendingSave,cadenceDown=false
   const api = {
     async query(view) {
-      if(view === 'cadence') return structuredClone(rows)
+      if(view === 'cadence'){
+        if(cadenceDown)throw Error('indisponible')
+        return structuredClone(rows)
+      }
       if(view === 'quick-profiles') return {accounts}
       if(view === 'account-health') return {accounts:accounts.map(a=>({...a,block:
         bans.has(a.id)?{kind:'banned',label:'Compte banni'}:a.id==='restreint'?{kind:'restricted',label:'Compte restreint'}:null})),checkedAt:new Date().toISOString()}
@@ -46,7 +52,7 @@ test('le plafond reste unique et les modifications suivent le compte et le rythm
       if(pendingSave) await pendingSave
       const limit = fields.mode === 'normal' ? fields.normal : fields.starter
       const row = rows.find(r => r.account === fields.account)
-      Object.assign(row,{mode:fields.mode,starter_limit:fields.starter,normal_limit:fields.normal,day_limit:limit,remaining:limit})
+      Object.assign(row,{mode:fields.mode,starter_limit:fields.starter,normal_limit:fields.normal,day_limit:limit,remaining:Math.max(0,limit-row.posted-row.reserved)})
       return structuredClone(row)
     }
   }
@@ -64,16 +70,24 @@ test('le plafond reste unique et les modifications suivent le compte et le rythm
   await React.act(async () => root.render(React.createElement(mod.exports.default,{params:{account:'banni'}})))
   const card = () => document.querySelector('.cadence-card')
   const change = (field,value) => React.act(async () => Simulate.change(field,{target:{value}}))
-  const choose = value => change(document.querySelector('.bs-account select'),value)
+  const accountButton = id => document.querySelector('.bs-account-choice[value="'+id+'"]')
+  const choose = value => React.act(async () => Simulate.click(accountButton(value)))
   const edit = () => React.act(async () => Simulate.click(card().querySelector('button')))
-  const options = () => Array.from(document.querySelectorAll('.bs-account select option'),o=>o.value)
+  const options = () => Array.from(document.querySelectorAll('.bs-account-choice'),o=>o.getAttribute('value'))
   const refresh = () => React.act(async () => Simulate.click(Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Actualiser')))
 
   assert.equal(card(),null)
   assert.ok(!options().includes('banni'))
   assert.ok(!document.body.textContent.includes('profil-banni'))
   assert.ok(options().includes('restreint'))
+  assert.deepEqual(options(),['alice','brune','clara','restreint','inconnu'])
+  assert.match(accountButton('alice').textContent,/5 à programmer.*2 publiées · 3 en file/)
+  assert.match(accountButton('brune').textContent,/En attente de publication.*0 publiée · 10 en file/)
+  assert.match(accountButton('clara').textContent,/Plafond atteint.*10 publiées · 0 en file/)
+  assert.match(accountButton('restreint').textContent,/Compte restreint/)
+  assert.match(accountButton('inconnu').textContent,/Suivi indisponible/)
   await choose('alice')
+  assert.equal(accountButton('alice').getAttribute('aria-pressed'),'true')
   await edit()
   for(const login of ['brune','clara','alice']) {
     await choose(login)
@@ -103,6 +117,7 @@ test('le plafond reste unique et les modifications suivent le compte et le rythm
   await choose('brune')
   await edit()
   assert.equal(card().querySelector('input').value,'0')
+  assert.match(accountButton('brune').textContent,/Plafond à zéro/)
   assert.equal(card().querySelector('select').value,'starter')
   bans.add('brune')
   await refresh()
@@ -112,4 +127,11 @@ test('le plafond reste unique et les modifications suivent le compte et le rythm
   await refresh()
   assert.ok(options().includes('brune'))
   assert.equal(card(),null)
+  cadenceDown=true
+  await refresh()
+  assert.match(accountButton('alice').textContent,/Suivi indisponible/)
+  assert.equal(accountButton('alice').querySelector('.bs-account-counts'),null)
+  cadenceDown=false
+  await refresh()
+  assert.match(accountButton('alice').textContent,/22 à programmer/)
 })

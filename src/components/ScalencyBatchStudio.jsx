@@ -8,6 +8,7 @@ import {AccountHealthNotice,isBanned,preparationBlock,publicationProfiles,useAcc
 import BatchEntry from './BatchEntry'
 import ScalencyDraft from './ScalencyDraft'
 import ScalencyQuickAccount from './ScalencyQuickAccount'
+import PublicationAccountPicker from './PublicationAccountPicker'
 import './ScalencyBatchStudio.css'
 
 const labels={draft:'Brouillon',running:'Remplissage…',ready:'Prête à relire',review:'À compléter',error:'À reprendre'}
@@ -65,7 +66,8 @@ function ReviewRow({row,onEdit,onDiscard,onSave,onQuick,quick,disabled,blocked,d
   </article>
 }
 export default function ScalencyBatchStudio({params,focused=false}){
-  const [profiles,setProfiles]=useState([]),[owner,setOwner]=useState(''),[requestedAccount,setAccount]=useState(params.account||'')
+  const [loadedProfiles,setProfiles]=useState(null),[owner,setOwner]=useState(''),[requestedAccount,setAccount]=useState(params.account||'')
+  const profiles=loadedProfiles??[]
   const [page,setPage]=useState(0),[data,setData]=useState(null),[error,setError]=useState(''),[notice,setNotice]=useState('')
   const [selected,setSelected]=useState({}),[review,setReview]=useState(false),[sending,setSending]=useState(false),[lastLot,setLastLot]=useState('')
   const [local,setLocal]=useState({}),[revision,setRevision]=useState(0)
@@ -80,7 +82,7 @@ export default function ScalencyBatchStudio({params,focused=false}){
   const account=health.report&&!banned?requestedAccount:''
   const availableProfiles=publicationProfiles(profiles,health)
   const cadence=useCadence()
-  const quota=cadence.rows.find(row=>row.account===account)
+  const quota=!cadence.error&&cadence.rows.find(row=>row.account===account)
   const blocked=preparationBlock(health,account)
   const login=profiles.find(a=>a.id===account)
   const reload=useCallback(()=>setRevision(n=>n+1),[])
@@ -199,12 +201,14 @@ export default function ScalencyBatchStudio({params,focused=false}){
     finally{lock.current=false;setSending(false);reload();cadence.refresh()}
   }
   return <main className="sc-work bs-work"><header className="sc-head"><div><p>{focused?'Espace Alicia':'Stock Vinted / Scalency'}</p><h1>Atelier d’annonces</h1></div><a href={focused?'#alicia/suivi':'#publication'}>Suivi des publications</a></header>
-    <fieldset className="bs-account" disabled={sending||!!editor||!health.report}><ScalencyQuickAccount readOnly={focused} accounts={availableProfiles} health={health} account={account} onSelect={choose} onSaved={updateProfile}/></fieldset>
+    <fieldset className="bs-account" disabled={sending||!!editor||!health.report}>
+      {!editor&&<PublicationAccountPicker profiles={availableProfiles} loadingProfiles={loadedProfiles===null} account={account} onSelect={choose} health={health} cadence={cadence}/>}
+      {login&&<ScalencyQuickAccount fixed readOnly={focused} accounts={availableProfiles} health={health} account={account} onSaved={updateProfile}/>}
+    </fieldset>
     {!editor&&<AccountHealthNotice health={health} id={account} overview showOtherBans={false}/>}
     {focused&&login&&!login.brand&&<p role="status">La marque de ce compte doit être renseignée par l’administrateur pour le remplissage automatique.</p>}
     {focused&&quota&&!editor&&<p className="bs-meta">{quota.remaining} place(s) disponible(s) aujourd’hui sur ce compte.</p>}
     {!focused&&quota&&!editor&&<CadenceSettings key={'cadence-'+account} row={quota} blocked={blocked} onSaved={cadence.applySaved}/>}
-    {account&&cadence.error&&<p role="alert">Plafond indisponible. <button onClick={cadence.refresh}>Réessayer</button></p>}
     {account&&login&&<PhotoAccountPanel key={'photos-'+account} account={account} login={login.login}/>}
     {error&&<p role="alert" className="sc-error">{error} <button onClick={reload}>Réessayer</button></p>}
     {notice&&<p className="bs-notice" role="status">{notice}{lastLot&&<> · <a href={(focused?'#alicia/suivi':'#publication')+'?lot='+lastLot}>Suivre le lot</a></>}</p>}
@@ -215,7 +219,7 @@ export default function ScalencyBatchStudio({params,focused=false}){
       <div hidden={review}><BatchEntry active={!editor&&!review&&!discarding} blocked={!!blocked} account={login} owner={owner} onQueued={sku=>{setPage(0);setNotice((sku?'Préparation lancée pour '+sku:'Préparation lancée')+'. Tu peux saisir la suivante.')}} onDetailed={()=>edit('new')}/></div>
       <section className="bs-panel bs-list"><div className="bs-panel-head"><div><h2>{review?'Récapitulatif du lot':'Annonces du compte'}</h2>
         <p className="bs-meta">{review?chosen.length+' sélectionnée(s) pour '+(login?.login||'ce compte'):login?login.login+' · '+(data?.total??'…')+' brouillon(s)':'Tous les brouillons · choisis un compte pour préparer un lot'}</p></div>
-        {!review&&<button className="bs-link" onClick={()=>{reload();health.refresh()}}>Actualiser</button>}</div>
+        {!review&&<button className="bs-link" onClick={()=>{reload();health.refresh();cadence.refresh()}}>Actualiser</button>}</div>
       {discarding&&<DiscardDialog rows={discarding} onClose={()=>setDiscarding(null)} onDiscard={discard}/>}
       {review?<>{duplicateCheck&&<p role="status">{duplicateCheck}</p>}{chosen.map(row=><ReviewRow key={row.id} row={row} onEdit={edit} onDiscard={setDiscarding} blocked={!!blocked} disabled={sending||!!quickEdit} onQuick={setQuickEdit} quick={quickEdit===row.id} onSave={saveQuickEdit} duplicates={duplicates[row.id]}/>)}
         <p role="status">{blocked||(!quota||cadence.error?'Vérification du plafond…':quota.remaining+' place(s) disponible(s) aujourd’hui.')}</p>

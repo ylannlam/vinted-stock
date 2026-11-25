@@ -3,11 +3,11 @@ import {act,query} from '../lib/scalency'
 import './PublicationCadence.css'
 
 export function useCadence(){
-  const [rows,setRows]=useState([]),[error,setError]=useState(''),[revision,setRevision]=useState(0)
+  const [rows,setRows]=useState(null),[error,setError]=useState(''),[revision,setRevision]=useState(0)
   const saveVersion=useRef(0)
   const applySaved=useCallback((account,capacity)=>{
     saveVersion.current++
-    setRows(previous=>previous.map(row=>row.account===account?{...row,...capacity}:row))
+    setRows(previous=>previous?.map(row=>row.account===account?{...row,...capacity}:row)??null)
   },[])
   const refresh=useCallback(()=>setRevision(n=>n+1),[])
   useEffect(()=>{
@@ -26,7 +26,7 @@ export function useCadence(){
     document.addEventListener('visibilitychange',tick)
     return ()=>{live=false;clearInterval(timer);document.removeEventListener('visibilitychange',tick)}
   },[revision])
-  return {rows,error,refresh,applySaved}
+  return {rows:rows??[],loading:rows===null&&!error,error,refresh,applySaved}
 }
 const rhythm=r=>r.mode==='normal'?'Normal':!r.starter_day?'Démarrage · première publication à venir':r.starter_day<=3?'Démarrage · jour '+r.starter_day+'/3':'Démarrage · 3 jours écoulés'
 
