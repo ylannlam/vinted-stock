@@ -212,7 +212,7 @@ export default function ScalencyBatchStudio({params,focused=false}){
       onClose={closeEditor} onGenerate={generate} onReviewed={savedEdit}
       onQueued={r=>{window.location.hash='publication'+(r?.job?.id?'?job='+r.job.id:'')}}/>}
     <div hidden={!!editor} className={'bs-layout'+(review?' bs-review-layout':'')}>
-      <div hidden={review}><BatchEntry blocked={!!blocked} account={login} owner={owner} onQueued={sku=>{setPage(0);setNotice((sku?'Préparation lancée pour '+sku:'Préparation lancée')+'. Tu peux saisir la suivante.')}} onDetailed={()=>edit('new')}/></div>
+      <div hidden={review}><BatchEntry active={!editor&&!review&&!discarding} blocked={!!blocked} account={login} owner={owner} onQueued={sku=>{setPage(0);setNotice((sku?'Préparation lancée pour '+sku:'Préparation lancée')+'. Tu peux saisir la suivante.')}} onDetailed={()=>edit('new')}/></div>
       <section className="bs-panel bs-list"><div className="bs-panel-head"><div><h2>{review?'Récapitulatif du lot':'Annonces du compte'}</h2>
         <p className="bs-meta">{review?chosen.length+' sélectionnée(s) pour '+(login?.login||'ce compte'):login?login.login+' · '+(data?.total??'…')+' brouillon(s)':'Tous les brouillons · choisis un compte pour préparer un lot'}</p></div>
         {!review&&<button className="bs-link" onClick={()=>{reload();health.refresh()}}>Actualiser</button>}</div>

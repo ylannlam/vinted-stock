@@ -3,6 +3,7 @@
 
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const EXTENSIONS = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp'}
+const imageAddress = /^(?:https?:\/\/|blob:|data:image\/)/i
 
 // Lecture synchrone : le navigateur vide le DataTransfer dès que l'évènement est terminé.
 export function readTransfer(transfer) {
@@ -13,11 +14,14 @@ export function readTransfer(transfer) {
   const urls = []
   if (!files.length) {
     const list = String(transfer?.getData?.('text/uri-list') || '')
-    for (const line of list.split(/\r?\n/)) if (/^(https?:|data:image\/)/i.test(line.trim())) urls.push(line.trim())
+    for (const line of list.split(/\r?\n/)) if (imageAddress.test(line.trim())) urls.push(line.trim())
     const html = String(transfer?.getData?.('text/html') || '')
-    for (const m of html.matchAll(/<img[^>]+src=["']([^"']+)["']/gi)) if (/^(https?:|data:image\/)/i.test(m[1])) urls.push(m[1].replace(/&amp;/g, '&'))
+    for (const m of html.matchAll(/<img\b[^>]*?\ssrc=["']([^"']+)["']/gi)) if (imageAddress.test(m[1])) urls.push(m[1].replace(/&amp;/g, '&'))
+    const plain = (transfer?.getData?.('text/plain') || '').trim()
+    if (/^(?:blob:|data:image\/)/i.test(plain)) urls.push(plain)
   }
-  return {files: files.filter(isImage), urls: [...new Set(urls)].slice(0, 1)}
+  const url = urls.find(value => !/^blob:/i.test(value)) || urls[0]
+  return {files: files.filter(isImage), urls: url ? [url] : []}
 }
 
 export const isImage = file => !!file && String(file.type).startsWith('image/')
