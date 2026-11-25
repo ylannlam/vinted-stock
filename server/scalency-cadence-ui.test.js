@@ -86,7 +86,11 @@ test('le plafond reste unique et les modifications suivent le compte et le rythm
   assert.match(accountButton('clara').textContent,/Plafond atteint.*10 publiées · 0 en file/)
   assert.match(accountButton('restreint').textContent,/Compte restreint/)
   assert.match(accountButton('inconnu').textContent,/Suivi indisponible/)
+  await choose('restreint')
+  assert.equal(document.querySelector('.sc-account-warning'),null)
+  assert.match(accountButton('restreint').textContent,/Compte restreint/)
   await choose('alice')
+  assert.equal(document.querySelector('.sc-account-warning'),null)
   assert.equal(accountButton('alice').getAttribute('aria-pressed'),'true')
   await edit()
   for(const login of ['brune','clara','alice']) {

@@ -211,7 +211,7 @@ export default function ScalencyBatchStudio({params,focused=false}){
       {!editor&&<PublicationAccountPicker profiles={availableProfiles} loadingProfiles={loadedProfiles===null} account={account} onSelect={choose} health={health} cadence={cadence}/>}
       {login&&<ScalencyQuickAccount fixed readOnly={focused} accounts={availableProfiles} health={health} account={account} onSaved={updateProfile}/>}
     </fieldset>
-    {!editor&&<AccountHealthNotice health={health} id={account} overview showOtherBans={false}/>}
+    {!editor&&health.error&&<AccountHealthNotice health={health}/>}
     {focused&&login&&!login.brand&&<p role="status">La marque de ce compte doit être renseignée par l’administrateur pour le remplissage automatique.</p>}
     {focused&&quota&&!editor&&<p className="bs-meta">{quota.remaining} place(s) disponible(s) aujourd’hui sur ce compte.</p>}
     {!focused&&quota&&!editor&&<CadenceSettings key={'cadence-'+account} row={quota} blocked={blocked} onSaved={cadence.applySaved}/>}
