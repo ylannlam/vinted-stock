@@ -1,3 +1,5 @@
+const AliciaSpace=lazy(()=>import('./components/AliciaSpace'))
+import {TAB_ALICIA} from './constants'
 const AccountPhotos=lazy(()=>import('./components/AccountPhotos'))
 const VintedAccountsTab=lazy(()=>import('./components/VintedAccountsTab'))
 const ScalencyWorkspace=lazy(()=>import('./components/ScalencyWorkspace'))
@@ -460,6 +462,13 @@ export default function App() {
   const accountSection = ['registre','creation','fonds'].includes(navigationFilters.section) ? navigationFilters.section : 'scalency'
   const isAdmin = userRole === 'admin'
   const isEmploye = userRole === 'employe'
+
+  if (isAdmin && activeTab===TAB_ALICIA) {
+    return <div className="min-h-screen workspace-shell"><Header profile={profile} onLogout={handleLogout}/>
+      <Suspense fallback={<p className="p-6">Chargement de l’espace Alicia…</p>}><PageBoundary>
+        <AliciaSpace params={navigationFilters}/>
+      </PageBoundary></Suspense></div>
+  }
 
   // Employe: show workspace only
   if (isEmploye) {

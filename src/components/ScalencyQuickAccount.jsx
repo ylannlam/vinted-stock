@@ -2,7 +2,7 @@ import {useEffect,useId,useState} from 'react'
 import {clothingSizeSuggestions} from '../lib/listingStudio'
 import {act} from '../lib/scalency'
 
-export default function ScalencyQuickAccount({accounts,health,account,onSelect,onSaved,fixed=false}){
+export default function ScalencyQuickAccount({accounts,health,account,onSelect,onSaved,fixed=false,readOnly=false}){
   const healthLabels=new Map(health?.report?.accounts.map(a=>[a.id,a.block?.label]))
   const current=accounts.find(a=>a.id===account)
   const [editing,setEditing]=useState(false),[name,setName]=useState(''),[error,setError]=useState(''),[saving,setSaving]=useState(false)
@@ -25,8 +25,9 @@ export default function ScalencyQuickAccount({accounts,health,account,onSelect,o
     }catch(e){setError(e.message)}finally{setSaving(false)}
   }
   return <div className="sc-quick-account">{!fixed&&<label className="sc-field"><span>Compte de publication</span><select disabled={saving} value={account} onChange={e=>onSelect(e.target.value)}><option value="">Choisir un compte</option>{accounts.map(a=><option key={a.id} value={a.id}>{[a.login,healthLabels.get(a.id)].filter(Boolean).join(' · ')}</option>)}</select></label>}
-    {current&&(current.brand&&!editing?<div><span>Marque Vinted · <strong>{current.brand}</strong></span> <button type="button" onClick={()=>setEditing(true)}>Modifier</button></div>:<div><label className="sc-field"><span>Marque de tes produits sur ce compte</span><input value={name} onChange={e=>setName(e.target.value)} maxLength={100}/></label><button type="button" disabled={saving||!name.trim()} onClick={save}>Enregistrer la marque du compte</button></div>)}
-    {current&&(editingSize?<div>
+    {readOnly&&current&&<span>{[current.brand,current.default_size].filter(Boolean).join(' · ')}</span>}
+    {!readOnly&&current&&(current.brand&&!editing?<div><span>Marque Vinted · <strong>{current.brand}</strong></span> <button type="button" onClick={()=>setEditing(true)}>Modifier</button></div>:<div><label className="sc-field"><span>Marque de tes produits sur ce compte</span><input value={name} onChange={e=>setName(e.target.value)} maxLength={100}/></label><button type="button" disabled={saving||!name.trim()} onClick={save}>Enregistrer la marque du compte</button></div>)}
+    {!readOnly&&current&&(editingSize?<div>
       <label className="sc-field"><span>Taille par défaut du compte</span><input autoFocus list={sizeList} maxLength={80} value={size} onChange={e=>setSize(e.target.value)} placeholder="Ex. XL ou 38"/></label>
       <datalist id={sizeList}>{clothingSizeSuggestions.map(s=><option key={s} value={s}/>)}</datalist>
       <button type="button" disabled={saving} onClick={saveSize}>Enregistrer la taille</button>
