@@ -17,7 +17,7 @@ function dressingOrderLabel(order){
 function Card({row,selected,toggle,open,soldView,onEditSku}){
   const name=row.title||'Annonce '+row.id
   return <article className={'shop-card'+(selected?' selected':'')}>
-    <div className="shop-photo"><button className="shop-photo-open" aria-label={'Ouvrir '+name} onClick={open}><ShopCover src={row.photo} title={name}/></button>
+    <div className="shop-photo"><button className="shop-photo-open" aria-label={'Ouvrir '+name} onClick={open}><ShopCover src={row.photo} thumbnail={row.thumbnail} title={name} card/></button>
       <label className="shop-check"><input type="checkbox" checked={selected} onChange={toggle} aria-label={'Sélectionner '+name}/></label>
       <span className={'shop-badge '+row.state}>{statusLabels[row.state]?.replace('Vendues','Vendue').replace('Masquées','Masquée').replace('Brouillons','Brouillon')}</span>
     </div>

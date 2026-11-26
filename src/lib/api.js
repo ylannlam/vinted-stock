@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import {createReadPool} from './requestPool'
+import {prepareListingPhoto} from './listingPhotoUpload'
 const reads=createReadPool()
 
 export async function authenticatedFetch(url, options = {}) {
@@ -66,7 +67,8 @@ export async function listingStudioRequest(method='GET',body,query='') {
   if(!response.ok)throw new Error(result.error||'L’annonce n’a pas pu être préparée. Ton brouillon est conservé.')
   return result
 }
-export async function uploadListingPhoto(file) {
+export async function uploadListingPhoto(original) {
+  const file=await prepareListingPhoto(original)
   const ticket=await listingStudioRequest('POST',{action:'upload',type:file.type,size:file.size})
   const {error}=await supabase.storage.from('creative-assets').uploadToSignedUrl(ticket.path,ticket.token,file,{contentType:file.type})
   if(error)throw new Error('La photo n’a pas pu être envoyée. Réessaie.')

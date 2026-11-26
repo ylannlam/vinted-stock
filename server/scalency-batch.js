@@ -2,25 +2,27 @@ import {remoteId,ScalencyError} from './scalency-api.js'
 import {accountBrand} from './scalency-quick.js'
 import {quickIssues,vintedCondition,withBioCondition} from '../src/lib/scalencyQuick.js'
 import {ASSET_BUCKET,ownedAsset} from './resources.js'
+import {listingCovers} from './listing-covers.js'
+import {makeThumbnail} from './resource-thumbnails.js'
 
 const checked=r=>{if(r.error)throw r.error;return r.data}
 export async function batchImages(db,userId,photos){
   const compact=photos.reduce((sum,photo)=>sum+Number(photo.size||8000000),0)>12000000
-  const images=[]
-  for(const photo of photos){
-    if(!ownedAsset(photo.path,userId))throw new ScalencyError('Cette photo ne fait pas partie de ton envoi.',403)
+  if(photos.some(photo=>!ownedAsset(photo.path,userId)))throw new ScalencyError('Cette photo ne fait pas partie de ton envoi.',403)
+  async function read(photo){
     const file=checked(await db.storage.from(ASSET_BUCKET).download(photo.path))
     let bytes=Buffer.from(await file.arrayBuffer()),type=photo.type
-    if(compact||bytes.length>5*1024*1024){
-      const {loadImage,createCanvas}=await import('@napi-rs/canvas')
-      const image=await loadImage(bytes),scale=Math.min(1,1152/Math.max(image.width,image.height))
-      const canvas=createCanvas(Math.max(1,Math.round(image.width*scale)),Math.max(1,Math.round(image.height*scale)))
-      const ctx=canvas.getContext('2d')
-      ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(image,0,0,canvas.width,canvas.height)
-      bytes=await canvas.encode('jpeg',80);type='image/jpeg'
+    const required=compact||bytes.length>5*1024*1024
+    if(required||bytes.length>512*1024){
+      try{
+        const preview=await makeThumbnail(bytes,1152)
+        if(required||preview.length<bytes.length){bytes=preview;type='image/webp'}
+      }catch(error){if(required)throw error}
     }
-    images.push('data:'+type+';base64,'+bytes.toString('base64'))
+    return 'data:'+type+';base64,'+bytes.toString('base64')
   }
+  const images=[]
+  for(let i=0;i<photos.length;i+=2)images.push(...await Promise.all(photos.slice(i,i+2).map(read)))
   return images
 }
 export function reviewMetadata(options,missing,fields){
@@ -46,9 +48,7 @@ export async function batchDrafts(db,user,q){
   if(q.account)read=read.eq('fields->>account_id',remoteId(q.account))
   const result=await read.order('updated_at',{ascending:false}).order('id').range(page*pageSize,(page+1)*pageSize-1)
   const drafts=checked(result)
-  const paths=[...new Set(drafts.map(d=>d.photos?.[0]?.path).filter(p=>p&&ownedAsset(p,user.id)))]
-  const urls=paths.length?checked(await db.storage.from(ASSET_BUCKET).createSignedUrls(paths,1800)):[]
-  const covers=new Map(urls.map(r=>[r.path,r.signedUrl]))
+  const covers=await listingCovers(db,user.id,drafts.map(d=>d.photos?.[0]?.path))
   return {rows:drafts.map(d=>({id:d.id,version:d.version,fields:d.payload?.batch?.status==='ready'?withBioCondition(d.fields):d.fields,updated_at:d.updated_at,
-    photo: covers.get(d.photos?.[0]?.path)||null,count:d.photos?.length||0,batch:d.payload?.batch?.status==='ready'?{...d.payload.batch,condition:vintedCondition}:d.payload?.batch||null})),page,pageSize,total:result.count}
+    photo: covers.get(d.photos?.[0]?.path)?.preview||covers.get(d.photos?.[0]?.path)?.original||null,count:d.photos?.length||0,batch:d.payload?.batch?.status==='ready'?{...d.payload.batch,condition:vintedCondition}:d.payload?.batch||null})),page,pageSize,total:result.count}
 }

@@ -2,6 +2,16 @@
   "regions": [
     "dub1"
   ],
+  "images": {
+    "sizes": [96, 256, 512],
+    "qualities": [75],
+    "formats": ["image/webp"],
+    "localPatterns": [],
+    "remotePatterns": [
+      {"protocol":"https","hostname":"images1.vinted.net","port":"","pathname":"^/(t|tc)/.*$"}
+    ],
+    "minimumCacheTTL": 3600
+  },
   "functions": {
     "api/sales.js": {
       "includeFiles": "node_modules/pdfjs-dist/{standard_fonts/**,legacy/build/pdf.worker.mjs}"

@@ -3,10 +3,17 @@ import {createPortal} from 'react-dom'
 import ResourceDialog from './ResourceDialog'
 import {price} from '../lib/shopView'
 
-export function ShopCover({src,title,small=false}){
+export function ShopCover({src,title,small=false,thumbnail,card=false}){
   const [failed,setFailed]=useState('')
+  const [failedPreview,setFailedPreview]=useState('')
   if(!src||failed===src)return <span className={'shop-placeholder'+(small?' small':'')}>Sans photo</span>
-  return <img src={src} loading="lazy" decoding="async" alt={title||'Article'} onError={()=>setFailed(src)}/>
+  const canOptimize=(small||card)&&/^https:\/\/images1\.vinted\.net\/(t|tc)\//.test(src)
+  const optimized=w=>'/_vercel/image?'+new URLSearchParams({url:src,w:String(w),q:'75'})
+  const preview=thumbnail||(canOptimize?optimized(small?96:256):null)
+  const usePreview=preview&&failedPreview!==preview
+  const srcSet=usePreview&&canOptimize&&!thumbnail&&!small?optimized(256)+' 1x, '+optimized(512)+' 2x':undefined
+  return <img src={usePreview?preview:src} srcSet={srcSet} loading="lazy" decoding="async" alt={title||'Article'}
+    onError={()=>usePreview?setFailedPreview(preview):setFailed(src)}/>
 }
 export function ShopHeader({title,children,busy,refresh}){
   return <header className="shop-header"><div><h1>{title}</h1>{children}</div><button className="shop-button" disabled={busy} onClick={()=>refresh(true)}>{busy?'Actualisation…':'Actualiser'}</button></header>

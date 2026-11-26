@@ -1,17 +1,18 @@
 import {useCallback,useEffect,useRef,useState} from 'react'
 import {query} from '../lib/scalency'
+import {readViewCache,viewCacheEpoch,writeViewCache} from '../lib/viewCache'
 
 const sources=['ventes','articles','retraits','publications','references']
 export default function useShopBoard(){
-  const [board,setBoard]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState('')
+  const [board,setBoard]=useState(()=>readViewCache(query,'shop-board')||null),[busy,setBusy]=useState(false),[error,setError]=useState('')
   const generation=useRef(0),working=useRef(false)
   const refresh=useCallback(async(force=false)=>{
     if(working.current)return
     working.current=true
-    const ticket=generation.current,live=()=>generation.current===ticket
+    const ticket=generation.current,epoch=viewCacheEpoch(),live=()=>generation.current===ticket&&epoch===viewCacheEpoch()
     let loaded=false
     setBusy(true);setError('')
-    const read=async()=>{const value=await query('shop-board');if(live()){setBoard(value);loaded=true}}
+    const read=async()=>{const value=await query('shop-board');if(live()){writeViewCache(query,'shop-board',value,epoch);setBoard(value);loaded=true}}
     try{
       await read()
       if(!live())return
@@ -32,7 +33,10 @@ export default function useShopBoard(){
     }catch(e){if(live())setError((loaded?'Dernières données disponibles. ':'')+(e.message||'Lecture interrompue.'))}
     finally{if(live()){working.current=false;setBusy(false)}}
   },[])
-  const reread=useCallback(async()=>{const ticket=generation.current;const next=await query('shop-board');if(generation.current===ticket)setBoard(next)},[])
+  const reread=useCallback(async()=>{
+    const ticket=generation.current,epoch=viewCacheEpoch(),next=await query('shop-board')
+    if(generation.current===ticket&&epoch===viewCacheEpoch()){writeViewCache(query,'shop-board',next,epoch);setBoard(next)}
+  },[])
   useEffect(()=>{
     generation.current++
     refresh()

@@ -2,7 +2,7 @@ import {readBoardRows} from './team-board.js'
 import {skuReferences,skuSourceRows} from './scalency-sku.js'
 import {buildSkuActivity} from '../src/lib/skuActivity.js'
 import {inSalesPeriod,salesStart} from '../src/lib/shopPeriod.js'
-import {ASSET_BUCKET,ownedAsset} from './resources.js'
+import {listingCovers} from './listing-covers.js'
 
 const check=result=>{if(result.error)throw result.error;return result.data}
 const identity=(...parts)=>JSON.stringify(parts.map(v=>String(v??'').toLowerCase()))
@@ -99,15 +99,10 @@ export async function readShopBoard(db,user,admin){
     all(db,'scalency_settings','id,value',q=>q.like('id','dressing-cover:%'),['id']),
     all(db,'publication_accounts','id,login',q=>q.not('login','is',null),['id'])
   ])
-  const photos=[...new Set(drafts.map(r=>r.photo).filter(p=>p&&ownedAsset(p,user.id)))]
-  const covers=new Map()
-  for(let offset=0;offset<photos.length;offset+=100){
-    const signed=await db.storage.from(ASSET_BUCKET).createSignedUrls(photos.slice(offset,offset+100),3600)
-    for(const r of signed.data||[])if(r.signedUrl)covers.set(r.path,r.signedUrl)
-  }
+  const covers=await listingCovers(db,user.id,drafts.map(r=>r.photo)).catch(()=>new Map())
   const dataset=shopBoard({publicationAccounts,accounts:accts.map(r=>({id:r.remote_id,login:r.login})),inventory,jobs:jobRows.map(r=>r.payload),
     orders:orderRows.map(r=>r.payload),references,listingCovers:media.map(r=>r.value),postedRefs:posted.map(r=>r.value),drafts:drafts.map(d=>({id:d.id,account:d.fields.account_id,sku:d.fields.sku,title:d.fields.title,
-      size:d.fields.size_text,price:d.fields.price,photo:covers.get(d.photo),status:'brouillon',seen:d.updated_at,isDraft:true}))})
+      size:d.fields.size_text,price:d.fields.price,photo:covers.get(d.photo)?.original,thumbnail:covers.get(d.photo)?.preview,status:'brouillon',seen:d.updated_at,isDraft:true}))})
   const stamps=check(sync).map(r=>r.value?.at).filter(Boolean).sort()
   return {...dataset,checkedAt:stamps.length===5?stamps[0]:null}
 }

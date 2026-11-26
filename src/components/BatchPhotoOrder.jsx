@@ -69,7 +69,7 @@ export default function BatchPhotoOrder({photos,busy,onMove,onRemove}){
         className={'bs-photo'+(index===0?' is-cover':'')+(drag?.from===photo.url?' is-moving':'')+(drag?.target===photo.url&&drag.from!==photo.url?' is-target':'')}>
         <div className="bs-photo-preview" onPointerDown={e=>start(e,photo.url)} onPointerMove={track} onPointerUp={drop}
           onPointerCancel={stop} onLostPointerCapture={stop}>
-          <img src={photo.url} alt={photo.file.name} draggable={false}/>
+          <img src={photo.url} alt={photo.file.name} draggable={false} decoding="async" loading={index<2?'eager':'lazy'}/>
           <span className="bs-photo-position" aria-hidden="true">{index+1}</span>
         </div>
         <button type="button" className="bs-photo-remove" aria-label={'Retirer la photo '+(index+1)} onClick={()=>onRemove(photo)}>×</button>
