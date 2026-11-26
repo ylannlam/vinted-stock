@@ -1,6 +1,15 @@
 export const vintedCondition='Très bon état'
 export const bioCondition='Neuf'
 
+export function accountBrandIssue(fields,expected){
+  const actual=fields.brand_title|| (fields.brand_id?'n° '+fields.brand_id:'')
+  if(!expected)return 'Vérifie la marque configurée pour ce compte.'
+  if(!actual)return 'Marque absente du brouillon. Ce compte utilise « '+expected+' ».'
+  if(actual!==expected)return 'Ce brouillon indique « '+actual+' ». Ce compte utilise « '+expected+' ».'
+  if(fields.brand_id)return 'Pour ce compte, utilise la marque « '+expected+' » enregistrée dans ses réglages.'
+  return 'La marque correspond à « '+expected+' ». Enregistre la fiche pour la revérifier.'
+}
+
 export function conditionForCatalog(options){
   return options?.conditions?.find(c=>(c.title||c.name)===vintedCondition)?.id??null
 }

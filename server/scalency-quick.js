@@ -4,7 +4,7 @@ import {draftSource} from './scalency-relations.js'
 import {generateListingText,listingAiToken,listingFields} from './listing-studio-core.js'
 import {readListingSettings} from './listing-settings.js'
 import {applyListingPresets} from '../src/lib/listingSettings.js'
-import {listingColors,quickIssues,vintedCondition,bioCondition,conditionForCatalog} from '../src/lib/scalencyQuick.js'
+import {accountBrandIssue,listingColors,quickIssues,vintedCondition,bioCondition,conditionForCatalog} from '../src/lib/scalencyQuick.js'
 import {composeVintedSeo} from '../src/lib/vintedSeo.js'
 import {listingFacts} from '../src/lib/library.js'
 
@@ -51,7 +51,7 @@ export async function accountBrand(db,id){
 }
 export async function verifyQuickFields(db,fields,options){
   const brand=await accountBrand(db,fields.account_id)
-  if(fields.brand_title!==brand||fields.brand_id)throw new ScalencyError('La marque du compte a changé. Relance le remplissage.',409)
+  if(fields.brand_title!==brand||fields.brand_id)throw new ScalencyError(accountBrandIssue(fields,brand),409)
   const missing=quickIssues(fields,options)
   if(missing.length)throw new ScalencyError('À compléter : '+missing.join(', ')+'.',409)
 }

@@ -71,7 +71,11 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
     setApproved(false);setMessage('')
   }
   async function run(fn){if(gate.current)return;gate.current=true;setBusy(true);setError('');try{await fn()}catch(e){setError(e.message)}finally{gate.current=false;setBusy(false)}}
-  async function save(reviewForBatch=false){const r=await act(reviewForBatch?'save-review':'save',{id:uid.current,version,fields,piece:source.piece,product:source.product,photos:photos.map(({url,...p})=>p)});setVersion(r.version);if(reviewForBatch)onReviewed?.(r);return r.version}
+  async function save(reviewForBatch=false){
+    const values=quick&&selectedBrand?{...fields,brand_title:selectedBrand,brand_id:null}:fields
+    const r=await act(reviewForBatch?'save-review':'save',{id:uid.current,version,fields:values,piece:source.piece,product:source.product,photos:photos.map(({url,...p})=>p)})
+    setVersion(r.version);if(reviewForBatch)onReviewed?.(r);return r.version
+  }
   async function validate(){const v=await save();await act('validate',{id:uid.current,version:v,schedule:date?new Date(date).toISOString():null});setApproved(true);setMessage('Scalency a validé cette annonce. Tu peux confirmer sa publication.')}
   async function upload(files){await query('account-health',{account:fields.account_id});setApproved(false);if(files.length+photos.length>20)throw Error('20 photos maximum.');for(const f of files){validateListingPhoto(f);const p=await uploadListingPhoto(f);const url=URL.createObjectURL(f);localUrls.current.push(url);setPhotos(old=>[...old,{...p,url}])}}
   function selectAccount(account){
@@ -127,6 +131,8 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
     <div className="sc-field"><span>Couleurs (deux maximum)</span><span className="sc-colors">{listingColors.map(c=><label key={c.id}><input type="checkbox" checked={fields.color_ids?.includes(c.id)||false} disabled={!fields.color_ids?.includes(c.id)&&fields.color_ids?.length>=2} onChange={e=>edit('color_ids',e.target.checked?[...(fields.color_ids||[]),c.id]:fields.color_ids.filter(id=>id!==c.id))}/>{c.title}</label>)}</span></div>
     {(options?.attributes||[]).filter(a=>a.required).map(a=><Field key={a.code} label={a.title}><select value={fields.item_attributes?.find(x=>x.code===a.code)?.ids[0]||''} onChange={e=>edit('item_attributes',[...fields.item_attributes.filter(x=>x.code!==a.code),...(e.target.value?[{code:a.code,ids:[Number(e.target.value)]}]:[])])}><option value="">Choisir</option>{(a.options||[]).map(v=><option value={v.id} key={v.id}>{v.title}</option>)}</select></Field>)}
     <Field label="Marque"><input readOnly={quick} value={quick?selectedBrand||'':fields.brand_title||''} onChange={e=>{edit('brand_id',null);edit('brand_title',e.target.value)}}/></Field>
+    {!quick&&onReviewed&&selectedBrand&&(fields.brand_title!==selectedBrand||fields.brand_id)&&<button type="button"
+      onClick={()=>{edit('brand_id',null);edit('brand_title',selectedBrand)}}>Utiliser la marque du compte « {selectedBrand} »</button>}
     <Field label="Format du colis"><select value={fields.package_size_id||''} onChange={e=>edit('package_size_id',Number(e.target.value)||null)}><option value="">Choisir</option>{(options?.package_sizes||[]).map(s=><option key={s.id} value={s.id}>{s.title||s.name||s.id}</option>)}</select></Field>
     {!focused&&<Field label="Programmer (facultatif)"><input type="datetime-local" value={date} onChange={e=>{setDate(e.target.value);setApproved(false)}}/></Field>}</div>
     <div className="sc-tools">{onReviewed&&!date?<button className="sc-primary" onClick={()=>run(()=>save(true))}>Enregistrer pour le récapitulatif</button>:<button onClick={()=>run(async()=>{await save();setMessage('Brouillon enregistré sur ton site.')})}>Enregistrer le brouillon</button>}

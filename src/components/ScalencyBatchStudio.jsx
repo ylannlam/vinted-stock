@@ -1,7 +1,7 @@
 import {useCallback,useEffect,useRef,useState} from 'react'
 import {act,query,formatMoney} from '../lib/scalency'
 import {retryIntake,watchIntake} from '../lib/batchIntake'
-import {listingColors} from '../lib/scalencyQuick'
+import {accountBrandIssue,listingColors} from '../lib/scalencyQuick'
 import {PhotoAccountPanel} from './AccountPhotos'
 import {CadenceSettings,useCadence} from './PublicationCadence'
 import {AccountHealthNotice,isBanned,preparationBlock,publicationProfiles,useAccountHealth} from './ScalencyAccountHealth'
@@ -148,6 +148,10 @@ export default function ScalencyBatchStudio({params,focused=false}){
   function toggle(row){setSelected(prev=>{const next={...prev};if(next[row.id])delete next[row.id];else next[row.id]=row;return next})}
   function edit(id){returnToReview.current=review;setEditor(id);setReview(false)}
   function closeEditor(){setEditor('');setReview(returnToReview.current);returnToReview.current=false;reload()}
+  function draftIssues(row){
+    const brand=profiles.find(profile=>profile.id===row.fields.account_id)?.brand
+    return row.batch?.missing?.map(issue=>issue==='Marque du compte'?accountBrandIssue(row.fields,brand):issue).join(' · ')
+  }
   function savedEdit(row){
     closeEditor()
     if(account!==row.fields.account_id)choose(row.fields.account_id)
@@ -158,7 +162,7 @@ export default function ScalencyBatchStudio({params,focused=false}){
       else delete next[row.id]
       return next
     })
-    setNotice(row.batch?.missing?.length?'À compléter : '+row.batch.missing.join(', '):'Fiche enregistrée pour le récapitulatif.')
+    setNotice(row.batch?.missing?.length?'À compléter : '+draftIssues(row):'Fiche enregistrée pour le récapitulatif.')
   }
   const selection=Object.values(selected).filter(r=>account&&r.fields.account_id===account&&!local[r.id])
   const chosen=selection.filter(r=>stage(r)==='ready')
@@ -257,7 +261,7 @@ export default function ScalencyBatchStudio({params,focused=false}){
             <Cover row={row}/><div className="bs-row-body"><h3>{f.title||f.sku||'Brouillon sans titre'}</h3>
             <p className="bs-meta">{[f.sku&&'SKU '+f.sku,f.size_text&&'Taille '+f.size_text,f.price&&formatMoney(f.price),!account&&profiles.find(a=>a.id===f.account_id)?.login].filter(Boolean).join(' · ')}</p>
             <span className={'bs-badge '+state}>{labels[state]}</span>
-            {(state==='review'||state==='error')&&<p className="bs-problem">{row.batch?.missing?.join(' · ')||'Remplissage interrompu, tu peux le relancer.'}</p>}
+            {(state==='review'||state==='error')&&<p className="bs-problem">{draftIssues(row)||'Remplissage interrompu, tu peux le relancer.'}</p>}
             </div><div className="bs-row-tools"><button disabled={state==='running'} className="bs-link" onClick={()=>edit(row.id)}>Modifier</button>
             {state!=='running'&&f.account_id&&<button type="button" className="bs-link bs-danger" onClick={()=>setDiscarding([row])}>Supprimer</button>}
             {state!=='running'&&state!=='ready'&&login?.brand&&f.account_id===account&&row.count>0&&Number(f.price)>0&&<button className="bs-link" disabled={!!blocked} onClick={()=>generate(row)}>{state==='error'?'Réessayer':'Remplir'}</button>}</div></article>

@@ -1,10 +1,17 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {quickIssues} from '../src/lib/scalencyQuick.js'
-import {quickProfiles,saveQuickBrand,saveQuickSize} from './scalency-quick.js'
+import {quickProfiles,saveQuickBrand,saveQuickSize,verifyQuickFields} from './scalency-quick.js'
 import {draftPayload} from './scalency-api.js'
 const options={catalog:{id:10},conditions:[{id:2}],size_groups:[{sizes:[{id:3,title:'S'}]}],package_sizes:[{id:1,title:'Petit'}]}
 const fields={account_id:'account1',sku:'piece',price:'25',title:'Robe rouge',description:'Robe rouge cintrée.',status_id:2,catalog_id:10,size_id:3,color_ids:[7],package_size_id:1,brand_id:null,brand_title:'Marque du compte'}
+test('un conflit cite les deux marques et la validation accepte la correction seule',async()=>{
+  const db={from(table){
+    return {select(){return this},eq(){return this},maybeSingle(){return {data:table==='scalency_records'?{payload:{linked:true}}:{value:{name:'Maison A'}}}}}
+  }}
+  await assert.rejects(verifyQuickFields(db,{...fields,brand_title:'Maison B'},options),/« Maison B ».*« Maison A »/)
+  await verifyQuickFields(db,{...fields,brand_title:'Maison A'},options)
+})
 test('Une annonce complète transmet la marque du vendeur, les couleurs, le SKU et le petit colis',()=>{
   assert.deepEqual(quickIssues(fields,options),[])
   const payload=draftPayload({fields},['https://example.org/image.jpg'],fields.account_id)
