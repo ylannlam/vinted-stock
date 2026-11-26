@@ -28,6 +28,7 @@ test('dressing, sélection, fiches à imprimer et bordereaux sur demande',async(
   const button=text=>[...document.querySelectorAll('button')].find(b=>b.textContent.includes(text))
   try{
     await act(async()=>root.render(React.createElement(mod.exports.Wardrobe,{params:{},admin:true})))
+    assert.equal(document.querySelector('.shop-filterbar select option[selected]').textContent,'Tous les comptes')
     assert.equal(document.querySelector('.shop-card .shop-sku').textContent,'SKU TEST-4')
     assert.equal(document.querySelector('.shop-card img').getAttribute('src'),'https://example.org/test.jpg')
     await click(document.querySelector('.shop-card .shop-copy'))

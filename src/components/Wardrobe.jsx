@@ -65,7 +65,8 @@ function ListingDetail({row,onEditSku,onClose}){
 }
 function Gallery({board,admin,params,reread,accounts,soldView}){
   const all=useMemo(()=>listingRows(board).filter(r=>!soldView||r.dressingSold),[board,soldView])
-  const [account,setAccount]=useState(params.login||all.find(r=>r.accountId===params.account)?.account||params.account||''),[search,setSearch]=useState(params.q||'')
+  const [account,setAccount]=useState(()=>params.login||(params.account?(all.find(r=>r.accountId===params.account)?.account||params.account):''))
+  const [search,setSearch]=useState(params.q||'')
   const [skuFilter,setSkuFilter]=useState('all')
   const [sort,setSort]=useState('recent'),[status,setStatus]=useState('all'),[age,setAge]=useState('all'),[page,setPage]=useState(0)
   const [detail,setDetail]=useState(null),[print,setPrint]=useState(null)
