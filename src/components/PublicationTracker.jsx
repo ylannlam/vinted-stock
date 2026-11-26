@@ -3,6 +3,7 @@ import {act,query} from '../lib/scalency'
 import {publicationDate,publicationProgress} from '../lib/publicationTracking'
 import PublicationLots from './PublicationLots'
 import DailyPublicationCount from './DailyPublicationCount'
+import {useAccountHealth} from './ScalencyAccountHealth'
 import './PublicationTracker.css'
 
 const tabs=[['queue','À publier'],['drafts','Brouillons'],['live','Mises en ligne'],['history','Historique'],['lots','Par lot']]
@@ -61,6 +62,14 @@ function Listing({row,login,selected,onSelect,onAction,disabled}){
 export default function PublicationTracker({params}){
   const tab=params.lot?'lots':tabs.some(([key])=>key===params.tab)?params.tab:'queue'
   const account=params.account||'',job=params.job||'',draft=params.draft||''
+  const showAccountFilter=!job&&!draft&&!params.lot
+  const directory=useAccountHealth(showAccountFilter)
+  const directoryReady=!!directory.report&&!directory.error
+  const linkedAccounts=directoryReady?directory.report.accounts.filter(a=>a.linked===true).sort((a,b)=>a.login.localeCompare(b.login,'fr')):[]
+  const accountAvailable=linkedAccounts.some(a=>a.id===account)
+  useEffect(()=>{
+    if(showAccountFilter&&directoryReady&&account&&!accountAvailable)window.location.replace(pageLink(tab,''))
+  },[showAccountFilter,directoryReady,account,accountAvailable,tab])
   const [data,setData]=useState(null),[error,setError]=useState(''),[loading,setLoading]=useState(false)
   const [input,setInput]=useState(''),[search,setSearch]=useState(''),[page,setPage]=useState(0),[cursors,setCursors]=useState([''])
   const [selection,setSelection]=useState({}),[choice,setChoice]=useState(null),[busy,setBusy]=useState(false),[receipt,setReceipt]=useState(null),[revision,setRevision]=useState(0)
@@ -82,7 +91,7 @@ export default function PublicationTracker({params}){
     const timer=setInterval(visible,30000);document.addEventListener('visibilitychange',visible)
     return ()=>{alive=false;clearInterval(timer);document.removeEventListener('visibilitychange',visible)}
   },[scope,tab,account,job,draft,search,page,cursor,revision])
-  const accounts=data?.accounts||[],logins=new Map(accounts.map(a=>[a.id,a.login]))
+  const logins=new Map([...(data?.accounts||[]),...linkedAccounts].map(a=>[a.id,a.login]))
   const rows=[...(data?.drafts||[]),...(data?.jobs||[])],eligible=rows.filter(r=>r.actions.length)
   const picked=eligible.filter(r=>selection[keyOf(r)])
   function toggle(row){setSelection(old=>({...old,[keyOf(row)]:!old[keyOf(row)]}))}
@@ -113,8 +122,9 @@ export default function PublicationTracker({params}){
     <DailyPublicationCount/>
     <nav className="pub-tabs" aria-label="Étapes de publication">{tabs.map(([value,label])=><a key={value} aria-current={!job&&tab===value?'page':undefined} href={pageLink(value,account)}>{label}</a>)}</nav>
     <div className="pub-filters">{!job&&!draft&&tab!=='lots'&&<label>Rechercher<input type="search" placeholder="Titre ou SKU" maxLength={120} value={input} onChange={e=>{setInput(e.target.value);setSelection({})}}/></label>}
-      {!job&&!draft&&!params.lot&&<label>Compte<select value={account} onChange={e=>{window.location.hash=pageLink(tab,e.target.value)}}><option value="">Tous les comptes</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.login}</option>)}</select></label>}
-      <button disabled={loading||busy} onClick={()=>setRevision(n=>n+1)}>{loading?'Actualisation…':'Actualiser'}</button></div>
+      {showAccountFilter&&<label>Compte<select value={accountAvailable?account:''} disabled={!directoryReady} onChange={e=>{window.location.hash=pageLink(tab,e.target.value)}}><option value="">{directoryReady?'Tous les comptes':directory.error?'Comptes indisponibles':'Chargement des comptes…'}</option>{linkedAccounts.map(a=><option key={a.id} value={a.id}>{a.login}</option>)}</select></label>}
+      <button disabled={loading||busy} onClick={()=>{setRevision(n=>n+1);if(showAccountFilter)directory.refresh()}}>{loading?'Actualisation…':'Actualiser'}</button></div>
+    {showAccountFilter&&directory.error&&<p className="sc-error" role="alert">La liste des comptes reliés à Scalency est indisponible. Clique sur Actualiser pour réessayer.</p>}
     {error&&<p className="sc-error" role="alert">{error}</p>}
     {receipt&&<div className="pub-receipt" role="status"><strong>Résultat de la sélection</strong><button onClick={()=>setReceipt(null)} aria-label="Fermer le résultat">×</button>{receipt.map((r,i)=><p key={i} className={r.ok?'':'sc-error'}>{r.text} {r.href&&<a href={r.href}>Suivre le lot</a>}</p>)}</div>}
     {tab==='lots'&&!job?<PublicationLots key={account+(params.lot||'')+revision} account={account} lotId={params.lot||''}/>:<section className="pub-panel" aria-busy={loading}>
