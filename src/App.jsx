@@ -46,7 +46,7 @@ export default function App() {
   const profileFetchedForRef = useRef(null) // évite les double-fetches
   const stockLoadedFor=useRef(null)
   const [profileLoading, setProfileLoading] = useState(false)
-  const [activeTab,setActiveTab,navigationFilters]=useNavigation(captureDraft)
+  const [activeTab,setActiveTab,navigationFilters,chooseSpace]=useNavigation(captureDraft)
   const [stockError,setStockError]=useState(''),[commandeError,setCommandeError]=useState(''),[profileError,setProfileError]=useState(''),[stockNotice,setStockNotice]=useState(''),[photoArticle,setPhotoArticle]=useState(null)
   const [items, setItems] = useState([])
   const [itemsLoading, setItemsLoading] = useState(false)
@@ -88,6 +88,7 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
         clearViewCache()
+        setActiveTab(TAB_SPACES)
         setUser(null)
       } else if (session?.user) {
         // Journalise chaque connexion : login explicite (SIGNED_IN) ET ouverture
@@ -418,13 +419,12 @@ export default function App() {
 
   async function handleLogout() {
     await supabase.auth.signOut()
-    if(window.matchMedia?.('(min-width: 768px)').matches)setActiveTab(TAB_SPACES)
     setItems([])
     setProfile(null)
   }
 
   if(activeTab===TAB_SPACES){
-    return <SpaceChooser onChoose={space=>setActiveTab(space==='alicia'?TAB_ALICIA:TAB_HOME)}/>
+    return <SpaceChooser onChoose={chooseSpace}/>
   }
 
   // --- Loading state ---
@@ -444,7 +444,7 @@ export default function App() {
     )
   }
 
-  if (!user) return <Login />
+  if (!user) return <Login space={activeTab===TAB_ALICIA?'Alicia':'Ylann'} />
 
   // Profile not found
   if (!profile) {

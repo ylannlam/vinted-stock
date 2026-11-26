@@ -2,10 +2,33 @@ import {useState,useEffect} from 'react'
 import * as T from '../constants'
 const routes={espaces:T.TAB_SPACES,alicia:T.TAB_ALICIA,comptes:T.TAB_COMPTES_VINTED,messages:T.TAB_AGENT,dressing:T.TAB_ADSPOWER,ylavint:T.TAB_COMPTES_VINTED,agent:T.TAB_COMPTES_VINTED,adspower:T.TAB_COMPTES_VINTED,annonces:T.TAB_LISTINGS,publication:T.TAB_PUBLICATION,accueil:T.TAB_HOME,ventes:T.TAB_SALES,catalogue:T.TAB_CATALOG,atelier:T.TAB_RESOURCES,budget:T.TAB_BUDGET,stock:T.TAB_TOUT,reception:T.TAB_A_RECEVOIR,expedition:T.TAB_A_ENVOYER,lots:T.TAB_A_ENVOYER_LOT,envoyes:T.TAB_ENVOYES,historique:T.TAB_HISTORY,travail:T.TAB_WORKSPACE}
 // « #ylavint/messagerie » : le segment après « / » est la rubrique de l'onglet.
-function readRoute(){const [path,query='']=window.location.hash.slice(1).split('?');const [name,section]=path.split('/');return {tab:routes[name]||(!name&&window.matchMedia?.('(min-width: 768px)').matches?T.TAB_SPACES:T.TAB_HOME),filters:{...Object.fromEntries(new URLSearchParams(query)),...(section?{section}:{})}}}
+function readRoute(){
+ const [path,query='']=window.location.hash.slice(1).split('?')
+ const [name,section]=path.split('/')
+ return {tab:routes[name]||T.TAB_SPACES,filters:{...Object.fromEntries(new URLSearchParams(query)),...(section?{section}:{})}}
+}
 export function useNavigation(capture){
- const [route,setRoute]=useState(()=>capture()?{tab:T.TAB_CATALOG,filters:{}}:readRoute())
+ const [entered,setEntered]=useState(false)
+ const [route,setRoute]=useState(()=>{
+   const imported=capture(),requested=readRoute()
+   return imported&&!window.location.hash?{tab:T.TAB_CATALOG,filters:{}}:requested
+ })
  useEffect(()=>{const update=()=>setRoute(readRoute());window.addEventListener('hashchange',update);return()=>window.removeEventListener('hashchange',update)},[])
- function navigate(value,filters={}){const tab=typeof value==='function'?value(route.tab):value;const name=Object.keys(routes).find(k=>routes[k]===tab)||'accueil';const query=new URLSearchParams(filters).toString();const hash=`#${name}${query?'?'+query:''}`;if(window.location.hash===hash)setRoute({tab,filters});else window.location.hash=hash}
- return [route.tab,navigate,route.filters]
+ function navigate(value,filters={}){
+   const tab=typeof value==='function'?value(route.tab):value
+   const name=Object.keys(routes).find(k=>routes[k]===tab)||'accueil'
+   const query=new URLSearchParams(filters).toString(),hash=`#${name}${query?'?'+query:''}`
+   setRoute({tab,filters})
+   if(window.location.hash!==hash)window.location.hash=hash
+ }
+ function chooseSpace(space){
+   const alicia=space==='alicia'
+   if(route.tab===T.TAB_SPACES||(route.tab===T.TAB_ALICIA)!==alicia){
+     navigate(alicia?T.TAB_ALICIA:T.TAB_HOME)
+   }else if(!window.location.hash){
+     navigate(route.tab,route.filters)
+   }
+   setEntered(true)
+ }
+ return [entered?route.tab:T.TAB_SPACES,navigate,entered?route.filters:{},chooseSpace]
 }

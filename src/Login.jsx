@@ -6,7 +6,7 @@ function pseudoToEmail(pseudo) {
   return `${pseudo.toLowerCase().trim().replace(/[^a-z0-9_-]/g, '_')}@vinted-stock.app`
 }
 
-export default function Login() {
+export default function Login({space}) {
   const [pseudo, setPseudo]     = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading]   = useState(false)
@@ -34,7 +34,8 @@ export default function Login() {
             <Logo size={64} />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Stock Vinted</h1>
-          <p className="text-gray-500 text-sm mt-1">Connectez-vous pour accéder</p>
+          <p className="text-gray-500 text-sm mt-1">Connectez-vous à l’espace {space}</p>
+          <a className="mt-2 inline-block text-sm text-teal-800 underline" href="#espaces">Changer d’espace</a>
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
