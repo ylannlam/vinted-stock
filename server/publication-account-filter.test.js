@@ -11,20 +11,21 @@ test('le filtre Publications suit les liaisons Scalency, y compris après actual
     write:false,jsx:'automatic',loader:{'.css':'empty'},plugins:[{name:'publication-fixtures',setup(build){
       build.onResolve({filter:/^\.\.\/lib\/scalency$/},()=>({path:'api',namespace:'fixture'}))
       build.onResolve({filter:/^\.\/(DailyPublicationCount|PublicationLots)$/},()=>({path:'panel',namespace:'fixture'}))
-      build.onLoad({filter:/.*/,namespace:'fixture'},({path})=>({contents:path==='api'?'export const query=(view)=>globalThis.readPublication(view);export const act=()=>{}':'export default ()=>null'}))
+      build.onLoad({filter:/.*/,namespace:'fixture'},({path})=>({contents:path==='api'?'export const query=(...args)=>globalThis.readPublication(...args);export const act=(...args)=>globalThis.movePublication(...args)':'export default ()=>null'}))
     }}]})
   const {window}=parseHTML('<html><body><div id="root"></div></body></html>')
   globalThis.window=window;globalThis.document=window.document;globalThis.IS_REACT_ACT_ENVIRONMENT=true
   const redirects=[]
   window.location={replace:url=>redirects.push(url)}
   let directory=[{id:'c',login:'Chloé',linked:true,block:{kind:'restricted'}},{id:'b',login:'Béa',linked:false},{id:'a',login:'Alice',linked:true}]
-  globalThis.readPublication=async view=>{
+  let publications=[]
+  globalThis.readPublication=async (view,q)=>{
     if(view==='account-health'){
       if(!directory)throw Error('hors ligne')
       return {accounts:directory}
     }
     assert.equal(view,'publication-tracking')
-    return {accounts:[{id:'old',login:'Archive'}],jobs:[],drafts:[]}
+    return {accounts:[{id:'old',login:'Archive'}],jobs:[],drafts:q.stage==='local'?publications:[]}
   }
   const require=createRequire(import.meta.url),React=require('react'),{createRoot}=require('react-dom/client')
   const mod=new Module(fileURLToPath(import.meta.url));mod.paths=Module._nodeModulePaths(cwd);mod._compile(bundle.outputFiles[0].text,mod.id)
@@ -46,5 +47,21 @@ test('le filtre Publications suit les liaisons Scalency, y compris après actual
     await render({tab:'history',account:'old',job:'ancien'})
     assert.deepEqual(options(),[])
     assert.equal(redirects.length,1)
-  }finally{await React.act(async()=>root.unmount())}
+    const at=new Date(Date.now()+86400000).toISOString()
+    publications=[{id:'first',version:2,title:'Robe du lot',kind:'draft',state:'preparing',account:'n',scheduled_for:at,actions:['move','stop-local']}]
+    const writes=[]
+    globalThis.movePublication=async (action,body)=>{writes.push({action,body});return {rows:[{id:'first',at}]}}
+    window.HTMLElement.prototype.showModal=function(){this.setAttribute('open','')}
+    await render({tab:'queue',stage:'local',account:'n'})
+    assert.ok(document.querySelector('a[aria-current="page"][href*="stage=local"]'))
+    assert.ok(document.querySelector('a[href*="stage=site"]'))
+    await React.act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Déplacer le créneau').click())
+    assert.ok(document.querySelector('dialog[open]'))
+    assert.equal(writes.length,0)
+    await React.act(async()=>document.querySelector('dialog form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})))
+    assert.equal(writes[0].action,'move-publications')
+    assert.equal(writes[0].body.entries[0].previous,at)
+    assert.equal(writes[0].body.account,'n')
+    assert.match(document.querySelector('.pub-receipt').textContent,/Stock Vinted · envoi prévu/)
+  }finally{await React.act(async()=>root.unmount());delete globalThis.movePublication}
 })

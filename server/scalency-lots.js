@@ -160,16 +160,23 @@ export async function publicationLots(db,user,q,saveRecords){
   if(q.lot)read=read.eq('id',remoteId(q.lot))
   const result=await read.order('created_at',{ascending:false}).order('id').range(page*pageSize,(page+1)*pageSize-1)
   const lots=checked(result),items=lots.flatMap(l=>l.entries)
-  const ids=items.map(e=>e.job_id).filter(Boolean)
+  const jobAccounts=new Map(lots.flatMap(l=>l.entries.filter(e=>e.job_id).map(e=>[String(e.job_id),l.account])))
+  const ids=[...jobAccounts.keys()]
   const cached=ids.length?checked(await db.from('scalency_records').select('remote_id,payload,seen_at').eq('kind','jobs').in('remote_id',ids)):[]
-  const byJob=new Map(cached.map(c=>[c.remote_id,c]))
+  const byJob=new Map(cached.filter(c=>String(c.payload.account_id)===jobAccounts.get(String(c.remote_id))).map(c=>[String(c.remote_id),c]))
   const stale=ids.filter(id=>{
     const hit=byJob.get(id)
     return !hit||(!['done','failed','cancelled','skipped'].includes(hit.payload.status)&&Date.now()-Date.parse(hit.seen_at)>60000)
   }).sort((a,b)=>String(byJob.get(a)?.seen_at||'').localeCompare(String(byJob.get(b)?.seen_at||'')))
   // Bound remote reads on busy accounts. Least recently checked jobs are refreshed first.
-  const fresh=await Promise.allSettled(stale.slice(0,5).map(id=>remote('jobs/'+remoteId(id))))
-  const jobs=fresh.filter(r=>r.status==='fulfilled').map(r=>r.value)
+  const batch=stale.slice(0,100)
+  let jobs=[]
+  if(batch.length){
+    try{
+      const page=await remote('jobs',{query:{ids:batch.join(','),limit:batch.length}})
+      jobs=(page.data||[]).filter(j=>j.type==='publish'&&String(j.account_id)===jobAccounts.get(String(j.id))&&batch.includes(String(j.id)))
+    }catch{/* Keep the last known receipt when Scalency is unavailable. */}
+  }
   if(jobs.length){await saveRecords(db,'jobs',jobs);for(const job of jobs)byJob.set(String(job.id),{payload:job})}
   const covers=[...new Set(items.map(e=>e.cover_path).filter(p=>ownedAsset(p,user.id)))]
   const links=covers.length?await db.storage.from(ASSET_BUCKET).createSignedUrls(covers,900):{data:[]}
@@ -181,7 +188,7 @@ export async function publicationLots(db,user,q,saveRecords){
   const logins=new Map(accounts.map(a=>[a.remote_id,a.payload.login]))
   return {lots:lots.map(l=>({...l,login:logins.get(l.account)||l.account,entries:l.entries.sort((a,b)=>a.position-b.position).map(e=>{
     const {cover_path,reviewed_version,...row}=e,d=byDraft.get(e.draft_id)
-    return {...row,photo:photos.get(cover_path)||null,job:byJob.get(e.job_id)?.payload,
+    return {...row,photo:photos.get(cover_path)||null,job:byJob.get(String(e.job_id))?.payload,
       editable:d?.state==='draft',retryable:!e.scheduled_for&&d?.state==='draft'&&d.version===reviewed_version+2}
   })})),total:result.count,pageSize}
 }

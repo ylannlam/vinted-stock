@@ -2,12 +2,14 @@ import {useEffect,useRef,useState} from 'react'
 import {act,query} from '../lib/scalency'
 import {publicationDate,publicationProgress} from '../lib/publicationTracking'
 import PublicationLots from './PublicationLots'
+import MovePublications,{moveSelectionIssue} from './MovePublications'
 import DailyPublicationCount from './DailyPublicationCount'
 import {useAccountHealth} from './ScalencyAccountHealth'
 import './PublicationTracker.css'
 
 const tabs=[['queue','À publier'],['drafts','Brouillons'],['live','Mises en ligne'],['history','Historique'],['lots','Par lot']]
 const operations={
+  move:{label:'Déplacer le créneau'},
   launch:{label:'Mettre en file',description:'Scalency publiera ces annonces au rythme du compte.'},
   'stop-local':{label:'Arrêter',description:'Les fiches sélectionnées reviendront dans les brouillons.'},
   cancel:{label:'Arrêter',description:'Scalency tentera d’arrêter les publications sélectionnées. Une annonce déjà en ligne reste publiée.'},
@@ -21,15 +23,16 @@ function progress(row){
   if(row.removal==='removing')return {label:'Retrait demandé',tone:'planned'}
   if(row.removal==='remove-failed')return {label:'Retrait à reprendre',tone:'warning'}
   if(row.kind==='job')return publicationProgress(row)
-  if(row.state==='preparing')return {label:row.actions.length?'En attente d’envoi':'Transmission en cours',tone:'pending'}
+  if(row.state==='preparing')return {label:row.scheduled_for&&row.actions.includes('move')?'Programmée sur Stock Vinted':row.actions.length?'En attente d’envoi':'Transmission en cours',tone:'pending'}
   if(row.state==='attention'||['error','review'].includes(row.batch))return {label:'À vérifier',tone:'warning',detail:row.reason}
   if(row.batch==='ready')return {label:'Prête à publier',tone:'success'}
   if(row.batch==='running')return {label:'Génération en cours',tone:'pending'}
   return {label:'Brouillon',tone:'muted'}
 }
-function pageLink(tab,account){
+function pageLink(tab,account,stage=''){
   const params=new URLSearchParams({tab})
   if(account)params.set('account',account)
+  if(stage)params.set('stage',stage)
   return '#publication?'+params
 }
 function Confirm({choice,onClose,onApply,busy}){
@@ -44,36 +47,37 @@ function Confirm({choice,onClose,onApply,busy}){
 }
 function Listing({row,login,selected,onSelect,onAction,disabled}){
   const info=progress(row),title=titleOf(row)
-  const date=row.kind==='draft'?row.date:row.done_at||row.sent_at||row.not_before||row.created_at
+  const date=row.kind==='draft'?row.scheduled_for||row.date:row.done_at||row.sent_at||row.not_before||row.created_at
   return <article className={'pub-row'+(selected?' chosen':'')}>
     <input type="checkbox" aria-label={'Sélectionner '+title} checked={selected} disabled={disabled||!row.actions.length} onChange={onSelect}/>
     <div className="pub-cover">{row.photo?<img src={row.photo} alt="" loading="lazy"/>:<span aria-label="Sans photo">◇</span>}</div>
     <div className="pub-copy"><h3>{title}</h3><p>{[login,row.size&&'Taille '+row.size,row.sku&&'SKU '+row.sku].filter(Boolean).join(' · ')}</p>
-      <span className={'pt-badge '+info.tone}>{info.label}</span>{date&&<time dateTime={date}>{publicationDate(date)}</time>}
+      <span className={'pt-badge '+info.tone}>{info.label}</span>{date&&<time dateTime={date}>{row.kind==='job'&&row.not_before===date?'Scalency · au plus tôt le ':''}{publicationDate(date)}</time>}
       {row.kind==='job'&&<details><summary>Détails du suivi</summary><p>{info.detail||row.reason||info.label}</p>
         <p>Demande n° {row.id}</p>{row.new_item_id&&row.removal!=='deleted'&&<a target="_blank" rel="noreferrer" href={'https://www.vinted.fr/items/'+row.new_item_id}>Voir sur Vinted ↗</a>}</details>}
       {row.kind==='draft'&&info.detail&&<p>{info.detail}</p>}
     </div>
     <div className="pub-row-actions">{row.kind==='draft'&&row.state==='draft'&&<a href={'#annonces?draft='+row.id}>Modifier</a>}
-      {row.actions.map(a=><button disabled={disabled} key={a} className={a==='launch'?'pub-launch':'pub-action'} onClick={()=>onAction(a,[row])}>{a==='discard'?'Supprimer':operations[a].label}</button>)}</div>
+      {row.actions.map(a=><button disabled={disabled} key={a} className={['launch','move'].includes(a)?'pub-launch':'pub-action'} onClick={()=>onAction(a,[row])}>{a==='discard'?'Supprimer':operations[a].label}</button>)}</div>
   </article>
 }
 
 export default function PublicationTracker({params}){
   const tab=params.lot?'lots':tabs.some(([key])=>key===params.tab)?params.tab:'queue'
   const account=params.account||'',job=params.job||'',draft=params.draft||''
+  const stage=tab==='queue'&&!job&&!draft&&['local','scalency','site'].includes(params.stage)?params.stage:''
   const showAccountFilter=!job&&!draft&&!params.lot
   const directory=useAccountHealth(showAccountFilter)
   const directoryReady=!!directory.report&&!directory.error
   const linkedAccounts=directoryReady?directory.report.accounts.filter(a=>a.linked===true).sort((a,b)=>a.login.localeCompare(b.login,'fr')):[]
   const accountAvailable=linkedAccounts.some(a=>a.id===account)
   useEffect(()=>{
-    if(showAccountFilter&&directoryReady&&account&&!accountAvailable)window.location.replace(pageLink(tab,''))
-  },[showAccountFilter,directoryReady,account,accountAvailable,tab])
+    if(showAccountFilter&&directoryReady&&account&&!accountAvailable)window.location.replace(pageLink(tab,'',stage))
+  },[showAccountFilter,directoryReady,account,accountAvailable,tab,stage])
   const [data,setData]=useState(null),[error,setError]=useState(''),[loading,setLoading]=useState(false)
   const [input,setInput]=useState(''),[search,setSearch]=useState(''),[page,setPage]=useState(0),[cursors,setCursors]=useState([''])
   const [selection,setSelection]=useState({}),[choice,setChoice]=useState(null),[busy,setBusy]=useState(false),[receipt,setReceipt]=useState(null),[revision,setRevision]=useState(0)
-  const lock=useRef(false),scope=[tab,account,job,draft].join('|'),[viewScope,setViewScope]=useState(scope)
+  const lock=useRef(false),scope=[tab,account,job,draft,stage].join('|'),[viewScope,setViewScope]=useState(scope)
   if(scope!==viewScope){setViewScope(scope);setSearch('');setInput('');setPage(0);setCursors(['']);setSelection({});setChoice(null);setReceipt(null);setData(null)}
   const cursor=cursors[cursors.length-1]
   useEffect(()=>{setData(null);setError('')},[scope,search,page,cursor])
@@ -83,19 +87,24 @@ export default function PublicationTracker({params}){
     async function read(){
       if(reading||!alive)return
       reading=true;setLoading(true)
-      try{const next=await query('publication-tracking',{tab,account,job,draft,search,cursor,draftPage:page});if(alive){setData(next);setError('')}}
+      try{const next=await query('publication-tracking',{tab,account,job,draft,stage,search,cursor,draftPage:page});if(alive){setData(next);setError('')}}
       catch(e){if(alive)setError(e.message)}finally{reading=false;if(alive)setLoading(false)}
     }
     read()
     const visible=()=>{if(document.visibilityState==='visible')read()}
     const timer=setInterval(visible,30000);document.addEventListener('visibilitychange',visible)
     return ()=>{alive=false;clearInterval(timer);document.removeEventListener('visibilitychange',visible)}
-  },[scope,tab,account,job,draft,search,page,cursor,revision])
+  },[scope,tab,account,job,draft,stage,search,page,cursor,revision])
   const logins=new Map([...(data?.accounts||[]),...linkedAccounts].map(a=>[a.id,a.login]))
   const rows=[...(data?.drafts||[]),...(data?.jobs||[])],eligible=rows.filter(r=>r.actions.length)
   const picked=eligible.filter(r=>selection[keyOf(r)])
   function toggle(row){setSelection(old=>({...old,[keyOf(row)]:!old[keyOf(row)]}))}
-  function ask(action,items){if(items.length)setChoice({action,rows:items})}
+  function ask(action,items){
+    if(!items.length)return
+    const issue=action==='move'&&moveSelectionIssue(items)
+    if(issue){setReceipt([{ok:false,text:issue}]);return}
+    setChoice({action,rows:items})
+  }
   async function apply(){
     if(lock.current||!choice)return
     lock.current=true;setBusy(true);const results=[]
@@ -122,8 +131,9 @@ export default function PublicationTracker({params}){
     <DailyPublicationCount/>
     <nav className="pub-tabs" aria-label="Étapes de publication">{tabs.map(([value,label])=><a key={value} aria-current={!job&&tab===value?'page':undefined} href={pageLink(value,account)}>{label}</a>)}</nav>
     <div className="pub-filters">{!job&&!draft&&tab!=='lots'&&<label>Rechercher<input type="search" placeholder="Titre ou SKU" maxLength={120} value={input} onChange={e=>{setInput(e.target.value);setSelection({})}}/></label>}
-      {showAccountFilter&&<label>Compte<select value={accountAvailable?account:''} disabled={!directoryReady} onChange={e=>{window.location.hash=pageLink(tab,e.target.value)}}><option value="">{directoryReady?'Tous les comptes':directory.error?'Comptes indisponibles':'Chargement des comptes…'}</option>{linkedAccounts.map(a=><option key={a.id} value={a.id}>{a.login}</option>)}</select></label>}
+      {showAccountFilter&&<label>Compte<select value={accountAvailable?account:''} disabled={!directoryReady} onChange={e=>{window.location.hash=pageLink(tab,e.target.value,stage)}}><option value="">{directoryReady?'Tous les comptes':directory.error?'Comptes indisponibles':'Chargement des comptes…'}</option>{linkedAccounts.map(a=><option key={a.id} value={a.id}>{a.login}</option>)}</select></label>}
       <button disabled={loading||busy} onClick={()=>{setRevision(n=>n+1);if(showAccountFilter)directory.refresh()}}>{loading?'Actualisation…':'Actualiser'}</button></div>
+    {tab==='queue'&&!job&&!draft&&<nav className="pub-stages" aria-label="Étape d’envoi">{[['','Toutes'],['local','À transmettre'],['site','Envoyées par Stock Vinted'],['scalency','Toute la file Scalency']].map(([key,label])=><a key={key} aria-current={key===stage?'page':undefined} href={pageLink(tab,account,key)}>{label}</a>)}</nav>}
     {showAccountFilter&&directory.error&&<p className="sc-error" role="alert">La liste des comptes reliés à Scalency est indisponible. Clique sur Actualiser pour réessayer.</p>}
     {error&&<p className="sc-error" role="alert">{error}</p>}
     {receipt&&<div className="pub-receipt" role="status"><strong>Résultat de la sélection</strong><button onClick={()=>setReceipt(null)} aria-label="Fermer le résultat">×</button>{receipt.map((r,i)=><p key={i} className={r.ok?'':'sc-error'}>{r.text} {r.href&&<a href={r.href}>Suivre le lot</a>}</p>)}</div>}
@@ -138,6 +148,7 @@ export default function PublicationTracker({params}){
       {(cursors.length>1||data?.nextCursor)&&<div className="pub-pager"><button disabled={cursors.length<2||busy} onClick={()=>{setCursors(c=>c.slice(0,-1));setSelection({})}}>Précédent</button><span>Scalency · page {cursors.length}</span><button disabled={!data?.nextCursor||busy} onClick={()=>{setCursors(c=>[...c,data.nextCursor]);setSelection({})}}>Suivant</button></div>}
     </section>}
     <footer className="pub-foot"><span>{data?.checkedAt&&'Actualisé le '+publicationDate(data.checkedAt)+' · Paris'}</span><a href="#publication?section=actions">Journal Scalency ↗</a></footer>
-    {choice&&<Confirm choice={choice} busy={busy} onClose={()=>{if(!lock.current)setChoice(null)}} onApply={apply}/>}
+    {choice?.action==='move'?<MovePublications rows={choice.rows} login={logins.get(choice.rows[0].account)||choice.rows[0].account} onClose={()=>setChoice(null)}
+      onResult={results=>{setReceipt(results);setSelection({});setChoice(null);setRevision(n=>n+1)}}/>:choice&&<Confirm choice={choice} busy={busy} onClose={()=>{if(!lock.current)setChoice(null)}} onApply={apply}/>}
   </main>
 }

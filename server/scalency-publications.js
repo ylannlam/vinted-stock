@@ -1,9 +1,10 @@
 import {remote,remoteId,ScalencyError} from './scalency-api.js'
 import {ownedAsset,ASSET_BUCKET} from './resources.js'
 import {removalKey} from './scalency-publication-actions.js'
+import {canMoveJob} from './scalency-reschedule.js'
 const pageSize=20
 const checked=r=>{if(r.error)throw r.error;return r.data||[]}
-const activeStates=['queued','sent','waiting','pending','scheduled']
+const activeStates=['queued','sent','waiting','pending','scheduled','planned','running','retry']
 const matches=(value,term)=>String(value||'').toLocaleLowerCase('fr').includes(term)
 
 async function covers(db,owner,paths){
@@ -29,26 +30,39 @@ async function localRows(db,user,{account,accounts,tab,page,term,draft}){
   const result=await read.order('updated_at',{ascending:false}).order('id').range(page*pageSize,(page+1)*pageSize-1)
   const drafts=checked(result),links=await covers(db,user.id,drafts.map(d=>d.photos?.[0]?.path))
   const preparing=drafts.filter(d=>d.state==='preparing')
-  const entries=preparing.length?checked(await db.from('scalency_lot_entries').select('draft_id,reviewed_version,status').in('draft_id',preparing.map(d=>d.id))):[]
+  const entries=preparing.length?checked(await db.from('scalency_lot_entries').select('draft_id,reviewed_version,status,scheduled_for').in('draft_id',preparing.map(d=>d.id))):[]
   return {total:result.count,rows:drafts.map(d=>{
     const f=d.fields||{},batch=d.payload?.batch?.status
     const entry=entries.find(e=>e.draft_id===d.id&&e.reviewed_version===d.version-1)
     return {kind:'draft',id:d.id,version:d.version,account:f.account_id,title:f.title,sku:f.sku,size:f.size_text,
-      date:d.updated_at,photo:links.get(d.photos?.[0]?.path),state:d.state,batch,reason:d.message,
-      actions:d.state==='preparing'?(entry&&['pending','working','dispatched'].includes(entry.status)?['stop-local']:[]):d.state==='draft'&&f.account_id?(batch==='ready'?['launch','discard']:['discard']):[]}
+      date:d.updated_at,scheduled_for:entry?.scheduled_for||null,photo:links.get(d.photos?.[0]?.path),state:d.state,batch,reason:d.message,
+      actions:d.state==='preparing'?(entry?.status==='pending'?['move','stop-local']:entry&&['working','dispatched'].includes(entry.status)?['stop-local']:[]):d.state==='draft'&&f.account_id?(batch==='ready'?['launch','discard']:['discard']):[]}
   })}
 }
 
-async function jobPage(q){
+async function siteReceipts(db,user,jobs){
+  if(!jobs.length)return []
+  const ids=jobs.map(j=>String(j.id))
+  const [drafts,entries]=await Promise.all([
+    db.from('listing_drafts').select('account:fields->>account_id,receipt:payload->>scalency_job_id').eq('owner_id',user.id).in('payload->>scalency_job_id',ids),
+    db.from('scalency_lot_entries').select('job_id,lot:scalency_publication_lots!inner(account,owner_id)').eq('lot.owner_id',user.id).in('job_id',ids)
+  ])
+  const keys=new Set([...checked(drafts).map(d=>d.account+'/'+d.receipt),
+    ...checked(entries).map(e=>e.lot.account+'/'+e.job_id)])
+  return jobs.filter(j=>keys.has(j.account_id+'/'+j.id))
+}
+
+async function jobPage(db,user,q){
   if(q.job){const j=await remote('jobs/'+remoteId(q.job));return {rows:j.type==='publish'&&(!q.account||String(j.account_id)===q.account)?[j]:[],next:null}}
   if(!['queue','live','history'].includes(q.tab)||q.draft)return {rows:[],next:null}
   let cursor=q.cursor||null,rows=[],next=null
   // Keep the provider cursor intact: don't discard matches at a page boundary.
   for(let i=0;i<4;i++){
     const res=await remote('jobs',{query:{type:'publish',scope:q.tab==='queue'?'active':'closed',account_id:q.account,cursor,limit:pageSize}})
-    rows.push(...(res.data||[]).filter(j=>j.type==='publish'&&(!q.account||String(j.account_id)===q.account)&&
+    const matchesPage=(res.data||[]).filter(j=>j.type==='publish'&&(!q.account||String(j.account_id)===q.account)&&
       (q.tab==='queue'?activeStates.includes(j.status):q.tab==='live'?j.status==='done'&&j.new_item_id:!activeStates.includes(j.status)&&!(j.status==='done'&&j.new_item_id))&&
-      (!q.term||[j.title,j.refs?.sku,j.id].some(x=>matches(x,q.term)))))
+      (!q.term||[j.title,j.refs?.sku,j.id].some(x=>matches(x,q.term))))
+    rows.push(...(q.stage==='site'?await siteReceipts(db,user,matchesPage):matchesPage))
     next=res.next_cursor||null
     if(rows.length||!next||next===cursor)break
     cursor=next
@@ -81,7 +95,7 @@ async function jobRows(db,user,jobs){
     const gone=stock?.status==='deleted'||removal==='deleted'
     return {...j,kind:'job',id:String(j.id),account:String(j.account_id),sku:j.refs?.sku||draft?.fields?.sku,size:draft?.fields?.size_text,
       photo:links.get(draft?.photos?.[0]?.path)||stock?.photo_url||j.photo_url||null,
-      removal:gone?'deleted':removal,actions:activeStates.includes(j.status)?['cancel']:
+      removal:gone?'deleted':removal,actions:canMoveJob(j)?['move','cancel']:['sent','queued','waiting','pending','scheduled'].includes(j.status)?['cancel']:activeStates.includes(j.status)?[]:
         j.status==='done'&&j.new_item_id&&!gone&&!stock?.sold&&removal!=='removing'?['remove']:[]}
   })
 }
@@ -91,6 +105,7 @@ export async function publicationTracking(db,user,q){
   if(!['drafts','queue','live','history','lots'].includes(tab)||String(q.cursor||'').length>512)throw new ScalencyError('Filtre invalide.')
   const page=Math.max(0,Math.min(100000,parseInt(q.draftPage,10)||0))
   const accounts=checked(await db.from('scalency_records').select('remote_id,payload').eq('kind','accounts')).map(a=>({id:a.remote_id,login:a.payload?.login||a.remote_id})).sort((a,b)=>a.login.localeCompare(b.login))
-  const [drafts,jobs]=await Promise.all([q.job?{rows:[],total:0}:localRows(db,user,{account,accounts,tab,page,term,draft:q.draft}),jobPage({...q,tab,account,term})])
+  const stage=tab==='queue'&&!q.job&&!q.draft?q.stage:''
+  const [drafts,jobs]=await Promise.all([q.job||['scalency','site'].includes(stage)?{rows:[],total:0}:localRows(db,user,{account,accounts,tab,page,term,draft:q.draft}),stage==='local'?{rows:[],next:null}:jobPage(db,user,{...q,tab,stage,account,term})])
   return {accounts,drafts:drafts.rows,draftTotal:drafts.total,pageSize,jobs:await jobRows(db,user,jobs.rows),nextCursor:jobs.next,checkedAt:new Date().toISOString()}
 }

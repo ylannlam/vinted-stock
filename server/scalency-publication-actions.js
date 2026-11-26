@@ -25,7 +25,7 @@ export async function managePublication(db,user,{operation,id,version,account},s
   if(job.type!=='publish'||String(job.account_id)!==account||String(job.id)!==id)conflict('Cette publication ne correspond plus à la sélection.')
   if(operation==='cancel'){
     if(job.status==='cancelled')return {message:'Déjà arrêtée.'}
-    if(!['queued','sent','waiting','pending','scheduled'].includes(job.status))conflict('Le traitement est terminé. Vérifie le statut avant de continuer.')
+    if(!['queued','sent','waiting','pending','scheduled','planned'].includes(job.status))conflict('Le traitement est terminé. Vérifie le statut avant de continuer.')
     const reply=await request('jobs/'+id+'/cancel',{method:'POST'})
     if(reply.status!=='cancelled'&&reply.job?.status!=='cancelled')conflict('Arrêt non confirmé par Scalency. Actualise le suivi.')
     await saveRecords(db,'jobs',[{...job,...reply.job,status:'cancelled'}])
