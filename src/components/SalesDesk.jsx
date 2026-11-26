@@ -3,6 +3,7 @@ import CopySkuButton from './CopySkuButton'
 import useShopBoard from './useShopBoard'
 import {FilterTabs,PageBar,PrintArticles,SelectionBar,ShopCover,ShopFilters,ShopHeader,useShopSelection} from './ShopControls'
 import BatchLabelsDialog from './BatchLabelsDialog'
+import ScalencyPurchaseCart from './ScalencyPurchaseCart'
 import {calendar,price,printableLabel,saleBucket,salesLabels,sortSales,textMatch} from '../lib/shopView'
 import {salesPeriodLabel} from '../lib/shopPeriod'
 import {query} from '../lib/scalency'
@@ -65,9 +66,11 @@ function SalesGrid({board,params}){
 }
 export default function SalesDesk({params}){
   const {board,busy,error,refresh}=useShopBoard()
-  return <main className="shop-work"><ShopHeader title="Ventes et expédition" busy={busy} refresh={refresh}><p>{salesPeriodLabel} · <a href="#dressing/sku">Meilleures ventes par SKU</a></p></ShopHeader>
+  const cart=params.section==='panier'
+  return <main className="shop-work"><ShopHeader title="Ventes et expédition" busy={busy} refresh={refresh}><p>{salesPeriodLabel} · <a href="#dressing/sku">Meilleures ventes par SKU</a></p>
+    <nav className="shop-views" aria-label="Ventes"><a href="#ventes" aria-current={!cart?'page':undefined}>Ventes</a><a href="#ventes/panier" aria-current={cart?'page':undefined}>Panier du jour SHEIN</a></nav></ShopHeader>
     {error&&<p className="shop-alert" role="alert">{error}</p>}
     {!board&&!error&&<p role="status" className="shop-empty">Chargement des ventes…</p>}
-    {board&&<SalesGrid board={board} params={params}/>}
+    {board&&(cart?<ScalencyPurchaseCart sales={board.sales}/>:<SalesGrid board={board} params={params}/>)}
   </main>
 }

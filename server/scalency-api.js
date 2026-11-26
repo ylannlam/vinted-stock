@@ -42,6 +42,7 @@ export function snapshot(kind,row,seenAt=new Date().toISOString()) {
   if (kind==='jobs' && row.refs?.sku) payload.refs={sku:row.refs.sku}
   if (kind==='orders') payload.items=(row.items||[]).map(i=>{
     const line=select(i,'id title thumbnail sku quantity selling_price purchase_price supplier_link location vinted_id state'.split(' '))
+    for(const field of ['size','color'])if(typeof i[field]==='string')line[field]=i[field]
     if(i.link_method==='sku'&&i.product?.skus?.length===1&&typeof i.product.skus[0]==='string')line.product_sku=i.product.skus[0]
     return line
   })

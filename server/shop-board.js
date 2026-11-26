@@ -3,6 +3,8 @@ import {skuReferences,skuSourceRows} from './scalency-sku.js'
 import {buildSkuActivity} from '../src/lib/skuActivity.js'
 import {inSalesPeriod,salesStart} from '../src/lib/shopPeriod.js'
 import {listingCovers} from './listing-covers.js'
+import {supplierLink} from '../src/lib/catalog.js'
+import {sizeFromLabel,sizeFromTitle} from '../src/lib/soldSize.js'
 
 const check=result=>{if(result.error)throw result.error;return result.data}
 const identity=(...parts)=>JSON.stringify(parts.map(v=>String(v??'').toLowerCase()))
@@ -71,13 +73,22 @@ export function shopBoard({accounts,publicationAccounts=[],inventory,jobs,orders
   }
   const exactLines=new Map(references.lines.map(r=>[identity(login(r.account),r.order,r.id),r]))
   const manualLines=new Map(manual.filter(r=>r.kind==='sale').map(r=>[identity(r.account,r.id,r.line),r.sku]))
+  const productUrls=new Map()
+  for(const product of references.products||[]){
+    const key=product.supplier_sku?.trim().toLowerCase(),url=supplierLink(product.supplier_url).product?.supplier_url
+    if(key&&url)productUrls.set(key,!productUrls.has(key)||productUrls.get(key)===url?url:null)
+  }
+  const listingUrls=new Map(inventory.map(r=>[identity(login(r.account||r.payload.account_id),r.remote_id||r.payload.id),r.payload.supplier_link]))
   const sales=[...recent.values()].map(r=>{
     const account=login(r.account)
     const lines=(r.items||[]).map(i=>{
       const k=identity(account,r.id,i.id),ref=exactLines.get(k)
       const ad=listings.get(identity(account,i.vinted_id||ref?.listing))
-      return {id:i.id,title:i.title||r.title,sku:posted('listing',account,i.vinted_id||ref?.listing)||posted('line',account,i.id)||manualLines.get(k)||soldLines.get(k)||i.sku||ref?.sku||i.product_sku||ad?.sku,
-        photo:safePhoto(i.thumbnail)||ad?.photo,size:ad?.size,quantity:i.quantity??1,location:i.location||ad?.location}
+      const sku=posted('listing',account,i.vinted_id||ref?.listing)||posted('line',account,i.id)||manualLines.get(k)||soldLines.get(k)||i.sku||ref?.sku||i.product_sku||ad?.sku
+      const url=supplierLink(i.supplier_link).product?.supplier_url||supplierLink(sku).product?.supplier_url||
+        productUrls.get(String(sku||'').trim().toLowerCase())||supplierLink(listingUrls.get(identity(account,i.vinted_id||ref?.listing))).product?.supplier_url
+      return {id:i.id,title:i.title||r.title,sku,supplierUrl:url,state:i.state,color:typeof i.color==='string'?i.color:null,
+        photo:safePhoto(i.thumbnail)||ad?.photo,size:sizeFromLabel(i.size)||ad?.size||sizeFromTitle(i.title||r.title),quantity:i.quantity??1,location:i.location||ad?.location}
     })
     return {id:r.id,accountId:r.account,account,title:r.title,date:r.order_date,estimated:!!r.order_date_estimated,status:r.normalized_status,state:r.state,
       label:r.status_fr,deadline:r.deadline,hasLabel:r.has_label===true,printed:r.printed_at,packed:r.packed_at,
@@ -92,7 +103,7 @@ export async function readShopBoard(db,user,admin){
     all(db,'scalency_catalog_inventory','remote_id,account,payload,photo,seen_at,listed_size,size,emplacement',q=>q,['account','remote_id']),
     all(db,'scalency_records','payload',q=>q.eq('kind','jobs').eq('payload->>status','done').in('payload->>type',['publish','relist','hide','unhide']),['account','remote_id']),
     all(db,'scalency_records','payload',q=>q.eq('kind','orders').gte('sort_at',salesStart),['account','remote_id']),
-    skuReferences(db,user),
+    skuReferences(db,user,{includeSupplierLinks:true}),
     admin?all(db,'listing_drafts','id,fields,photo:photos->0->>path,updated_at',q=>q.eq('state','draft').eq('owner_id',user.id).not('fields->>account_id','is',null).is('vinted_id',null),['id']):[],
     db.from('scalency_settings').select('id,value').like('id','dressing-read-v1:%'),
     all(db,'scalency_settings','id,value',q=>q.like('id','dressing-ref:%'),['id']),

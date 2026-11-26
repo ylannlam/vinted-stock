@@ -112,6 +112,15 @@ test('dressing, sélection, fiches à imprimer et bordereaux sur demande',async(
     assert.match(document.querySelector('.shop-sales tbody').textContent,/Vente annulée/)
     assert.equal(document.querySelector('.sale-product .shop-copy'),null)
     assert.ok(button('Imprimer les bordereaux').disabled)
+    assert.ok(document.querySelector('a[href="#ventes/panier"]'))
+    board.sales.push({id:'du-jour',account:'Exemple',date:new Date().toISOString(),status:'payment_received',state:'to_order',
+      lines:[{id:'l1',sku:'sz-test',title:'Robe du jour',size:'XL',quantity:2}]})
+    await act(async()=>root.render(React.createElement(mod.exports.SalesDesk,{params:{section:'panier'}})))
+    assert.equal(document.querySelectorAll('.shop-cart-row').length,1)
+    assert.match(document.querySelector('.shop-cart-row').textContent,/Quantité 2/)
+    assert.equal(document.querySelector('.shop-cart-row a[target="_blank"]').getAttribute('href'),'https://fr.shein.com/pdsearch/sz-test/')
+    await click(button('Copier la liste'))
+    assert.match(copies.at(-1),/2 × Robe du jour · Taille XL/)
   }finally{
     await act(async()=>root.unmount())
     if(originalClipboard)Object.defineProperty(navigator,'clipboard',originalClipboard)
