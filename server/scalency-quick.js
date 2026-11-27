@@ -77,7 +77,15 @@ export async function prepareQuickDraft(db,user,req,row,photosFor,review){
     if(labels.size===1)stockSize=[...labels][0]
   }
   const sizeText=size||result.label_size||stockSize
-  const category=result.catalog_id,options=category?await remote('catalogs/'+remoteId(category)):null
+  let category=result.catalog_id,options=null
+  if(category){
+    try{options=await remote('catalogs/'+remoteId(category))}
+    catch(error){
+      if(error.status!==404)throw error
+      // A category can be retired between refreshing the index and preparing a draft.
+      category=null
+    }
+  }
   const next=applyListingPresets({...fields,brand_id:null,brand_title:brand,title:result.title,description:result.description,
     catalog_id:category,status_id:conditionForCatalog(options),size_id:null,package_size_id:null,size_text:sizeText,color_ids:result.color_ids,item_attributes:[]},options,settings)
   const copy=composeVintedSeo(result.seoParts,{size:sizeText,condition:bioCondition,measures:listingFacts(product,sizeText)?.measures})

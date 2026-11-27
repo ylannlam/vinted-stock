@@ -113,6 +113,8 @@ test('un index Scalency incomplet est enrichi pour les bodies et les autres vêt
  ],[{id:98765,title:'Test veste courte',parent_id:13}])
  const choices=catalogChoices(rows)
  assert.ok(choices.some(c=>c.id===1835&&c.label==='Femmes › Vêtements › Hauts et t-shirts › Bodies'))
+ assert.ok(choices.some(c=>c.id===1079&&c.label.endsWith('Vestes en jean')))
+ assert.ok(choices.some(c=>c.id===222&&c.label.endsWith('Chemises')))
  assert.ok(!choices.some(c=>c.id===13))
  for(const [title,proposed,expected] of [
    ['Body lingerie rouge métallisé',29,1835],['Body effet cuir rouge',null,1835],

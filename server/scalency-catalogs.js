@@ -1,18 +1,13 @@
 import {remote,ScalencyError} from './scalency-api.js'
 import {listingMetadata} from './listing-studio-core.js'
+import {womensClothingCatalog} from './womens-clothing-catalog.js'
 const cacheId='listing-catalogs-fr'
 const check=r=>{if(r.error)throw r.error;return r.data}
 // The paginated Scalency index can end at a department, even when its leaf
 // categories and their listing options are available by ID.
-const verifiedLeaves=[
-  {id:1835,parent_id:12,title:'Bodies'},
-  {id:1774,parent_id:10,title:'Pour occasions'},
-  {id:1777,parent_id:1774,title:"Robes de bal de fin d'année"},
-  {id:1778,parent_id:1774,title:'Robes de soirée'}
-]
 export function mergeListingCatalogs(primary,extra=[]){
   const categories=new Map()
-  for(const row of [...verifiedLeaves,...extra,...primary]){
+  for(const row of [...womensClothingCatalog,...extra,...primary]){
     if(Number.isSafeInteger(row?.id)&&typeof row.title==='string'&&row.title.trim())
       categories.set(row.id,{id:row.id,title:row.title,parent_id:row.parent_id??null})
   }
