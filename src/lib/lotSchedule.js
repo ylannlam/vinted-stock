@@ -1,7 +1,14 @@
-import {addDays,clockMinutes,parisToUtc,timeLabel} from './publicationPlan.js'
+import {addDays,clockMinutes,parisDate,parisToUtc,timeLabel} from './publicationPlan.js'
 import {validDay} from './publications.js'
 
 const minute=60000
+
+// Scalency requires a future first send; the form accepts whole minutes.
+export function tonightWindow(now){
+  const next=(Math.floor(now/minute)+1)*minute
+  const from=timeLabel(next),to='23:55'
+  return {from,to,available:parisDate(next)===parisDate(now)&&from<to}
+}
 
 export function lotSchedule(window,count){
   if(!validDay(window?.day))throw Error('Choisis la date de publication.')

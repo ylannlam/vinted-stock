@@ -48,9 +48,12 @@ export async function batchDrafts(db,user,q){
   if(q.account)read=read.eq('fields->>account_id',remoteId(q.account))
   if(readyOnly)read=read.eq('payload->batch->>status','ready').is('payload->>scalency_job_id',null).is('published_at',null)
     .is('vinted_id',null).is('publication_task_id',null).is('inflight',null).is('dotb_item_id',null)
-  const result=await read.order('updated_at',{ascending:false}).order('id').range(page*pageSize,(page+1)*pageSize-1)
+  const [result,counts]=await Promise.all([
+    read.order('updated_at',{ascending:false}).order('id').range(page*pageSize,(page+1)*pageSize-1),
+    q.withCounts==='1'?db.rpc('scalency_draft_counts',{p_owner:user.id}):null
+  ])
   const drafts=checked(result)
   const covers=await listingCovers(db,user.id,drafts.map(d=>d.photos?.[0]?.path))
-  return {rows:drafts.map(d=>({id:d.id,version:d.version,fields:d.payload?.batch?.status==='ready'?withBioCondition(d.fields):d.fields,updated_at:d.updated_at,
+  return {...(counts?{draftCounts:counts.error?null:counts.data}:{}),rows:drafts.map(d=>({id:d.id,version:d.version,fields:d.payload?.batch?.status==='ready'?withBioCondition(d.fields):d.fields,updated_at:d.updated_at,
     photo: covers.get(d.photos?.[0]?.path)?.preview||covers.get(d.photos?.[0]?.path)?.original||null,count:d.photos?.length||0,batch:d.payload?.batch?.status==='ready'?{...d.payload.batch,condition:vintedCondition}:d.payload?.batch||null})),page,pageSize,total:result.count}
 }

@@ -42,7 +42,7 @@ test('le plafond reste unique et les modifications suivent le compte et le rythm
       if(view === 'quick-profiles') return {accounts}
       if(view === 'account-health') return {accounts:accounts.map(a=>({...a,block:
         bans.has(a.id)?{kind:'banned',label:'Compte banni'}:a.id==='restreint'?{kind:'restricted',label:'Compte restreint'}:null})),checkedAt:new Date().toISOString()}
-      if(view === 'batch-drafts') return {rows:[],total:0}
+      if(view === 'batch-drafts') return {rows:[],total:0,draftCounts:{alice:47,restreint:1}}
       throw Error(view)
     },
     async act(action, fields) {
@@ -81,7 +81,10 @@ test('le plafond reste unique et les modifications suivent le compte et le rythm
   assert.ok(!document.body.textContent.includes('profil-banni'))
   assert.ok(options().includes('restreint'))
   assert.deepEqual(options(),['alice','brune','clara','restreint','inconnu'])
-  assert.match(accountButton('alice').textContent,/5 à programmer.*2 publiées · 3 en file/)
+  assert.equal(accountButton('alice').querySelector('.bs-account-drafts').textContent,'47 brouillons')
+  assert.equal(accountButton('brune').querySelector('.bs-account-drafts').textContent,'0 brouillon')
+  assert.equal(accountButton('restreint').querySelector('.bs-account-drafts').textContent,'1 brouillon')
+  assert.match(accountButton('alice').textContent,/5 places libres aujourd’hui.*2 publiées · 3 en file/)
   assert.match(accountButton('brune').textContent,/En attente de publication.*0 publiée · 10 en file/)
   assert.match(accountButton('clara').textContent,/Plafond atteint.*10 publiées · 0 en file/)
   assert.match(accountButton('restreint').textContent,/Compte restreint/)
@@ -137,5 +140,5 @@ test('le plafond reste unique et les modifications suivent le compte et le rythm
   assert.equal(accountButton('alice').querySelector('.bs-account-counts'),null)
   cadenceDown=false
   await refresh()
-  assert.match(accountButton('alice').textContent,/22 à programmer/)
+  assert.match(accountButton('alice').textContent,/22 places libres aujourd’hui/)
 })

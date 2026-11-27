@@ -2,12 +2,29 @@ import {useEffect,useState} from 'react'
 import {query} from '../lib/scalency'
 import {addDays,dayLabel,timeLabel} from '../lib/publicationPlan'
 import {parisDay,validDay} from '../lib/publications'
-import {lotDays} from '../lib/lotSchedule'
+import {lotDays,tonightWindow} from '../lib/lotSchedule'
 
 export default function LotWindowPlanner({account,chosen,disabled,sending,onSubmit,revision,initialDay}){
-  const today=parisDay(),tomorrow=addDays(today,1),lastDay=addDays(today,30)
-  const [day,setDay]=useState(()=>validDay(initialDay)&&initialDay>=today&&initialDay<=lastDay?initialDay:tomorrow)
-  const [from,setFrom]=useState('08:00'),[to,setTo]=useState('20:00')
+  const [now,setNow]=useState(Date.now)
+  const tonight=tonightWindow(now),today=parisDay(now),tomorrow=addDays(today,1),lastDay=addDays(today,30)
+  const [day,setDay]=useState(()=>validDay(initialDay)&&initialDay>today&&initialDay<=lastDay?initialDay:tonight.available?today:tomorrow)
+  const [manualFrom,setFrom]=useState(null),[manualTo,setTo]=useState(null)
+  const from=manualFrom??(day===today?tonight.from:'08:00'),to=manualTo??(day===today?tonight.to:'20:00')
+  useEffect(()=>{
+    let timer
+    function tick(){
+      clearTimeout(timer)
+      const time=Date.now()
+      setNow(time)
+      timer=setTimeout(tick,60000-(time%60000))
+    }
+    tick()
+    document.addEventListener('visibilitychange',tick)
+    return ()=>{clearTimeout(timer);document.removeEventListener('visibilitychange',tick)}
+  },[])
+  function chooseDay(next){
+    setNow(Date.now());setDay(next);setFrom(null);setTo(null);setAcceptedSplit('')
+  }
   const [capacity,setCapacity]=useState(null),[retry,setRetry]=useState(0),[acceptedSplit,setAcceptedSplit]=useState('')
   const validDate=validDay(day)&&day>=today&&day<=lastDay
   const count=chosen.length,key=JSON.stringify([account,day,count,revision,retry])
@@ -33,7 +50,7 @@ export default function LotWindowPlanner({account,chosen,disabled,sending,onSubm
   const available=capacity?.key===key?capacity:null
   const free=available?.remaining,overflow=count-free
   const canSplit=overflow>0&&Number.isInteger(available?.next)&&available.next>=overflow
-  const splitKey=JSON.stringify([account,day,from,to,count,free])
+  const splitKey=JSON.stringify([account,day,manualFrom,to,count,free])
   const split=canSplit&&acceptedSplit===splitKey
   const windowPlan={day,from,to,...(split?{firstCount:free}:{})}
   let groups=[],issue=''
@@ -44,8 +61,10 @@ export default function LotWindowPlanner({account,chosen,disabled,sending,onSubm
   let position=0
   return <div className="bs-window">
     <fieldset disabled={sending}><legend>Créneau de publication · heure de Paris</legend>
-      <button type="button" onClick={()=>{setDay(tomorrow);setFrom('08:00');setTo('20:00');setAcceptedSplit('')}}>Demain · 8 h–20 h</button>
-      <label>Date<input type="date" min={today} max={lastDay} required value={day} onChange={e=>setDay(e.target.value)}/></label>
+      <button type="button" disabled={!tonight.available} aria-pressed={day===today&&from===tonight.from&&to===tonight.to}
+        onClick={()=>chooseDay(today)}>Ce soir · jusqu’à 23 h 55</button>
+      <button type="button" aria-pressed={day===tomorrow&&from==='08:00'&&to==='20:00'} onClick={()=>chooseDay(tomorrow)}>Demain · 8 h–20 h</button>
+      <label>Date<input type="date" min={today} max={lastDay} required value={day} onChange={e=>chooseDay(e.target.value)}/></label>
       <label>De<input type="time" required value={from} onChange={e=>setFrom(e.target.value)}/></label>
       <label>À<input type="time" required value={to} onChange={e=>setTo(e.target.value)}/></label>
     </fieldset>
@@ -67,6 +86,10 @@ export default function LotWindowPlanner({account,chosen,disabled,sending,onSubm
       })}</ol></section>)}
     <p className="bs-meta">Horaires d’envoi à Scalency. La mise en ligne est confirmée dans le Planning.</p>
     <button type="button" className="sc-primary" disabled={disabled||sending||!!issue||!(free>=count||split)}
-      onClick={()=>onSubmit(chosen,windowPlan)}>{sending?'Enregistrement…':'Programmer le lot ('+count+')'}</button>
+      onClick={()=>{
+        const time=Date.now()
+        if(!groups.length||Date.parse(groups[0].times[0])<=time){setNow(time);return}
+        onSubmit(chosen,windowPlan)
+      }}>{sending?'Enregistrement…':'Programmer le lot ('+count+')'}</button>
   </div>
 }

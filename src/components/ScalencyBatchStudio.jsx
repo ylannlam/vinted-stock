@@ -71,6 +71,7 @@ export default function ScalencyBatchStudio({params,focused=false}){
   const [loadedProfiles,setProfiles]=useState(null),[owner,setOwner]=useState(''),[requestedAccount,setAccount]=useState(params.account||'')
   const profiles=loadedProfiles??[]
   const [page,setPage]=useState(0),[data,setData]=useState(null),[error,setError]=useState(''),[notice,setNotice]=useState('')
+  const [draftCounts,setDraftCounts]=useState(null)
   const [selected,setSelected]=useState({}),[review,setReview]=useState(false),[sending,setSending]=useState(false),[lastLot,setLastLot]=useState('')
   const [local,setLocal]=useState({}),[revision,setRevision]=useState(0)
   const [discarding,setDiscarding]=useState(null)
@@ -110,15 +111,15 @@ export default function ScalencyBatchStudio({params,focused=false}){
   },[params.account,focused])
   useEffect(()=>{
     let live=true
-    query('batch-drafts',{account,page}).then(r=>{
+    query('batch-drafts',{account,page,withCounts:'1'}).then(r=>{
       if(!live)return
-      setData(r);setError('')
+      setData(r);setDraftCounts(r.draftCounts??null);setError('')
       setSelected(prev=>Object.fromEntries(Object.entries(prev).filter(([id,row])=>{
         const current=r.rows.find(x=>x.id===id)
         return !current||current.version===row.version&&stage(current)!=='running'
       })))
       if(!r.rows.length&&page)setPage(p=>p-1)
-    }).catch(e=>{if(live)setError(e.message)})
+    }).catch(e=>{if(live){setDraftCounts(null);setError(e.message)}})
     return()=>{live=false}
   },[account,page,revision])
   useEffect(()=>{
@@ -232,7 +233,7 @@ export default function ScalencyBatchStudio({params,focused=false}){
     disabled={sending||!!quickEdit} onQuick={setQuickEdit} quick={quickEdit===row.id} onSave={saveQuickEdit} duplicates={duplicates[row.id]}/>)
   return <main className="sc-work bs-work"><header className="sc-head"><div><p>{focused?'Espace Alicia':'Stock Vinted / Scalency'}</p><h1>Atelier d’annonces</h1></div><a href={focused?'#alicia/suivi':'#publication'}>Suivi des publications</a></header>
     <fieldset className="bs-account" hidden={review} disabled={sending||!!editor||!health.report}>
-      {!editor&&<PublicationAccountPicker profiles={availableProfiles} loadingProfiles={loadedProfiles===null} account={account} onSelect={choose} health={health} cadence={cadence}/>}
+      {!editor&&<PublicationAccountPicker profiles={availableProfiles} loadingProfiles={loadedProfiles===null} draftCounts={draftCounts} account={account} onSelect={choose} health={health} cadence={cadence}/>}
       {login&&<ScalencyQuickAccount fixed readOnly={focused} accounts={availableProfiles} health={health} account={account} onSaved={updateProfile}/>}
     </fieldset>
     {!editor&&health.error&&<AccountHealthNotice health={health}/>}
