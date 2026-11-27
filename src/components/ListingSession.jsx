@@ -1,9 +1,11 @@
+import ListingCategoryPicker from './ListingCategoryPicker'
+import {categoryIndex} from '../lib/categoryPicker'
 import ListingPublisher,{YlavintTransfer,ListingAgentControls} from './ListingPublisher'
 import {syncListingStatuses} from '../lib/listingStatusSync'
 import ListingSheinHint from './ListingSheinHint'
 import {useEffect,useMemo,useRef,useState} from 'react'
 import ListingSettingsPanel from './ListingSettingsPanel'
-import {catalogChoices,generationIssues,listingIssues,listingSizes,listingStateLabels,validateListingPhoto,MAX_LISTING_PHOTOS} from '../lib/listingStudio'
+import {generationIssues,listingIssues,listingSizes,listingStateLabels,validateListingPhoto,MAX_LISTING_PHOTOS} from '../lib/listingStudio'
 import {applyListingPresets} from '../lib/listingSettings'
 import {readTransfer,resolveTransfer,hasTransferImage,filesFromClipboard} from '../lib/dropFiles'
 
@@ -62,7 +64,7 @@ export default function ListingSession({request,upload,account,meta,initialSku='
  const [loading,setLoading]=useState(true),[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(initialSku?`SKU ${initialSku} prêt : ajoute les photos de l’article, il sera repris sur la fiche avec ses mesures Shein.`:'')
  const [dropped,setDropped]=useState(null),[showSettings,setShowSettings]=useState(false)
  const [selected,setSelected]=useState(null),[filter,setFilter]=useState('all'),[dragging,setDragging]=useState(false),[zone,setZone]=useState(null),[photoIndex,setPhotoIndex]=useState(0)
- const choices=useMemo(()=>catalogChoices(meta.catalogs||[]),[meta.catalogs])
+ const categories=useMemo(()=>categoryIndex(meta.catalogs),[meta.catalogs])
  // Rédaction automatique : dès qu'un article a ses photos et sa taille, l'IA l'écrit (3 à la fois au plus).
  const aiSlots=useRef(0),aiWaiters=useRef([]),aiPaused=useRef(false),[autoWrite,setAutoWrite]=useState(()=>{try{return localStorage.getItem('listing-auto-write')!=='off'}catch{return true}})
  const render=()=>{if(alive.current)setTick(n=>n+1)}
@@ -386,10 +388,8 @@ export default function ListingSession({request,upload,account,meta,initialSku='
  }
 
  function fiche(card,options,stage){
-  const f=card.fields,locked=!!card.busy,search=card.categorySearch||'',issues=stage==='review'?listingIssues(f,card.photos,options):[]
+  const f=card.fields,locked=!!card.busy,issues=stage==='review'?listingIssues(f,card.photos,options):[]
   const missing=key=>issues.some(i=>i.key===key)
-  const filtered=search?choices.filter(c=>c.label.toLocaleLowerCase('fr').includes(search.toLocaleLowerCase('fr'))).slice(0,300):choices
-  const category=choices.find(c=>c.id===f.catalog_id)
   const row=(label,key,control,hint)=><div key={label} className="grid gap-1.5 px-4 py-3 sm:grid-cols-[9.5rem_1fr] sm:items-center"><dt className={`flex items-center gap-2 text-sm ${missing(key)?'font-medium text-amber-900':'text-[#79756f]'}`}>{missing(key)&&<span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true"/>}{label}</dt><dd className="min-w-0">{control}{hint&&<p className="mt-1 text-xs text-[#79756f]">{hint}</p>}</dd></div>
   const select=(label,value,list,onChange,empty='Choisir…')=><select aria-label={label} className={field} value={value||''} onChange={e=>onChange(e.target.value?Number(e.target.value):null)}><option value="">{empty}</option>{list.map(o=><option key={o.id} value={o.id}>{o.title}</option>)}</select>
   const loadingOptions=f.catalog_id&&!options
@@ -398,7 +398,8 @@ export default function ListingSession({request,upload,account,meta,initialSku='
    <label className="block"><span className="flex items-baseline justify-between text-sm font-medium text-[#323630]">Description<span className="text-xs font-normal tabular-nums text-[#79756f]">{f.description.length} / 2000</span></span><textarea className={field+' mt-1.5 min-h-48 leading-relaxed'} maxLength={2000} value={f.description} onChange={e=>edit(card,{description:e.target.value})}/></label>
    {card.row.message&&<p className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-sm text-amber-950"><span className="font-medium">À relire :</span> {card.row.message}</p>}
    <dl className="divide-y divide-[#eee9e1] rounded-2xl border border-[#e8e4dd] bg-[#fffefa]">
-    {row('Catégorie','category',<div className="space-y-1.5"><input className={field} placeholder="Rechercher une catégorie…" value={search} onChange={e=>{card.categorySearch=e.target.value;render()}}/><select aria-label="Catégorie Vinted" className={field} value={f.catalog_id||''} onChange={e=>changeCategory(card,Number(e.target.value)||null)}><option value="">Choisir la catégorie</option>{category&&!filtered.some(c=>c.id===category.id)&&<option value={category.id}>{category.label}</option>}{filtered.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}</select></div>)}
+    {row('Catégorie','category',<ListingCategoryPicker index={categories} value={f.catalog_id} invalid={missing('category')}
+      fallbackLabel={options?.catalog?.title} onChange={id=>changeCategory(card,id)}/>)}
     {loadingOptions?<p className="px-4 py-3 text-sm text-[#79756f]">{optionCache.current.get(Number(f.catalog_id)) instanceof Error?'Les options de cette catégorie n’ont pas pu être chargées. Actualise la session.':'Chargement des tailles et des options…'}</p>:options&&<>
      {!!listingSizes(options).length&&row('Taille Vinted','size',select('Taille Vinted',f.size_id,listingSizes(options),size_id=>edit(card,{size_id})),f.size_text?`Taille notée : ${f.size_text}`:null)}
      {!!options.conditions?.length&&row('État','condition',select('État',f.status_id,options.conditions,status_id=>edit(card,{status_id})))}

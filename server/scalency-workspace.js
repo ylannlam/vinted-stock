@@ -250,6 +250,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
       return res.json({...row,urls:await photosFor(db,row.photos,3600)})
     }
     if(action==='catalogs')return res.json(await remote('catalogs',{query:{limit:100,cursor:q.cursor}}))
+    if(action==='catalog-tree')return res.json({data:await listingCatalogs(db)})
     if(action==='catalog-choices')return res.json({data:catalogChoices(await listingCatalogs(db))})
     if(action==='category')return res.json(await remote('catalogs/'+remoteId(q.id)))
     if(action==='connection')return res.json({configured:!!process.env.SCALENCY_API_KEY,webhook:!!checked(await db.from('scalency_settings').select('id').eq('id','webhook').not('value->>id','is',null).maybeSingle())})

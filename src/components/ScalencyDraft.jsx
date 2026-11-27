@@ -1,4 +1,6 @@
-import {useState,useEffect,useRef} from 'react'
+import ListingCategoryPicker from './ListingCategoryPicker'
+import {categoryIndex} from '../lib/categoryPicker'
+import {useState,useEffect,useMemo,useRef} from 'react'
 import ListingSeoOutput from './ListingSeoOutput'
 import {updateSeoDetails} from '../lib/vintedSeo'
 import ScalencyQuickAccount from './ScalencyQuickAccount'
@@ -19,8 +21,9 @@ function ChoosePiece({onChoose,busy}){
 function Field({label,children}){return <label className="sc-field"><span>{label}</span>{children}</label>}
 export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onGenerate,onReviewed,onProfileSaved,initialAccount,sharedHealth,detailed=false,focused=false}){
   const [fields,setFields]=useState({...emptyListing(),sku:sku||''}),[photos,setPhotos]=useState([]),[version,setVersion]=useState(null)
-  const [cats,setCats]=useState([]),[options,setOptions]=useState(null)
-  const [search,setSearch]=useState(''),[date,setDate]=useState(''),[approved,setApproved]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState(''),[ready,setReady]=useState(!id)
+  const [cats,setCats]=useState(null),[options,setOptions]=useState(null)
+  const categories=useMemo(()=>categoryIndex(cats||[]),[cats])
+  const [date,setDate]=useState(''),[approved,setApproved]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState(''),[ready,setReady]=useState(!id)
   const [quick,setQuick]=useState(!id&&!detailed),[prepared,setPrepared]=useState(false),[review,setReview]=useState(false),[profiles,setProfiles]=useState([]),[owner,setOwner]=useState('')
   const [choosing,setChoosing]=useState(false)
   const [source,setSource]=useState({piece:piece||null,product:product||null,label:''}),[savedState,setSavedState]=useState('draft')
@@ -58,7 +61,7 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
       if(!id){const found=r.accounts.find(a=>a.id===(initialAccount||last))||(r.accounts.length===1?r.accounts[0]:null)
         if(found&&!accountChosen.current)setFields(f=>({...f,account_id:found.id}))}
     }).catch(e=>live&&setError(e.message))
-    query('catalog-choices').then(r=>{if(live)setCats(r.data||[])}).catch(e=>live&&setError(e.message))
+    query('catalog-tree').then(r=>{if(live)setCats(r.data||[])}).catch(e=>{if(live){setCats([]);setError(e.message)}})
     return()=>{live=false}
   },[id,piece,product,sku])
   useEffect(()=>{
@@ -135,8 +138,13 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
     {(!quick||review)&&<><div className="sc-tools">{!quick&&<button onClick={()=>run(async()=>{const v=await save();const r=await act('generate',{id:uid.current,version:v});edit('title',r.title);edit('description',r.description);setMessage('Texte préparé. Tu peux le relire et le modifier.')})}>Rédiger le titre et la bio</button>}</div>
     <Field label="Titre"><input maxLength={100} value={fields.title} onChange={e=>edit('title',e.target.value)}/></Field>
     <Field label="Description"><textarea rows={4} maxLength={2000} value={fields.description} onChange={e=>edit('description',e.target.value)}/></Field>
-    <div className="sc-fields"><Field label="Rechercher une catégorie"><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Ex. Robes"/></Field>
-    <Field label="Catégorie Vinted"><select value={fields.catalog_id||''} onChange={e=>{edit('catalog_id',Number(e.target.value)||null);edit('size_id',null);edit('status_id',null);edit('package_size_id',null);edit('item_attributes',[])}}><option value="">Choisir</option>{fields.catalog_id&&!cats.some(c=>c.id===fields.catalog_id)&&<option value={fields.catalog_id}>{options?.ancestors?.at(-1)?.title||fields.catalog_id}</option>}{cats.filter(c=>!search||c.label.toLowerCase().includes(search.toLowerCase().replace(/^body$/,'bodies'))||c.id===fields.catalog_id).map(c=><option value={c.id} key={c.id}>{c.label}</option>)}</select></Field></div>
+    <div className="sc-field"><span>Catégorie Vinted</span>
+      <ListingCategoryPicker index={categories} loading={cats===null} value={fields.catalog_id}
+        fallbackLabel={options?.catalog?.id===fields.catalog_id ? options?.ancestors?.at(-1)?.title||options?.catalog?.title : ''}
+        onChange={catalog_id=>{
+          setFields(f=>({...f,catalog_id,size_id:null,status_id:null,package_size_id:null,item_attributes:[]}))
+          setApproved(false);setMessage('')
+        }}/></div>
     <div className="sc-fields"><Field label="État Vinted"><input readOnly value={savedState==='draft'?(options&&!conditionForCatalog(options)?'Indisponible dans cette catégorie':vintedCondition):(options?.conditions?.find(c=>c.id===fields.status_id)?.title||'')}/></Field>
     <Field label="Taille Vinted"><select value={fields.size_id||''} onChange={e=>{const id=Number(e.target.value)||null;edit('size_id',id);edit('size_text',sizes.find(s=>s.id===id)?.title.split('/')[0]?.trim()||'')}}><option value="">Choisir</option>{sizes.map((s,i)=><option key={s.id+'-'+i} value={s.id}>{s.title}</option>)}</select></Field>
     <div className="sc-field"><span>Couleurs (deux maximum)</span><span className="sc-colors">{listingColors.map(c=><label key={c.id}><input type="checkbox" checked={fields.color_ids?.includes(c.id)||false} disabled={!fields.color_ids?.includes(c.id)&&fields.color_ids?.length>=2} onChange={e=>edit('color_ids',e.target.checked?[...(fields.color_ids||[]),c.id]:fields.color_ids.filter(id=>id!==c.id))}/>{c.title}</label>)}</span></div>
