@@ -68,6 +68,51 @@ test('le dépôt couvre la fenêtre de saisie et ajoute chaque photo une seule f
       assert.equal(overlay(),null)
     }
     assert.deepEqual(names(),['face.jpg','dos.jpg','photo.png','collée.png'])
+    await render({})
+    const realFetch=globalThis.fetch
+    let signal
+    try{
+      globalThis.fetch=(_url,options)=>new Promise((_,reject)=>{
+        signal=options.signal;signal.addEventListener('abort',()=>reject(Error('aborted')),{once:true})
+      })
+      const hanging={types:['text/uri-list'],getData:t=>t==='text/uri-list'?'https://img.example/hanging':''}
+      await dispatch('drop',{dataTransfer:hanging})
+      await dispatch('drop',{dataTransfer:{types:['Files'],files:[new File(['a'],'queued.png',{type:'image/png'})]}})
+      const cancel=[...document.querySelectorAll('button')].find(b=>b.textContent==='Annuler l’import en cours')
+      assert.ok(cancel)
+      await act(async()=>cancel.click())
+      assert.ok(signal.aborted)
+      assert.equal(names().length,4)
+    }finally{globalThis.fetch=realFetch}
+    const burst=Array.from({length:24},(_,i)=>new File(['image'],'robe-'+i+'.png',{type:'image/png'}))
+    await dispatch('drop',{dataTransfer:{types:['Files'],files:burst}})
+    assert.deepEqual(names().slice(4),burst.slice(0,16).map(f=>f.name))
+    assert.match(document.querySelector('[role="alert"]').textContent,/20 photos/)
+    await act(async()=>document.querySelector('.bs-photo-remove').click())
+    await dispatch('paste',{clipboardData:{files:[burst[17]]}})
+    assert.equal(names().length,20)
+    assert.equal(names().at(-1),'robe-17.png')
+    await act(async()=>root.render(null))
+    const drawCalls=[],decoded=[],closed=[]
+    let inProgress=0,maxConcurrent=0
+    globalThis.createImageBitmap=async(file,{resizeWidth})=>{
+      decoded.push(file);maxConcurrent=Math.max(maxConcurrent,++inProgress)
+      await new Promise(r=>setTimeout(r,1))
+      return {width:resizeWidth,height:resizeWidth*2,close(){closed.push(file);inProgress--}}
+    }
+    const canvasPrototype=Object.getPrototypeOf(document.createElement('canvas'))
+    const getContext=canvasPrototype.getContext
+    canvasPrototype.getContext=()=>({drawImage:(image,x,y,width,height)=>drawCalls.push([width,height])})
+    try{
+      await render({})
+      await dispatch('drop',{dataTransfer:{types:['Files'],files:burst}})
+      for(let i=0;i<100&&closed.length<20;i++)await new Promise(r=>setTimeout(r,5))
+      assert.equal(maxConcurrent,1)
+      assert.deepEqual(decoded,burst.slice(0,20))
+      assert.deepEqual(closed,decoded)
+      assert.deepEqual(drawCalls,Array.from({length:20},()=>[128,256]))
+      assert.equal(document.querySelectorAll('.bs-photo canvas').length,20)
+    }finally{delete globalThis.createImageBitmap;canvasPrototype.getContext=getContext}
   }finally{
     await act(async()=>root.unmount())
     delete globalThis.window;delete globalThis.document;delete globalThis.IS_REACT_ACT_ENVIRONMENT;delete globalThis.cancelAnimationFrame

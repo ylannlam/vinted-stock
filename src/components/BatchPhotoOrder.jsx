@@ -1,5 +1,33 @@
 import {useEffect,useRef,useState} from 'react'
 
+let previewQueue=Promise.resolve()
+function PhotoPreview({photo,index}){
+  const canvas=useRef(null)
+  const [fallback,setFallback]=useState(()=>typeof createImageBitmap!=='function')
+  useEffect(()=>{
+    if(fallback)return
+    let live=true
+    const element=canvas.current
+    async function draw(){
+      if(!live)return
+      let bitmap
+      try{
+        bitmap=await createImageBitmap(photo.file,{resizeWidth:192,resizeQuality:'low'})
+        if(!live)return
+        const scale=Math.min(1,256/bitmap.height)
+        element.width=Math.max(1,Math.round(bitmap.width*scale))
+        element.height=Math.max(1,Math.round(bitmap.height*scale))
+        element.getContext('2d').drawImage(bitmap,0,0,element.width,element.height)
+      }catch{if(live)setFallback(true)}
+      finally{bitmap?.close()}
+    }
+    previewQueue=previewQueue.then(draw,draw)
+    return ()=>{live=false;element.width=0;element.height=0}
+  },[photo.file,fallback])
+  return fallback?<img src={photo.url} alt={photo.file.name} draggable={false} decoding="async" loading={index<2?'eager':'lazy'}/>:
+    <canvas ref={canvas} width="1" height="1" role="img" aria-label={photo.file.name}/>
+}
+
 export default function BatchPhotoOrder({photos,busy,onMove,onRemove}){
   const grid=useRef(null),gesture=useRef(null),scrollFrame=useRef(0)
   const [drag,setDrag]=useState(null),[announcement,setAnnouncement]=useState('')
@@ -69,7 +97,7 @@ export default function BatchPhotoOrder({photos,busy,onMove,onRemove}){
         className={'bs-photo'+(index===0?' is-cover':'')+(drag?.from===photo.url?' is-moving':'')+(drag?.target===photo.url&&drag.from!==photo.url?' is-target':'')}>
         <div className="bs-photo-preview" onPointerDown={e=>start(e,photo.url)} onPointerMove={track} onPointerUp={drop}
           onPointerCancel={stop} onLostPointerCapture={stop}>
-          <img src={photo.url} alt={photo.file.name} draggable={false} decoding="async" loading={index<2?'eager':'lazy'}/>
+          <PhotoPreview photo={photo} index={index}/>
           <span className="bs-photo-position" aria-hidden="true">{index+1}</span>
         </div>
         <button type="button" className="bs-photo-remove" aria-label={'Retirer la photo '+(index+1)} onClick={()=>onRemove(photo)}>×</button>

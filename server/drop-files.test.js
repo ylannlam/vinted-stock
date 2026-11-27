@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {readTransfer,hasTransferImage,filesFromTransfer,filesFromClipboard,fileName,BLOCKED_MESSAGE} from '../src/lib/dropFiles.js'
+import {readTransfer,hasTransferImage,filesFromTransfer,filesFromClipboard,fetchImage,fileName,BLOCKED_MESSAGE} from '../src/lib/dropFiles.js'
 
 const png=name=>new File([new Uint8Array([1,2,3])],name,{type:'image/png'})
 const transfer=(parts={})=>({files:parts.files||[],items:parts.items||[],types:parts.types||[],getData:type=>parts.data?.[type]||''})
@@ -40,4 +40,32 @@ test('a pasted image gets a readable name and non-images are ignored',()=>{
   assert.equal(files.length,2);assert.match(files[0].name,/^collage-\d+-1\.png$/);assert.equal(files[1].name,'robe.png')
   assert.deepEqual(filesFromClipboard({files:[],items:[]}),[])
   assert.equal(fileName('data:image/png;base64,AAAA','image/png'),'photo.png')
+})
+
+test('Chrome image drags prefer the actual image and preserve a multi-image selection',()=>{
+  const t=data=>readTransfer(transfer({data})).urls
+  assert.deepEqual(t({'text/uri-list':'https://chatgpt.com/c/example','text/html':'<img src="blob:https://chatgpt.com/id">',
+    DownloadURL:'image/png:robe.png:https://img.example/download?id=one'}),['https://img.example/download?id=one'])
+  assert.deepEqual(t({'text/uri-list':'https://chatgpt.com/c/example','text/html':'<a><img src="https://img.example/one.png"></a>'}),['https://img.example/one.png'])
+  assert.deepEqual(t({'text/html':'<img src="data:image/png;base64,AQ=="><img src="https://img.example/two">' }),
+    ['data:image/png;base64,AQ==','https://img.example/two'])
+  const raw=transfer({files:[new File(['link'],'internet.url',{type:'text/plain'})],items:[{kind:'file',getAsFile:()=>png('original.png')}]})
+  assert.equal(readTransfer(raw).files[0].name,'original.png')
+})
+
+test('a stalled body times out, and oversized streams stop downloading',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']})
+  const stalled=fetchImage('https://img.example/stall',async(_, {signal})=>({ok:true,blob:()=>new Promise((_,reject)=>{
+    signal.addEventListener('abort',()=>reject(Error('aborted')),{once:true})
+  })}))
+  await Promise.resolve()
+  t.mock.timers.tick(15000)
+  await assert.rejects(stalled,/interrompu/)
+  let signal
+  await assert.rejects(fetchImage('https://img.example/large',async(_,options)=>{
+    signal=options.signal
+    return new Response(new ReadableStream({start(c){c.enqueue(new Uint8Array(4_100_000));c.enqueue(new Uint8Array(4_100_000));c.close()}}),
+      {headers:{'content-type':'image/png'}})
+  }),/8 Mo/)
+  assert.ok(signal.aborted)
 })

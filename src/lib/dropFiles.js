@@ -1,27 +1,38 @@
 // Photos déposées ou collées sur la page : fichiers de l'ordinateur, image glissée depuis une autre page web,
 // ou image copiée (clic droit › Copier l'image) puis collée avec Ctrl+V. Rien n'est à télécharger avant.
 
+import {MAX_LISTING_PHOTO_BYTES} from './listingStudio.js'
+
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const EXTENSIONS = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp'}
 const imageAddress = /^(?:https?:\/\/|blob:|data:image\/)/i
 
 // Lecture synchrone : le navigateur vide le DataTransfer dès que l'évènement est terminé.
 export function readTransfer(transfer) {
-  const files = Array.from(transfer?.files || [])
+  const files = Array.from(transfer?.files || []).filter(isImage)
   if (!files.length) for (const item of Array.from(transfer?.items || [])) {
-    if (item.kind === 'file') { const file = item.getAsFile?.(); if (file) files.push(file) }
+    if (item.kind === 'file') { const file = item.getAsFile?.(); if (isImage(file)) files.push(file) }
   }
-  const urls = []
-  if (!files.length) {
-    const list = String(transfer?.getData?.('text/uri-list') || '')
-    for (const line of list.split(/\r?\n/)) if (imageAddress.test(line.trim())) urls.push(line.trim())
-    const html = String(transfer?.getData?.('text/html') || '')
-    for (const m of html.matchAll(/<img\b[^>]*?\ssrc=["']([^"']+)["']/gi)) if (imageAddress.test(m[1])) urls.push(m[1].replace(/&amp;/g, '&'))
-    const plain = (transfer?.getData?.('text/plain') || '').trim()
-    if (/^(?:blob:|data:image\/)/i.test(plain)) urls.push(plain)
+  if (files.length) return {files, urls: []}
+  const get = type => String(transfer?.getData?.(type) || '').trim()
+  const list = get('text/uri-list').split(/\r?\n/).map(s => s.trim()).filter(s => imageAddress.test(s))
+  const images = Array.from(get('text/html').matchAll(/<img\b[^>]*?\ssrc=["']([^"']+)["']/gi),
+    m => m[1].replace(/&amp;/g, '&')).filter(s => imageAddress.test(s))
+  const download = get('DownloadURL').match(/^image\/[^:]+:[^:]*:((?:https?:\/\/|blob:|data:image\/).+)$/i)?.[1]
+  const plain = get('text/plain')
+  const candidates = [...list, ...images, download, /^(?:blob:|data:image\/)/i.test(plain) && plain].filter(Boolean)
+  let urls
+  if (images.length > 1) urls = images
+  else if (list.length > 1) urls = list
+  else {
+    const direct = s => s && !/^blob:/i.test(s)
+    // A linked image may carry the page address in uri-list as well as the actual image in HTML.
+    const samePath = images[0] && list[0]?.split(/[?#]/)[0] === images[0].split(/[?#]/)[0]
+    const embedded = candidates.find(s => /^data:image\//i.test(s))
+    const best = [embedded, download, samePath && list[0], images[0], ...candidates].find(direct) || candidates[0]
+    urls = best ? [best] : []
   }
-  const url = urls.find(value => !/^blob:/i.test(value)) || urls[0]
-  return {files: files.filter(isImage), urls: url ? [url] : []}
+  return {files, urls: [...new Set(urls)]}
 }
 
 export const isImage = file => !!file && String(file.type).startsWith('image/')
@@ -38,13 +49,45 @@ export function fileName(url, type) {
 }
 
 // Récupère l'image d'une adresse web (une image glissée depuis un autre site). Certains sites l'interdisent.
-export async function fetchImage(url, fetcher = fetch) {
-  const response = await fetcher(url)
-  if (!response.ok) throw new Error(`HTTP ${response.status}`)
-  const blob = await response.blob()
-  const type = IMAGE_TYPES.includes(blob.type) ? blob.type : ''
-  if (!type) throw new Error('Format non pris en charge')
-  return new File([blob], fileName(url, type), {type})
+export async function fetchImage(url, fetcher = fetch, signal) {
+  const controller = new AbortController()
+  const abort = () => controller.abort()
+  if (signal?.aborted) abort()
+  signal?.addEventListener('abort', abort, {once:true})
+  const timer = setTimeout(abort, 15000)
+  const tooLarge = 'Cette photo dépasse 8 Mo. Choisis une version plus légère.'
+  try {
+    if (/^blob:/i.test(url) && globalThis.location && new URL(url).origin !== location.origin) throw Error(BLOCKED_MESSAGE)
+    if (/^data:image\/[^,]+;base64,/i.test(url) && url.length > Math.ceil(MAX_LISTING_PHOTO_BYTES / 3) * 4 + 128) throw Error(tooLarge)
+    const response = await fetcher(url, {signal:controller.signal})
+    if (!response.ok) throw Error(BLOCKED_MESSAGE)
+    if (Number(response.headers?.get('content-length')) > MAX_LISTING_PHOTO_BYTES) throw Error(tooLarge)
+    const type = response.headers?.get('content-type')?.split(';')[0].trim().toLowerCase()
+    if (type && !IMAGE_TYPES.includes(type)) throw Error(BLOCKED_MESSAGE)
+    let blob
+    if (response.body?.getReader) {
+      const reader = response.body.getReader(), parts = []
+      let size = 0
+      while (true) {
+        const {value,done} = await reader.read()
+        if (done) break
+        size += value.byteLength
+        if (size > MAX_LISTING_PHOTO_BYTES) throw Error(tooLarge)
+        parts.push(value)
+      }
+      blob = new Blob(parts, {type})
+    } else blob = await response.blob()
+    if (blob.size > MAX_LISTING_PHOTO_BYTES) throw Error(tooLarge)
+    if (!blob.size || !IMAGE_TYPES.includes(blob.type)) throw Error(BLOCKED_MESSAGE)
+    return new File([blob], fileName(url, blob.type), {type:blob.type})
+  } catch (error) {
+    if (controller.signal.aborted) throw Error('Import interrompu. Tu peux réessayer ou coller l’image avec Ctrl+V.')
+    throw Error(error.message === tooLarge ? tooLarge : BLOCKED_MESSAGE)
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', abort)
+    abort()
+  }
 }
 
 export const BLOCKED_MESSAGE = 'Ce site ne laisse pas récupérer l’image en la glissant. Fais un clic droit sur l’image › Copier l’image, puis colle-la ici avec Ctrl+V.'
@@ -57,7 +100,9 @@ export async function filesFromTransfer(transfer, fetcher = fetch) {
 export async function resolveTransfer({files, urls}, fetcher = fetch) {
   if (files.length) return files
   if (!urls.length) throw new Error('Aucune photo reconnue. Glisse des photos JPG, PNG ou WebP.')
-  try { return [await fetchImage(urls[0], fetcher)] } catch { throw new Error(BLOCKED_MESSAGE) }
+  const photos = []
+  for (const url of urls) photos.push(await fetchImage(url, fetcher))
+  return photos
 }
 
 // Images d'un collage (Ctrl+V). Vide si le presse-papiers ne contient pas d'image.
