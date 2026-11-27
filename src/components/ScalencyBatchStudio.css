@@ -78,3 +78,8 @@
 .sc-account-warning{margin:12px 0;padding:14px 18px;border:1px solid #e1be83;border-left:4px solid #986513;border-radius:10px;background:#fff8eb;color:#583b10}
 .sc-account-warning p{margin:0 0 4px}.sc-account-warning button{margin-top:4px}
 .sc-account-clear{margin:8px 0 16px;color:#325449;font-size:.9rem}.sc-account-clear time{white-space:nowrap}
+.bs-window .plan-split{display:block;margin:12px 0;padding:12px;background:#fff;border:1px solid #aacbbd;border-radius:8px;line-height:1.6}
+.plan-split input{margin-right:9px;accent-color:#087f5b}
+.bs-window .plan-preview{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,19rem),1fr));gap:2px 12px}
+.bs-window .plan-preview li{display:flex;align-items:center;gap:10px;border-bottom:1px solid #dce8df;padding:6px 0;min-width:0}
+.plan-preview img{width:32px;height:40px;border-radius:5px;object-fit:cover}.plan-preview time{font-variant-numeric:tabular-nums}.plan-preview span{overflow-wrap:anywhere}

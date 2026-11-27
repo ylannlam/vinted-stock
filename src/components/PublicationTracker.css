@@ -49,3 +49,10 @@
 .pub-window-fields{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
 .pub-window-fields label{display:grid;gap:4px;font-size:13px;font-weight:600}
 .pub-window-fields input{border:1px solid #b8ccc6;border-radius:7px;padding:6px 9px;font:inherit;min-height:36px}
+.plan-board{display:grid;gap:16px}.plan-heading,.plan-account,.plan-agenda,.plan-days{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.plan-heading,.plan-agenda{justify-content:space-between}.plan-heading h2,.plan-agenda h2,.plan-account h3{margin:0;font-weight:700}.plan-heading p,.plan-muted,.plan-event p{color:#526960;font-size:.875rem}
+.plan-days{gap:5px}.plan-days button,.plan-days input{min-height:42px}.sc-work .plan-days button[aria-pressed=true]{background:#0c684f;color:white;border-color:#0c684f}
+.plan-accounts{display:grid;gap:8px}.plan-account{border:1px solid #cbdcd4;background:white;padding:14px 18px;border-radius:12px;display:grid;grid-template-columns:minmax(140px,.9fr) minmax(260px,2fr) minmax(150px,auto)}
+.plan-account h3{font-size:1.03rem}.plan-account dl{display:flex;justify-content:space-around;gap:12px;margin:0}.plan-account dt{font-size:.875rem;color:#526960}.plan-account dd{font-size:1.17rem;font-weight:650}.plan-account .pub-primary{text-align:center}
+.plan-free,.plan-block{font-size:.875rem;margin:.2rem 0 0}.plan-free{color:#11684c}.plan-block{color:#89421f}.plan-agenda{padding:14px 18px}.plan-event{display:grid;grid-template-columns:50px 1fr auto auto;align-items:center;gap:14px;padding:12px 18px;border-top:1px solid #dfe8e4}.plan-event time{font-weight:650;font-variant-numeric:tabular-nums}.plan-event strong,.plan-event p{overflow-wrap:anywhere}.plan-event a{color:#08664c;text-decoration:underline}.plan-event .pt-badge{justify-self:start}
+@media(max-width:720px){.plan-account{grid-template-columns:1fr;gap:10px}.plan-account dl{justify-content:flex-start;flex-wrap:wrap;gap:8px 20px}.plan-account .pub-primary{justify-self:stretch}.plan-event{grid-template-columns:44px minmax(0,1fr);gap:6px 10px}.plan-event .pt-badge,.plan-event a{grid-column:2}.plan-agenda{align-items:flex-start}.plan-days{max-width:100%}.plan-days button{white-space:normal}}

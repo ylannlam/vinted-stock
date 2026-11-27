@@ -10,6 +10,7 @@ import ScalencyDraft from './ScalencyDraft'
 import ScalencyQuickAccount from './ScalencyQuickAccount'
 import PublicationAccountPicker from './PublicationAccountPicker'
 import LotWindowPlanner from './LotWindowPlanner'
+import {addDays,dayLabel} from '../lib/publicationPlan'
 import './ScalencyBatchStudio.css'
 
 const labels={draft:'Brouillon',running:'Remplissage…',ready:'Prête à relire',review:'À compléter',error:'À reprendre'}
@@ -78,7 +79,7 @@ export default function ScalencyBatchStudio({params,focused=false}){
   const [transfers,setTransfers]=useState([])
   const [editor,setEditor]=useState(params.draft||(params.piece||params.product||params.sku?'new':''))
   const lock=useRef(false),active=useRef(true),userPicked=useRef(false),pending=useRef(new Set())
-  const returnToReview=useRef(false)
+  const returnToReview=useRef(false),openedPlanning=useRef(false)
   const health=useAccountHealth()
   const banned=isBanned(health,requestedAccount)
   const account=health.report&&!banned?requestedAccount:''
@@ -120,6 +121,19 @@ export default function ScalencyBatchStudio({params,focused=false}){
     }).catch(e=>{if(live)setError(e.message)})
     return()=>{live=false}
   },[account,page,revision])
+  useEffect(()=>{
+    if(params.programmer!=='1'||openedPlanning.current||!account||account!==params.account||!login||blocked)return
+    let live=true
+    query('batch-drafts',{account,ready:'1',page:0}).then(result=>{
+      if(!live)return
+      openedPlanning.current=true
+      if(!result.rows.length){setNotice('Aucun brouillon prêt à programmer sur ce compte.');return}
+      setSelected(Object.fromEntries(result.rows.map(row=>[row.id,row])))
+      setScheduled(true);setReview(true)
+      if(result.total>result.rows.length)setNotice('Les 100 premiers brouillons prêts sont sélectionnés pour ce lot.')
+    }).catch(e=>{if(live)setError(e.message)})
+    return ()=>{live=false}
+  },[account,params.account,params.programmer,login?.id,blocked,revision])
   const inProgress=!!Object.keys(local).length||data?.rows.some(r=>stage(r)==='running')
   useEffect(()=>{
     const tick=()=>{if(document.visibilityState==='visible')reload()}
@@ -205,23 +219,27 @@ export default function ScalencyBatchStudio({params,focused=false}){
       const result=await act('accept-lot',{account,entries:entries.map(({id,version})=>({id,version})),...(windowPlan?{window:windowPlan}:{})})
       const submitted=new Set(entries.map(row=>row.id))
       setLastLot(result.id);setSelected(prev=>Object.fromEntries(Object.entries(prev).filter(([id])=>!submitted.has(id))));setReview(false);setScheduled(false)
-      setNotice(windowPlan?'Lot programmé · '+result.count+' annonce(s) le '+windowPlan.day.split('-').reverse().join('/')+' entre '+windowPlan.from+' et '+windowPlan.to+' (Paris).':
+      const days=windowPlan?.firstCount===undefined?windowPlan&&dayLabel(windowPlan.day):
+        [windowPlan.firstCount&&dayLabel(windowPlan.day),dayLabel(addDays(windowPlan.day,1))].filter(Boolean).join(' et ')
+      setNotice(windowPlan?'Lot programmé · '+result.count+' annonce(s) · '+days+' entre '+windowPlan.from+' et '+windowPlan.to+' (Paris).':
         'Lot enregistré · '+result.count+' annonce'+(result.count>1?'s':'')+'. Tu peux fermer cet onglet ou changer de compte.')
     }catch(e){setError(e.message)}
     finally{lock.current=false;setSending(false);reload();cadence.refresh()}
   }
+  const reviewPanel=useRef(null)
+  useEffect(()=>{if(review)reviewPanel.current?.focus({preventScroll:false})},[review])
   const reviewRows=review&&chosen.map(row=><ReviewRow key={row.id} row={row} onEdit={edit} onDiscard={setDiscarding} blocked={blocked}
     disabled={sending||!!quickEdit} onQuick={setQuickEdit} quick={quickEdit===row.id} onSave={saveQuickEdit} duplicates={duplicates[row.id]}/>)
   return <main className="sc-work bs-work"><header className="sc-head"><div><p>{focused?'Espace Alicia':'Stock Vinted / Scalency'}</p><h1>Atelier d’annonces</h1></div><a href={focused?'#alicia/suivi':'#publication'}>Suivi des publications</a></header>
-    <fieldset className="bs-account" disabled={sending||!!editor||!health.report}>
+    <fieldset className="bs-account" hidden={review} disabled={sending||!!editor||!health.report}>
       {!editor&&<PublicationAccountPicker profiles={availableProfiles} loadingProfiles={loadedProfiles===null} account={account} onSelect={choose} health={health} cadence={cadence}/>}
       {login&&<ScalencyQuickAccount fixed readOnly={focused} accounts={availableProfiles} health={health} account={account} onSaved={updateProfile}/>}
     </fieldset>
     {!editor&&health.error&&<AccountHealthNotice health={health}/>}
     {focused&&login&&!login.brand&&<p role="status">La marque de ce compte doit être renseignée par l’administrateur pour le remplissage automatique.</p>}
     {focused&&quota&&!editor&&<p className="bs-meta">{quota.remaining} place(s) disponible(s) aujourd’hui sur ce compte.</p>}
-    {!focused&&quota&&!editor&&<CadenceSettings key={'cadence-'+account} row={quota} blocked={blocked} onSaved={cadence.applySaved}/>}
-    {account&&login&&<PhotoAccountPanel key={'photos-'+account} account={account} login={login.login}/>}
+    {!review&&!focused&&quota&&!editor&&<CadenceSettings key={'cadence-'+account} row={quota} blocked={blocked} onSaved={cadence.applySaved}/>}
+    {!review&&account&&login&&<PhotoAccountPanel key={'photos-'+account} account={account} login={login.login}/>}
     {error&&<p role="alert" className="sc-error">{error} <button onClick={reload}>Réessayer</button></p>}
     {notice&&<p className="bs-notice" role="status">{notice}{lastLot&&<> · <a href={(focused?'#alicia/suivi':'#publication')+'?lot='+lastLot}>Suivre le lot</a></>}</p>}
     {editor&&<ScalencyDraft key={editor} sharedHealth={health} focused={focused} detailed id={editor==='new'?null:editor} initialAccount={account} onProfileSaved={updateProfile} piece={params.piece} product={params.product} sku={params.sku}
@@ -229,7 +247,7 @@ export default function ScalencyBatchStudio({params,focused=false}){
       onQueued={r=>{window.location.hash='publication'+(r?.job?.id?'?job='+r.job.id:'')}}/>}
     <div hidden={!!editor} className={'bs-layout'+(review?' bs-review-layout':'')}>
       <div hidden={review}><BatchEntry active={!editor&&!review&&!discarding} blocked={!!blocked} account={login} owner={owner} onQueued={sku=>{setPage(0);setNotice((sku?'Préparation lancée pour '+sku:'Préparation lancée')+'. Tu peux saisir la suivante.')}} onDetailed={()=>edit('new')}/></div>
-      <section className="bs-panel bs-list"><div className="bs-panel-head"><div><h2>{review?'Récapitulatif du lot':'Annonces du compte'}</h2>
+      <section className="bs-panel bs-list" ref={reviewPanel} tabIndex={-1}><div className="bs-panel-head"><div><h2>{review?'Récapitulatif du lot':'Annonces du compte'}</h2>
         <p className="bs-meta">{review?chosen.length+' sélectionnée(s) pour '+(login?.login||'ce compte'):login?login.login+' · '+(data?.total??'…')+' brouillon(s)':'Tous les brouillons · choisis un compte pour préparer un lot'}</p></div>
         {!review&&<button className="bs-link" onClick={()=>{reload();health.refresh();cadence.refresh()}}>Actualiser</button>}</div>
       {discarding&&<DiscardDialog rows={discarding} onClose={()=>setDiscarding(null)} onDiscard={discard}/>}
@@ -238,8 +256,9 @@ export default function ScalencyBatchStudio({params,focused=false}){
           <button type="button" aria-pressed={!scheduled} disabled={sending||!!quickEdit} onClick={()=>setScheduled(false)}>Mettre en file maintenant</button>
           <button type="button" aria-pressed={scheduled} disabled={sending||!!quickEdit} onClick={()=>setScheduled(true)}>Choisir un créneau</button>
         </div>
+        {scheduled&&Object.values(duplicates).some(rows=>rows.length>0)&&<p className="bs-problem" role="status">Doublon possible. Ouvre les fiches ci-dessous pour vérifier les articles concernés.</p>}
         {scheduled?<details><summary>Relire les fiches sélectionnées ({chosen.length})</summary>{reviewRows}</details>:reviewRows}
-        {scheduled?<LotWindowPlanner account={account} chosen={chosen} revision={revision} onSubmit={submit} sending={sending}
+        {scheduled?<LotWindowPlanner initialDay={params.jour} account={account} chosen={chosen} revision={revision} onSubmit={submit} sending={sending}
           disabled={!!blocked||!!quickEdit||duplicateCheck==='Vérification des doublons…'}/>:<>
         <p role="status">{blocked||(!quota||cadence.error?'Vérification du plafond…':quota.remaining+' place(s) disponible(s) aujourd’hui.')}</p>
         {!blocked&&quota&&!cadence.error&&toQueue.length<chosen.length&&<p>Les {toQueue.length} premières fiches du récapitulatif peuvent partir. Les {chosen.length-toQueue.length} autres restent en brouillon.</p>}
@@ -247,7 +266,11 @@ export default function ScalencyBatchStudio({params,focused=false}){
         <p className="bs-meta">Scalency gère le départ de chaque annonce. Tu peux fermer cet onglet dès que le lot est enregistré.</p></>}
         <button className="bs-link" disabled={sending||!!quickEdit} onClick={()=>setReview(false)}>Retour à la sélection</button></>:
         <><div className="bs-actions"><button disabled={!ready.length} onClick={()=>setSelected(prev=>({...prev,...Object.fromEntries(ready.map(r=>[r.id,r]))}))}>Sélectionner les prêtes</button>
-        <button className="sc-primary" disabled={!chosen.length} onClick={()=>{setReview(true)}}>{selection.length===chosen.length?'Relire la sélection':'Relire les prêtes'} ({chosen.length})</button>
+        <button className="sc-primary" disabled={!!blocked||(!chosen.length&&!ready.length)} onClick={()=>{
+          if(!chosen.length)setSelected(Object.fromEntries(ready.map(r=>[r.id,r])))
+          setScheduled(true);setReview(true)
+        }}>{chosen.length?'Programmer la sélection ('+chosen.length+')':'Programmer les prêtes ('+ready.length+')'}</button>
+        <button disabled={!chosen.length} onClick={()=>{setScheduled(false);setReview(true)}}>{selection.length===chosen.length?'Relire la sélection':'Relire les prêtes'} ({chosen.length})</button>
         {selection.length>0&&<button type="button" className="bs-link bs-danger" onClick={()=>setDiscarding(selection)}>Supprimer la sélection ({selection.length})</button>}</div>
         {intake.map(t=><article key={t.id} className="bs-row"><div className="bs-row-body"><h3>{t.fields.sku||'Annonce en préparation'}</h3>
           <p className="bs-meta">{t.fields.size_text} · {formatMoney(t.fields.price)}</p>

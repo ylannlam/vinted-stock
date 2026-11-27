@@ -1,5 +1,5 @@
 import {capacityResult} from './scalency-cadence.js'
-import {lotSchedule} from '../src/lib/lotSchedule.js'
+import {lotDays} from '../src/lib/lotSchedule.js'
 import {requireWorkspaceAccount} from './scalency-account-health.js'
 import {createHash} from 'node:crypto'
 import {remote,remoteId,ScalencyError} from './scalency-api.js'
@@ -13,7 +13,7 @@ export function lotKey(owner,account,entries,window=null){
   if(!Array.isArray(entries)||!entries.length||entries.length>100||entries.some(e=>!isId(e?.id)||!Number.isSafeInteger(e.version)||e.version<1)
     ||new Set(entries.map(e=>e.id)).size!==entries.length)throw new ScalencyError('Sélectionne entre 1 et 100 annonces prêtes de ce compte.')
   const versions=entries.map(e=>[e.id,e.version])
-  const key=window?[owner,account,versions,window.day,window.from,window.to]:[owner,account,versions.sort((a,b)=>a[0].localeCompare(b[0]))]
+  const key=window?[owner,account,versions,window.day,window.from,window.to,...(window.firstCount===undefined?[]:[window.firstCount])]:[owner,account,versions.sort((a,b)=>a[0].localeCompare(b[0]))]
   return createHash('sha256').update(JSON.stringify(key)).digest('hex')
 }
 
@@ -22,7 +22,7 @@ export async function acceptPublicationLot(db,user,body){
   const id=lotKey(user.id,account,entries,body.window)
   let plan
   if(body.window!=null){
-    try{plan=lotSchedule(body.window,entries.length)}catch(error){throw new ScalencyError(error.message)}
+    try{plan=lotDays(body.window,entries.length).flatMap(group=>group.times.map(at=>({at,until:group.end})))}catch(error){throw new ScalencyError(error.message)}
   }
   try{await requireWorkspaceAccount(db,account)}
   catch(error){
@@ -32,7 +32,7 @@ export async function acceptPublicationLot(db,user,body){
     throw error
   }
   const accepted=await db.rpc('scalency_accept_limited_lot',{p_lot:id,p_owner:user.id,p_account:account,
-    p_entries:entries.map(({id,version},i)=>plan?{id,version,at:plan.times[i],until:plan.end}:{id,version})})
+    p_entries:entries.map(({id,version},i)=>plan?{id,version,...plan[i]}:{id,version})})
   if(accepted.error?.message==='lot_window')throw new ScalencyError('Choisis un créneau futur dans les 30 prochains jours.',409)
   if(accepted.error?.code==='23505'||['lot_changed','lot_conflict'].includes(accepted.error?.message))throw new ScalencyError('Une fiche a changé ou appartient déjà à un lot. Actualise l’atelier pour relire la sélection.',409)
   capacityResult(accepted)

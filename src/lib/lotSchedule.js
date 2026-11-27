@@ -1,4 +1,4 @@
-import {clockMinutes,parisToUtc,timeLabel} from './publicationPlan.js'
+import {addDays,clockMinutes,parisToUtc,timeLabel} from './publicationPlan.js'
 import {validDay} from './publications.js'
 
 const minute=60000
@@ -21,4 +21,16 @@ export function lotSchedule(window,count){
     return new Date(start+offset*minute).toISOString()
   })
   return {times,end:new Date(end).toISOString()}
+}
+
+export function lotDays(window,count){
+  if(window.firstCount===undefined)return [{...lotSchedule(window,count),day:window.day}]
+  const first=window.firstCount
+  if(!Number.isInteger(count)||count<1||count>100||!Number.isInteger(first)||first<0||first>=count||!validDay(window.day))
+    throw Error('Répartition des annonces invalide.')
+  const next=addDays(window.day,1)
+  return [
+    ...(first?[{...lotSchedule(window,first),day:window.day}]:[]),
+    {...lotSchedule({...window,day:next},count-first),day:next}
+  ]
 }

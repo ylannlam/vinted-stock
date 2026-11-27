@@ -20,7 +20,7 @@ test('le récapitulatif utilise les places du jour choisi et confirme la sélect
   const tomorrow=addDays(parisDate(Date.now()),1),later=addDays(tomorrow,1),requests=[]
   const mod=new Module(source)
   mod.require=id=>id==='../lib/scalency'?{async query(view,params){
-    requests.push([view,params]);return {remaining:params.day===tomorrow?10:3}
+    requests.push([view,params]);return {remaining:params.day===later?3:10}
   }}:require(id)
   mod._compile(bundle.outputFiles[0].text,source)
   const chosen=Array.from({length:10},(_,i)=>({id:String(i),fields:{sku:'robe-'+i}})),sent=[]
@@ -35,4 +35,12 @@ test('le récapitulatif utilise les places du jour choisi et confirme la sélect
   assert.equal(submit.disabled,true)
   assert.match(document.querySelector('[role=status]').textContent,/3 places disponibles/)
   assert.equal(sent.length,1)
+  const split=document.querySelector('input[type=checkbox]')
+  assert.ok(split)
+  await React.act(async()=>Simulate.change(split,{target:{checked:true}}))
+  assert.equal(submit.disabled,false)
+  assert.deepEqual([...document.querySelectorAll('.bs-window section')].map(s=>s.querySelectorAll('time').length),[3,7])
+  await React.act(async()=>Simulate.click(submit))
+  assert.deepEqual(sent[1],[chosen,{day:later,from:'08:00',to:'20:00',firstCount:3}])
+  assert.equal(document.querySelectorAll('li time').length,10)
 })

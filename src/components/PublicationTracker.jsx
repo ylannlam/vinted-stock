@@ -2,12 +2,13 @@ import {useEffect,useRef,useState} from 'react'
 import {act,query} from '../lib/scalency'
 import {publicationDate,publicationProgress} from '../lib/publicationTracking'
 import PublicationLots from './PublicationLots'
+import PublicationPlanning from './PublicationPlanning'
 import MovePublications,{moveSelectionIssue} from './MovePublications'
 import DailyPublicationCount from './DailyPublicationCount'
 import {useAccountHealth} from './ScalencyAccountHealth'
 import './PublicationTracker.css'
 
-const tabs=[['queue','À publier'],['drafts','Brouillons'],['live','Mises en ligne'],['history','Historique'],['lots','Par lot']]
+const tabs=[['planning','Planning'],['queue','À publier'],['drafts','Brouillons'],['live','Mises en ligne'],['history','Historique'],['lots','Par lot']]
 const operations={
   move:{label:'Déplacer le créneau'},
   launch:{label:'Mettre en file',description:'Scalency publiera ces annonces au rythme du compte.'},
@@ -63,9 +64,10 @@ function Listing({row,login,selected,onSelect,onAction,disabled}){
 }
 
 export default function PublicationTracker({params}){
-  const tab=params.lot?'lots':tabs.some(([key])=>key===params.tab)?params.tab:'queue'
+  const tab=params.lot?'lots':tabs.some(([key])=>key===params.tab&&key!=='planning')?params.tab:params.job||params.draft||params.stage?'queue':'planning'
   const account=params.account||'',job=params.job||'',draft=params.draft||''
   const stage=tab==='queue'&&!job&&!draft&&['local','scalency','site'].includes(params.stage)?params.stage:''
+  const planningView=useRef({day:params.jour,filter:params.vue})
   const showAccountFilter=!job&&!draft&&!params.lot
   const directory=useAccountHealth(showAccountFilter)
   const directoryReady=!!directory.report&&!directory.error
@@ -83,6 +85,7 @@ export default function PublicationTracker({params}){
   useEffect(()=>{setData(null);setError('')},[scope,search,page,cursor])
   useEffect(()=>{const t=setTimeout(()=>{setSearch(input.trim());setPage(0);setCursors(['']);setSelection({})},280);return ()=>clearTimeout(t)},[input])
   useEffect(()=>{
+    if(tab==='planning')return
     let alive=true,reading=false
     async function read(){
       if(reading||!alive)return
@@ -128,16 +131,25 @@ export default function PublicationTracker({params}){
   const pageCount=Math.ceil((data?.draftTotal||0)/(data?.pageSize||20))
   return <main className="sc-work pt-work pub-console">
     <header className="pub-header"><div><h1>Publications</h1><p>Suivi des annonces sur Stock Vinted et Scalency</p></div><a className="pub-primary" href="#annonces?nouvelle=1">+ Nouvelle annonce</a></header>
-    <DailyPublicationCount/>
+    {tab!=='planning'&&<DailyPublicationCount/>}
     <nav className="pub-tabs" aria-label="Étapes de publication">{tabs.map(([value,label])=><a key={value} aria-current={!job&&tab===value?'page':undefined} href={pageLink(value,account)}>{label}</a>)}</nav>
-    <div className="pub-filters">{!job&&!draft&&tab!=='lots'&&<label>Rechercher<input type="search" placeholder="Titre ou SKU" maxLength={120} value={input} onChange={e=>{setInput(e.target.value);setSelection({})}}/></label>}
-      {showAccountFilter&&<label>Compte<select value={accountAvailable?account:''} disabled={!directoryReady} onChange={e=>{window.location.hash=pageLink(tab,e.target.value,stage)}}><option value="">{directoryReady?'Tous les comptes':directory.error?'Comptes indisponibles':'Chargement des comptes…'}</option>{linkedAccounts.map(a=><option key={a.id} value={a.id}>{a.login}</option>)}</select></label>}
+    <div className="pub-filters">{!job&&!draft&&tab!=='lots'&&tab!=='planning'&&<label>Rechercher<input type="search" placeholder="Titre ou SKU" maxLength={120} value={input} onChange={e=>{setInput(e.target.value);setSelection({})}}/></label>}
+      {showAccountFilter&&<label>Compte<select value={accountAvailable?account:''} disabled={!directoryReady} onChange={e=>{
+        let url=pageLink(tab,e.target.value,stage)
+        if(tab==='planning'){
+          const {day,filter}=planningView.current
+          if(day)url+='&jour='+encodeURIComponent(day)
+          if(filter==='added')url+='&vue=added'
+        }
+        window.location.hash=url
+      }}><option value="">{directoryReady?'Tous les comptes':directory.error?'Comptes indisponibles':'Chargement des comptes…'}</option>{linkedAccounts.map(a=><option key={a.id} value={a.id}>{a.login}</option>)}</select></label>}
       <button disabled={loading||busy} onClick={()=>{setRevision(n=>n+1);if(showAccountFilter)directory.refresh()}}>{loading?'Actualisation…':'Actualiser'}</button></div>
     {tab==='queue'&&!job&&!draft&&<nav className="pub-stages" aria-label="Étape d’envoi">{[['','Toutes'],['local','À transmettre'],['site','Envoyées par Stock Vinted'],['scalency','Toute la file Scalency']].map(([key,label])=><a key={key} aria-current={key===stage?'page':undefined} href={pageLink(tab,account,key)}>{label}</a>)}</nav>}
     {showAccountFilter&&directory.error&&<p className="sc-error" role="alert">La liste des comptes reliés à Scalency est indisponible. Clique sur Actualiser pour réessayer.</p>}
     {error&&<p className="sc-error" role="alert">{error}</p>}
     {receipt&&<div className="pub-receipt" role="status"><strong>Résultat de la sélection</strong><button onClick={()=>setReceipt(null)} aria-label="Fermer le résultat">×</button>{receipt.map((r,i)=><p key={i} className={r.ok?'':'sc-error'}>{r.text} {r.href&&<a href={r.href}>Suivre le lot</a>}</p>)}</div>}
-    {tab==='lots'&&!job?<PublicationLots key={account+(params.lot||'')+revision} account={account} lotId={params.lot||''}/>:<section className="pub-panel" aria-busy={loading}>
+    {tab==='planning'?<PublicationPlanning account={account} health={directory} revision={revision} initialDay={params.jour} initialFilter={params.vue}
+      onViewChange={(day,filter)=>{planningView.current={day,filter}}}/>:tab==='lots'&&!job?<PublicationLots key={account+(params.lot||'')+revision} account={account} lotId={params.lot||''}/>:<section className="pub-panel" aria-busy={loading}>
       <div className="pub-panel-head"><h2>{job||draft?'Annonce sélectionnée':({queue:'En attente et en cours',drafts:'Brouillons du site',live:'Annonces mises en ligne',history:'Arrêts et incidents'})[tab]}</h2>
         {(job||draft)&&<a href={pageLink(tab,account)}>Retour à la liste</a>}</div>
       {eligible.length>0&&<div className="pub-select"><label><input type="checkbox" aria-label="Sélectionner toutes les annonces disponibles sur cette page" checked={allSelected} disabled={busy} onChange={()=>setSelection(allSelected?{}:Object.fromEntries(eligible.map(r=>[keyOf(r),true])))}/> {picked.length?picked.length+' sélectionnée(s)':'Sélectionner la page'}</label>

@@ -196,6 +196,15 @@ export async function scalencyHandler(req,res,{db,user,role}){
       await syncPage(db,'jobs')
       return res.json(await cadenceReport(db))
     }
+    if(action==='publication-planning'){
+      if(!validDay(q.day)||!['planned','added'].includes(q.filter))fail('Choisis une date et un filtre valides.',400)
+      res.setHeader('Cache-Control','private, no-store')
+      let syncDelayed=false
+      try{await syncPage(db,'jobs')}catch{syncDelayed=true}
+      const report=checked(await db.rpc('scalency_publication_planning',{p_owner:user.id,p_day:q.day,p_filter:q.filter,
+        p_account:q.account?remoteId(q.account):null,p_page:Math.min(100000,Math.max(0,parseInt(q.page,10)||0))}))
+      return res.json({...report,syncDelayed})
+    }
     if(action==='lot-capacity'){
       if(!validDay(q.day))fail('Choisis un jour valide.',400)
       res.setHeader('Cache-Control','private, no-store')

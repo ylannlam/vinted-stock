@@ -43,9 +43,11 @@ export function checkBatchSubmission(row,account){
   if(row.payload?.batch?.status!=='ready')throw new ScalencyError('Vérifie cette fiche avant de l’ajouter au lot.',409)
 }
 export async function batchDrafts(db,user,q){
-  const page=Math.max(0,parseInt(q.page,10)||0),pageSize=36
+  const page=Math.max(0,parseInt(q.page,10)||0),readyOnly=q.ready==='1'&&!!q.account,pageSize=readyOnly?100:36
   let read=db.from('listing_drafts').select('id,version,state,fields,photos,payload,updated_at',{count:'exact'}).eq('owner_id',user.id).eq('state','draft')
   if(q.account)read=read.eq('fields->>account_id',remoteId(q.account))
+  if(readyOnly)read=read.eq('payload->batch->>status','ready').is('payload->>scalency_job_id',null).is('published_at',null)
+    .is('vinted_id',null).is('publication_task_id',null).is('inflight',null).is('dotb_item_id',null)
   const result=await read.order('updated_at',{ascending:false}).order('id').range(page*pageSize,(page+1)*pageSize-1)
   const drafts=checked(result)
   const covers=await listingCovers(db,user.id,drafts.map(d=>d.photos?.[0]?.path))
