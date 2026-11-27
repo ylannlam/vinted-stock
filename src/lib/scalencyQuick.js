@@ -38,11 +38,14 @@ export function quickIssues(fields,options){
   if(!(Number(fields.price)>0))missing.push('Prix')
   if(!fields.title?.trim())missing.push('Titre')
   if(!fields.description?.trim())missing.push('Bio')
-  if(!fields.catalog_id||!options?.catalog||options.offline)missing.push('Catégorie Vinted')
-  if(!options?.conditions?.some(c=>c.id===fields.status_id))missing.push('État')
+  const categoryValid=!!fields.catalog_id && options?.catalog?.id===fields.catalog_id && !options.offline
+  const categoryHasOptions=categoryValid && !!(options.conditions?.length||options.package_sizes?.length)
+  if(!categoryValid)missing.push('Catégorie Vinted')
+  else if(!categoryHasOptions)missing.push('Choisis une catégorie Vinted plus précise')
+  if(categoryHasOptions&&!options.conditions?.some(c=>c.id===fields.status_id))missing.push('État')
   if(options?.size_groups?.some(g=>g.sizes?.length)&&!options.size_groups.some(g=>g.sizes?.some(s=>s.id===fields.size_id)))missing.push('Taille sur l’étiquette')
   if(!fields.color_ids?.length||fields.color_ids.some(id=>!listingColors.some(c=>c.id===id)))missing.push('Couleur')
-  if(!fields.package_size_id||!options?.package_sizes?.some(p=>p.id===fields.package_size_id&&p.title.toLowerCase()==='petit'))missing.push('Petit colis indisponible pour cette catégorie')
+  if(categoryHasOptions&&(!fields.package_size_id||!options.package_sizes?.some(p=>p.id===fields.package_size_id&&p.title.toLowerCase()==='petit')))missing.push('Petit colis indisponible pour cette catégorie')
   for(const a of options?.attributes||[])if(a.required&&!fields.item_attributes?.some(x=>x.code===a.code&&x.ids?.length&&x.ids.every(id=>a.options?.some(o=>o.id===id))))missing.push(a.title||a.code)
   return missing
 }

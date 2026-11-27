@@ -7,6 +7,7 @@ import ScalencyRelations from './ScalencyRelations'
 import {act,query} from '../lib/scalency'
 import {uploadListingPhoto} from '../lib/api'
 import {emptyListing,validateListingPhoto,listingSizes,matchingSize} from '../lib/listingStudio'
+import {applyListingPresets} from '../lib/listingSettings'
 
 import {AccountHealthNotice,isBanned,preparationBlock,publicationProfiles,useAccountHealth} from './ScalencyAccountHealth'
 
@@ -18,7 +19,7 @@ function ChoosePiece({onChoose,busy}){
 function Field({label,children}){return <label className="sc-field"><span>{label}</span>{children}</label>}
 export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onGenerate,onReviewed,onProfileSaved,initialAccount,sharedHealth,detailed=false,focused=false}){
   const [fields,setFields]=useState({...emptyListing(),sku:sku||''}),[photos,setPhotos]=useState([]),[version,setVersion]=useState(null)
-  const [cats,setCats]=useState([]),[cursor,setCursor]=useState(null),[options,setOptions]=useState(null)
+  const [cats,setCats]=useState([]),[options,setOptions]=useState(null)
   const [search,setSearch]=useState(''),[date,setDate]=useState(''),[approved,setApproved]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState(''),[ready,setReady]=useState(!id)
   const [quick,setQuick]=useState(!id&&!detailed),[prepared,setPrepared]=useState(false),[review,setReview]=useState(false),[profiles,setProfiles]=useState([]),[owner,setOwner]=useState('')
   const [choosing,setChoosing]=useState(false)
@@ -57,10 +58,21 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
       if(!id){const found=r.accounts.find(a=>a.id===(initialAccount||last))||(r.accounts.length===1?r.accounts[0]:null)
         if(found&&!accountChosen.current)setFields(f=>({...f,account_id:found.id}))}
     }).catch(e=>live&&setError(e.message))
-    query('catalogs').then(r=>{if(live){setCats(r.data||[]);setCursor(r.next_cursor)}}).catch(e=>live&&setError(e.message))
+    query('catalog-choices').then(r=>{if(live)setCats(r.data||[])}).catch(e=>live&&setError(e.message))
     return()=>{live=false}
   },[id,piece,product,sku])
-  useEffect(()=>{let live=true;setOptions(null);if(fields.catalog_id)query('category',{id:fields.catalog_id}).then(r=>{if(live){setOptions(r);if(savedState==='draft')setFields(f=>f.catalog_id===fields.catalog_id?{...withBioCondition(f),status_id:conditionForCatalog(r)}:f)}}).catch(e=>live&&setError(e.message));return()=>{live=false}},[fields.catalog_id,savedState])
+  useEffect(()=>{
+    let live=true
+    setOptions(null)
+    if(fields.catalog_id)query('category',{id:fields.catalog_id}).then(r=>{
+      if(!live)return
+      setOptions(r)
+      if(savedState==='draft')setFields(f=>f.catalog_id===fields.catalog_id
+        ?applyListingPresets({...withBioCondition(f),status_id:conditionForCatalog(r)},r,{condition:vintedCondition,package:'Petit'})
+        :f)
+    }).catch(e=>live&&setError(e.message))
+    return()=>{live=false}
+  },[fields.catalog_id,savedState])
   const edit=(key,value)=>{
     if(key==='size_text')sizeOrigin.current='manual'
     setFields(f=>{
@@ -124,8 +136,7 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
     <Field label="Titre"><input maxLength={100} value={fields.title} onChange={e=>edit('title',e.target.value)}/></Field>
     <Field label="Description"><textarea rows={4} maxLength={2000} value={fields.description} onChange={e=>edit('description',e.target.value)}/></Field>
     <div className="sc-fields"><Field label="Rechercher une catégorie"><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Ex. Robes"/></Field>
-    <Field label="Catégorie Vinted"><select value={fields.catalog_id||''} onChange={e=>{edit('catalog_id',Number(e.target.value)||null);edit('size_id',null);edit('status_id',null)}}><option value="">Choisir</option>{fields.catalog_id&&!cats.some(c=>c.id===fields.catalog_id)&&<option value={fields.catalog_id}>{options?.ancestors?.at(-1)?.title||fields.catalog_id}</option>}{cats.filter(c=>!search||c.title?.toLowerCase().includes(search.toLowerCase())||c.id===fields.catalog_id).map(c=><option value={c.id} key={c.id}>{c.title} · {c.id}</option>)}</select></Field></div>
-    {cursor&&<button onClick={()=>run(async()=>{const r=await query('catalogs',{cursor});setCats(old=>[...old,...r.data]);setCursor(r.next_cursor)})}>Charger plus de catégories</button>}
+    <Field label="Catégorie Vinted"><select value={fields.catalog_id||''} onChange={e=>{edit('catalog_id',Number(e.target.value)||null);edit('size_id',null);edit('status_id',null);edit('package_size_id',null);edit('item_attributes',[])}}><option value="">Choisir</option>{fields.catalog_id&&!cats.some(c=>c.id===fields.catalog_id)&&<option value={fields.catalog_id}>{options?.ancestors?.at(-1)?.title||fields.catalog_id}</option>}{cats.filter(c=>!search||c.label.toLowerCase().includes(search.toLowerCase().replace(/^body$/,'bodies'))||c.id===fields.catalog_id).map(c=><option value={c.id} key={c.id}>{c.label}</option>)}</select></Field></div>
     <div className="sc-fields"><Field label="État Vinted"><input readOnly value={savedState==='draft'?(options&&!conditionForCatalog(options)?'Indisponible dans cette catégorie':vintedCondition):(options?.conditions?.find(c=>c.id===fields.status_id)?.title||'')}/></Field>
     <Field label="Taille Vinted"><select value={fields.size_id||''} onChange={e=>{const id=Number(e.target.value)||null;edit('size_id',id);edit('size_text',sizes.find(s=>s.id===id)?.title.split('/')[0]?.trim()||'')}}><option value="">Choisir</option>{sizes.map((s,i)=><option key={s.id+'-'+i} value={s.id}>{s.title}</option>)}</select></Field>
     <div className="sc-field"><span>Couleurs (deux maximum)</span><span className="sc-colors">{listingColors.map(c=><label key={c.id}><input type="checkbox" checked={fields.color_ids?.includes(c.id)||false} disabled={!fields.color_ids?.includes(c.id)&&fields.color_ids?.length>=2} onChange={e=>edit('color_ids',e.target.checked?[...(fields.color_ids||[]),c.id]:fields.color_ids.filter(id=>id!==c.id))}/>{c.title}</label>)}</span></div>

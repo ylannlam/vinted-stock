@@ -9,7 +9,8 @@ import {readListingSettings} from './listing-settings.js'
 import {prepareQuickDraft,quickProfiles,saveQuickBrand,saveQuickSize,verifyQuickFields} from './scalency-quick.js'
 import {bioCondition,conditionForCatalog,withBioCondition} from '../src/lib/scalencyQuick.js'
 import {listingFacts} from '../src/lib/library.js'
-import {matchingSize} from '../src/lib/listingStudio.js'
+import {catalogChoices,matchingSize} from '../src/lib/listingStudio.js'
+import {listingCatalogs} from './scalency-catalogs.js'
 import {updateSeoDetails} from '../src/lib/vintedSeo.js'
 import {nextHistoryPage} from './scalency-history.js'
 import {managePublication} from './scalency-publication-actions.js'
@@ -249,6 +250,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
       return res.json({...row,urls:await photosFor(db,row.photos,3600)})
     }
     if(action==='catalogs')return res.json(await remote('catalogs',{query:{limit:100,cursor:q.cursor}}))
+    if(action==='catalog-choices')return res.json({data:catalogChoices(await listingCatalogs(db))})
     if(action==='category')return res.json(await remote('catalogs/'+remoteId(q.id)))
     if(action==='connection')return res.json({configured:!!process.env.SCALENCY_API_KEY,webhook:!!checked(await db.from('scalency_settings').select('id').eq('id','webhook').not('value->>id','is',null).maybeSingle())})
     fail('Vue inconnue.',404)

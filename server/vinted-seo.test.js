@@ -2,6 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {composeVintedSeo,updateSeoDetails} from '../src/lib/vintedSeo.js'
 import {generateListingText} from './listing-studio-core.js'
+import {mergeListingCatalogs} from './scalency-catalogs.js'
+import {catalogChoices} from '../src/lib/listingStudio.js'
+import {quickIssues} from '../src/lib/scalencyQuick.js'
 
 const parts={title:'Robe bordeaux',sentences:['Robe longue bordeaux au bustier drapé.','Sa jupe ample convient pour une cérémonie.'],hashtags:['robelongue','bordeaux','robe','bustier','drapé','soirée','robehabillée','jupeample','tenuedesoiree','invitéemariage','mariage','gala','cérémonie','coupeévasée','décolleté']}
 test('Titre, deux paragraphes, mentions et exactement seize hashtags',()=>{
@@ -100,4 +103,26 @@ test('Une robe pour une invitée ne reçoit pas le hashtag robe de mariée',()=>
  assert.match(guest.description,/#inviteemariage/)
  assert.equal(guest.description.match(/#/g).length,16)
  assert.match(composeVintedSeo({...generation,title:'Robe de mariée en dentelle'}).description,/#robedemariée/)
+})
+
+test('un index Scalency incomplet est enrichi pour les bodies et les autres vêtements',async()=>{
+ const rows=mergeListingCatalogs([
+   {id:1904,title:'Femmes',parent_id:null},{id:4,title:'Vêtements',parent_id:1904},
+   {id:12,title:'Hauts et t-shirts',parent_id:4},{id:29,title:'Lingerie et pyjamas',parent_id:4},
+   {id:13,title:'Test parent vestes',parent_id:4}
+ ],[{id:98765,title:'Test veste courte',parent_id:13}])
+ const choices=catalogChoices(rows)
+ assert.ok(choices.some(c=>c.id===1835&&c.label==='Femmes › Vêtements › Hauts et t-shirts › Bodies'))
+ assert.ok(!choices.some(c=>c.id===13))
+ for(const [title,proposed,expected] of [
+   ['Body lingerie rouge métallisé',29,1835],['Body effet cuir rouge',null,1835],
+   ['Veste courte rouge',98765,98765],['Body bébé rouge',null,null]
+ ]){
+   const fetcher=async()=>Response.json({choices:[{message:{content:JSON.stringify({...parts,title,catalog_id:proposed,is_dress:false,is_ball_gown:false,color_ids:[]})}}]})
+   const result=await generateListingText({fields:{}},[],rows,[],{fetcher,token:'test',quick:true})
+   assert.equal(result.catalog_id,expected)
+ }
+ const issues=quickIssues({catalog_id:29},{catalog:{id:29},conditions:[],package_sizes:[]})
+ assert.ok(issues.includes('Choisis une catégorie Vinted plus précise'))
+ assert.ok(!issues.includes('État'))
 })
