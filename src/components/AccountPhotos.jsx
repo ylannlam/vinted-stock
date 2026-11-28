@@ -1,6 +1,8 @@
 import {useEffect,useRef,useState} from 'react'
 import {creativeAccountsRequest,uploadResourceImage} from '../lib/api'
 import {validateImage} from '../lib/resources'
+import {readBackgroundFile} from '../lib/backgroundDownload'
+import {downloadListingFile} from '../lib/listingExport'
 import ResourceDialog from './ResourceDialog'
 import './AccountPhotos.css'
 
@@ -70,9 +72,10 @@ export function PhotoAccountPanel({account,login,onSaved,autoEdit=false}){
   }
   async function getFile(){
     setDownload(true);setError('')
-    try{const r=await creativeAccountsRequest('POST',{action:'photo-download',account:data.id,version:data.version,background_id:data.background_id})
-      if(!alive.current)return
-      const a=document.createElement('a');a.href=r.url;a.download=r.name;document.body.appendChild(a);a.click();a.remove()
+    try{
+      const ticket=await creativeAccountsRequest('POST',{action:'photo-download',account:data.id,version:data.version,background_id:data.background_id})
+      const blob=await readBackgroundFile(ticket.url,data.original)
+      if(alive.current)downloadListingFile({blob,filename:ticket.name})
     }catch(e){if(alive.current)setError(e.message)}finally{if(alive.current)setDownload(false)}
   }
   function saved(next){setData(next);setEdit(false);setMessage('Fiche photo enregistrée.');setError('');onSaved?.(next)}
