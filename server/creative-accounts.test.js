@@ -40,11 +40,14 @@ test('inherited prompts update with the background while personal overrides and 
 test('API requires authentication for reads, sync, selection and DA saves',async()=>{
  for(const [method,action] of [['GET',null],['POST','sync'],['PATCH','select'],['PATCH','save']]){const res=response();await handler({method,body:{action},headers:{}},res);assert.equal(res.code,401)}
 })
-test('API sync calls only the atomic metadata RPC and does not change selection or DA',async()=>{
- let called=false
- const db={rpc:async(name,args)=>{assert.equal(name,'sync_creative_accounts');assert.deepEqual(args,{p_accounts:[{id,login:'A',country:null}]});called=true;return {error:null}}}
- const run=creativeAccountsHandler(async(_req,_res,roles)=>{assert.deepEqual(roles,['admin']);return {db}},async()=>[{id,login:'A',country:null}])
- const res=response();await run({method:'POST',body:{action:'sync'}},res);assert.equal(res.code,200);assert.ok(called)
+test('legacy account sync directs admins to Scalency without importing or writing any accounts',async()=>{
+ const noLegacyAccess=()=>assert.fail('the retired sync must not access Dotb or the database')
+ const db={rpc:noLegacyAccess,from:noLegacyAccess}
+ const run=creativeAccountsHandler(async(_req,_res,roles)=>{assert.deepEqual(roles,['admin']);return {db}},noLegacyAccess)
+ const res=response()
+ await run({method:'POST',body:{action:'sync'}},res)
+ assert.equal(res.code,410)
+ assert.match(res.body.error,/Comptes.*Scalency/)
 })
 test('API preserves form on selection conflict and validates a referenced background',async()=>{
  const db={rpc:async()=>({error:Error('stale_account')}),from:()=>({select(){return this},eq(){return this},maybeSingle:async()=>({data:{id:bg,kind:'prompt'},error:null})})}

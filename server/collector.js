@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { AppError, isId } from './dotb.js'
-import { sheinProduct, parsePrice } from '../src/lib/catalog.js'
+import { sheinProduct, sheinPhotoUrl, parsePrice } from '../src/lib/catalog.js'
 
 export async function retryCollections(db,ids) {
   if(!Array.isArray(ids)||!ids.length||ids.length>100||!ids.every(isId))throw new AppError('Sélectionne entre 1 et 100 articles à relancer.')
@@ -58,9 +58,6 @@ const clean = (value,max,name) => {
   if (typeof value !== 'string' || value.length > max) throw new AppError(`${name} invalide.`)
   return value.trim()
 }
-function photo(value) {
-  try {const u=new URL(value);return u.protocol==='https:' && !u.username && !u.password && !u.port && /(^|\.)ltwebstatic\.com$/.test(u.hostname) && u.href.length<=2000 ? u.href : null} catch{return null}
-}
 export function validateCollection(body,job,now=Date.now()) {
   if (!body || typeof body!=='object' || JSON.stringify(body).length>100000) throw new AppError('Fiche récupérée trop volumineuse.')
   const product=sheinProduct(body.supplier_url)
@@ -74,7 +71,7 @@ export function validateCollection(body,job,now=Date.now()) {
   if (body.currency!=='EUR' || price==null || Number.isNaN(price) || price!==shown || !/€|EUR/i.test(body.price_text||'')) throw new AppError('Le prix affiché en euros n’a pas pu être confirmé. La fiche reste à vérifier.',409)
   const color=clean(body.color,100,'Couleur')
   if (!color) throw new AppError('La couleur de la fiche est illisible. La comparaison de prix reste suspendue.',409)
-  const images=[...new Set((Array.isArray(body.photos)?body.photos:[]).map(photo).filter(Boolean))].slice(0,15)
+  const images=[...new Set((Array.isArray(body.photos)?body.photos:[]).map(sheinPhotoUrl).filter(Boolean))].slice(0,15)
   const sizes=(Array.isArray(body.sizes)?body.sizes:[]).slice(0,50).map(s=>({size:clean(s.size,80,'Taille'),availability:['available','unavailable'].includes(s.availability)?s.availability:'unknown'})).filter(s=>s.size)
   const details=(Array.isArray(body.details)?body.details:[]).slice(0,50).map(row=>({name:clean(row.name,100,'Détail'),value:clean(row.value,1000,'Valeur')}))
   return {...product,supplier_sku:sku,title,price,currency:'EUR',color,photos:images,sizes,details,

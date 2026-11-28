@@ -3,6 +3,10 @@ import {PUBLICATION_PACE,typePublication} from './ylavint-typing.mjs'
 
 const norm=s=>String(s??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim().toLowerCase()
 const stop=message=>Object.assign(review(message),{keep_page:true})
+const signedPhotoOrigins=new Set([
+ 'https://stock-vinted-bd46f562da6a.stock-vinted-bd46f562da6a-pc.workers.dev',
+ 'https://xnclywhkqpdulogykvoy.supabase.co'
+])
 const names={title:['title'],description:['description'],price:['price'],category:['catalog','catalog_id','category'],brand:['brand','brand_id'],size:['size','size_id'],condition:['condition','status','status_id'],color:['color','color_ids']}
 const testIds={title:'title',description:'description',price:'price-input',category:'catalog-select-dropdown',brand:'brand-select-dropdown',color:'color-select-dropdown'}
 
@@ -80,7 +84,7 @@ export class PublicationForm{
   for(const [i,p] of photos.entries()){
    await this.guard()
    const url=new URL(p.url),ext={'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[p.type]
-   if(!ext||url.origin!=='https://xnclywhkqpdulogykvoy.supabase.co'||!url.pathname.startsWith('/storage/v1/object/sign/creative-assets/')||!url.searchParams.get('token'))throw stop('Source de photo non autorisée.')
+   if(!ext||!signedPhotoOrigins.has(url.origin)||url.username||url.password||!url.pathname.startsWith('/storage/v1/object/sign/creative-assets/')||!url.searchParams.get('token'))throw stop('Source de photo non autorisée.')
    const response=await this.fetcher(url,{credentials:'omit',redirect:'error',signal:AbortSignal.timeout(30000)})
    if(!response.ok||Number(response.headers.get('content-length'))>8000000)throw stop('Photo inaccessible ou trop volumineuse.')
    // Bound the stream as well: a missing Content-Length must not allow an unbounded download.

@@ -58,6 +58,28 @@ test('photos may only come from the private signed Stock Vinted store',async()=>
  form.guard=async()=>{}
  for(const url of ['http://127.0.0.1/file','https://www.vinted.fr/api/private','https://files.test/image','https://xnclywhkqpdulogykvoy.supabase.co/storage/v1/object/public/creative-assets/a'])await assert.rejects(form.photos([{url,type:'image/jpeg'}]),/non autorisée/)
 })
+test('the desktop form loads signed photos from the migrated stock store and its original store',async()=>{
+ const host='stock-vinted-bd46f562da6a.stock-vinted-bd46f562da6a-pc.workers.dev'
+ const path='/storage/v1/object/sign/creative-assets/owner/article.png'
+ const urls=['https://'+host,'https://xnclywhkqpdulogykvoy.supabase.co'].map(origin=>origin+path+'?token=signed')
+ const fetched=[],uploads=[]
+ const input={count:async()=>1,evaluate:async()=>false,setInputFiles:async files=>uploads.push(files)}
+ const progress={count:async()=>0}
+ const form=new PublicationForm({page:{locator:s=>s.startsWith('input')?input:progress},fetcher:async(url,options)=>{
+  fetched.push(url.href);assert.equal(options.redirect,'error')
+  return new Response(new Uint8Array([1,2,3]))
+ }})
+ form.guard=async()=>{}
+ form.images=async()=>[{src:'preview',ready:true},{src:'preview2',ready:true}]
+ await form.photos(urls.map(url=>({url,type:'image/png'})))
+ assert.deepEqual(fetched,urls)
+ assert.deepEqual(uploads[0].map(f=>f.name),['photo-01.png','photo-02.png'])
+ for(const url of ['http://'+host+path+'?token=signed','https://other.workers.dev'+path+'?token=signed',
+  'https://'+host+path,'https://'+host+path.replace('/sign/','/public/')+'?token=signed']){
+  await assert.rejects(form.photos([{url,type:'image/png'}]),/non autorisée/)
+ }
+ assert.deepEqual(fetched,urls)
+})
 test('a duplicate publish click is refused even if the first click failed',async()=>{
  let clicked=0,recorded=0
  const form=new PublicationForm({page:{locator:()=>({count:async()=>1,isEnabled:async()=>true,scrollIntoViewIfNeeded:async()=>{},click:async()=>{clicked++;throw Error('connection lost')}})},task:{id:'one'},journal:{step:async()=>{recorded++}},authorize:async()=>{}})

@@ -56,12 +56,24 @@
 .bs-row>input{accent-color:#086757;width:17px;height:17px;flex:none}.bs-cover{width:54px;height:68px;object-fit:cover;border-radius:7px;flex:none;background:#eaf2ee}
 .bs-placeholder{display:grid;place-items:center;color:#778e85}.bs-row-body{flex:1;min-width:0}.bs-work .bs-row h3,.bs-work .bs-review-head h3{font-size:1rem;line-height:1.35;margin:0;overflow-wrap:anywhere}
 .bs-row-tools{display:grid;justify-items:end}.bs-badge{display:inline-block;padding:3px 9px;border-radius:12px;color:#486057;background:#eef3f0;font-size:.81rem;font-weight:650}
-.bs-badge.ready{background:#e2f4e6;color:#205f36}.bs-badge.running{color:#264b81;background:#eaf2ff}.bs-badge.review,.bs-badge.error{color:#854519;background:#fff1de}
+.bs-badge.ready,.bs-preparation-note.ready{background:#e2f4e6;color:#205f36}
+.bs-badge.running,.bs-preparation-note.running{background:#eaf2ff;color:#264b81}
+.bs-badge.catalog,.bs-preparation-note.catalog{background:#edf0f9;color:#424e78}
+.bs-badge.review,.bs-preparation-note.review{background:#fff1de;color:#794416}
+.bs-badge.error,.bs-preparation-note.error{background:#fcece9;color:#882f28}
+.bs-preparation-note{border-inline-start:3px solid currentColor;border-radius:7px;padding:10px 14px;margin:10px 0;overflow-wrap:anywhere}
+.bs-draft-row .bs-meta{overflow-wrap:anywhere}
 .bs-work .bs-problem{color:#804625;font-size:.9rem;margin:5px 0 0;overflow-wrap:anywhere}
 .bs-notice,.bs-receipts{background:#edf6f0;border-radius:9px;padding:10px 14px;margin:10px 0;color:#244f40}
 .bs-review-item{border-top:1px solid #dce8e0;padding:14px 0}.bs-review-head{flex-wrap:nowrap}.bs-review-item summary{cursor:pointer;color:#08695b}.bs-bio{white-space:pre-wrap;overflow-wrap:anywhere}.bs-review-item .bs-link{margin-top:5px}
 @media(max-width:850px){.bs-layout{grid-template-columns:1fr}.bs-work .sc-head{gap:10px}.bs-work .bs-row{gap:8px}.bs-cover{width:43px;height:56px}}
 @media(max-width:450px){.bs-actions button{flex:1}.bs-row{flex-wrap:wrap}.bs-row-tools{margin-left:auto;display:flex;gap:10px}.bs-work{padding:14px}.bs-panel{padding:14px}}
+@media(max-width:600px){
+  .bs-work .bs-draft-row{display:grid;grid-template-columns:auto auto minmax(0,1fr);align-items:start;gap:8px}
+  .bs-draft-row>input{align-self:center}
+  .bs-draft-row .bs-row-tools{grid-column:2/-1;display:flex;flex-wrap:wrap;gap:4px 16px;justify-content:flex-start;margin:0}
+  .bs-draft-row .bs-row-tools button{min-height:36px}
+}
 
 .bs-work .bs-link.bs-danger{color:#a4322f!important}
 .bs-discard-dialog{width:min(32rem,calc(100% - 2rem));max-height:85vh;overflow:auto;border:1px solid #cddbd6;padding:24px;border-radius:14px;color:#1d3530;background:#fff}

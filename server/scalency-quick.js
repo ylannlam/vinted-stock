@@ -81,6 +81,19 @@ async function generateQuickFields(db,req,row,photosFor,settings){
     productId:product?.id||null,model:result.usage?.model||null}
 }
 
+export function describeDraftCatalogIssues(fields,options,issues){
+  let field,message
+  if(!options&&fields.catalog_id&&issues.includes('Catégorie Vinted')){
+    field='Catégorie Vinted'
+    message='Texte enregistré. Options de la catégorie Vinted en attente.'
+  }else if(options?.source==='confirmed-listings'&&fields.size_text&&issues.includes('Taille sur l’étiquette')){
+    field='Taille sur l’étiquette'
+    message='La taille '+fields.size_text+' attend la confirmation du référentiel Vinted.'
+  }
+  if(!field)return {missing:issues}
+  return {catalog_pending:true,catalog_issue:message,missing:issues.map(issue=>issue===field?message:issue)}
+}
+
 export async function prepareQuickDraft(db,user,req,row,photosFor,review){
   const {fields}=row
   if(!/^\d{1,5}(?:[.]\d{1,2})?$/.test(fields.price)||Number(fields.price)<=0||!row.photos.length)throw new ScalencyError('Ajoute les photos et un prix positif.')
@@ -90,19 +103,19 @@ export async function prepareQuickDraft(db,user,req,row,photosFor,review){
   const generated=review&&batch?.catalog_pending&&fields.catalog_id&&fields.title&&fields.description
     ?{fields,productId:row.catalog_product_id,model:batch.ai_model}
     :await generateQuickFields(db,req,row,photosFor,settings)
-  let category=generated.fields.catalog_id,options=null,catalogPending=false
+  let category=generated.fields.catalog_id,options=null
   if(category){
     try{options=await readCategoryOptions(category)}
     catch(error){
       if(error.status===404)category=null
-      else if(error instanceof CatalogTemporarilyUnavailable)catalogPending=true
-      else throw error
+      else if(!(error instanceof CatalogTemporarilyUnavailable))throw error
     }
   }
   const next=applyListingPresets({...generated.fields,catalog_id:category,brand_id:null,brand_title:brand,status_id:conditionForCatalog(options)},options,settings)
   const safe=listingFields(next,{scalency:true})
-  const missing=quickIssues(safe,options).map(issue=>catalogPending&&issue==='Catégorie Vinted'?'Texte enregistré. Options de la catégorie Vinted en attente.':issue)
-  const metadata=review?{payload:{...row.payload,scalency_source:'stock-vinted',batch:{...review(options,missing,safe),ai_model:generated.model,...(catalogPending?{catalog_pending:true}:{})}}}:{}
+  const catalogReview=describeDraftCatalogIssues(safe,options,quickIssues(safe,options))
+  const {missing}=catalogReview
+  const metadata=review?{payload:{...row.payload,scalency_source:'stock-vinted',batch:{...review(options,missing,safe),...catalogReview,ai_model:generated.model}}}:{}
   const saved=checked(await db.from('listing_drafts').update({...metadata,fields:safe,catalog_product_id:generated.productId,version:row.version+1,updated_at:new Date().toISOString()}).eq('id',row.id).eq('owner_id',user.id).eq('version',row.version).eq('state','draft').select('id,fields,version').maybeSingle())
   if(!saved)throw new ScalencyError('Le brouillon a été modifié. Rouvre-le.',409)
   return {...saved,missing}

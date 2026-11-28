@@ -12,6 +12,17 @@ export class CatalogTemporarilyUnavailable extends ScalencyError {
   constructor(){super('Les options Vinted de cette catégorie sont temporairement indisponibles.',503)}
 }
 
+function confirmedOptionsWhileLoading(id,error){
+  // French Bodies listings with Vinted receipts on Nov 5 (M) and Nov 27 (XL), 2026.
+  // Only these choices were validated together. Publication still requires a live Scalency dry run.
+  if(id==='1835'&&/référentiel Vinted se charge/i.test(error?.message)){
+    return {catalog:{id:1835,title:'Bodies'},source:'confirmed-listings',
+      conditions:[{id:2,title:'Très bon état'}],package_sizes:[{id:1,title:'Petit'}],
+      size_groups:[{sizes:[{id:1739,title:'M'},{id:1741,title:'XL'}]}],attributes:[]}
+  }
+  throw new CatalogTemporarilyUnavailable()
+}
+
 export async function readCategoryOptions(category,read=remote,secondary=listingMetadata,wait=ms=>new Promise(r=>setTimeout(r,ms))){
   const id=remoteId(category),path='catalogs/'+id
   try{return await read(path)}
@@ -23,12 +34,12 @@ export async function readCategoryOptions(category,read=remote,secondary=listing
       if(options?.catalog?.id===Number(id)&&!options.offline&&Array.isArray(options.conditions)
         &&Array.isArray(options.package_sizes)&&Array.isArray(options.size_groups))return options
     }catch{/* Scalency may finish loading its reference data before the second read. */}
-    if(error.status===429)throw new CatalogTemporarilyUnavailable()
+    if(error.status===429)return confirmedOptionsWhileLoading(id,error)
     await wait(2000)
     try{return await read(path)}
     catch(retryError){
       if(!temporaryReferenceError(retryError))throw retryError
-      throw new CatalogTemporarilyUnavailable()
+      return confirmedOptionsWhileLoading(id,retryError)
     }
   }
 }

@@ -46,9 +46,11 @@ test('test notifications acknowledge without fetching or fabricating a sale',asy
   await receiveOrderEvent(db,{id:eventId,type:'webhook.test',created_at:event.created_at,order_id:null})
   assert.deepEqual(db.calls[0].args.p_orders,[])
 })
-test('public webhook endpoint rejects unsigned calls before database access',async()=>{
+test('public webhook ignores the retired Dotb route and rejects unsigned Scalency events',async()=>{
   const res={code:200,setHeader(){},status(n){this.code=n;return this},json(body){this.body=body;return this},end(){}}
   await webhook({method:'POST',headers:{}},res)
+  assert.equal(res.code,204)
+  await webhook({method:'POST',headers:{},query:{provider:'scalency'}},res)
   assert.equal(res.code,401)
 })
 test('setup saves signing material only on the server and subscribes to orders and account alerts',async()=>{

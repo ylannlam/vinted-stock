@@ -33,8 +33,11 @@ test('le plafond reste unique et les modifications suivent le compte et le rythm
   accounts.push({id:'ancien',login:'ancien-cache'},{id:'retiré',login:'compte-délié'})
   const bans = new Set(['banni'])
   const writes = []
+  const drafts = []
+  const requests = new Map()
   let pendingSave,cadenceDown=false
   const api = {
+    formatMoney: price=>price+' €',
     async query(view) {
       if(view === 'cadence'){
         if(cadenceDown)throw Error('indisponible')
@@ -43,11 +46,12 @@ test('le plafond reste unique et les modifications suivent le compte et le rythm
       if(view === 'quick-profiles') return {accounts}
       if(view === 'account-health') return {accounts:accounts.filter(a=>a.id!=='ancien').map(a=>({...a,linked:a.id!=='retiré',block:
         bans.has(a.id)?{kind:'banned',label:'Compte banni'}:a.id==='restreint'?{kind:'restricted',label:'Compte restreint'}:null})),checkedAt:new Date().toISOString()}
-      if(view === 'batch-drafts') return {rows:[],total:0,draftCounts:{alice:47,restreint:1}}
+      if(view === 'batch-drafts') return {rows:structuredClone(drafts),total:drafts.length,draftCounts:{alice:47,restreint:1}}
       throw Error(view)
     },
     async act(action, fields) {
       if(action === 'sync') return
+      if(action === 'batch-generate')return new Promise((resolve,reject)=>requests.set(fields.id,{resolve,reject}))
       assert.equal(action,'cadence-save')
       writes.push(fields)
       if(pendingSave) await pendingSave
@@ -142,4 +146,37 @@ test('le plafond reste unique et les modifications suivent le compte et le rythm
   cadenceDown=false
   await refresh()
   assert.match(accountButton('alice').textContent,/22 places libres aujourd’hui/)
+
+  await t.test('chaque résultat reste sur son SKU quand deux remplissages se terminent dans le désordre',async()=>{
+    for(const sku of ['A','B']){
+      const pendingIssue=sku==='A'?'La taille L attend la confirmation du référentiel Vinted.':undefined
+      drafts.push({id:sku,version:2,count:1,fields:{account_id:'alice',sku,price:'22'},
+        batch:{status:'review',catalog_pending:true,catalog_issue:pendingIssue,missing:[pendingIssue||'Texte enregistré. Options de la catégorie Vinted en attente.','Couleur']}})
+    }
+    await choose('alice')
+    await refresh()
+    const draft=sku=>Array.from(document.querySelectorAll('.bs-draft-row')).find(el=>el.querySelector('h3')?.textContent===sku)
+    const notice=()=>document.querySelector('.bs-preparation-note')
+    const retry=sku=>React.act(async()=>Simulate.click(Array.from(draft(sku).querySelectorAll('button')).find(b=>b.textContent==='Actualiser la catégorie')))
+    assert.equal(draft('A').querySelector('.bs-badge').textContent,'Catégorie Vinted en attente')
+    assert.match(draft('A').textContent,/La taille L attend la confirmation/)
+    assert.match(draft('A').textContent,/Champs à vérifier · Couleur/)
+    await retry('A')
+    await retry('B')
+    assert.match(notice().textContent,/B · Vérification de la catégorie/)
+    await React.act(async()=>requests.get('A').reject(Error('Connexion interrompue')))
+    assert.match(draft('A').textContent,/Connexion interrompue/)
+    assert.match(notice().textContent,/B · Vérification de la catégorie/)
+    drafts[1].version++
+    drafts[1].batch={status:'ready',missing:[]}
+    await React.act(async()=>requests.get('B').resolve())
+    assert.equal(notice().textContent.trim(),'B · Prête à relire')
+    assert.equal(notice().getAttribute('role'),'status')
+    await retry('A')
+    await React.act(async()=>requests.get('A').reject(Error('Réseau indisponible')))
+    assert.match(notice().textContent,/A · Réseau indisponible/)
+    assert.equal(notice().getAttribute('role'),'alert')
+    await choose('brune')
+    assert.equal(notice(),null)
+  })
 })

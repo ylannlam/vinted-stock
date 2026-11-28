@@ -1,6 +1,8 @@
 STOCK VINTED — CONNECTEUR ADSPOWER
 
-CONNEXION 1.8.15
+CONNEXION 1.8.16
+
+Les photos d’annonce peuvent être chargées depuis le nouveau stockage de Stock Vinted hébergé sur le PC.
 
 Priorité aux acheteurs : objectif de réponse sous 4 minutes pour messages,
 offres et premiers favoris, selon les fonctions activées. Vérification environ
@@ -31,7 +33,7 @@ avec alerte sur l'accueil si une réponse de la file attend trop longtemps.
 - La connexion protégée et les journaux sont conservés dans le dossier local StockVinted/AdsPower de ton compte Windows.
 - Pour reprendre une ancienne installation, remplace ses fichiers en conservant son dossier .data, puis relance run.bat : les données seront reprises automatiquement.
 
-ASSISTANT YLAVINT SUR PC (version 1.8.15)
+ASSISTANT YLAVINT SUR PC (version 1.8.16)
 Les annonces peuvent être confiées à la file même lorsque l’assistant est arrêté
 ou en pause. Elles sont traitées une par une après son démarrage ou sa reprise.
 La page Annonces actualise l’état du compte sans effacer les modifications en cours.

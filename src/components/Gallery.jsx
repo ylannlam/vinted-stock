@@ -2,12 +2,34 @@ import {useEffect,useState} from 'react'
 import {Pagination} from './WorkspaceUI'
 import ItemCard from './ItemCard'
 import LotCard from './LotCard'
+import {sheinProduct,sheinPhotoUrl} from '../lib/catalog'
+import {supabase} from '../lib/supabase'
 
 export default function Gallery({ items, loading, lotSelected, onToggleLot, onMarkSold, onMarkSent, onMarkUnsent, onRemettreEnVente, onRemettreEnStock, onMarkReceived, onDelete, onUpdateEmplacement, onBordereauDrop, onPhotoDrop, onEdit, onToggleReception, onLotMarkSent, onDeleteLot, isLotTab, showAddHint, onPreparePhoto }) {
   const [page,setPage]=useState(0)
   const itemIds=items.map(item=>item.id).join(',')
   useEffect(()=>setPage(0),[itemIds])
   const pageItems=items.slice(page*48,(page+1)*48)
+  const [supplierPhotos,setSupplierPhotos]=useState(new Map())
+  const supplierId=item=>item.status==='en_stock'?sheinProduct(item.shein_url)?.supplier_id:null
+  const supplierIds=[...new Set(pageItems.map(supplierId).filter(Boolean))].sort().join(',')
+  useEffect(()=>{
+    if(!supplierIds)return
+    let active=true
+    async function read(){
+      const photos=new Map()
+      try{
+        const {data,error}=await supabase.from('catalog_products')
+          .select('supplier_id,photo_url,first_photo:photos->>0').in('supplier_id',supplierIds.split(','))
+        if(!error)for(const product of data||[]){
+          const url=sheinPhotoUrl(product.photo_url)||sheinPhotoUrl(product.first_photo)
+          if(url)photos.set(product.supplier_id,url)
+        }
+      }finally{if(active)setSupplierPhotos(photos)}
+    }
+    read().catch(()=>{})
+    return ()=>{active=false}
+  },[supplierIds])
   if (loading) {
     return (
       <div className="p-4 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -73,6 +95,7 @@ export default function Gallery({ items, loading, lotSelected, onToggleLot, onMa
         <ItemCard
           key={item.id}
           item={item}
+          supplierPhoto={supplierPhotos.get(supplierId(item))}
           isLotSelected={lotSelected?.has(item.id) ?? false}
           onToggleLot={onToggleLot}
           onMarkSold={onMarkSold}

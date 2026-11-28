@@ -6,11 +6,11 @@ import {collections,remote,remoteId,ScalencyError,snapshot,shippable,draftPayloa
 import {verifiedPhotos,listingFields,listingAiToken,generateListingText} from './listing-studio-core.js'
 import {ASSET_BUCKET} from './resources.js'
 import {readListingSettings} from './listing-settings.js'
-import {prepareQuickDraft,quickProfiles,saveQuickBrand,saveQuickSize,verifyQuickFields} from './scalency-quick.js'
+import {describeDraftCatalogIssues,prepareQuickDraft,quickProfiles,saveQuickBrand,saveQuickSize,verifyQuickFields} from './scalency-quick.js'
 import {bioCondition,conditionForCatalog,withBioCondition} from '../src/lib/scalencyQuick.js'
 import {listingFacts} from '../src/lib/library.js'
 import {catalogChoices,matchingSize} from '../src/lib/listingStudio.js'
-import {listingCatalogs,readCategoryOptions} from './scalency-catalogs.js'
+import {CatalogTemporarilyUnavailable,listingCatalogs,readCategoryOptions} from './scalency-catalogs.js'
 import {updateSeoDetails} from '../src/lib/vintedSeo.js'
 import {nextHistoryPage} from './scalency-history.js'
 import {managePublication} from './scalency-publication-actions.js'
@@ -350,8 +350,15 @@ export async function scalencyHandler(req,res,{db,user,role}){
     if(action==='batch-create'&&(b.owner!==user.id||b.version!=null))fail('Session différente. Rouvre l’atelier avec le compte d’origine.',409)
     const id=remoteId(b.id), input=listingFields(b.fields,{scalency:true})
     if(input.account_id||action==='batch-create')await requireWorkspaceAccount(db,input.account_id)
-    const [options,photos]=await Promise.all([catalogConditions(input),verifiedPhotos(db,user.id,b.photos)])
+    const [options,photos]=await Promise.all([
+      catalogConditions(input).catch(error=>{
+        if(error instanceof CatalogTemporarilyUnavailable&&action!=='batch-create')return null
+        throw error
+      }),
+      verifiedPhotos(db,user.id,b.photos)
+    ])
     const fields=applyCondition(input,options)
+    if(input.catalog_id&&!options)fields.status_id=input.status_id
     if(action==='batch-create'){
       if(!isId(id))fail('Identifiant de brouillon invalide.',400)
       const saved=checked(await db.rpc('scalency_create_batch_draft',{p_id:id,p_owner:user.id,p_fields:fields,p_photos:photos}).select(draftCols+',payload').maybeSingle())
@@ -362,7 +369,9 @@ export async function scalencyHandler(req,res,{db,user,role}){
     const row={fields,photos,updated_at:now()}
     const previous=b.version==null?null:await getDraft(db,user,id)
     if(action==='save-review'||previous?.payload?.batch){
-      const batch=action==='save-review'?await reviewEditedDraft(db,fields,photos,options):null
+      const review=await reviewEditedDraft(db,fields,photos,options)
+      const batch={...review,...describeDraftCatalogIssues(fields,options,review.missing)}
+      if(previous?.payload?.batch?.ai_model)batch.ai_model=previous.payload.batch.ai_model
       row.payload={...previous?.payload,scalency_source:'stock-vinted',batch}
     }
     if(Object.hasOwn(b,'piece')||Object.hasOwn(b,'product')){

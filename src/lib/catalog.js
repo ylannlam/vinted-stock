@@ -10,6 +10,14 @@ export function sheinProduct(value) {
   } catch { return null }
 }
 
+export function sheinPhotoUrl(value) {
+  try {
+    const url=new URL(value)
+    if(url.protocol==='https:'&&!url.username&&!url.password&&!url.port&&/(^|\.)ltwebstatic\.com$/.test(url.hostname)&&url.href.length<=2000)return url.href
+  } catch {}
+  return null
+}
+
 export function supplierLink(value) {
   if (typeof value!=='string' || !value.trim()) return {url:null,product:null,status:'missing'}
   if(value.length>6000)return {url:null,product:null,status:'invalid'}

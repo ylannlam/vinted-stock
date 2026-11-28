@@ -129,12 +129,14 @@ export default function BatchEntry({account,owner,blocked,active=true,onQueued,o
     event.preventDefault()
     if(blocked||importing||!account?.brand||!photos.length)return
     const fields={...emptyListing(),sku:sku.trim(),price,size_text:size.trim(),account_id:account.id}
+    let draftId
     try{
-      queueIntake(owner,crypto.randomUUID(),fields,photos.map(photo=>photo.file))
+      draftId=crypto.randomUUID()
+      queueIntake(owner,draftId,fields,photos.map(photo=>photo.file))
     }catch(error){setError(error.message);return}
     flushSync(()=>{
       setPhotos([]);setSku('');setPrice('');setSizeOverride(null);setError('')
-      onQueued(fields.sku)
+      onQueued(fields.sku,draftId)
     })
     skuInput.current?.focus({preventScroll:true})
     skuInput.current?.scrollIntoView({block:'center',behavior:'instant'})

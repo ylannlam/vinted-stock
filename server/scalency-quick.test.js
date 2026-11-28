@@ -27,7 +27,7 @@ test('le texte et les photos du brouillon sont conservés puis la catégorie seu
   t.after(()=>{for(const k of ['ONEPROVIDER_API_KEY','SCALENCY_API_KEY','DOTB_API_TOKEN']){
     if(previous[k]===undefined)delete process.env[k];else process.env[k]=previous[k]
   }})
-  const row={id:'brouillon',version:2,fields:{account_id:'vt-3',price:'39.90',sku:'article',size_text:'M'},photos:[{path:'photo'}],payload:{batch:{status:'running'}}}
+  const row={id:'brouillon',version:2,fields:{account_id:'vt-3',price:'39.90',sku:'article',size_text:'L'},photos:[{path:'photo'}],payload:{batch:{status:'running'}}}
   const db={from(name){
     let key,patch
     const q={select:()=>q,eq(k,v){if(k==='id')key=v;return q},in:async()=>({data:[]}),update(value){patch=value;return q},
@@ -53,14 +53,14 @@ test('le texte et les photos du brouillon sont conservés puis la catégorie seu
     assert.ok(path.endsWith('/catalogs/1835'))
     if(down)return Response.json({error:{message:'Le référentiel Vinted se charge'}},{status:429})
     return Response.json({...options,catalog:{id:1835,title:'Bodies'},conditions:[{id:2,title:'Très bon état'}],
-      size_groups:[{sizes:[{id:3,title:'M'}]}]})
+      size_groups:[{sizes:[{id:3,title:'L'}]}]})
   })
   const run=()=>prepareQuickDraft(db,{id:'vendeur'},{headers:{}},row,async()=>['data:image/png;base64,dGVzdA=='],reviewMetadata)
   await run()
   assert.equal(row.payload.batch.status,'review')
   assert.equal(row.payload.batch.catalog_pending,true)
   const {description,title}=row.fields
-  assert.match(title,/Body noir taille M/)
+  assert.match(title,/Body noir taille L/)
   down=false
   await run()
   assert.equal(aiCalls,1)
@@ -70,6 +70,24 @@ test('le texte et les photos du brouillon sont conservés puis la catégorie seu
   assert.deepEqual(row.photos,[{path:'photo'}])
   assert.equal(row.fields.sku,'article')
   assert.equal(row.fields.price,'39.90')
+})
+
+test('seules les combinaisons confirmées pour les bodies en France sont proposées pendant le chargement',async()=>{
+  const loading=Object.assign(Error('Le référentiel Vinted se charge : réessaie dans quelques secondes.'),{status:503})
+  const wait=async()=>{}
+  const read=async()=>{throw loading}
+  const secondary=async()=>null
+  const observed=await readCategoryOptions(1835,read,secondary,wait)
+  assert.deepEqual(observed.size_groups[0].sizes,[{id:1739,title:'M'},{id:1741,title:'XL'}])
+  const body={...fields,catalog_id:1835,size_id:1739,status_id:2,package_size_id:1}
+  assert.deepEqual(quickIssues(body,observed),[])
+  assert.deepEqual(quickIssues({...body,size_id:4},observed),['Taille sur l’étiquette'])
+  await assert.rejects(readCategoryOptions(1778,read,secondary,wait),CatalogTemporarilyUnavailable)
+  const forbidden=Object.assign(Error('Accès refusé'),{status:403})
+  await assert.rejects(readCategoryOptions(1835,async()=>{throw forbidden},secondary,wait),e=>e===forbidden)
+  const current={...options,catalog:{id:1835},conditions:[{id:6,title:'Neuf avec étiquette'}]}
+  assert.equal(await readCategoryOptions(1835,async()=>current,secondary,wait),current)
+  assert.equal(await readCategoryOptions(1835,read,async()=>current,wait),current)
 })
 test('un conflit cite les deux marques et la validation accepte la correction seule',async()=>{
   const db={from(table){

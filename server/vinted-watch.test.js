@@ -1,9 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {execFileSync} from 'node:child_process'
-import {mkdtempSync,writeFileSync,readFileSync} from 'node:fs'
-import {tmpdir} from 'node:os'
-import {join} from 'node:path'
+import {readFileSync} from 'node:fs'
+import {readStoredZip} from '../tests/read-stored-zip.js'
 import {parseHTML} from 'linkedom'
 import {watchReport,bannerAlertId,recordWatch,watchArchive,readWatchToken,newWatchToken,WATCH_FILES} from './vinted-watch.js'
 import '../extensions/ylavint/read.js'
@@ -64,11 +62,12 @@ test('a banner becomes the account state; the same banner keeps its first date; 
   assert.equal((await recordWatch(db,{id:'k1'},{...base,member_id:'999',login:'inconnu',observed_at:'2026-11-08T09:00:00.000Z'})).saved,false)
 })
 test('the downloaded archive is a valid extension carrying its own key',()=>{
-  const dir=mkdtempSync(join(tmpdir(),'watch-')),zip=join(dir,'x.zip')
-  writeFileSync(zip,watchArchive('svwk_test-token',name=>readFileSync(new URL(`../extensions/ylavint/${name}`,import.meta.url),'utf8')))
-  const list=execFileSync('unzip',['-l',zip]).toString()
-  for(const name of WATCH_FILES)assert.match(list,new RegExp(name.replace('.','\\.')))
-  assert.match(execFileSync('unzip',['-p',zip,'config.js']).toString(),/svwk_test-token/)
-  execFileSync('unzip',['-tq',zip])
-  JSON.parse(execFileSync('unzip',['-p',zip,'manifest.json']).toString())
+  const files=readStoredZip(watchArchive('svwk_test-token'))
+  assert.deepEqual(files.map(file=>file.name).sort(),[...WATCH_FILES].sort())
+  for(const {name,data} of files){
+    if(name==='config.js')assert.match(data.toString('utf8'),/svwk_test-token/)
+    else assert.deepEqual(data,readFileSync(new URL(`../extensions/ylavint/${name}`,import.meta.url)),name)
+  }
+  const manifest=files.find(file=>file.name==='manifest.json')
+  assert.equal(JSON.parse(manifest.data.toString('utf8')).manifest_version,3)
 })
