@@ -23,9 +23,9 @@ test('le plafond reste unique et les modifications suivent le compte et le rythm
 
   const rows = ['alice','brune','clara'].map(account => ({
     account, login:account, mode:'normal', normal_limit:10, starter_limit:4,
-    day_limit:10, remaining:10, posted:0, reserved:0
+    day_limit:10, remaining:10, posted:0, reserved:0, queued:0
   }))
-  Object.assign(rows[0],{posted:2,reserved:3,remaining:5})
+  Object.assign(rows[0],{posted:2,reserved:3,queued:1,remaining:5})
   Object.assign(rows[1],{reserved:10,remaining:0})
   Object.assign(rows[2],{posted:10,remaining:0})
   const accounts = rows.map(({account,login}) => ({id:account,login,brand:'Marque'})).reverse()
@@ -85,8 +85,8 @@ test('le plafond reste unique et les modifications suivent le compte et le rythm
   assert.equal(accountButton('alice').querySelector('.bs-account-drafts').textContent,'47 brouillons')
   assert.equal(accountButton('brune').querySelector('.bs-account-drafts').textContent,'0 brouillon')
   assert.equal(accountButton('restreint').querySelector('.bs-account-drafts').textContent,'1 brouillon')
-  assert.match(accountButton('alice').textContent,/5 places libres aujourd’hui.*2 publiées · 3 en file/)
-  assert.match(accountButton('brune').textContent,/En attente de publication.*0 publiée · 10 en file/)
+  assert.match(accountButton('alice').textContent,/5 places libres aujourd’hui.*2 publiées · 1 en file/)
+  assert.match(accountButton('brune').textContent,/Places du jour réservées.*0 publiée · 0 en file/)
   assert.match(accountButton('clara').textContent,/Plafond atteint.*10 publiées · 0 en file/)
   assert.match(accountButton('restreint').textContent,/Compte restreint/)
   assert.match(accountButton('inconnu').textContent,/Suivi indisponible/)

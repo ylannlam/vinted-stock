@@ -6,7 +6,7 @@ function dailyStatus(row,block,loading){
   if(row.day_limit===0)return {order:3,tone:'neutral',label:'Plafond à zéro'}
   if(row.remaining>0)return {order:0,tone:'todo',label:row.remaining+(row.remaining===1?' place libre':' places libres')+' aujourd’hui'}
   if(row.posted>=row.day_limit)return {order:2,tone:'done',label:'Plafond atteint'}
-  return {order:1,tone:'queued',label:'En attente de publication'}
+  return {order:1,tone:'queued',label:'Places du jour réservées'}
 }
 
 export default function PublicationAccountPicker({profiles,account,onSelect,health,cadence,loadingProfiles,draftCounts}){
@@ -29,7 +29,7 @@ export default function PublicationAccountPicker({profiles,account,onSelect,heal
         <strong>{profile.login}{selected&&<span className="bs-account-check" aria-hidden="true">✓</span>}</strong>
         <span className="bs-account-drafts">{total===null?'Brouillons · —':total+(total>1?' brouillons':' brouillon')}</span>
         <span className={'bs-account-state '+status.tone}>{status.label}</span>
-        {row&&<span className="bs-account-counts">{row.posted} {row.posted>1?'publiées':'publiée'} · {row.reserved} en file</span>}
+        {row&&<span className="bs-account-counts">{row.posted} {row.posted>1?'publiées':'publiée'} · {row.queued==null?'File indisponible':row.queued+' en file'}</span>}
       </button>
     })}</div>
     {!cards.length&&<p role="status">{health.error?'Liste des comptes indisponible.':loadingProfiles||!health.report?'Chargement des comptes…':'Aucun compte de publication disponible.'}</p>}

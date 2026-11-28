@@ -5,7 +5,34 @@ import {canMoveJob} from './scalency-reschedule.js'
 const pageSize=20
 const checked=r=>{if(r.error)throw r.error;return r.data||[]}
 const activeStates=['queued','sent','waiting','pending','scheduled','planned','running','retry']
+const closedStates=new Set(['done','failed','cancelled','skipped'])
 const matches=(value,term)=>String(value||'').toLocaleLowerCase('fr').includes(term)
+
+// The active feed is authoritative even when the provider introduces a new status.
+const activePublication=job=>job.type==='publish'&&!closedStates.has(job.status)
+
+export async function activePublicationCounts(request=remote){
+  const counts=new Map(),seenJobs=new Set(),cursors=new Set()
+  let cursor=null
+  try{
+    for(let page=0;page<20;page++){
+      const result=await request('jobs',{query:{type:'publish',scope:'active',cursor,limit:100}})
+      if(!Array.isArray(result?.data))return null
+      for(const job of result.data.filter(activePublication)){
+        if(job.id==null||job.account_id==null)return null
+        const account=String(job.account_id),key=account+'/'+job.id
+        if(seenJobs.has(key))continue
+        seenJobs.add(key)
+        counts.set(account,(counts.get(account)||0)+1)
+      }
+      cursor=result.next_cursor
+      if(!cursor)return result.has_more?null:counts
+      if(cursors.has(cursor))return null
+      cursors.add(cursor)
+    }
+  }catch{/* A partial or unavailable feed cannot establish a zero count. */}
+  return null
+}
 
 async function covers(db,owner,paths){
   const keys=[...new Set(paths.filter(p=>p&&ownedAsset(p,owner)))]
@@ -59,8 +86,9 @@ async function jobPage(db,user,q){
   // Keep the provider cursor intact: don't discard matches at a page boundary.
   for(let i=0;i<4;i++){
     const res=await remote('jobs',{query:{type:'publish',scope:q.tab==='queue'?'active':'closed',account_id:q.account,cursor,limit:pageSize}})
-    const matchesPage=(res.data||[]).filter(j=>j.type==='publish'&&(!q.account||String(j.account_id)===q.account)&&
-      (q.tab==='queue'?activeStates.includes(j.status):q.tab==='live'?j.status==='done'&&j.new_item_id:!activeStates.includes(j.status)&&!(j.status==='done'&&j.new_item_id))&&
+    if(!Array.isArray(res.data)||(res.has_more&&!res.next_cursor))throw new ScalencyError('La liste des publications Scalency est incomplète. Actualise pour réessayer.',502)
+    const matchesPage=res.data.filter(j=>j.type==='publish'&&(!q.account||String(j.account_id)===q.account)&&
+      (q.tab==='queue'?activePublication(j):q.tab==='live'?j.status==='done'&&j.new_item_id:!activeStates.includes(j.status)&&!(j.status==='done'&&j.new_item_id))&&
       (!q.term||[j.title,j.refs?.sku,j.id].some(x=>matches(x,q.term))))
     rows.push(...(q.stage==='site'?await siteReceipts(db,user,matchesPage):matchesPage))
     next=res.next_cursor||null

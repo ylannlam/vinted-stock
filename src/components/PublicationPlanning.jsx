@@ -64,7 +64,7 @@ export default function PublicationPlanning({account,health,revision,focused=fal
       const params=new URLSearchParams({account:card.account,programmer:'1',jour:day>=today?day:today})
       return <article className="plan-account" key={card.account}><div><h3>{card.login||card.account}</h3>
         <p className={block?'plan-block':'plan-free'}>{block||free+' place'+(free>1?'s':'')+' libre'+(free>1?'s':'')+' sur '+card.capacity.day_limit}</p></div>
-        <dl><div><dt>Prêtes</dt><dd>{card.ready}</dd></div><div><dt>En file chez Scalency · total</dt><dd>{card.queued}</dd></div>
+        <dl><div><dt>Prêtes</dt><dd>{card.ready}</dd></div><div><dt>En file chez Scalency · total</dt><dd>{card.queued??'Indisponible'}</dd></div>
           <div><dt>Publiées {publishedDay}</dt><dd>{card.posted}</dd></div></dl>
         {card.ready>0&&!block?<a className="pub-primary" href={(focused?'#alicia/annonces?':'#annonces?')+params}>{card.ready===1?'Programmer la fiche prête':'Programmer les '+Math.min(card.ready,100)+' prêtes'}</a>:
           <span className="plan-muted">{block?'Programmation suspendue':'Aucune fiche prête'}</span>}</article>

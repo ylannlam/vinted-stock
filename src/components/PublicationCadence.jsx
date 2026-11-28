@@ -57,7 +57,7 @@ export function CadenceSettings({row,onSaved,blocked}){
   return <section className="cadence-card">
     <div><strong>Plafond quotidien de {row.login}</strong>
       <p>{row.day_limit} {row.day_limit===1?'annonce':'annonces'} par jour · {rhythm(row)}</p>
-      <p>{blocked||('Places restantes : '+row.remaining+' · '+row.posted+' publiée(s) · '+row.reserved+' en file')}</p>
+      <p>{blocked||('Places restantes : '+row.remaining+' · '+row.posted+(row.posted>1?' publiées':' publiée')+' · '+row.reserved+(row.reserved>1?' places réservées':' place réservée'))}</p>
       {saved&&<p role="status">Plafond enregistré.</p>}
     </div>
     {!editing&&<button type="button" onClick={open}>Régler le plafond</button>}
@@ -75,7 +75,7 @@ export function CadenceOverview({health}){
       <tbody>{rows.map(r=>{
         const block=health.report?.accounts.find(a=>a.id===r.account)?.block
         return <tr key={r.account}><th scope="row"><a href={'#annonces?account='+encodeURIComponent(r.account)}>{r.login}</a></th>
-          <td>{rhythm(r)}</td><td>{r.posted}</td><td>{r.reserved}</td><td>{block?.label||<strong>{r.remaining} / {r.day_limit}</strong>}</td></tr>
+          <td>{rhythm(r)}</td><td>{r.posted}</td><td>{r.queued??'Indisponible'}</td><td>{block?.label||<strong>{r.remaining} / {r.day_limit}</strong>}</td></tr>
       })}</tbody></table></div>}
   </section>
 }

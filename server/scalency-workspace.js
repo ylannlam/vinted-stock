@@ -15,7 +15,7 @@ import {updateSeoDetails} from '../src/lib/vintedSeo.js'
 import {nextHistoryPage} from './scalency-history.js'
 import {managePublication} from './scalency-publication-actions.js'
 import {reschedulePublications} from './scalency-reschedule.js'
-import {publicationTracking} from './scalency-publications.js'
+import {activePublicationCounts,publicationTracking} from './scalency-publications.js'
 import {batchDrafts,batchImages,checkBatchSubmission,reviewEditedDraft,reviewMetadata} from './scalency-batch.js'
 import {acceptPublicationLot,publicationLots,retryLotEntry,reviewDuplicates} from './scalency-lots.js'
 import {catalogProduct,connectedRecords,draftSource} from './scalency-relations.js'
@@ -194,16 +194,22 @@ export async function scalencyHandler(req,res,{db,user,role}){
     if(action==='cadence'){
       res.setHeader('Cache-Control','private, no-store')
       await syncPage(db,'jobs')
-      return res.json(await cadenceReport(db))
+      const [rows,counts]=await Promise.all([cadenceReport(db),activePublicationCounts()])
+      return res.json(rows.map(row=>({...row,queued:counts?(counts.get(row.account)??0):null})))
     }
     if(action==='publication-planning'){
       if(!validDay(q.day)||!['planned','added'].includes(q.filter))fail('Choisis une date et un filtre valides.',400)
       res.setHeader('Cache-Control','private, no-store')
       let syncDelayed=false
       try{await syncPage(db,'jobs')}catch{syncDelayed=true}
-      const report=checked(await db.rpc('scalency_publication_planning',{p_owner:user.id,p_day:q.day,p_filter:q.filter,
-        p_account:q.account?remoteId(q.account):null,p_page:Math.min(100000,Math.max(0,parseInt(q.page,10)||0))}))
-      return res.json({...report,syncDelayed})
+      const [result,counts]=await Promise.all([
+        db.rpc('scalency_publication_planning',{p_owner:user.id,p_day:q.day,p_filter:q.filter,
+          p_account:q.account?remoteId(q.account):null,p_page:Math.min(100000,Math.max(0,parseInt(q.page,10)||0))}),
+        activePublicationCounts()
+      ])
+      const report=checked(result)
+      const accounts=report.accounts.map(row=>({...row,queued:counts?(counts.get(row.account)??0):null}))
+      return res.json({...report,accounts,syncDelayed:syncDelayed||!counts})
     }
     if(action==='lot-capacity'){
       if(!validDay(q.day))fail('Choisis un jour valide.',400)
