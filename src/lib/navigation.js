@@ -7,7 +7,7 @@ function readRoute(){
  const [name,section]=path.split('/')
  return {tab:routes[name]||T.TAB_SPACES,filters:{...Object.fromEntries(new URLSearchParams(query)),...(section?{section}:{})}}
 }
-export function useNavigation(capture){
+export function useNavigation(capture,initialSpace){
  const [entered,setEntered]=useState(false)
  const [route,setRoute]=useState(()=>{
    const imported=capture(),requested=readRoute()
@@ -30,5 +30,7 @@ export function useNavigation(capture){
    }
    setEntered(true)
  }
+ // A choice made while the authenticated application was downloading belongs to this opening only.
+ useEffect(()=>{if(initialSpace)chooseSpace(initialSpace)},[initialSpace])
  return [entered?route.tab:T.TAB_SPACES,navigate,entered?route.filters:{},chooseSpace]
 }

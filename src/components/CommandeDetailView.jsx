@@ -223,7 +223,7 @@ function ReceiveArticleModal({ item, stockItems, onClose, onConfirm }) {
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div className="flex items-center gap-3">
             {item.photo_url
-              ? <img src={item.photo_url} alt="" className="w-10 h-10 rounded-lg object-cover border border-gray-200 flex-shrink-0" />
+              ? <img loading="lazy" decoding="async" src={item.photo_url} alt="" className="w-10 h-10 rounded-lg object-cover border border-gray-200 flex-shrink-0" />
               : <div className="w-10 h-10 rounded-lg bg-gray-100 flex-shrink-0" />
             }
             <div>

@@ -12,5 +12,6 @@ export async function query(view,fields={},body){
   return result
 }
 export const act=(action,fields={})=>query('',{},{action,...fields})
-export const formatMoney=(v,currency='EUR')=>v==null||v===''?'—':new Intl.NumberFormat('fr-FR',{style:'currency',currency}).format(Number(v))
+const euros=new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'})
+export const formatMoney=(v,currency='EUR')=>v==null||v===''?'—':(currency==='EUR'?euros:new Intl.NumberFormat('fr-FR',{style:'currency',currency})).format(Number(v))
 export const formatDate=v=>v?new Date(v).toLocaleString('fr-FR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'—'

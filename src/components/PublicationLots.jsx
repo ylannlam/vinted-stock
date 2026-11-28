@@ -2,11 +2,12 @@ import {useEffect,useState} from 'react'
 import {act,query} from '../lib/scalency'
 import {publicationDate} from '../lib/publicationTracking'
 import {lotProgress} from '../lib/lotProgress'
+import {scalencyQueueUrl,transferConfirmedLot,transferMessage} from '../lib/lotTransfer'
 import './PublicationLots.css'
 
 const groups={waiting:'en préparation',queue:'en file ou en cours',live:'publiée',problem:'à corriger',check:'à vérifier',stopped:'arrêtée(s)'}
 
-function Lot({lot,open,onRetry,busy,focused}){
+function Lot({lot,open,onRetry,onResume,busy,focused}){
   const [expanded,setExpanded]=useState(open),[filter,setFilter]=useState('')
   const entries=lot.entries.map(e=>({...e,progress:lotProgress(e)}))
   const counts=entries.reduce((acc,e)=>{const k=e.progress.group;acc[k]=(acc[k]||0)+1;return acc},{})
@@ -15,11 +16,13 @@ function Lot({lot,open,onRetry,busy,focused}){
       <button type="button" aria-expanded={expanded} onClick={()=>{setFilter('');setExpanded(!expanded)}}>{expanded?'Masquer le détail':'Voir le lot'}</button></div>
     <div className="lot-counts">{Object.entries(groups).filter(([key])=>counts[key]).map(([key,label])=><button key={key} aria-pressed={expanded&&filter===key}
       onClick={()=>{setExpanded(true);setFilter(filter===key?'':key)}}>{counts[key]} {label}{key==='live'&&counts[key]>1?'s':''}</button>)}</div>
+    {expanded&&entries.some(e=>!e.job_id&&['pending','working','dispatched'].includes(e.status))&&
+      <button type="button" disabled={busy} onClick={()=>onResume(lot.id)}>Reprendre la transmission à Scalency</button>}
     {expanded&&entries.filter(e=>!filter||e.progress.group===filter).map(e=><div key={e.id} className="lot-entry">
       {e.photo&&<img src={e.photo} alt="" loading="lazy"/>}
       <div><strong>{e.title||e.sku}</strong><p className="pt-meta">{[e.sku&&'SKU '+e.sku,e.size_text&&'Taille '+e.size_text,e.job_id&&'N° '+e.job_id].filter(Boolean).join(' · ')}</p>
       <b>{e.progress.label}</b>{e.progress.detail&&<p>{e.progress.detail}</p>}
-      {e.scheduled_for&&!e.job_id&&<p>Envoi prévu par Stock Vinted · {publicationDate(e.scheduled_for)} (Paris)</p>}
+      {e.scheduled_for&&<p>Mise en ligne prévue · {publicationDate(e.job?.not_before||e.scheduled_for)} (Paris)</p>}
       <div className="lot-links">{e.editable&&<a href={(focused?'#alicia/annonces':'#annonces')+'?draft='+e.draft_id}>Corriger la fiche</a>}
         {e.retryable&&<button disabled={busy} onClick={()=>onRetry(e.id)}>Relancer cette annonce</button>}
         {!focused&&['pending','working','dispatched'].includes(e.status)&&<a href={'#publication?tab=queue&account='+encodeURIComponent(lot.account)+'&draft='+encodeURIComponent(e.draft_id)}>Gérer la mise en ligne</a>}
@@ -31,6 +34,7 @@ function Lot({lot,open,onRetry,busy,focused}){
 
 export default function PublicationLots({account,lotId,focused=false}){
   const [data,setData]=useState(null),[error,setError]=useState(''),[revision,setRevision]=useState(0),[page,setPage]=useState(0),[busy,setBusy]=useState(false)
+  const [transfer,setTransfer]=useState('')
   useEffect(()=>{
     let active=true,running=false
     async function read(){
@@ -51,12 +55,20 @@ export default function PublicationLots({account,lotId,focused=false}){
     try{const lot=await act('retry-lot-entry',{id});window.location.hash=(focused?'alicia/suivi':'publication')+'?lot='+lot.id}
     catch(e){setError(e.message)}finally{setBusy(false)}
   }
+  async function resume(lot){
+    setBusy(true);setError('');setTransfer('Vérification des réceptions Scalency…')
+    try{await transferConfirmedLot(lot,act,progress=>setTransfer(transferMessage(progress)))}
+    catch(e){setTransfer('Transmission interrompue. Consulte les statuts du lot.');setError(e.message)}
+    finally{setBusy(false);setRevision(r=>r+1)}
+  }
   return <section className="sc-panel"><div className="pt-head"><h2>{lotId?'Suivi du lot':'Lots de publication'}</h2>
     <button onClick={()=>setRevision(r=>r+1)}>Actualiser les lots</button></div>
+    <a href={scalencyQueueUrl} target="_blank" rel="noreferrer">Voir la file API Scalency</a>
+    {transfer&&<p role="status">{transfer}</p>}
     {error&&<p role="alert" className="sc-error">{error}</p>}
     {!data&&!error&&<p>Chargement des lots…</p>}
     {data&&!data.lots.length&&<p className="sc-muted">{lotId?'Lot introuvable.':'Les prochains lots validés dans l’atelier apparaîtront ici.'}</p>}
-    {data?.lots.map(l=><Lot focused={focused} key={l.id} lot={l} open={!!lotId} onRetry={retry} busy={busy}/>)}
+    {data?.lots.map(l=><Lot focused={focused} key={l.id} lot={l} open={!!lotId} onRetry={retry} onResume={resume} busy={busy}/>)}
     {lotId&&<a href={focused?'#alicia/suivi':'#publication?tab=lots'}>Voir tous les lots</a>}
     {data&&data.total>data.pageSize&&<div className="sc-tools"><button disabled={!page} onClick={()=>setPage(p=>p-1)}>Précédent</button><button disabled={(page+1)*data.pageSize>=data.total} onClick={()=>setPage(p=>p+1)}>Suivant</button></div>}
   </section>

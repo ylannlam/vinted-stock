@@ -1,4 +1,5 @@
 import {useEffect,useState} from 'react'
+import {useCachedState} from '../lib/useCachedState'
 import {query} from '../lib/scalency'
 import {parisDay,validDay} from '../lib/publications'
 import {addDays,dayLabel,timeLabel} from '../lib/publicationPlan'
@@ -21,8 +22,9 @@ function status(row){
 
 export default function PublicationPlanning({account,health,revision,focused=false,initialDay,initialFilter,onViewChange}){
   const [selectedDay,setDay]=useState(validDay(initialDay)?initialDay:''),[filter,setFilter]=useState(initialFilter==='added'?'added':'planned'),[page,setPage]=useState(0)
-  const [today,setToday]=useState(parisDay),[result,setResult]=useState(null)
-  const day=selectedDay||today,key=JSON.stringify([account,day,filter,page])
+  const [today,setToday]=useState(parisDay),[failure,setFailure]=useState(null)
+  const day=selectedDay||today,key=JSON.stringify(['planning',account,day,filter,page])
+  const [data,setData]=useCachedState(query,key,null)
   useEffect(()=>{
     let active=true,reading=false
     async function read(){
@@ -34,9 +36,9 @@ export default function PublicationPlanning({account,health,revision,focused=fal
         const data=await query('publication-planning',{account,day,filter,page})
         if(active){
           if(page>0&&page>=Math.ceil(data.total/data.pageSize))setPage(Math.max(0,Math.ceil(data.total/data.pageSize)-1))
-          setResult({key,data})
+          setData(data);setFailure(null)
         }
-      }catch(e){if(active)setResult(prev=>({key,data:prev?.key===key?prev.data:null,error:e.message}))}
+      }catch(e){if(active)setFailure({key,message:e.message})}
       finally{reading=false}
     }
     read()
@@ -44,7 +46,7 @@ export default function PublicationPlanning({account,health,revision,focused=fal
     document.addEventListener('visibilitychange',read)
     return ()=>{active=false;clearInterval(timer);document.removeEventListener('visibilitychange',read)}
   },[account,day,filter,page,revision,today,key])
-  const current=result?.key===key?result:null,data=current?.data
+  const error=failure?.key===key?failure.message:''
   const publishedDay=day===today?'aujourd’hui':'le '+dayLabel(day)
   const linked=new Map((health.report?.accounts||[]).filter(a=>a.linked).map(a=>[String(a.id),a]))
   const cards=health.report&&data?data.accounts.filter(a=>isPublicationProfile(linked.get(a.account))):[]
@@ -56,9 +58,9 @@ export default function PublicationPlanning({account,health,revision,focused=fal
       <div className="plan-days"><button type="button" aria-pressed={day===today} onClick={()=>chooseDay('')}>Aujourd’hui</button>
         <button type="button" aria-pressed={day===addDays(today,1)} onClick={()=>chooseDay(addDays(today,1))}>Demain</button>
         <input aria-label="Jour du planning" type="date" value={day} onChange={e=>chooseDay(e.target.value)}/></div></div>
-    {current?.error&&<p role="alert" className="sc-error">{current.error}</p>}
+    {error&&<p role="alert" className="sc-error">{error}</p>}
     {data?.syncDelayed&&<p role="status">Derniers statuts connus. La synchronisation Scalency est momentanément retardée.</p>}
-    {!data&&!current?.error&&<p role="status">Chargement du planning…</p>}
+    {!data&&!error&&<p role="status">Chargement du planning…</p>}
     {data&&health.report&&<><div className="plan-accounts">{cards.map(card=>{
       const block=preparationBlock(health,card.account),free=card.capacity.remaining
       const params=new URLSearchParams({account:card.account,programmer:'1',jour:day>=today?day:today})

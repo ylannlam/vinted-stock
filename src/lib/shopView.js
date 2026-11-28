@@ -8,13 +8,15 @@ const strip=value=>String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g
 const timestamp=value=>Number.isFinite(Date.parse(value))?Date.parse(value):0
 const labelDate=new Intl.DateTimeFormat('fr-FR',{day:'numeric',month:'short',year:'numeric',timeZone:'Europe/Paris'})
 export const calendar=value=>timestamp(value)?labelDate.format(new Date(value)):'—'
+const euros=new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'})
 export function price(amount,currency='EUR'){
   if(amount==null||amount===''||!Number.isFinite(Number(amount)))return '—'
-  try{return new Intl.NumberFormat('fr-FR',{style:'currency',currency:currency||'EUR'}).format(Number(amount))}
+  try{return (!currency||currency==='EUR'?euros:new Intl.NumberFormat('fr-FR',{style:'currency',currency})).format(Number(amount))}
   catch{return [amount,currency].filter(Boolean).join(' ')}
 }
 export const recordKey=r=>JSON.stringify([r.isDraft?'draft':'item',r.account,r.id])
 export function textMatch(row,search){
+  if(!search?.trim())return true
   const haystack=strip([row.sku,row.title,row.account,row.id,...(row.lines||[]).flatMap(i=>[i.title,i.sku,i.location])].join(' '))
   return strip(search).split(/\s+/).every(word=>haystack.includes(word))
 }

@@ -124,7 +124,7 @@ test('la taille par compte se relit et se retire indépendamment de la marque',a
     const q={
       select(){return q},
       eq(key,value){if(key==='remote_id')selected=value;return q},
-      order:async()=>({data:profiles}),
+      order:async()=>({data:profiles.map(({remote_id,payload})=>({remote_id,login:payload.login}))}),
       maybeSingle:async()=>({data:profiles.find(p=>p.remote_id===selected)}),
       like:async(key,pattern)=>({data:[...settings].filter(([id])=>id.startsWith(pattern.slice(0,-1))).map(([id,value])=>({id,value}))}),
       upsert:async({id,value})=>{settings.set(id,value);return {data:null}},

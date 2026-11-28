@@ -4,12 +4,15 @@ export function createReadPool() {
   return {
     clear(){pending.clear()},
     read(key,work){
-      let task=pending.get(key)
-      if(!task){
-        task=Promise.resolve().then(work).finally(()=>{if(pending.get(key)===task)pending.delete(key)})
-        pending.set(key,task)
+      let entry=pending.get(key)
+      if(!entry){
+        entry={readers:0}
+        entry.task=Promise.resolve().then(work).finally(()=>{if(pending.get(key)===entry)pending.delete(key)})
+        pending.set(key,entry)
       }
-      return task.then(response=>response.clone())
+      entry.readers++
+      // The last reader consumes the original stream, so there is no abandoned buffered copy.
+      return entry.task.then(response=>--entry.readers===0?response:response.clone())
     },
   }
 }

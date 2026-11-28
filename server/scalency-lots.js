@@ -1,7 +1,7 @@
 import {capacityResult} from './scalency-cadence.js'
 import {lotDays} from '../src/lib/lotSchedule.js'
 import {requireWorkspaceAccount} from './scalency-account-health.js'
-import {createHash} from 'node:crypto'
+import {createHash,randomUUID} from 'node:crypto'
 import {remote,remoteId,ScalencyError} from './scalency-api.js'
 import {isId} from './dotb.js'
 import {ASSET_BUCKET,ownedAsset} from './resources.js'
@@ -116,15 +116,18 @@ export async function runLotEntry({prepare,authorizeSend,publish,finish,attempt=
   return result.job
 }
 
-export async function consumeLotTicket(db,{id,ticket},preparePublication,saveRecords){
+export async function consumeLotTicket(db,{id,ticket,fromConfirmation=false},preparePublication,saveRecords){
   if(!isId(id)||!isId(ticket))throw new ScalencyError('Accès refusé.',403)
   const entry=checked(await db.from('scalency_lot_entries').update({status:'working'})
     .eq('id',id).eq('token',ticket).eq('status','dispatched').gt('lease_until',new Date().toISOString())
-    .select('draft_id,reviewed_version,lot_id,attempts,window_end').maybeSingle())
+    .select('draft_id,reviewed_version,lot_id,attempts,scheduled_for,window_end').maybeSingle())
   if(!entry)return false
+  const schedule=entry.scheduled_for&&(fromConfirmation||Date.parse(entry.scheduled_for)>Date.now())?entry.scheduled_for:null
   function checkWindow(){
     if(entry.window_end&&Date.parse(entry.window_end)<=Date.now())
       throw new ScalencyError('Créneau terminé. Choisis un nouveau créneau pour ce brouillon.')
+    if(schedule&&Date.parse(schedule)<=Date.now())
+      throw new ScalencyError('L’heure prévue est passée. Choisis un nouvel horaire pour ce brouillon.')
   }
   const finish=async(status,message,delay=60,job=null)=>{
     const saved=checked(await db.rpc('scalency_finish_lot_entry',{p_id:id,p_token:ticket,p_status:status,p_message:message,p_delay:delay,p_job:job}))
@@ -143,14 +146,49 @@ export async function consumeLotTicket(db,{id,ticket},preparePublication,saveRec
       if(!row||row.state!=='preparing'||row.version!==entry.reviewed_version+1||row.fields.account_id!==lot.account||row.payload?.batch?.status!=='ready')
         throw new ScalencyError('La fiche a changé depuis la validation du lot.',409)
       if(!row.photos?.length)throw new ScalencyError('Ajoute une photo avant de relancer cette annonce.')
-      return (await preparePublication(db,row,{quick:true})).payload
+      return (await preparePublication(db,row,{quick:true,schedule})).payload
     },
     authorizeSend:async()=>!!checked(await db.from('scalency_lot_entries').update({status:'sending',lease_until:new Date(Date.now()+150000).toISOString()})
       .eq('id',id).eq('token',ticket).eq('status','working').gt('lease_until',new Date().toISOString()).select('id').maybeSingle()),
     publish:body=>{checkWindow();return remote('items',{method:'POST',body})}
   })
-  if(job)await saveRecords(db,'jobs',[job])
+  if(job){
+    if(schedule)checked(await db.from('listing_drafts').update({scheduled_at:job.not_before||schedule})
+      .eq('id',entry.draft_id).eq('state','scheduled').eq('payload->>scalency_job_id',String(job.id))
+      .eq('version',entry.reviewed_version+2))
+    await saveRecords(db,'jobs',[job])
+  }
   return true
+}
+
+export function canTransmitEntry(entry,now=Date.now()){
+  if(entry.job_id)return false
+  if(entry.status==='pending')return entry.attempts===0||Date.parse(entry.next_attempt)<=now
+  return ['working','dispatched'].includes(entry.status)&&Date.parse(entry.lease_until)<now
+}
+
+export async function transmitPublicationLot(db,user,id,prepare,saveRecords){
+  if(typeof id!=='string'||!/^[a-f0-9]{64}$/.test(id))throw new ScalencyError('Lot inconnu.',404)
+  const owned=checked(await db.from('scalency_publication_lots').select('id').eq('id',id).eq('owner_id',user.id).maybeSingle())
+  if(!owned)throw new ScalencyError('Lot introuvable.',404)
+  const read=async()=>checked(await db.from('scalency_lot_entries')
+    .select('id,status,attempts,next_attempt,lease_until,token,job_id,scheduled_for').eq('lot_id',id).order('position'))
+  const entries=await read()
+  const summarize=(rows,more=false)=>({total:rows.length,received:rows.filter(e=>e.job_id).length,more})
+  if(entries.some(e=>e.status==='pending'&&e.attempts>0&&Date.parse(e.next_attempt)>Date.now()))return summarize(entries)
+  const entry=entries.find(e=>canTransmitEntry(e))
+  if(!entry)return summarize(entries)
+  const ticket=randomUUID(),now=Date.now()
+  let claim=db.from('scalency_lot_entries').update({status:'dispatched',token:ticket,lease_until:new Date(now+150000).toISOString()})
+    .eq('id',entry.id).eq('lot_id',id).eq('status',entry.status).eq('next_attempt',entry.next_attempt).is('job_id',null)
+  claim=entry.scheduled_for?claim.eq('scheduled_for',entry.scheduled_for):claim.is('scheduled_for',null)
+  if(entry.status!=='pending')claim=claim.eq('token',entry.token).lt('lease_until',new Date(now).toISOString())
+  const claimed=checked(await claim.select('id').maybeSingle())
+  if(claimed)await consumeLotTicket(db,{id:entry.id,ticket,fromConfirmation:true},prepare,saveRecords)
+  const updated=await read()
+  const result=updated.find(e=>e.id===entry.id)
+  // A provider cooldown applies to the rest of this transfer as well.
+  return summarize(updated,!!claimed&&result?.status!=='pending'&&updated.some(e=>canTransmitEntry(e)))
 }
 
 export async function publicationLots(db,user,q,saveRecords){

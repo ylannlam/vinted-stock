@@ -20,33 +20,33 @@ const PhotoPreparation=lazy(()=>import('./components/PhotoPreparation'))
 import { supabase } from './lib/supabase'
 import { TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES, TAB_COMPTES_VINTED, TAB_WORKSPACE } from './constants'
 import Login from './Login'
-import ScalencyRelations from './components/ScalencyRelations'
+const ScalencyRelations = lazy(() => import('./components/ScalencyRelations'))
 import { recordLogin } from './lib/loginLog'
 import { usePersistedState } from './lib/usePersistedState'
 import Header from './components/Header'
 import CategoryTabs from './components/CategoryTabs'
-import Gallery from './components/Gallery'
+const Gallery = lazy(() => import('./components/Gallery'))
 import FilterBar from './components/FilterBar'
-import AddItemModal from './components/AddItemModal'
-import EditItemModal from './components/EditItemModal'
-import SoldModal from './components/SoldModal'
+const AddItemModal = lazy(() => import('./components/AddItemModal'))
+const EditItemModal = lazy(() => import('./components/EditItemModal'))
+const SoldModal = lazy(() => import('./components/SoldModal'))
 const WorkspaceTab=lazy(()=>import('./components/WorkspaceTab'))
-import EmplacementsView from './components/EmplacementsView'
-import LotPdfModal from './components/LotPdfModal'
+const EmplacementsView = lazy(() => import('./components/EmplacementsView'))
+const LotPdfModal = lazy(() => import('./components/LotPdfModal'))
 import { getCapacities, getOccupied, firstFreeSlot } from './lib/emplacements'
-import AddCommandeModal from './components/AddCommandeModal'
+const AddCommandeModal = lazy(() => import('./components/AddCommandeModal'))
 import CommandeCard from './components/CommandeCard'
-import CommandeDetailView from './components/CommandeDetailView'
-import ReceptionModal from './components/ReceptionModal'
+const CommandeDetailView = lazy(() => import('./components/CommandeDetailView'))
+const ReceptionModal = lazy(() => import('./components/ReceptionModal'))
 
-export default function App() {
+export default function App({initialSpace}={}) {
   const [user, setUser] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
   const [profile, setProfile] = useState(null)
   const profileFetchedForRef = useRef(null) // évite les double-fetches
   const stockLoadedFor=useRef(null)
   const [profileLoading, setProfileLoading] = useState(false)
-  const [activeTab,setActiveTab,navigationFilters,chooseSpace]=useNavigation(captureDraft)
+  const [activeTab,setActiveTab,navigationFilters,chooseSpace]=useNavigation(captureDraft,initialSpace)
   const [stockError,setStockError]=useState(''),[commandeError,setCommandeError]=useState(''),[profileError,setProfileError]=useState(''),[stockNotice,setStockNotice]=useState(''),[photoArticle,setPhotoArticle]=useState(null)
   const [items, setItems] = useState([])
   const [itemsLoading, setItemsLoading] = useState(false)
@@ -495,9 +495,10 @@ export default function App() {
   }
 
   // Stock / Admin: full UI
-  const isSpecialTab = activeTab === TAB_TOUT || activeTab === TAB_A_RECEVOIR || activeTab === TAB_A_ENVOYER || activeTab === TAB_A_ENVOYER_LOT || activeTab === TAB_ENVOYES || activeTab === TAB_COMPTES_VINTED
+  const stockTab = [TAB_TOUT, TAB_A_RECEVOIR, TAB_A_ENVOYER, TAB_A_ENVOYER_LOT, TAB_ENVOYES].includes(activeTab)
 
   const filteredItems = (() => {
+    if (!stockTab) return []
     if(activeTab===TAB_TOUT&&navigationFilters.piece)return items.filter(item=>item.id===navigationFilters.piece)
     if (activeTab === TAB_A_RECEVOIR)    return items.filter(i => i.status === 'a_recevoir')
     if (activeTab === TAB_A_ENVOYER || activeTab === TAB_A_ENVOYER_LOT) {
@@ -543,7 +544,7 @@ export default function App() {
         items={items}
         commandes={commandes}
         userRole={userRole}
-        sentCount={items.filter(i=>i.status==='envoye').length}
+        sentCount={stockTab ? items.filter(i=>i.status==='envoye').length : 0}
       />
 
       {(stockError||commandeError)&&<div className="max-w-screen-2xl mx-auto p-4 space-y-3"><ErrorNotice error={stockError} retry={fetchItems} busy={itemsLoading}/><ErrorNotice error={commandeError} retry={fetchCommandes}/></div>}
@@ -565,6 +566,7 @@ export default function App() {
       </PageBoundary></Suspense>
 
 
+      {stockTab&&<Suspense fallback={<p role="status" className="p-6">Chargement du stock…</p>}><PageBoundary key={activeTab}>
       {activeTab===TAB_TOUT&&navigationFilters.piece&&<section className="sc-work"><a href="#stock">← Tout le stock</a><ScalencyRelations entity="stock" id={navigationFilters.piece}/></section>}
       {activeTab === TAB_TOUT && !navigationFilters.piece && (
         <FilterBar
@@ -657,7 +659,7 @@ export default function App() {
         )
       })()}
 
-      {activeTab !== TAB_AGENT && activeTab !== TAB_ADSPOWER && activeTab !== TAB_LISTINGS && activeTab !== TAB_HOME && activeTab !== TAB_HISTORY && activeTab !== TAB_RESOURCES && activeTab !== TAB_CATALOG && activeTab !== TAB_BUDGET && activeTab !== TAB_SALES && activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_A_RECEVOIR && (
+      {stockTab && activeTab !== TAB_A_RECEVOIR && (
         <Gallery
           items={filteredItems}
           loading={itemsLoading}
@@ -679,11 +681,10 @@ export default function App() {
           onLotMarkSent={handleLotMarkSent}
           onDeleteLot={handleDeleteLot}
           isLotTab={activeTab === TAB_A_ENVOYER_LOT}
-          showAddHint={!isSpecialTab}
         />
       )}
 
-      {activeTab !== TAB_AGENT && activeTab !== TAB_ADSPOWER && activeTab !== TAB_LISTINGS && activeTab !== TAB_HOME && activeTab !== TAB_HISTORY && activeTab !== TAB_RESOURCES && activeTab !== TAB_CATALOG && activeTab !== TAB_BUDGET && activeTab !== TAB_SALES && activeTab !== TAB_COMPTES_VINTED && activeTab !== TAB_A_ENVOYER && activeTab !== TAB_A_ENVOYER_LOT && activeTab !== TAB_ENVOYES && (
+      {(activeTab === TAB_TOUT || activeTab === TAB_A_RECEVOIR) && (
         <button
           onClick={() => activeTab === TAB_A_RECEVOIR ? setShowAddCommandeModal(true) : setShowAddModal(true)}
           className={`fixed bottom-6 right-5 w-14 h-14 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-105 z-40 ${
@@ -792,6 +793,7 @@ export default function App() {
           onSold={handleItemSold}
         />
       )}
+      </PageBoundary></Suspense>}
     </div>
   )
 }

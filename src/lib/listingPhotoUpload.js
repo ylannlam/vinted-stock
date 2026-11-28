@@ -38,6 +38,19 @@ async function encode(file) {
   }
 }
 
+// Append successful transfers in selection order, including when a sibling upload fails.
+export async function uploadListingGroups(files, upload, append, active) {
+  for (let start=0; start<files.length && active(); start+=3) {
+    const group=files.slice(start,start+3)
+    const results=await Promise.allSettled(group.map(file=>upload(file)))
+    if (!active()) return
+    const added=results.flatMap((result,index)=>result.status==='fulfilled'?[{file:group[index],photo:result.value}]:[])
+    if (added.length) append(added)
+    const failure=results.find(result=>result.status==='rejected')
+    if (failure) throw failure.reason
+  }
+}
+
 export function prepareListingPhoto(file) {
   if (file.type !== 'image/png' || file.size < 512 * 1024 || typeof createImageBitmap !== 'function') return Promise.resolve(file)
   // Bound decoded memory when several listings are queued. Uploads still run in parallel.

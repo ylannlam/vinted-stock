@@ -13,12 +13,12 @@ const profileKey=id=>'listing-brand:'+remoteId(id)
 const sizeKey=id=>'listing-size:'+remoteId(id)
 export async function quickProfiles(db,user){
   const [accounts,names,sizes]=await Promise.all([
-    db.from('scalency_records').select('remote_id,payload').eq('kind','accounts').eq('payload->>linked','true').order('payload->>login'),
+    db.from('scalency_records').select('remote_id,login:payload->>login').eq('kind','accounts').eq('payload->>linked','true').order('payload->>login'),
     db.from('scalency_settings').select('id,value').like('id','listing-brand:%'),
     db.from('scalency_settings').select('id,value').like('id','listing-size:%')])
   const lookup=new Map(checked(names).map(p=>[p.id,p.value.name]))
   const sizeByAccount=new Map(checked(sizes).map(p=>[p.id,p.value.size]))
-  return {owner:user.id,accounts:checked(accounts).map(a=>({id:a.remote_id,login:a.payload.login,brand:lookup.get(profileKey(a.remote_id))||'',default_size:sizeByAccount.get(sizeKey(a.remote_id))||''}))}
+  return {owner:user.id,accounts:checked(accounts).map(a=>({id:a.remote_id,login:a.login,brand:lookup.get(profileKey(a.remote_id))||'',default_size:sizeByAccount.get(sizeKey(a.remote_id))||''}))}
 }
 async function activeAccount(db,id){
   const account=checked(await db.from('scalency_records').select('payload').eq('kind','accounts').eq('remote_id',remoteId(id)).maybeSingle())

@@ -80,7 +80,7 @@ export function PhotoAccountPanel({account,login,onSaved,autoEdit=false}){
   }
   function saved(next){setData(next);setEdit(false);setMessage('Fiche photo enregistrée.');setError('');onSaved?.(next)}
   return <section className="ap-panel" aria-label={'Fond photo de '+data.login}>
-    {data.image?<button type="button" className="ap-preview" onClick={()=>setZoom(true)} aria-label={'Agrandir le fond de '+data.login}><img src={data.image} alt={data.name||'Fond du compte'}/></button>:<div className="ap-preview ap-empty">Aucun fond</div>}
+    {data.image?<button type="button" className="ap-preview" onClick={()=>setZoom(true)} aria-label={'Agrandir le fond de '+data.login}><img decoding="async" src={data.image} alt={data.name||'Fond du compte'}/></button>:<div className="ap-preview ap-empty">Aucun fond</div>}
     <div className="ap-panel-body"><p className="ap-eyebrow">Photos de {data.login}</p><h2>{data.name||'Fond photo du compte'}</h2>
       {!ready(data)&&<p className="ap-missing">{!data.hasImage&&!data.hasPrompt?'Ajoute un fond et un prompt.':!data.hasImage?'Ajoute le fond de ce compte.':'Ajoute le prompt de ce compte.'}</p>}
       <div className="ap-actions">{data.front.trim()&&<button type="button" className="ap-button ap-primary" onClick={()=>copy(data.front)}>Copier le prompt</button>}
@@ -112,7 +112,7 @@ export default function AccountPhotos({account,base='#comptes/fonds'}){
       <label className="ap-check"><input type="checkbox" checked={incomplete} onChange={e=>setIncomplete(e.target.checked)}/>À compléter uniquement</label></div>
     {error&&<p role="alert" className="ap-error">{error} <button onClick={()=>setRevision(r=>r+1)}>Réessayer</button></p>}
     {loading&&!rows.length?<p>Chargement des comptes…</p>:<div className="ap-grid">{shown.map(r=><a key={r.id} className={'ap-card'+(selected?.id===r.id?' ap-current':'')} href={photosLink(r.id)} onClick={()=>window.scrollTo(0,0)}>
-      {r.image?<img src={r.image} alt="" loading="lazy"/>:<div className="ap-empty">Aucun fond</div>}<div className="ap-card-info"><strong>{r.login}</strong><span>{r.name||'Fond à choisir'}</span>{!ready(r)&&<small>À compléter</small>}</div></a>)}</div>}
+      {r.image?<img src={r.image} alt="" loading="lazy" decoding="async"/>:<div className="ap-empty">Aucun fond</div>}<div className="ap-card-info"><strong>{r.login}</strong><span>{r.name||'Fond à choisir'}</span>{!ready(r)&&<small>À compléter</small>}</div></a>)}</div>}
     {!loading&&!error&&!shown.length&&<p>Aucun compte ne correspond à cette recherche.</p>}
   </main>
 }

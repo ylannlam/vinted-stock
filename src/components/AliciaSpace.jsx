@@ -1,10 +1,10 @@
-import {useState} from 'react'
-import PublicationPlanning from './PublicationPlanning'
+import {lazy,Suspense,useState} from 'react'
+const PublicationPlanning = lazy(() => import('./PublicationPlanning'))
 import {isPublicationProfile,useAccountHealth} from './ScalencyAccountHealth'
 import './PublicationTracker.css'
-import AccountPhotos from './AccountPhotos'
-import PublicationLots from './PublicationLots'
-import ScalencyBatchStudio from './ScalencyBatchStudio'
+const AccountPhotos = lazy(() => import('./AccountPhotos'))
+const PublicationLots = lazy(() => import('./PublicationLots'))
+const ScalencyBatchStudio = lazy(() => import('./ScalencyBatchStudio'))
 import '../scalency.css'
 import './AliciaSpace.css'
 
@@ -27,8 +27,8 @@ export default function AliciaSpace({params}){
     <header className="alicia-bar"><strong>Espace Alicia</strong><nav aria-label="Espace Alicia">{tabs.map(([id,label])=>
       <a key={id} aria-current={id===section?'page':undefined} href={'#alicia/'+id}>{label}</a>)}</nav>
       <a className="alicia-return" href="#espaces">Changer d’espace</a></header>
-    {section==='planning'?<AliciaPlanning/>:section==='fonds'?<AccountPhotos account={params.account} base="#alicia/fonds"/>:
+    <Suspense fallback={<p role="status" className="p-6">Chargement…</p>}>{section==='planning'?<AliciaPlanning/>:section==='fonds'?<AccountPhotos account={params.account} base="#alicia/fonds"/>:
       section==='suivi'?<main className="sc-work"><h1>Suivi des lots</h1><PublicationLots key={params.lot||''} focused account="" lotId={params.lot||''}/></main>:
-      <ScalencyBatchStudio key={JSON.stringify(params)} focused params={params}/>}
+      <ScalencyBatchStudio key={JSON.stringify(params)} focused params={params}/>}</Suspense>
   </div>
 }

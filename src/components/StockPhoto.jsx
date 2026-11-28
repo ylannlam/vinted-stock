@@ -19,7 +19,7 @@ export default function StockPhoto({item,supplierPhoto,faded,onEdit}) {
   </div>
   return <>
     <button type="button" aria-label={'Agrandir · '+title} className="relative block h-full w-full cursor-zoom-in" onClick={()=>setZoom(src)}>
-      <img key={src} src={src} alt={title} loading="lazy" referrerPolicy="no-referrer" onError={unavailable}
+      <img key={src} src={src} alt={title} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={unavailable}
         className={'h-full w-full object-contain'+(faded?' opacity-70':'')}/>
       {supplier&&<span className="absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-white/95 px-2 py-1 text-[10px] font-medium text-teal-900 shadow-sm">Photo fournisseur</span>}
     </button>

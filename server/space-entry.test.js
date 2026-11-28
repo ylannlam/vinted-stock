@@ -11,8 +11,8 @@ test('chaque ouverture propose les deux espaces et reprend le lien du bon espace
     import {useNavigation} from './src/lib/navigation'
     import SpaceChooser from './src/components/SpaceChooser'
     import {TAB_SPACES} from './src/constants'
-    export default function Entry({capture}){
-      const [tab,,filters,choose]=useNavigation(capture)
+    export default function Entry({capture,initialSpace}){
+      const [tab,,filters,choose]=useNavigation(capture,initialSpace)
       return tab===TAB_SPACES?<SpaceChooser onChoose={choose}/>:<output>{JSON.stringify([tab,filters])}</output>
     }`,resolveDir:rootDir,loader:'jsx'},bundle:true,platform:'node',packages:'external',write:false,jsx:'automatic'})
   const {window}=parseHTML('<html><body><div id="root"></div></body></html>')
@@ -21,15 +21,17 @@ test('chaque ouverture propose les deux espaces et reprend le lien du bon espace
   const mod=new Module(fileURLToPath(import.meta.url));mod.paths=Module._nodeModulePaths(rootDir)
   mod._compile(bundle.outputFiles[0].text,fileURLToPath(import.meta.url))
   const {TAB_HOME,TAB_ALICIA,TAB_LISTINGS,TAB_CATALOG}=await import('../src/constants.js')
-  async function open(hash,desktop,choice,expected,filters={},imported=false){
+  async function open(hash,desktop,choice,expected,filters={},imported=false,early=false){
     window.location={hash}
     window.matchMedia=()=>({matches:desktop})
     const root=createRoot(document.getElementById('root'))
     try{
-      await React.act(async()=>root.render(React.createElement(mod.exports.default,{capture:()=>imported})))
+      await React.act(async()=>root.render(React.createElement(mod.exports.default,{capture:()=>imported,initialSpace:early?choice:null})))
       const buttons=[...document.querySelectorAll('button')]
-      assert.deepEqual(buttons.map(b=>b.querySelector('strong').textContent),['YLANN','ALICIA'])
-      await React.act(async()=>buttons[choice==='alicia'?1:0].click())
+      if(!early){
+        assert.deepEqual(buttons.map(b=>b.querySelector('strong').textContent),['YLANN','ALICIA'])
+        await React.act(async()=>buttons[choice==='alicia'?1:0].click())
+      }
       assert.deepEqual(JSON.parse(document.querySelector('output').textContent),[expected,filters])
       if(Object.keys(filters).length)assert.equal(window.location.hash,hash)
       await React.act(async()=>{window.location.hash='#espaces';window.dispatchEvent(new window.Event('hashchange'))})
@@ -43,4 +45,6 @@ test('chaque ouverture propose les deux espaces et reprend le lien du bon espace
   await open('#annonces?account=exemple',false,'alicia',TAB_ALICIA)
   await open('#alicia/fonds',true,'ylann',TAB_HOME)
   await open('',false,'ylann',TAB_CATALOG,{},true)
+  await open('#annonces?account=exemple',true,'ylann',TAB_LISTINGS,{account:'exemple'},false,true)
+  await open('',false,'alicia',TAB_ALICIA,{},false,true)
 })

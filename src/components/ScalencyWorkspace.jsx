@@ -1,12 +1,13 @@
-import {useEffect,useState,useRef} from 'react'
+import {lazy,useEffect,useState,useRef} from 'react'
+import {useCachedState} from '../lib/useCachedState'
 import {query,act,formatDate,formatMoney} from '../lib/scalency'
-import Wardrobe from './Wardrobe'
-import SalesDesk from './SalesDesk'
+const Wardrobe = lazy(() => import('./Wardrobe'))
+const SalesDesk = lazy(() => import('./SalesDesk'))
 import DailyPublicationCount from './DailyPublicationCount'
 import ScalencyQuickAccount from './ScalencyQuickAccount'
-import ScalencyDraft from './ScalencyDraft'
-import PublicationTracker from './PublicationTracker'
-import ScalencyBatchStudio from './ScalencyBatchStudio'
+const ScalencyDraft = lazy(() => import('./ScalencyDraft'))
+const PublicationTracker = lazy(() => import('./PublicationTracker'))
+const ScalencyBatchStudio = lazy(() => import('./ScalencyBatchStudio'))
 import ScalencyRelations from './ScalencyRelations'
 import '../scalency.css'
 
@@ -58,7 +59,11 @@ export default function ScalencyWorkspace({kind,admin,params={}}){
  return <WorkspaceList kind={kind} admin={admin} params={params}/>
 }
 function WorkspaceList({kind,admin,params}){
- const [stored,setData]=useState(null),[search,setSearch]=useState(''),[filter,setFilter]=useState(params.filter||''),[page,setPage]=useState(0),[rev,setRev]=useState(0),[busy,setBusy]=useState(false),[err,setErr]=useState(''),[selection,setSelected]=useState(null),[editor,setEditor]=useState(params.draft||(params.sku||params.piece||params.product||params.nouvelle==='1'?'new':null)),[connection,setConnection]=useState(null)
+ const [search,setSearch]=useState(''),[filter,setFilter]=useState(params.filter||''),[page,setPage]=useState(0),[rev,setRev]=useState(0),[busy,setBusy]=useState(false),[err,setErr]=useState(''),[selection,setSelected]=useState(null),[editor,setEditor]=useState(params.draft||(params.sku||params.piece||params.product||params.nouvelle==='1'?'new':null)),[connection,setConnection]=useState(null)
+ const snapshotKey=JSON.stringify([kind,admin,search,filter,page,params.account,params.id])
+ const [stored,setData]=useCachedState(query,snapshotKey,null)
+ const latest=useRef(stored)
+ latest.current=stored
  const archived=kind==='accounts'&&params.filter==='history'
  const currentAccounts=kind==='accounts'&&!archived
  const health=useAccountHealth(admin&&(currentAccounts||kind==='home'))
@@ -85,16 +90,35 @@ function WorkspaceList({kind,admin,params}){
  useEffect(()=>{if(lastDirectoryPage!=null&&page>lastDirectoryPage)setPage(lastDirectoryPage)},[lastDirectoryPage,page])
  useEffect(()=>{let live=true;const timer=setTimeout(()=>{query(kind,{search,filter,page,...(params.account?{account:params.account}:{}),...(params.id&&kind!=='home'?{focus:params.id}:{})}).then(r=>{if(!live)return;setData(r);if(params.id&&!opened.current){let found=r.rows?.find(x=>x.remote_id===params.id);if(found){setSelected(found);opened.current=true}}}).catch(e=>live&&setErr(e.message))},search?200:0);return()=>{live=false;clearTimeout(timer)}},[kind,filter,page,search,rev,params.id,params.account])
  async function sync(older=false,force=true){
-   if(syncing.current)return;syncing.current=true;setBusy(true);setErr('')
-   try{const kinds=kind==='home'?['accounts','orders','items','jobs']:kind==='drafts'?['accounts']:[kind]
-     for(const k of kinds.filter(k=>admin||['items','orders'].includes(k)))await act('sync',{kind:k,older,force})
-     reload()
+   if(syncing.current)return
+   const kinds=kind==='home'?['accounts','orders','items','jobs']:kind==='drafts'?['accounts']:[kind]
+   const pending=kinds.filter(k=>{
+     if(!admin&&!['items','orders'].includes(k))return false
+     const stamp=kind==='home'?latest.current?.groups?.[k]?.sync:latest.current?.sync
+     const age=Date.now()-Date.parse(stamp?.updated_at)
+     return force||older||!(age>=0&&age<60000)
+   })
+   if(!pending.length)return
+   syncing.current=true;setBusy(true);setErr('')
+   try{
+     let changed=false
+     for(const k of pending){
+       const result=await act('sync',{kind:k,older,force})
+       if(!result?.skipped)changed=true
+     }
+     if(changed||force)reload()
      if(force&&admin&&(currentAccounts||kind==='home'))health.refresh()
    }catch(e){setErr(e.message)}finally{syncing.current=false;setBusy(false)}
  }
- useEffect(()=>{sync(false,false);if(admin&&kind==='accounts')query('connection').then(setConnection).catch(e=>setErr(e.message))
-   const timer=setInterval(()=>{if(document.visibilityState==='visible')sync(false,false)},120000);return()=>clearInterval(timer)
+ useEffect(()=>{
+   if(admin&&kind==='accounts')query('connection').then(setConnection).catch(e=>setErr(e.message))
  },[kind,admin])
+ const hasSnapshot=!!stored
+ useEffect(()=>{
+   if(!hasSnapshot)return
+   sync(false,false)
+   const timer=setInterval(()=>{if(document.visibilityState==='visible')sync(false,false)},120000);return()=>clearInterval(timer)
+ },[kind,admin,hasSnapshot])
  const byAccount=new Map(health.report?.accounts.map(a=>[a.id,a.block]))
  const rowLabel=(r)=>kind==='orders'?[r.status_fr||r.state,r.account,formatDate(r.deadline)]:kind==='items'?[r.sku||'Sans SKU',r.sold?'Vendue':r.status==='active'?'En ligne':'Inactive',formatMoney(r.price)]:kind==='jobs'?[r.type_label,r.status_label||r.status,formatDate(r.not_before)]:kind==='accounts'?[byAccount.get(String(r.id))?.label,r.linked?'Relié':'Non relié',r.agent&&(r.agent.active?'Bot allumé':'Bot inactif')]:kind==='conversations'?[r.buyer,r.unread?'Non lu':'Lu',r.preview]:[r.fields?.sku||'Sans SKU',formatDate(r.updated_at)]
  return <main className="sc-work"><header className="sc-head"><div><p>Stock Vinted / Scalency</p><h1>{titles[kind]}</h1>{params.login&&<p>Compte · {params.login} <a href={'#'+destination[kind]}>Tous les comptes</a></p>}</div><div className="sc-tools">{kind==='drafts'?<button className="sc-primary" onClick={()=>setEditor('new')}>＋ Nouvelle annonce</button>:<button disabled={busy} onClick={()=>sync()}>{busy?'Synchronisation…':'Actualiser'}</button>}</div></header>

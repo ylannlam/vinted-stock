@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react'
 import {act,query} from '../lib/scalency'
+import {scalencyQueueUrl,transferConfirmedLot,transferMessage} from '../lib/lotTransfer'
 import {publicationDate,publicationProgress} from '../lib/publicationTracking'
 import PublicationLots from './PublicationLots'
 import PublicationPlanning from './PublicationPlanning'
@@ -115,8 +116,15 @@ export default function PublicationTracker({params}){
       if(choice.action==='launch'){
         const groups=new Map()
         for(const r of choice.rows)groups.set(r.account,[...(groups.get(r.account)||[]),r])
-        for(const [acct,rs] of groups)try{const lot=await act('accept-lot',{account:acct,entries:rs.map(({id,version})=>({id,version}))});results.push({ok:true,text:rs.length+' annonce(s) en file sur Stock Vinted.',href:'#publication?lot='+lot.id})}
-          catch(e){results.push({ok:false,text:(logins.get(acct)||acct)+' · '+e.message})}
+        for(const [acct,rs] of groups){
+          let href
+          try{
+            const lot=await act('accept-lot',{account:acct,entries:rs.map(({id,version})=>({id,version}))})
+            href='#publication?lot='+lot.id
+            const progress=await transferConfirmedLot(lot.id,act)
+            results.push({ok:progress.received===progress.total,text:transferMessage(progress),href})
+          }catch(e){results.push({ok:false,text:(logins.get(acct)||acct)+' · '+e.message,href})}
+        }
       }else for(const row of choice.rows){
         const operation=choice.action==='cancel'&&row.kind==='draft'?'stop-local':choice.action
         try{const r=await act('manage-publication',{operation,id:row.id,version:row.version,account:row.account});results.push({ok:true,text:titleOf(row)+' · '+r.message})}
@@ -159,7 +167,7 @@ export default function PublicationTracker({params}){
       {pageCount>1&&<div className="pub-pager"><button disabled={page===0||busy} onClick={()=>{setPage(page-1);setSelection({})}}>Précédent</button><span>Brouillons · {page+1} / {pageCount}</span><button disabled={page+1>=pageCount||busy} onClick={()=>{setPage(page+1);setSelection({})}}>Suivant</button></div>}
       {(cursors.length>1||data?.nextCursor)&&<div className="pub-pager"><button disabled={cursors.length<2||busy} onClick={()=>{setCursors(c=>c.slice(0,-1));setSelection({})}}>Précédent</button><span>Scalency · page {cursors.length}</span><button disabled={!data?.nextCursor||busy} onClick={()=>{setCursors(c=>[...c,data.nextCursor]);setSelection({})}}>Suivant</button></div>}
     </section>}
-    <footer className="pub-foot"><span>{data?.checkedAt&&'Actualisé le '+publicationDate(data.checkedAt)+' · Paris'}</span><a href="#publication?section=actions">Journal Scalency ↗</a></footer>
+    <footer className="pub-foot"><span>{data?.checkedAt&&'Actualisé le '+publicationDate(data.checkedAt)+' · Paris'}</span><a href={scalencyQueueUrl} target="_blank" rel="noreferrer">Programmées par l’API dans Scalency ↗</a><a href="#publication?section=actions">Journal Scalency ↗</a></footer>
     {choice?.action==='move'?<MovePublications rows={choice.rows} login={logins.get(choice.rows[0].account)||choice.rows[0].account} onClose={()=>setChoice(null)}
       onResult={results=>{setReceipt(results);setSelection({});setChoice(null);setRevision(n=>n+1)}}/>:choice&&<Confirm choice={choice} busy={busy} onClose={()=>{if(!lock.current)setChoice(null)}} onApply={apply}/>}
   </main>

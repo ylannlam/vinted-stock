@@ -20,7 +20,7 @@ function Stat({value,label,tone='slate'}){
 function Section({title,children,aside}){
  return <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-xs font-semibold uppercase tracking-widest text-slate-500">{title}</h2>{aside}</div>{children}</section>
 }
-function Thumb({row}){return row.photo?<img src={row.photo} alt="" className="h-10 w-8 rounded-md object-cover bg-slate-100 shrink-0"/>:<span className="h-10 w-8 rounded-md bg-slate-100 shrink-0"/>}
+function Thumb({row}){return row.photo?<img loading="lazy" decoding="async" src={row.photo} alt="" className="h-10 w-8 rounded-md object-cover bg-slate-100 shrink-0"/>:<span className="h-10 w-8 rounded-md bg-slate-100 shrink-0"/>}
 
 export default function PublicationTab({request=defaultRequest,onOpenListings,step=1800}){
  const [data,setData]=useState(null),[loading,setLoading]=useState(true),[loadError,setLoadError]=useState('')

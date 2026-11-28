@@ -7,6 +7,7 @@ import ScalencyQuickAccount from './ScalencyQuickAccount'
 import {listingColors,vintedCondition,withBioCondition,conditionForCatalog} from '../lib/scalencyQuick'
 import ScalencyRelations from './ScalencyRelations'
 import {act,query} from '../lib/scalency'
+import {uploadListingGroups} from '../lib/listingPhotoUpload'
 import {uploadListingPhoto} from '../lib/api'
 import {emptyListing,validateListingPhoto,listingSizes,matchingSize} from '../lib/listingStudio'
 import {applyListingPresets} from '../lib/listingSettings'
@@ -49,7 +50,8 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
       return f.size_text===defaultSize&&f.size_id===sizeId?f:{...f,size_text:defaultSize,size_id:sizeId}
     })
   },[id,version,fields.account_id,defaultSize,options])
-  useEffect(()=>()=>localUrls.current.forEach(URL.revokeObjectURL),[])
+  const mounted=useRef(true)
+  useEffect(()=>{mounted.current=true;return ()=>{mounted.current=false;localUrls.current.forEach(URL.revokeObjectURL)}},[])
   useEffect(()=>{let live=true
     const apply=(row)=>{if(!live)return;setFields({...emptyListing(),...row.fields});setVersion(row.version);setPhotos(row.photos.map((p,i)=>({...p,url:row.urls[i]})));setReady(true);setSavedState(row.state);setSource({piece:row.stock_item_id,product:row.catalog_product_id,label:''})}
     if(!id&&(piece||product||sku)){setReady(false);query('draft-source',{...(piece?{piece}:{}),...(product?{product}:{}),...(sku?{sku}:{})}).then(r=>{if(!live)return;setSource({piece:r.stock?.id||null,product:r.product?.id||null,label:[r.product?.title,r.stock?.emplacement].filter(Boolean).join(' · ')});if(r.stock?.size&&sizeOrigin.current!=='manual')sizeOrigin.current='stock';setFields(f=>({...f,sku:sku||r.product?.supplier_sku||'',size_text:sizeOrigin.current==='stock'&&r.stock?.size?r.stock.size:f.size_text,price:r.product?.sale_price==null?'':String(r.product.sale_price)}));setReady(true)}).catch(e=>{if(live)setError(e.message)})}
@@ -92,7 +94,20 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
     setVersion(r.version);if(reviewForBatch)onReviewed?.(r);return r.version
   }
   async function validate(){const v=await save();await act('validate',{id:uid.current,version:v,schedule:date?new Date(date).toISOString():null});setApproved(true);setMessage('Scalency a validé cette annonce. Tu peux confirmer sa publication.')}
-  async function upload(files){await query('account-health',{account:fields.account_id});setApproved(false);if(files.length+photos.length>20)throw Error('20 photos maximum.');for(const f of files){validateListingPhoto(f);const p=await uploadListingPhoto(f);const url=URL.createObjectURL(f);localUrls.current.push(url);setPhotos(old=>[...old,{...p,url}])}}
+  async function upload(files){
+    if(files.length+photos.length>20)throw Error('20 photos maximum.')
+    files.forEach(file=>validateListingPhoto(file))
+    await query('account-health',{account:fields.account_id})
+    setApproved(false)
+    await uploadListingGroups(files,uploadListingPhoto,added=>{
+      const next=added.map(({file,photo})=>{
+        const url=URL.createObjectURL(file)
+        localUrls.current.push(url)
+        return {...photo,url}
+      })
+      setPhotos(old=>[...old,...next])
+    },()=>mounted.current)
+  }
   function selectAccount(account){
     accountChosen.current=true
     setFields(f=>({...f,account_id:account,...(quick?{brand_id:null,brand_title:''}:{})}));setPrepared(false);setApproved(false);setMessage('')

@@ -1,4 +1,6 @@
 import {useCallback,useEffect,useRef,useState} from 'react'
+import {useCachedState} from '../lib/useCachedState'
+import {readViewCache,viewCacheEpoch,writeViewCache} from '../lib/viewCache'
 import {act,query,formatMoney} from '../lib/scalency'
 import {retryIntake,watchIntake} from '../lib/batchIntake'
 import {accountBrandIssue,listingColors} from '../lib/scalencyQuick'
@@ -10,7 +12,7 @@ import ScalencyDraft from './ScalencyDraft'
 import ScalencyQuickAccount from './ScalencyQuickAccount'
 import PublicationAccountPicker from './PublicationAccountPicker'
 import LotWindowPlanner from './LotWindowPlanner'
-import {addDays,dayLabel} from '../lib/publicationPlan'
+import {scalencyQueueUrl,transferConfirmedLot,transferMessage} from '../lib/lotTransfer'
 import './ScalencyBatchStudio.css'
 
 const labels={draft:'Brouillon',running:'Remplissage…',catalog:'Catégorie Vinted en attente',ready:'Prête à relire',review:'À compléter',error:'À reprendre'}
@@ -70,14 +72,24 @@ function ReviewRow({row,onEdit,onDiscard,onSave,onQuick,quick,disabled,blocked,d
       <button className="bs-link bs-danger" disabled={disabled} onClick={()=>onDiscard([row])}>Supprimer</button></div>
   </article>
 }
+function lastAccount(profile){
+  if(!profile?.owner)return ''
+  try{
+    const last=localStorage.getItem('scalency-last-account:'+profile.owner)
+    return profile.accounts.some(a=>a.id===last)?last:''
+  }catch{return ''}
+}
 export default function ScalencyBatchStudio({params,focused=false}){
-  const [loadedProfiles,setProfiles]=useState(null),[owner,setOwner]=useState(''),[requestedAccount,setAccount]=useState(params.account||'')
+  const [profilesAtEntry]=useState(()=>readViewCache(query,'studio-profiles'))
+  const [loadedProfiles,setProfiles]=useState(profilesAtEntry?.accounts??null),[owner,setOwner]=useState('')
+  const [requestedAccount,setAccount]=useState(()=>params.account||lastAccount(profilesAtEntry))
   const profiles=loadedProfiles??[]
-  const [page,setPage]=useState(0),[data,setData]=useState(null),[error,setError]=useState(''),[notice,setNotice]=useState('')
+  const [page,setPage]=useState(0),[error,setError]=useState(''),[notice,setNotice]=useState('')
   const [draftCounts,setDraftCounts]=useState(null)
   const [selected,setSelected]=useState({}),[review,setReview]=useState(false),[sending,setSending]=useState(false)
   const [local,setLocal]=useState({}),[revision,setRevision]=useState(0)
   const [requestErrors,setRequestErrors]=useState({})
+  const [profileError,setProfileError]=useState(''),[profileRevision,retryProfiles]=useState(0)
   const [discarding,setDiscarding]=useState(null)
   const [scheduled,setScheduled]=useState(false)
   const [quickEdit,setQuickEdit]=useState(''),[duplicates,setDuplicates]=useState({}),[duplicateCheck,setDuplicateCheck]=useState('')
@@ -88,6 +100,8 @@ export default function ScalencyBatchStudio({params,focused=false}){
   const health=useAccountHealth()
   const excluded=excludedPublicationAccount(health,requestedAccount)
   const account=health.report&&!health.error&&!excluded?requestedAccount:''
+  const [snapshot,setData]=useCachedState(query,JSON.stringify(['studio-drafts',account,page]),null)
+  const data=health.report||health.error?snapshot:null
   const availableProfiles=publicationProfiles(profiles,health)
   const cadence=useCadence()
   const quota=!cadence.error&&cadence.rows.find(row=>row.account===account)
@@ -101,20 +115,23 @@ export default function ScalencyBatchStudio({params,focused=false}){
   useEffect(()=>{active.current=true;return()=>{active.current=false}},[])
   useEffect(()=>{
     let live=true
+    const epoch=viewCacheEpoch()
     async function read(){
       try{
         const r=await query('quick-profiles');if(!live)return
-        setProfiles(r.accounts);setOwner(r.owner)
-        let last='';try{last=localStorage.getItem('scalency-last-account:'+r.owner)||''}catch{}
-        if(!userPicked.current&&!params.account&&r.accounts.some(a=>a.id===last))setAccount(last)
-      }catch(e){if(live)setError(e.message)}
+        writeViewCache(query,'studio-profiles',r,epoch)
+        setProfileError('');setProfiles(r.accounts);setOwner(r.owner)
+        if(!userPicked.current&&!params.account)setAccount(lastAccount(r))
+      }catch(e){if(live)setProfileError(e.message)}
     }
     read()
-    if(!focused)act('sync',{kind:'accounts',force:false}).then(()=>{if(live)read()}).catch(()=>{})
+    if(!focused)act('sync',{kind:'accounts',force:false}).then(result=>{if(live&&!result?.skipped)read()}).catch(()=>{})
     return()=>{live=false}
-  },[params.account,focused])
+  },[params.account,focused,profileRevision])
   useEffect(()=>{
     let live=true
+    if(!health.report&&!health.error)return
+    if(!requestedAccount&&loadedProfiles===null&&!profileError&&!health.error)return
     query('batch-drafts',{account,page,withCounts:'1'}).then(r=>{
       if(!live)return
       setData(r);setDraftCounts(r.draftCounts??null);setError('')
@@ -125,7 +142,7 @@ export default function ScalencyBatchStudio({params,focused=false}){
       if(!r.rows.length&&page)setPage(p=>p-1)
     }).catch(e=>{if(live){setDraftCounts(null);setError(e.message)}})
     return()=>{live=false}
-  },[account,page,revision])
+  },[account,page,revision,!!requestedAccount||loadedProfiles!==null||!!profileError,!!health.report,!!health.error])
   useEffect(()=>{
     if(params.programmer!=='1'||openedPlanning.current||!account||account!==params.account||!login||blocked)return
     let live=true
@@ -149,7 +166,7 @@ export default function ScalencyBatchStudio({params,focused=false}){
   function updateProfile(id,changes){setProfiles(rows=>rows.map(a=>a.id===id?{...a,...changes}:a))}
   const choose=useCallback(id=>{
     setScheduled(false)
-    userPicked.current=true;setAccount(id);setSelected({});setReview(false);setData(null);setPage(0);setNotice('')
+    userPicked.current=true;setAccount(id);setSelected({});setReview(false);setPage(0);setNotice('')
     if(owner)try{localStorage.setItem('scalency-last-account:'+owner,id)}catch{}
   },[owner])
   useEffect(()=>{
@@ -248,10 +265,13 @@ export default function ScalencyBatchStudio({params,focused=false}){
       const result=await act('accept-lot',{account,entries:entries.map(({id,version})=>({id,version})),...(windowPlan?{window:windowPlan}:{})})
       const submitted=new Set(entries.map(row=>row.id))
       setSelected(prev=>Object.fromEntries(Object.entries(prev).filter(([id])=>!submitted.has(id))));setReview(false);setScheduled(false)
-      const days=windowPlan?.firstCount===undefined?windowPlan&&dayLabel(windowPlan.day):
-        [windowPlan.firstCount&&dayLabel(windowPlan.day),dayLabel(addDays(windowPlan.day,1))].filter(Boolean).join(' et ')
-      setNotice({lotId:result.id,text:windowPlan?'Lot programmé · '+result.count+' annonce(s) · '+days+' entre '+windowPlan.from+' et '+windowPlan.to+' (Paris).':
-        'Lot enregistré · '+result.count+' annonce'+(result.count>1?'s':'')+'. Tu peux fermer cet onglet ou changer de compte.'})
+      setNotice({lotId:result.id,text:'Lot enregistré. Transmission à Scalency en cours…'})
+      try{
+        await transferConfirmedLot(result.id,act,progress=>setNotice({lotId:result.id,text:transferMessage(progress)}))
+      }catch(e){
+        setNotice({lotId:result.id,text:'Lot enregistré. Ouvre son suivi pour vérifier les réceptions et reprendre la transmission.'})
+        throw e
+      }
     }catch(e){setError(e.message)}
     finally{lock.current=false;setSending(false);reload();cadence.refresh()}
   }
@@ -264,6 +284,7 @@ export default function ScalencyBatchStudio({params,focused=false}){
       {!editor&&<PublicationAccountPicker profiles={availableProfiles} loadingProfiles={loadedProfiles===null} draftCounts={draftCounts} account={account} onSelect={choose} health={health} cadence={cadence}/>}
       {login&&<ScalencyQuickAccount fixed readOnly={focused} accounts={availableProfiles} health={health} account={account} onSaved={updateProfile}/>}
     </fieldset>
+    {profileError&&<p role="alert" className="sc-error">{profileError} <button onClick={()=>retryProfiles(n=>n+1)}>Recharger les comptes</button></p>}
     {!editor&&health.error&&<AccountHealthNotice health={health}/>}
     {focused&&login&&!login.brand&&<p role="status">La marque de ce compte doit être renseignée par l’administrateur pour le remplissage automatique.</p>}
     {focused&&quota&&!editor&&<p className="bs-meta">{quota.remaining} place(s) disponible(s) aujourd’hui sur ce compte.</p>}
@@ -271,7 +292,7 @@ export default function ScalencyBatchStudio({params,focused=false}){
     {!review&&account&&login&&<PhotoAccountPanel key={'photos-'+account} account={account} login={login.login}/>}
     {error&&<p role="alert" className="sc-error">{error} <button onClick={reload}>Réessayer</button></p>}
     {typeof notice==='string'&&notice&&<p className="bs-notice" role="status">{notice}</p>}
-    {notice?.lotId&&<p className="bs-notice" role="status">{notice.text} · <a href={(focused?'#alicia/suivi':'#publication')+'?lot='+notice.lotId}>Suivre le lot</a></p>}
+    {notice?.lotId&&<p className="bs-notice" role="status">{notice.text} · <a href={(focused?'#alicia/suivi':'#publication')+'?lot='+notice.lotId}>Suivre le lot</a> · <a href={scalencyQueueUrl} target="_blank" rel="noreferrer">Voir la file API Scalency</a></p>}
     {preparation&&<p className={'bs-preparation-note '+preparation.tone} role={preparation.tone==='error'?'alert':'status'} aria-atomic="true">
       <strong>{notice.label}</strong> · {preparation.text}</p>}
     {editor&&<ScalencyDraft key={editor} sharedHealth={health} focused={focused} detailed id={editor==='new'?null:editor} initialAccount={account} onProfileSaved={updateProfile} piece={params.piece} product={params.product} sku={params.sku}
@@ -295,7 +316,7 @@ export default function ScalencyBatchStudio({params,focused=false}){
         <p role="status">{blocked||(!quota||cadence.error?'Vérification du plafond…':quota.remaining+' place(s) disponible(s) aujourd’hui.')}</p>
         {!blocked&&quota&&!cadence.error&&toQueue.length<chosen.length&&<p>Les {toQueue.length} premières fiches du récapitulatif peuvent partir. Les {chosen.length-toQueue.length} autres restent en brouillon.</p>}
         <button className="sc-primary" disabled={!!blocked||sending||!toQueue.length||!!quickEdit||duplicateCheck==='Vérification des doublons…'} onClick={()=>submit(toQueue)}>{sending?'Enregistrement…':'Mettre dans la file ('+toQueue.length+')'}</button>
-        <p className="bs-meta">Scalency gère le départ de chaque annonce. Tu peux fermer cet onglet dès que le lot est enregistré.</p></>}
+        <p className="bs-meta">Garde cet onglet ouvert jusqu’à la confirmation de réception par Scalency.</p></>}
         <button className="bs-link" disabled={sending||!!quickEdit} onClick={()=>setReview(false)}>Retour à la sélection</button></>:
         <><div className="bs-actions"><button disabled={!ready.length} onClick={()=>setSelected(prev=>({...prev,...Object.fromEntries(ready.map(r=>[r.id,r]))}))}>Sélectionner les prêtes</button>
         <button className="sc-primary" disabled={!!blocked||(!chosen.length&&!ready.length)} onClick={()=>{

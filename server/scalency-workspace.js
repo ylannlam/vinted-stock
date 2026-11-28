@@ -17,7 +17,7 @@ import {managePublication} from './scalency-publication-actions.js'
 import {reschedulePublications} from './scalency-reschedule.js'
 import {activePublicationCounts,publicationTracking} from './scalency-publications.js'
 import {batchDrafts,batchImages,checkBatchSubmission,reviewEditedDraft,reviewMetadata} from './scalency-batch.js'
-import {acceptPublicationLot,publicationLots,retryLotEntry,reviewDuplicates} from './scalency-lots.js'
+import {acceptPublicationLot,publicationLots,retryLotEntry,reviewDuplicates,transmitPublicationLot} from './scalency-lots.js'
 import {catalogProduct,connectedRecords,draftSource} from './scalency-relations.js'
 import {skuFeed,skuReferences,linkSku} from './scalency-sku.js'
 import {parisDay,validDay} from '../src/lib/publications.js'
@@ -55,7 +55,7 @@ export async function syncPage(db,kind,{older=false,force=false}={}){
   if(older)return nextHistoryPage(db,kind)
   const state=checked(await db.from('scalency_sync').select('*').eq('kind',kind).maybeSingle())
   if(older&&state?.complete)return state
-  if(!older&&!force&&state&&Date.now()-Date.parse(state.updated_at)<60000)return state
+  if(!older&&!force&&state&&Date.now()-Date.parse(state.updated_at)<60000)return {...state,skipped:true}
   const stamp=now()
   const options={limit:100,cursor:older?state?.cursor_value:null}
   if(kind==='orders')Object.assign(options,{state:'all',sort:'order_date'})
@@ -71,7 +71,7 @@ export async function syncPage(db,kind,{older=false,force=false}={}){
   }
   return next
 }
-async function list(db,kind,q){
+async function collectionPage(db,kind,q,size=pageSize){
   const page=Math.max(0,Math.min(100000,parseInt(q.page,10)||0))
   let read=db.from(kind==='items'?'scalency_catalog_inventory':table).select('*',{count:'exact'}).eq('kind',kind)
   if(kind==='orders')read=read.gte('sort_at',salesStart)
@@ -85,10 +85,15 @@ async function list(db,kind,q){
   if(kind==='jobs'&&q.filter==='failed')read=read.in('payload->>status',['failed','error','attention','needs_review'])
   if(kind==='conversations'&&q.filter==='unread')read=read.eq('payload->>unread','true')
   if(kind==='orders'&&q.filter==='prepare')read=read.is('payload->>packed_at',null).in('payload->>state',['ready','to_pack','to_order','waiting','to_prepare','preparing','partial','to_ship'])
-  const r=await read.order('sort_at',{ascending:false,nullsFirst:false}).order('remote_id').order('account').range(page*pageSize,(page+1)*pageSize-1)
+  const r=await read.order('sort_at',{ascending:false,nullsFirst:false}).order('remote_id').order('account').range(page*size,(page+1)*size-1)
   checked(r)
-  const sync=checked(await db.from('scalency_sync').select('*').eq('kind',kind).maybeSingle())
-  return {rows:r.data,total:r.count,page,pageSize,sync,connected:!!process.env.SCALENCY_API_KEY}
+  return {rows:r.data,total:r.count,page,pageSize:size}
+}
+async function list(db,kind,q){
+  const [result,stamp]=await Promise.all([
+    collectionPage(db,kind,q),db.from('scalency_sync').select('*').eq('kind',kind).maybeSingle()
+  ])
+  return {...result,sync:checked(stamp),connected:!!process.env.SCALENCY_API_KEY}
 }
 async function orderDetails(db,id,account){
   let read=db.from(table).select('payload,account').eq('kind','orders').eq('remote_id',id)
@@ -193,18 +198,19 @@ export async function scalencyHandler(req,res,{db,user,role}){
     }
     if(action==='cadence'){
       res.setHeader('Cache-Control','private, no-store')
-      await syncPage(db,'jobs')
-      const [rows,counts]=await Promise.all([cadenceReport(db),activePublicationCounts()])
+      const [rows,counts]=await Promise.all([
+        syncPage(db,'jobs').then(()=>cadenceReport(db)),activePublicationCounts()
+      ])
       return res.json(rows.map(row=>({...row,queued:counts?(counts.get(row.account)??0):null})))
     }
     if(action==='publication-planning'){
       if(!validDay(q.day)||!['planned','added'].includes(q.filter))fail('Choisis une date et un filtre valides.',400)
       res.setHeader('Cache-Control','private, no-store')
       let syncDelayed=false
-      try{await syncPage(db,'jobs')}catch{syncDelayed=true}
+      const params={p_owner:user.id,p_day:q.day,p_filter:q.filter,p_account:q.account?remoteId(q.account):null,
+        p_page:Math.min(100000,Math.max(0,parseInt(q.page,10)||0))}
       const [result,counts]=await Promise.all([
-        db.rpc('scalency_publication_planning',{p_owner:user.id,p_day:q.day,p_filter:q.filter,
-          p_account:q.account?remoteId(q.account):null,p_page:Math.min(100000,Math.max(0,parseInt(q.page,10)||0))}),
+        syncPage(db,'jobs').catch(()=>{syncDelayed=true}).then(()=>db.rpc('scalency_publication_planning',params)),
         activePublicationCounts()
       ])
       const report=checked(result)
@@ -239,8 +245,12 @@ export async function scalencyHandler(req,res,{db,user,role}){
     if(collections.includes(action))return res.json(await list(db,action,q))
     if(action==='home'){
       const groups=role==='admin'?['orders','items','jobs','accounts']:['orders','items']
-      const results=await Promise.all(groups.map(k=>list(db,k,{filter:({orders:'prepare',items:'withdraw',jobs:'failed'})[k]})))
-      return res.json({connected:!!process.env.SCALENCY_API_KEY,groups:Object.fromEntries(groups.map((k,i)=>[k,{total:results[i].total,rows:results[i].rows.slice(0,5),sync:results[i].sync}]))})
+      const [pages,sync]=await Promise.all([
+        Promise.all(groups.map(k=>collectionPage(db,k,{filter:({orders:'prepare',items:'withdraw',jobs:'failed'})[k]},5))),
+        db.from('scalency_sync').select('*').in('kind',groups)
+      ])
+      const stamps=new Map(checked(sync).map(row=>[row.kind,row]))
+      return res.json({connected:!!process.env.SCALENCY_API_KEY,groups:Object.fromEntries(groups.map((k,i)=>[k,{total:pages[i].total,rows:pages[i].rows,sync:stamps.get(k)||null}]))})
     }
     if(action==='stock'){
       const page=Math.max(0,parseInt(q.page,10)||0)
@@ -278,6 +288,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
   if(action==='manage-publication')return res.json(await managePublication(db,user,b,saveRecords))
   if(action==='move-publications')return res.json(await reschedulePublications(db,user,b,saveRecords))
   if(action==='accept-lot')return res.json(await acceptPublicationLot(db,user,b))
+  if(action==='transmit-lot')return res.json(await transmitPublicationLot(db,user,b.lot,prepareScalencyPublication,saveRecords))
   if(action==='retry-lot-entry')return res.json(await retryLotEntry(db,user,b))
   if(action==='lot-duplicates')return res.json(await reviewDuplicates(db,user,b))
   if(action==='lot-review-edit'){

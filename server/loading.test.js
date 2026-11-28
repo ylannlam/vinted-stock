@@ -1,7 +1,24 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import {uploadListingGroups} from '../src/lib/listingPhotoUpload.js'
 import {createReadPool} from '../src/lib/requestPool.js'
 import {clearViewCache,setViewCacheScope,readViewCache,writeViewCache,viewCacheEpoch} from '../src/lib/viewCache.js'
+
+test('parallel listing uploads preserve the selected cover and successful siblings on failure',async()=>{
+ const files=['cover','back','detail','last']
+ const release=new Map(),added=[]
+ const transfer=file=>new Promise((resolve,reject)=>release.set(file,{resolve,reject}))
+ const work=uploadListingGroups(files,transfer,group=>added.push(...group.map(row=>row.photo)),()=>true)
+ assert.deepEqual([...release.keys()],files.slice(0,3))
+ release.get('detail').resolve('detail')
+ release.get('back').reject(Error('upload failed'))
+ release.get('cover').resolve('cover')
+ await assert.rejects(work,/upload failed/)
+ assert.deepEqual(added,['cover','detail'])
+ assert.equal(release.has('last'),false)
+ await uploadListingGroups(files,async file=>file,group=>added.push(...group.map(row=>row.photo)),()=>true)
+ assert.deepEqual(added.slice(2),files)
+})
 
 test('simultaneous identical reads share a request but have independent response bodies',async()=>{
  const pool=createReadPool();let calls=0
@@ -11,6 +28,13 @@ test('simultaneous identical reads share a request but have independent response
  await pool.read('user-a/sales',fetcher);assert.equal(calls,2)
  await Promise.all([pool.read('user-a/sales',fetcher),pool.read('user-b/sales',fetcher)]);assert.equal(calls,4)
 })
+test('a single reader consumes the original response stream',async()=>{
+ const response=Response.json({id:42})
+ const result=await createReadPool().read('board',()=>response)
+ assert.equal(result,response)
+ assert.deepEqual(await result.json(),{id:42})
+})
+
 test('a write invalidates in-flight reads for subsequent requests and errors remain retryable',async()=>{
  const pool=createReadPool();let finish
  const old=pool.read('sales',()=>new Promise(resolve=>{finish=resolve}));await Promise.resolve()

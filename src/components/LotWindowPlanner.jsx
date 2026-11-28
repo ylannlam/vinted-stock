@@ -84,7 +84,7 @@ export default function LotWindowPlanner({account,chosen,disabled,sending,onSubm
         return <li key={row.id}><time dateTime={at}>{timeLabel(at)}</time>{row.photo&&<img src={row.photo} loading="lazy" alt=""/>}
           <span>{row.fields.title||row.fields.sku||'Annonce '+position}</span></li>
       })}</ol></section>)}
-    <p className="bs-meta">Horaires d’envoi à Scalency. La mise en ligne est confirmée dans le Planning.</p>
+    <p className="bs-meta">Scalency recevra les annonces dès ta confirmation et les mettra en file pour les horaires affichés, heure de Paris. Garde cet onglet ouvert jusqu’à la confirmation de réception.</p>
     <button type="button" className="sc-primary" disabled={disabled||sending||!!issue||!(free>=count||split)}
       onClick={()=>{
         const time=Date.now()

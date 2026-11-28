@@ -12,7 +12,7 @@ function RankingCard({group,open}){
   return <article className="shop-card shop-rank-card">
     <div className="shop-photo">
       <button type="button" className="shop-photo-open" onClick={open} aria-label={'Voir le détail du SKU '+sku}>
-        <ShopCover src={photo} title={name}/>
+        <ShopCover src={photo} title={name} card/>
       </button>
       <span className={'shop-badge shop-units'+(sold?' complete':'')}>{sold} {sold>1?'vendus':'vendu'}</span>
     </div>

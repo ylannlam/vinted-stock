@@ -12,10 +12,12 @@ export default function useShopBoard(){
     const ticket=generation.current,epoch=viewCacheEpoch(),live=()=>generation.current===ticket&&epoch===viewCacheEpoch()
     let loaded=false
     setBusy(true);setError('')
-    const read=async()=>{const value=await query('shop-board');if(live()){writeViewCache(query,'shop-board',value,epoch);setBoard(value);loaded=true}}
+    const read=async()=>{const value=await query('shop-board');if(live()){writeViewCache(query,'shop-board',value,epoch);setBoard(value);loaded=true}return value}
     try{
-      await read()
+      const current=await read()
       if(!live())return
+      const age=Date.now()-Date.parse(current.checkedAt)
+      if(!force&&age>=0&&age<180000)return
       let refreshed=false
       for(const source of sources){
         let cursor=''

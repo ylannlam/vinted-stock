@@ -44,7 +44,7 @@ export function checkBatchSubmission(row,account){
 }
 export async function batchDrafts(db,user,q){
   const page=Math.max(0,parseInt(q.page,10)||0),readyOnly=q.ready==='1'&&!!q.account,pageSize=readyOnly?100:36
-  let read=db.from('listing_drafts').select('id,version,state,fields,photos,payload,updated_at',{count:'exact'}).eq('owner_id',user.id).eq('state','draft')
+  let read=db.from('listing_drafts').select('id,version,fields,photos,batch:payload->batch,updated_at',{count:'exact'}).eq('owner_id',user.id).eq('state','draft')
   if(q.account)read=read.eq('fields->>account_id',remoteId(q.account))
   if(readyOnly)read=read.eq('payload->batch->>status','ready').is('payload->>scalency_job_id',null).is('published_at',null)
     .is('vinted_id',null).is('publication_task_id',null).is('inflight',null).is('dotb_item_id',null)
@@ -54,6 +54,6 @@ export async function batchDrafts(db,user,q){
   ])
   const drafts=checked(result)
   const covers=await listingCovers(db,user.id,drafts.map(d=>d.photos?.[0]?.path))
-  return {...(counts?{draftCounts:counts.error?null:counts.data}:{}),rows:drafts.map(d=>({id:d.id,version:d.version,fields:d.payload?.batch?.status==='ready'?withBioCondition(d.fields):d.fields,updated_at:d.updated_at,
-    photo: covers.get(d.photos?.[0]?.path)?.preview||covers.get(d.photos?.[0]?.path)?.original||null,count:d.photos?.length||0,batch:d.payload?.batch?.status==='ready'?{...d.payload.batch,condition:vintedCondition}:d.payload?.batch||null})),page,pageSize,total:result.count}
+  return {...(counts?{draftCounts:counts.error?null:counts.data}:{}),rows:drafts.map(d=>({id:d.id,version:d.version,fields:d.batch?.status==='ready'?withBioCondition(d.fields):d.fields,updated_at:d.updated_at,
+    photo: covers.get(d.photos?.[0]?.path)?.preview||covers.get(d.photos?.[0]?.path)?.original||null,count:d.photos?.length||0,batch:d.batch?.status==='ready'?{...d.batch,condition:vintedCondition}:d.batch||null})),page,pageSize,total:result.count}
 }

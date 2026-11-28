@@ -102,7 +102,7 @@ export default function LotCard({ items, lotIndex, onMarkSent, onDeleteLot }) {
           {items.map(item => (
             <div key={item.id} className="bg-gray-50 rounded-lg overflow-hidden">
               {item.photo_url
-                ? <img src={item.photo_url} alt="" className="w-full aspect-square object-cover" />
+                ? <img loading="lazy" decoding="async" src={item.photo_url} alt="" className="w-full aspect-square object-cover" />
                 : <div className="w-full aspect-square bg-gray-100" />
               }
               <div className="px-1.5 py-1">

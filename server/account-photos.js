@@ -5,7 +5,8 @@ import {uploadTarget,ownedAsset,ASSET_BUCKET,checkAssetInfo,ensureAssetBucket} f
 
 const checked=result=>{if(result.error)throw result.error;return result.data}
 const fold=login=>String(login||'').trim().toLowerCase()
-const fields='id,login,version,background_id,photo_label,prompt_front,prompt_back'
+const profileSummary='id,login,version,background_id,photo_label'
+const fields=profileSummary+',prompt_front,prompt_back'
 const imageFields='id,title,image_path'
 
 async function all(build){
@@ -45,11 +46,11 @@ export function photoAccounts(remote,register,profiles,observations=[]){
   }
   return groups.filter(g=>!g.banned).sort((a,b)=>Number(b.linked)-Number(a.linked)||a.login.localeCompare(b.login,'fr'))
 }
-async function directory(db){
+async function directory(db,columns=profileSummary){
   const lists=await Promise.all([
     all(()=>db.from('scalency_records').select('remote_id,payload').eq('kind','accounts').order('remote_id')),
     all(()=>db.from('vinted_accounts').select('id,pseudo,statut').is('deleted_at',null).order('id')),
-    all(()=>db.from('account_photo_profiles').select(fields).order('id')),
+    all(()=>db.from('account_photo_profiles').select(columns).order('id')),
     all(()=>db.from('scalency_settings').select('id,value').like('id','profile-ban:%').order('id'))
   ])
   return photoAccounts(...lists)
@@ -60,6 +61,29 @@ function findAccount(groups,id){
   if(!exact)throw new AppError('Compte introuvable.',404)
   return exact
 }
+// Reusing an unexpired URL lets a browser reuse the original image after switching accounts.
+const previewLinks=new Map()
+async function signedImages(db,rows){
+  const now=Date.now(),urls=new Map(),missing=[]
+  for(const path of new Set(rows.map(row=>row.image_path))){
+    const key=JSON.stringify([db.supabaseUrl,ASSET_BUCKET,path])
+    const entry=previewLinks.get(key)
+    if(entry&&entry.until>now)urls.set(path,entry.url)
+    else missing.push(path)
+  }
+  if(missing.length){
+    const links=checked(await db.storage.from(ASSET_BUCKET).createSignedUrls(missing,3600))
+    for(const link of links){
+      if(!link.signedUrl)continue
+      urls.set(link.path,link.signedUrl)
+      const key=JSON.stringify([db.supabaseUrl,ASSET_BUCKET,link.path])
+      previewLinks.delete(key)
+      previewLinks.set(key,{url:link.signedUrl,until:now+30*60000})
+      if(previewLinks.size>500)previewLinks.delete(previewLinks.keys().next().value)
+    }
+  }
+  return urls
+}
 async function backgrounds(db,ids){
   if(ids&&!ids.length)return []
   const rows=await all(()=>{
@@ -67,8 +91,7 @@ async function backgrounds(db,ids){
     return ids?q.in('id',ids):q
   })
   if(!rows.length)return []
-  const links=checked(await db.storage.from(ASSET_BUCKET).createSignedUrls(rows.map(r=>r.image_path),3600))
-  const urls=new Map(links.map(a=>[a.path,a.signedUrl]))
+  const urls=await signedImages(db,rows)
   return rows.map(r=>({...r,image_url:urls.get(r.image_path)||''}))
 }
 function present(group,bg,detail=false){
@@ -81,11 +104,22 @@ function present(group,bg,detail=false){
 }
 export async function readPhotos(db,account,options=false){
   if(options)return {backgrounds:(await backgrounds(db)).map(b=>({id:b.id,title:b.title,image:b.image_url}))}
-  const groups=await directory(db),rows=account?[findAccount(groups,account)]:groups
-  const ids=[...new Set(rows.map(r=>r.profile?.background_id).filter(Boolean))]
+  if(account){
+    const group=findAccount(await directory(db),account)
+    if(!group.profile)return {account:present(group,null,true)}
+    const backgroundId=group.profile.background_id
+    const [details,images]=await Promise.all([
+      db.from('account_photo_profiles').select(fields).eq('id',group.profile.id).maybeSingle(),
+      backgrounds(db,backgroundId?[backgroundId]:[])
+    ])
+    const profile=checked(details)
+    const [bg]=profile?.background_id===backgroundId?images:await backgrounds(db,profile?.background_id?[profile.background_id]:[])
+    return {account:present({...group,profile},bg,true)}
+  }
+  const groups=await directory(db,profileSummary+',prompt_front')
+  const ids=[...new Set(groups.map(r=>r.profile?.background_id).filter(Boolean))]
   const assets=new Map((await backgrounds(db,ids)).map(b=>[b.id,b]))
-  const data=rows.map(g=>present(g,assets.get(g.profile?.background_id),!!account))
-  return account?{account:data[0]}:{accounts:data}
+  return {accounts:groups.map(g=>present(g,assets.get(g.profile?.background_id)))}
 }
 export function photoPatch(body){
   if(!Number.isInteger(body.version)||body.version<0||typeof body.label!=='string'||body.label.length>120||

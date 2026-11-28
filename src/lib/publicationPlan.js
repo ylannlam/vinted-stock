@@ -8,7 +8,8 @@ const MINUTE = 60000, DAY = 86400000
 
 const partsFormat = new Intl.DateTimeFormat('en-US', {timeZone: 'Europe/Paris', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'})
 function parisParts(ms) {
-  const get = type => Number(partsFormat.formatToParts(new Date(ms)).find(p => p.type === type).value)
+  const parts = partsFormat.formatToParts(ms)
+  const get = type => Number(parts.find(p => p.type === type).value)
   return {year: get('year'), month: get('month'), day: get('day'), hour: get('hour'), minute: get('minute'), second: get('second')}
 }
 export function parisOffset(ms) {
@@ -36,11 +37,13 @@ export function clockMinutes(value) {
   const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(value || ''))
   return match ? Number(match[1]) * 60 + Number(match[2]) : null
 }
+const days = new Intl.DateTimeFormat('fr-FR', {weekday: 'short', day: '2-digit', month: '2-digit', timeZone: 'UTC'})
+const times = new Intl.DateTimeFormat('fr-FR', {hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris'})
 export function dayLabel(date) {
-  return new Date(`${date}T12:00:00Z`).toLocaleDateString('fr-FR', {weekday: 'short', day: '2-digit', month: '2-digit', timeZone: 'UTC'})
+  return days.format(new Date(`${date}T12:00:00Z`))
 }
 export function timeLabel(ms) {
-  return new Date(ms).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris'})
+  return times.format(new Date(ms))
 }
 
 export function validatePlanSettings(raw) {
