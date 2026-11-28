@@ -24,11 +24,16 @@ export function useAccountHealth(enabled=true){
   },[enabled,revision])
   return {report,error,refresh}
 }
-export function isBanned(health,id){
-  return !!id&&!!health.report?.accounts.some(a=>a.id===String(id)&&a.block?.kind==='banned')
+export function isPublicationProfile(account){
+  return account?.linked===true&&account.block?.kind!=='banned'&&account.block?.kind!=='unlinked'
+}
+export function excludedPublicationAccount(health,id){
+  return !!id&&!!health.report&&!health.report.accounts.some(account=>account.id===String(id)&&isPublicationProfile(account))
 }
 export function publicationProfiles(profiles,health){
-  return health.report?profiles.filter(profile=>!isBanned(health,profile.id)):[]
+  if(!health.report||health.error)return []
+  const ids=new Set(health.report.accounts.filter(isPublicationProfile).map(account=>account.id))
+  return profiles.filter(profile=>ids.has(profile.id))
 }
 export function preparationBlock(health,id){
   if(!id)return 'Choisis le compte de publication.'

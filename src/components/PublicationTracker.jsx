@@ -5,7 +5,7 @@ import PublicationLots from './PublicationLots'
 import PublicationPlanning from './PublicationPlanning'
 import MovePublications,{moveSelectionIssue} from './MovePublications'
 import DailyPublicationCount from './DailyPublicationCount'
-import {useAccountHealth} from './ScalencyAccountHealth'
+import {isPublicationProfile,useAccountHealth} from './ScalencyAccountHealth'
 import './PublicationTracker.css'
 
 const tabs=[['planning','Planning'],['queue','À publier'],['drafts','Brouillons'],['live','Mises en ligne'],['history','Historique'],['lots','Par lot']]
@@ -71,7 +71,7 @@ export default function PublicationTracker({params}){
   const showAccountFilter=!job&&!draft&&!params.lot
   const directory=useAccountHealth(showAccountFilter)
   const directoryReady=!!directory.report&&!directory.error
-  const linkedAccounts=directoryReady?directory.report.accounts.filter(a=>a.linked===true).sort((a,b)=>a.login.localeCompare(b.login,'fr')):[]
+  const linkedAccounts=directoryReady?directory.report.accounts.filter(isPublicationProfile).sort((a,b)=>a.login.localeCompare(b.login,'fr')):[]
   const accountAvailable=linkedAccounts.some(a=>a.id===account)
   useEffect(()=>{
     if(showAccountFilter&&directoryReady&&account&&!accountAvailable)window.location.replace(pageLink(tab,'',stage))

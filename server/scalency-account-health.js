@@ -1,5 +1,7 @@
 import {remote,remoteId,ScalencyError} from './scalency-api.js'
 
+import {readBoardRows} from './team-board.js'
+
 const unavailable='État du compte indisponible. Actualise pour réessayer avant de préparer une annonce.'
 const labels={banned:'Compte banni',restricted:'Compte restreint',blocked:'Compte bloqué',publication:'Publication suspendue',unlinked:'Compte non relié',unknown:'État indisponible'}
 const normalize=value=>String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[_-]+/g,' ').trim()
@@ -82,13 +84,19 @@ const readPublicAccounts=createHealthReader()
 // Public account pauses can be empty even when Scalency Desktop saw Vinted's block page.
 export async function readAccountHealth(db,read=readPublicAccounts){
   const getRecords=prefix=>db.from('scalency_settings').select('id,value').like('id',prefix+':%')
-  const [report,bans,restrictions]=await Promise.all([read(),getRecords('profile-ban'),getRecords('profile-restriction')])
+  const registeredBans=readBoardRows(()=>db.from('vinted_accounts').select('id,pseudo',{count:'exact'})
+    .eq('statut','banni_def').is('deleted_at',null).order('id'))
+  const [report,bans,restrictions,permanent]=await Promise.all([read(),getRecords('profile-ban'),getRecords('profile-restriction'),registeredBans])
   if(bans.error||restrictions.error)throw new ScalencyError(unavailable,503)
   const observations=new Map([...bans.data,...restrictions.data].map(row=>[row.id,row.value]))
+  const username=value=>String(value||'').trim().toLowerCase()
+  const bannedIds=new Set(permanent.map(row=>row.id))
+  const bannedNames=new Set(permanent.map(row=>username(row.pseudo)).filter(Boolean))
   const now=Date.now()
   return {...report,accounts:report.accounts.map(account=>{
     const ban=observations.get('profile-ban:'+account.id)
     if(ban?.status==='banned')return {...account,block:{...block('banned'),observedAt:ban.checked_at}}
+    if(bannedIds.has(account.id)||bannedNames.has(username(account.login)))return {...account,block:block('banned')}
     const restriction=observations.get('profile-restriction:'+account.id)
     if(account.block?.kind==='banned'||restriction?.status!=='restricted')return account
     const end=date(restriction.until)

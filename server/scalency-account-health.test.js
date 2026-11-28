@@ -4,6 +4,15 @@ import {accountBlock,createHealthReader,requireListingAccount,readAccountHealth}
 
 const now=Date.parse('2026-11-24T07:00:00Z'),end='2026-11-26T07:00:00.000Z'
 const account=(agent={},extra={})=>({id:'demo',login:'boutique-test',linked:true,agent:{paused:null,paused_until:null,publication_pause:null,paused_actions:[],...agent},...extra})
+function healthDb(records,registry=[]){
+  return {from(table){
+    if(table==='scalency_settings')return {select:()=>({like:async(_,pattern)=>({data:records.filter(r=>r.id.startsWith(pattern.slice(0,-1)))})})}
+    assert.equal(table,'vinted_accounts')
+    return {select(){return this},eq(key,value){assert.equal(key,'statut');assert.equal(value,'banni_def');return this},
+      is(key,value){assert.equal(key,'deleted_at');assert.equal(value,null);return this},order(){return this},
+      async range(from,to){return {count:registry.length,data:registry.slice(from,to+1)}}}
+  }}
+}
 const block=(agent,extra)=>accountBlock(account(agent,extra),now)
 test('bannissement, restriction temporaire et pause ciblée ont des libellés distincts',()=>{
   assert.equal(block({paused:'account_banned'}).kind,'banned')
@@ -54,7 +63,7 @@ test('une page de bannissement confirmée prime sur une pause publique vide et r
   assert.equal(block({state:{vinted_ban:{status:'banned'}}}).kind,'banned')
   const read=createHealthReader(async()=>({data:[account(),account({}, {id:'autre'})]}),()=>now)
   const rows=[{id:'profile-ban:demo',value:{status:'banned',checked_at:end}}]
-  const db={from:()=>({select:()=>({like:async()=>({data:rows})})})}
+  const db=healthDb(rows)
   const report=await readAccountHealth(db,read)
   assert.equal(report.accounts[0].block.observedAt,end)
   assert.equal(report.accounts[1].block,null)
@@ -66,7 +75,7 @@ test('une page de bannissement confirmée prime sur une pause publique vide et r
 test('une restriction du journal bloque malgré les pauses publiques vides et sa levée ne supprime jamais un ban',async()=>{
   const read=createHealthReader(async()=>({data:[account()]}),()=>now)
   const rows=[{id:'profile-restriction:demo',value:{status:'restricted',checked_at:end}}]
-  const db={from:()=>({select:()=>({like:async(_,pattern)=>({data:rows.filter(r=>r.id.startsWith(pattern.slice(0,-1)))})})})}
+  const db=healthDb(rows)
   const current=async()=>(await readAccountHealth(db,read)).accounts[0].block?.kind
   assert.equal(await current(),'restricted')
   rows[0].value.until='2000-01-01T00:00:00Z'
@@ -78,4 +87,13 @@ test('une restriction du journal bloque malgré les pauses publiques vides et sa
   assert.equal(await current(),'banned')
   rows[1].value.status='cleared'
   assert.equal(await current(),undefined)
+})
+
+test('un bannissement définitif du registre empêche de préparer sur un ancien profil encore relié',async()=>{
+  const registry=[{id:'local',pseudo:' Boutique-Test '},{id:'autre',pseudo:'ancien-pseudo'}]
+  const read=createHealthReader(async()=>({data:[account({}, {agent:null}),account({}, {id:'autre',login:'nouveau-pseudo'}),account({}, {id:'actif',login:'boutique-test2'})]}),()=>now)
+  const report=()=>readAccountHealth(healthDb([],registry),read)
+  await assert.rejects(requireListingAccount('demo',report),{status:423})
+  await assert.rejects(requireListingAccount('autre',report),{status:423})
+  await requireListingAccount('actif',report)
 })

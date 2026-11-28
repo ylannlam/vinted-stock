@@ -1,6 +1,6 @@
 import {useState} from 'react'
 import PublicationPlanning from './PublicationPlanning'
-import {useAccountHealth} from './ScalencyAccountHealth'
+import {isPublicationProfile,useAccountHealth} from './ScalencyAccountHealth'
 import './PublicationTracker.css'
 import AccountPhotos from './AccountPhotos'
 import PublicationLots from './PublicationLots'
@@ -10,7 +10,7 @@ import './AliciaSpace.css'
 
 function AliciaPlanning(){
   const [account,setAccount]=useState(''),[revision,setRevision]=useState(0)
-  const health=useAccountHealth(),accounts=(health.report?.accounts||[]).filter(a=>a.linked)
+  const health=useAccountHealth(),accounts=(health.report?.accounts||[]).filter(isPublicationProfile)
   const selected=accounts.some(a=>a.id===account)?account:''
   return <main className="sc-work pub-console"><h1>Planning</h1>
     <div className="pub-filters"><label>Compte<select value={selected} onChange={e=>setAccount(e.target.value)}>

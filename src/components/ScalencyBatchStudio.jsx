@@ -4,7 +4,7 @@ import {retryIntake,watchIntake} from '../lib/batchIntake'
 import {accountBrandIssue,listingColors} from '../lib/scalencyQuick'
 import {PhotoAccountPanel} from './AccountPhotos'
 import {CadenceSettings,useCadence} from './PublicationCadence'
-import {AccountHealthNotice,isBanned,preparationBlock,publicationProfiles,useAccountHealth} from './ScalencyAccountHealth'
+import {AccountHealthNotice,excludedPublicationAccount,preparationBlock,publicationProfiles,useAccountHealth} from './ScalencyAccountHealth'
 import BatchEntry from './BatchEntry'
 import ScalencyDraft from './ScalencyDraft'
 import ScalencyQuickAccount from './ScalencyQuickAccount'
@@ -82,8 +82,8 @@ export default function ScalencyBatchStudio({params,focused=false}){
   const lock=useRef(false),active=useRef(true),userPicked=useRef(false),pending=useRef(new Set())
   const returnToReview=useRef(false),openedPlanning=useRef(false)
   const health=useAccountHealth()
-  const banned=isBanned(health,requestedAccount)
-  const account=health.report&&!banned?requestedAccount:''
+  const excluded=excludedPublicationAccount(health,requestedAccount)
+  const account=health.report&&!health.error&&!excluded?requestedAccount:''
   const availableProfiles=publicationProfiles(profiles,health)
   const cadence=useCadence()
   const quota=!cadence.error&&cadence.rows.find(row=>row.account===account)
@@ -149,8 +149,8 @@ export default function ScalencyBatchStudio({params,focused=false}){
     if(owner)try{localStorage.setItem('scalency-last-account:'+owner,id)}catch{}
   },[owner])
   useEffect(()=>{
-    if(banned)choose('')
-  },[banned,choose])
+    if(excluded)choose('')
+  },[excluded,choose])
   function generate(row){
     const reason=preparationBlock(health,row.fields.account_id)
     if(reason){setError(reason);return}

@@ -30,6 +30,7 @@ test('le plafond reste unique et les modifications suivent le compte et le rythm
   Object.assign(rows[2],{posted:10,remaining:0})
   const accounts = rows.map(({account,login}) => ({id:account,login,brand:'Marque'})).reverse()
   accounts.push({id:'banni',login:'profil-banni'},{id:'restreint',login:'profil-restreint'},{id:'inconnu',login:'sans-suivi'})
+  accounts.push({id:'ancien',login:'ancien-cache'},{id:'retiré',login:'compte-délié'})
   const bans = new Set(['banni'])
   const writes = []
   let pendingSave,cadenceDown=false
@@ -40,7 +41,7 @@ test('le plafond reste unique et les modifications suivent le compte et le rythm
         return structuredClone(rows)
       }
       if(view === 'quick-profiles') return {accounts}
-      if(view === 'account-health') return {accounts:accounts.map(a=>({...a,block:
+      if(view === 'account-health') return {accounts:accounts.filter(a=>a.id!=='ancien').map(a=>({...a,linked:a.id!=='retiré',block:
         bans.has(a.id)?{kind:'banned',label:'Compte banni'}:a.id==='restreint'?{kind:'restricted',label:'Compte restreint'}:null})),checkedAt:new Date().toISOString()}
       if(view === 'batch-drafts') return {rows:[],total:0,draftCounts:{alice:47,restreint:1}}
       throw Error(view)

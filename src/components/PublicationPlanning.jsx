@@ -3,7 +3,7 @@ import {query} from '../lib/scalency'
 import {parisDay,validDay} from '../lib/publications'
 import {addDays,dayLabel,timeLabel} from '../lib/publicationPlan'
 import {publicationDate,publicationProgress} from '../lib/publicationTracking'
-import {preparationBlock} from './ScalencyAccountHealth'
+import {isPublicationProfile,preparationBlock} from './ScalencyAccountHealth'
 
 function status(row){
   if(row.job_status){
@@ -47,7 +47,7 @@ export default function PublicationPlanning({account,health,revision,focused=fal
   const current=result?.key===key?result:null,data=current?.data
   const publishedDay=day===today?'aujourd’hui':'le '+dayLabel(day)
   const linked=new Map((health.report?.accounts||[]).filter(a=>a.linked).map(a=>[String(a.id),a]))
-  const cards=health.report&&data?data.accounts.filter(a=>linked.has(a.account)):[]
+  const cards=health.report&&data?data.accounts.filter(a=>isPublicationProfile(linked.get(a.account))):[]
   const rows=(data?.rows||[]).filter(r=>linked.has(r.account))
   function chooseDay(next){setDay(next);setPage(0);onViewChange?.(next,filter)}
   function chooseFilter(next){setFilter(next);setPage(0);onViewChange?.(selectedDay,next)}

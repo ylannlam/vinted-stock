@@ -28,7 +28,8 @@ function database(tables){
         if(patch)matches.forEach(r=>Object.assign(r,patch))
         return {data:structuredClone(matches)}
       }
-      const query={select(){return query},eq(k,v){filters.push(r=>r[k]===v);return query},like(k,v){filters.push(r=>r[k].startsWith(v.slice(0,-1)));return query},update(v){patch=v;return query},
+      const query={select(){return query},is(k,v){return query.eq(k,v)},order(){return query},
+        range(from,to){const {data}=execute();return {data:data.slice(from,to+1),count:data.length}},eq(k,v){filters.push(r=>r[k]===v);return query},like(k,v){filters.push(r=>r[k].startsWith(v.slice(0,-1)));return query},update(v){patch=v;return query},
         insert(v){if(table.some(r=>r.request_id===v.request_id))return {error:{code:'23505'}};table.push({...v});return {data:v}},
         upsert(v){table.push(...v);return {data:v}},maybeSingle(){return {data:execute().data[0]||null}},
         single(){return query.maybeSingle()},then(resolve,reject){return Promise.resolve(execute()).then(resolve,reject)}}
@@ -40,7 +41,7 @@ test('le lot envoie une seule fois les versions relues du même compte',async t=
   const options={catalog:{id:10,title:'Robes de soirée'},conditions:[{id:2,title:'Très bon état'},{id:6,title:'Neuf sans étiquette'}],size_groups:[{sizes:[{id:3,title:'S'}]}],package_sizes:[{id:1,title:'Petit'}]}
   const fields={account_id:account,brand_title:'Maison',sku:'ref',price:'25',size_text:'S',title:'Robe noire S',description:'Robe noire à sequins.',catalog_id:10,status_id:6,size_id:3,color_ids:[1],package_size_id:1}
   const drafts=Array.from({length:10},(_,i)=>({id:'draft-'+i,owner_id:user.id,version:3,state:'draft',fields:{...fields,sku:'ref-'+i},photos:[{path:'photo'}],payload:{batch:reviewMetadata(options,[])}}))
-  const db=database({listing_drafts:drafts,scalency_settings:[{id:'profile-ban:restreint',value:{status:'banned',checked_at:'2026-11-23T22:50:57Z'}},{id:'listing-brand:'+account,value:{name:'Maison'}}],
+  const db=database({vinted_accounts:[],listing_drafts:drafts,scalency_settings:[{id:'profile-ban:restreint',value:{status:'banned',checked_at:'2026-11-23T22:50:57Z'}},{id:'listing-brand:'+account,value:{name:'Maison'}}],
     scalency_records:[{kind:'accounts',remote_id:account,payload:{linked:true}}],scalency_product_keys:[],scalency_commands:[]})
   const previous=process.env.SCALENCY_API_KEY;process.env.SCALENCY_API_KEY='test-fixture'
   t.after(()=>{if(previous===undefined)delete process.env.SCALENCY_API_KEY;else process.env.SCALENCY_API_KEY=previous})

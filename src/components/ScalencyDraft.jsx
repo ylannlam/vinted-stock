@@ -11,7 +11,7 @@ import {uploadListingPhoto} from '../lib/api'
 import {emptyListing,validateListingPhoto,listingSizes,matchingSize} from '../lib/listingStudio'
 import {applyListingPresets} from '../lib/listingSettings'
 
-import {AccountHealthNotice,isBanned,preparationBlock,publicationProfiles,useAccountHealth} from './ScalencyAccountHealth'
+import {AccountHealthNotice,excludedPublicationAccount,preparationBlock,publicationProfiles,useAccountHealth} from './ScalencyAccountHealth'
 
 function ChoosePiece({onChoose,busy}){
   const [page,setPage]=useState(0),[rows,setRows]=useState([]),[total,setTotal]=useState(0),[error,setError]=useState('')
@@ -32,15 +32,15 @@ export default function ScalencyDraft({id,sku,piece,product,onClose,onQueued,onG
   const ownHealth=useAccountHealth(!sharedHealth)
   const health=sharedHealth||ownHealth
   const availableProfiles=publicationProfiles(profiles,health)
-  const banned=isBanned(health,fields.account_id)
-  const pickerAccount=health.report&&!banned?fields.account_id:''
+  const excluded=excludedPublicationAccount(health,fields.account_id)
+  const pickerAccount=health.report&&!health.error&&!excluded?fields.account_id:''
   const blocked=preparationBlock(health,fields.account_id)
   useEffect(()=>{
-    if(!banned||id||version!==null)return
+    if(!excluded||id||version!==null)return
     accountChosen.current=true
     setFields(f=>({...f,account_id:''}))
     setPrepared(false);setApproved(false);setMessage('')
-  },[banned,id,version])
+  },[excluded,id,version])
   const defaultSize=profiles.find(a=>a.id===fields.account_id)?.default_size||''
   useEffect(()=>{
     if(id||version!==null||sizeOrigin.current!=='default')return

@@ -18,6 +18,7 @@ test('le filtre Publications suit les liaisons Scalency, y compris après actual
   const redirects=[]
   window.location={replace:url=>redirects.push(url)}
   let directory=[{id:'c',login:'Chloé',linked:true,block:{kind:'restricted'}},{id:'b',login:'Béa',linked:false},{id:'a',login:'Alice',linked:true}]
+  directory.push({id:'banned',login:'Retiré',linked:true,block:{kind:'banned'}})
   let publications=[]
   globalThis.readPublication=async (view,q)=>{
     if(view==='account-health'){
