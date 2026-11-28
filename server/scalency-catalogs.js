@@ -1,8 +1,37 @@
-import {remote,ScalencyError} from './scalency-api.js'
+import {remote,remoteId,ScalencyError} from './scalency-api.js'
 import {listingMetadata} from './listing-studio-core.js'
 import {womensClothingCatalog} from './womens-clothing-catalog.js'
 const cacheId='listing-catalogs-fr'
 const check=r=>{if(r.error)throw r.error;return r.data}
+
+const temporaryReferenceError=error=>[425,429,502,503,504].includes(error?.status)
+  ||['TimeoutError','AbortError'].includes(error?.name)
+  ||/référentiel Vinted se charge/i.test(error?.message)
+
+export class CatalogTemporarilyUnavailable extends ScalencyError {
+  constructor(){super('Les options Vinted de cette catégorie sont temporairement indisponibles.',503)}
+}
+
+export async function readCategoryOptions(category,read=remote,secondary=listingMetadata,wait=ms=>new Promise(r=>setTimeout(r,ms))){
+  const id=remoteId(category),path='catalogs/'+id
+  try{return await read(path)}
+  catch(error){
+    if(!temporaryReferenceError(error))throw error
+    // Both sources describe the same French Vinted category. Never reuse another category's options.
+    try{
+      const options=await secondary(path+'/options?country=FR&locale=fr')
+      if(options?.catalog?.id===Number(id)&&!options.offline&&Array.isArray(options.conditions)
+        &&Array.isArray(options.package_sizes)&&Array.isArray(options.size_groups))return options
+    }catch{/* Scalency may finish loading its reference data before the second read. */}
+    if(error.status===429)throw new CatalogTemporarilyUnavailable()
+    await wait(2000)
+    try{return await read(path)}
+    catch(retryError){
+      if(!temporaryReferenceError(retryError))throw retryError
+      throw new CatalogTemporarilyUnavailable()
+    }
+  }
+}
 // The paginated Scalency index can end at a department, even when its leaf
 // categories and their listing options are available by ID.
 export function mergeListingCatalogs(primary,extra=[]){
@@ -42,6 +71,5 @@ export async function refreshListingCatalogs(db){
 }
 export async function listingCatalogs(db){
   const data=check(await db.from('scalency_settings').select('value').eq('id',cacheId).maybeSingle())
-  if(!data?.value?.rows?.length)throw new ScalencyError('Le catalogue des catégories est en cours de synchronisation.',503)
-  return mergeListingCatalogs(data.value.rows)
+  return mergeListingCatalogs(data?.value?.rows||[])
 }

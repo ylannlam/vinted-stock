@@ -10,7 +10,7 @@ import {prepareQuickDraft,quickProfiles,saveQuickBrand,saveQuickSize,verifyQuick
 import {bioCondition,conditionForCatalog,withBioCondition} from '../src/lib/scalencyQuick.js'
 import {listingFacts} from '../src/lib/library.js'
 import {catalogChoices,matchingSize} from '../src/lib/listingStudio.js'
-import {listingCatalogs} from './scalency-catalogs.js'
+import {listingCatalogs,readCategoryOptions} from './scalency-catalogs.js'
 import {updateSeoDetails} from '../src/lib/vintedSeo.js'
 import {nextHistoryPage} from './scalency-history.js'
 import {managePublication} from './scalency-publication-actions.js'
@@ -133,7 +133,7 @@ async function photosFor(db,photos,seconds){
   return checked(await db.storage.from(ASSET_BUCKET).createSignedUrls(photos.map(p=>p.path),seconds)).map(x=>{if(!x.signedUrl)fail('Une photo est indisponible.',409);return x.signedUrl})
 }
 async function catalogConditions(fields){
-  return fields.catalog_id?remote('catalogs/'+remoteId(fields.catalog_id)):null
+  return fields.catalog_id?readCategoryOptions(fields.catalog_id):null
 }
 function applyCondition(fields,options){
   const next={...withBioCondition(fields),status_id:conditionForCatalog(options)}
@@ -267,7 +267,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
     if(action==='catalogs')return res.json(await remote('catalogs',{query:{limit:100,cursor:q.cursor}}))
     if(action==='catalog-tree')return res.json({data:await listingCatalogs(db)})
     if(action==='catalog-choices')return res.json({data:catalogChoices(await listingCatalogs(db))})
-    if(action==='category')return res.json(await remote('catalogs/'+remoteId(q.id)))
+    if(action==='category')return res.json(await readCategoryOptions(q.id))
     if(action==='connection')return res.json({configured:!!process.env.SCALENCY_API_KEY,webhook:!!checked(await db.from('scalency_settings').select('id').eq('id','webhook').not('value->>id','is',null).maybeSingle())})
     fail('Vue inconnue.',404)
   }
@@ -381,13 +381,13 @@ export async function scalencyHandler(req,res,{db,user,role}){
     if(['generate','autofill','autopost','batch-generate'].includes(action))await requireWorkspaceAccount(db,row.fields.account_id)
     if(action==='batch-generate'){
       const started=now(),version=row.version+1
-      const payload={...row.payload,scalency_source:'stock-vinted',batch:{status:'running',started}}
+      const payload={...row.payload,scalency_source:'stock-vinted',batch:{...row.payload?.batch,status:'running',started}}
       if(row.payload?.batch?.status==='running'&&Date.now()-Date.parse(row.payload.batch.started)<600000)fail('Cette annonce est déjà en cours de remplissage.',409)
       const locked=checked(await db.from('listing_drafts').update({payload,version,updated_at:started}).eq('owner_id',user.id).eq('id',row.id).eq('state','draft').eq('version',row.version).select('id').maybeSingle())
       if(!locked)fail('Le brouillon a changé. Actualise la liste.',409)
       try{return res.json(await prepareQuickDraft(db,user,req,{...row,payload,version},(db,photos)=>batchImages(db,user.id,photos),reviewMetadata))}
       catch(error){
-        const batch={status:'error',missing:[error.message||'Le remplissage a été interrompu.']}
+        const batch={...payload.batch,status:'error',missing:[error.message||'Le remplissage a été interrompu.']}
         checked(await db.from('listing_drafts').update({payload:{...payload,batch},version:version+1,updated_at:now()}).eq('owner_id',user.id).eq('id',row.id).eq('state','draft').eq('version',version))
         throw error
       }

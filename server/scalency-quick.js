@@ -1,5 +1,5 @@
-import {ScalencyError,remote,remoteId} from './scalency-api.js'
-import {listingCatalogs} from './scalency-catalogs.js'
+import {ScalencyError,remoteId} from './scalency-api.js'
+import {CatalogTemporarilyUnavailable,listingCatalogs,readCategoryOptions} from './scalency-catalogs.js'
 import {draftSource} from './scalency-relations.js'
 import {generateListingText,listingAiToken,listingFields} from './listing-studio-core.js'
 import {readListingSettings} from './listing-settings.js'
@@ -55,18 +55,16 @@ export async function verifyQuickFields(db,fields,options){
   const missing=quickIssues(fields,options)
   if(missing.length)throw new ScalencyError('À compléter : '+missing.join(', ')+'.',409)
 }
-export async function prepareQuickDraft(db,user,req,row,photosFor,review){
+async function generateQuickFields(db,req,row,photosFor,settings){
   const {fields}=row
-  if(!/^\d{1,5}(?:[.]\d{1,2})?$/.test(fields.price)||Number(fields.price)<=0||!row.photos.length)throw new ScalencyError('Ajoute les photos et un prix positif.')
   const photos=row.photos.length<=8?row.photos:[...row.photos.slice(0,6),...row.photos.slice(-2)]
-  const [brand,presets,catalogs,source,urls,defaultSize]=await Promise.all([
-    accountBrand(db,fields.account_id),readListingSettings(db,fields.account_id),listingCatalogs(db),
+  const [catalogs,source,urls,defaultSize]=await Promise.all([
+    listingCatalogs(db),
     draftSource(db,row.stock_item_id,row.catalog_product_id,fields.sku),photosFor(db,photos,300),
     fields.size_text?'':accountSize(db,fields.account_id)
   ])
   const product=source.product
   const size=fields.size_text||source.stock?.size||defaultSize
-  const settings={...presets.effective,condition:vintedCondition,package:'Petit',no_brand:false,description_footer:''}
   const facts=listingFacts(product,size)
   const result=await generateListingText({...row,fields:{...fields,size_text:size,seo_condition:bioCondition}},urls,catalogs,listingColors,
     {token:listingAiToken(req),settings,quick:true,shein:facts?{details:facts.details}:null})
@@ -77,22 +75,35 @@ export async function prepareQuickDraft(db,user,req,row,photosFor,review){
     if(labels.size===1)stockSize=[...labels][0]
   }
   const sizeText=size||result.label_size||stockSize
-  let category=result.catalog_id,options=null
+  const copy=composeVintedSeo(result.seoParts,{size:sizeText,condition:bioCondition,measures:listingFacts(product,sizeText)?.measures})
+  return {fields:{...fields,title:result.title,description:result.description,...copy,seo_condition:bioCondition,
+    catalog_id:result.catalog_id,status_id:null,size_id:null,package_size_id:null,size_text:sizeText,color_ids:result.color_ids,item_attributes:[]},
+    productId:product?.id||null,model:result.usage?.model||null}
+}
+
+export async function prepareQuickDraft(db,user,req,row,photosFor,review){
+  const {fields}=row
+  if(!/^\d{1,5}(?:[.]\d{1,2})?$/.test(fields.price)||Number(fields.price)<=0||!row.photos.length)throw new ScalencyError('Ajoute les photos et un prix positif.')
+  const [brand,presets]=await Promise.all([accountBrand(db,fields.account_id),readListingSettings(db,fields.account_id)])
+  const settings={...presets.effective,condition:vintedCondition,package:'Petit',no_brand:false,description_footer:''}
+  const batch=row.payload?.batch
+  const generated=review&&batch?.catalog_pending&&fields.catalog_id&&fields.title&&fields.description
+    ?{fields,productId:row.catalog_product_id,model:batch.ai_model}
+    :await generateQuickFields(db,req,row,photosFor,settings)
+  let category=generated.fields.catalog_id,options=null,catalogPending=false
   if(category){
-    try{options=await remote('catalogs/'+remoteId(category))}
+    try{options=await readCategoryOptions(category)}
     catch(error){
-      if(error.status!==404)throw error
-      // A category can be retired between refreshing the index and preparing a draft.
-      category=null
+      if(error.status===404)category=null
+      else if(error instanceof CatalogTemporarilyUnavailable)catalogPending=true
+      else throw error
     }
   }
-  const next=applyListingPresets({...fields,brand_id:null,brand_title:brand,title:result.title,description:result.description,
-    catalog_id:category,status_id:conditionForCatalog(options),size_id:null,package_size_id:null,size_text:sizeText,color_ids:result.color_ids,item_attributes:[]},options,settings)
-  const copy=composeVintedSeo(result.seoParts,{size:sizeText,condition:bioCondition,measures:listingFacts(product,sizeText)?.measures})
-  const safe=listingFields({...next,...copy,seo_condition:bioCondition},{scalency:true})
-  const missing=quickIssues(safe,options)
-  const metadata=review?{payload:{...row.payload,scalency_source:'stock-vinted',batch:{...review(options,missing,safe),ai_model:result.usage?.model||null}}}:{}
-  const saved=checked(await db.from('listing_drafts').update({...metadata,fields:safe,catalog_product_id:product?.id||null,version:row.version+1,updated_at:new Date().toISOString()}).eq('id',row.id).eq('owner_id',user.id).eq('version',row.version).eq('state','draft').select('id,fields,version').maybeSingle())
+  const next=applyListingPresets({...generated.fields,catalog_id:category,brand_id:null,brand_title:brand,status_id:conditionForCatalog(options)},options,settings)
+  const safe=listingFields(next,{scalency:true})
+  const missing=quickIssues(safe,options).map(issue=>catalogPending&&issue==='Catégorie Vinted'?'Texte enregistré. Options de la catégorie Vinted en attente.':issue)
+  const metadata=review?{payload:{...row.payload,scalency_source:'stock-vinted',batch:{...review(options,missing,safe),ai_model:generated.model,...(catalogPending?{catalog_pending:true}:{})}}}:{}
+  const saved=checked(await db.from('listing_drafts').update({...metadata,fields:safe,catalog_product_id:generated.productId,version:row.version+1,updated_at:new Date().toISOString()}).eq('id',row.id).eq('owner_id',user.id).eq('version',row.version).eq('state','draft').select('id,fields,version').maybeSingle())
   if(!saved)throw new ScalencyError('Le brouillon a été modifié. Rouvre-le.',409)
   return {...saved,missing}
 }
