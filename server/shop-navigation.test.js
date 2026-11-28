@@ -1,9 +1,26 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import {readFile} from 'node:fs/promises'
 import {createRequire,Module} from 'node:module'
 import {fileURLToPath} from 'node:url'
 import {parseHTML} from 'linkedom'
 import {build} from 'esbuild'
+import postcss from 'postcss'
+
+test('les liens de vente occupent une zone cliquable continue si leur texte revient à la ligne',async()=>{
+  const files={
+    'ShopBoard.css':['.sale-product a','.shop-cart .shop-alert a','.shop-cart-row details a'],
+    'SkuActivity.css':['.sku-line a']
+  }
+  for(const [file,selectors] of Object.entries(files)){
+    const css=postcss.parse(await readFile(new URL('../src/components/'+file,import.meta.url),'utf8'))
+    for(const selector of selectors){
+      let display
+      css.walkRules(rule=>{if(rule.selectors.includes(selector))rule.walkDecls('display',decl=>{display=decl.value})})
+      assert.ok(['block','inline-block','flex','inline-flex'].includes(display),selector)
+    }
+  }
+})
 
 test('dressing, sélection, fiches à imprimer et bordereaux sur demande',async()=>{
   const rootDir=fileURLToPath(new URL('..',import.meta.url))
@@ -99,6 +116,7 @@ test('dressing, sélection, fiches à imprimer et bordereaux sur demande',async(
     assert.match(document.querySelector('.shop-sku-notice').textContent,/enregistré sur Scalency/)
     await act(async()=>root.render(React.createElement(mod.exports.SalesDesk,{params:{}})))
     assert.equal(document.querySelectorAll('.shop-sales tbody tr').length,1)
+    assert.equal(document.querySelector('.sale-product a').getAttribute('href'),'#ventes?id=c1&account=Exemple')
     await click(document.querySelector('.sale-product .shop-copy'));assert.deepEqual(copies,Array(4).fill('TEST-4'))
     assert.ok(button('Imprimer les bordereaux').disabled)
     await click(button('Cocher les bordereaux'))

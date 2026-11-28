@@ -40,7 +40,7 @@
 .shop-rank tbody th{font-weight:500;min-width:230px}.shop-rank th button,.sale-product{display:flex;gap:10px;align-items:center;text-align:left}.shop-rank th small,.sale-product small,.sale-account small,.sale-state small{display:block;color:var(--muted);font-size:.76rem;margin-top:3px}
 .shop-mini{width:48px;height:58px;min-width:48px;overflow:hidden;border-radius:6px}.shop-mini img{width:100%;height:100%;object-fit:cover}
 .shop-unmatched{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.sale-products{width:46%}.sale-product+.sale-product{margin-top:7px}
-.sale-product a{font-weight:620;color:var(--ink);text-decoration:none}.sale-product a:hover{text-decoration:underline}.sale-price{font-weight:700}.sale-state{min-width:146px}.shop-sales tr.picked{background:#eef7ed}.sale-tick{width:36px}
+.sale-product a{display:block;font-weight:620;color:var(--ink);text-decoration:none}.sale-product a:hover{text-decoration:underline}.sale-price{font-weight:700}.sale-state{min-width:146px}.shop-sales tr.picked{background:#eef7ed}.sale-tick{width:36px}
 .shop-product-detail{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;color:#193833}
 .shop-detail-photo{aspect-ratio:4/5;background:#f0f0e9;border-radius:9px;overflow:hidden}.shop-product-detail dl>div{display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #e3e8e2;padding:6px 0}
 .shop-product-detail dd{overflow-wrap:anywhere}.shop-product-detail a{display:block;margin-top:9px;text-decoration:underline}.shop-sku-form{display:grid;gap:8px;margin-top:15px}.shop-sku-form input{width:100%}
@@ -85,5 +85,6 @@
 .shop-cart-row details{font-size:.8rem;margin-top:6px}
 .shop-cart-row summary{cursor:pointer}
 .shop-cart-row details a{display:block;color:var(--accent);text-decoration:underline}
+.shop-cart .shop-alert a{display:inline-block;max-width:100%;overflow-wrap:anywhere}
 .shop-cart-row .shop-button{text-align:center}
 @media(max-width:640px){.shop-cart-row{grid-template-columns:48px minmax(0,1fr);gap:10px}.shop-cart-row .shop-mini{width:48px}.shop-cart-row>a{grid-column:2;justify-self:start}}
