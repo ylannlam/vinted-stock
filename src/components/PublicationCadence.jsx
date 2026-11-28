@@ -1,5 +1,6 @@
 import {useCallback,useEffect,useRef,useState} from 'react'
 import {act,query} from '../lib/scalency'
+import {isPublicationProfile} from './ScalencyAccountHealth'
 import './PublicationCadence.css'
 
 export function useCadence(){
@@ -68,14 +69,16 @@ export function CadenceSettings({row,onSaved,blocked}){
   </section>
 }
 export function CadenceOverview({health}){
-  const {rows,error,refresh}=useCadence()
+  const {rows,error,refresh,loading}=useCadence()
+  const accounts=health.report?.accounts.filter(isPublicationProfile)||[]
+  const byId=new Map(rows.map(r=>[r.account,r]))
   return <section className="cadence-overview"><h2>Publications du jour</h2>
-    {error?<p role="alert">{error} <button onClick={refresh}>Réessayer</button></p>:<div className="cadence-scroll"><table>
+    {health.error?<p>Comptes de publication indisponibles.</p>:error?<p role="alert">{error} <button onClick={refresh}>Réessayer</button></p>:loading||!health.report?<p role="status">Chargement des comptes…</p>:!accounts.length?<p>Aucun compte de publication relié.</p>:<div className="cadence-scroll"><table>
       <thead><tr>{['Compte','Rythme','Publiées','En file','Places restantes'].map(label=><th key={label}>{label}</th>)}</tr></thead>
-      <tbody>{rows.map(r=>{
-        const block=health.report?.accounts.find(a=>a.id===r.account)?.block
-        return <tr key={r.account}><th scope="row"><a href={'#annonces?account='+encodeURIComponent(r.account)}>{r.login}</a></th>
-          <td>{rhythm(r)}</td><td>{r.posted}</td><td>{r.queued??'Indisponible'}</td><td>{block?.label||<strong>{r.remaining} / {r.day_limit}</strong>}</td></tr>
+      <tbody>{accounts.map(a=>{
+        const r=byId.get(a.id)
+        return <tr key={a.id}><th scope="row">{a.block?a.login:<a href={'#annonces?account='+encodeURIComponent(a.id)}>{a.login}</a>}</th>
+          <td>{r?rhythm(r):'—'}</td><td>{r?.posted??'—'}</td><td>{r?.queued??'Indisponible'}</td><td>{a.block?.label||(r?<strong>{r.remaining} / {r.day_limit}</strong>:'—')}</td></tr>
       })}</tbody></table></div>}
   </section>
 }
