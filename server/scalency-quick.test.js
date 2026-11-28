@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {quickIssues} from '../src/lib/scalencyQuick.js'
 import {prepareQuickDraft,quickProfiles,saveQuickBrand,saveQuickSize,verifyQuickFields} from './scalency-quick.js'
-import {CatalogTemporarilyUnavailable,readCategoryOptions} from './scalency-catalogs.js'
+import {CatalogTemporarilyUnavailable,readCategoryOptions,workspaceCategoryOptions} from './scalency-catalogs.js'
 import {reviewMetadata} from './scalency-batch.js'
 import {draftPayload} from './scalency-api.js'
 const options={catalog:{id:10},conditions:[{id:2}],size_groups:[{sizes:[{id:3,title:'S'}]}],package_sizes:[{id:1,title:'Petit'}]}
@@ -82,12 +82,37 @@ test('seules les combinaisons confirmées pour les bodies en France sont propos�
   const body={...fields,catalog_id:1835,size_id:1739,status_id:2,package_size_id:1}
   assert.deepEqual(quickIssues(body,observed),[])
   assert.deepEqual(quickIssues({...body,size_id:4},observed),['Taille sur l’étiquette'])
-  await assert.rejects(readCategoryOptions(1778,read,secondary,wait),CatalogTemporarilyUnavailable)
+  await assert.rejects(readCategoryOptions(999,read,secondary,wait),CatalogTemporarilyUnavailable)
   const forbidden=Object.assign(Error('Accès refusé'),{status:403})
   await assert.rejects(readCategoryOptions(1835,async()=>{throw forbidden},secondary,wait),e=>e===forbidden)
   const current={...options,catalog:{id:1835},conditions:[{id:6,title:'Neuf avec étiquette'}]}
   assert.equal(await readCategoryOptions(1835,async()=>current,secondary,wait),current)
   assert.equal(await readCategoryOptions(1835,read,async()=>current,wait),current)
+})
+test('le catalogue indisponible conserve les options effectivement publiées pour chaque type de robe',async()=>{
+  const unavailable=async()=>{throw Object.assign(Error('Référentiel indisponible'),{status:503})}
+  for(const [id,title,labels] of [[1777,"Robes de bal de fin d'année",['M','L','XL']],[1778,'Robes de soirée',['S','M','L','XL']]]){
+    const options=await readCategoryOptions(id,unavailable,unavailable,async()=>{})
+    assert.equal(options.catalog.title,title)
+    assert.deepEqual(options.size_groups[0].sizes.map(s=>s.title),labels)
+    assert.deepEqual(quickIssues({...fields,catalog_id:id,size_id:1741,status_id:2,package_size_id:1},options),[])
+    assert.deepEqual(quickIssues({...fields,catalog_id:id,size_id:999},options),['Taille sur l’étiquette'])
+  }
+})
+test('les options complètes d’une catégorie restent utilisables en cas de panne et isolées des autres catégories',async()=>{
+  const rows=new Map(),db={from(){let key;return {select(){return this},eq(_,id){key=id;return this},
+    async maybeSingle(){return {data:rows.has(key)?{value:rows.get(key)}:null}},
+    async upsert(row){rows.set(row.id,row.value);return {data:null}}}}}
+  const full={...options,catalog:{id:10},attributes:[{code:'style',required:true}]}
+  const down=async()=>{throw new CatalogTemporarilyUnavailable()}
+  assert.equal(await workspaceCategoryOptions(db,10,async()=>full),full)
+  const saved=rows.get('category-options-fr:10')
+  saved.at=new Date(Date.now()-3600000).toISOString()
+  assert.equal(await workspaceCategoryOptions(db,10,down),full)
+  await assert.rejects(workspaceCategoryOptions(db,11,down),CatalogTemporarilyUnavailable)
+  await assert.rejects(workspaceCategoryOptions(db,10,async()=>{throw Object.assign(Error('retirée'),{status:404})}),/retirée/)
+  saved.at=new Date(Date.now()-8*86400000).toISOString()
+  await assert.rejects(workspaceCategoryOptions(db,10,down),CatalogTemporarilyUnavailable)
 })
 test('un conflit cite les deux marques et la validation accepte la correction seule',async()=>{
   const db={from(table){

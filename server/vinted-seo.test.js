@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {composeVintedSeo,updateSeoDetails} from '../src/lib/vintedSeo.js'
-import {generateListingText} from './listing-studio-core.js'
+import {garmentCategory,generateListingText} from './listing-studio-core.js'
 import {mergeListingCatalogs} from './scalency-catalogs.js'
 import {catalogChoices} from '../src/lib/listingStudio.js'
 import {quickIssues} from '../src/lib/scalencyQuick.js'
@@ -48,10 +48,20 @@ test('Le générateur Scalency construit le format à partir de données structu
 
 test('Scalency sélectionne le bal pour une robe volumineuse et conserve la catégorie des autres vêtements',async()=>{
  for(const [is_dress,is_ball_gown,expected] of [[true,true,1777],[true,false,1778],[false,false,2]]){
-   const fetcher=async()=>Response.json({choices:[{message:{content:JSON.stringify({...parts,is_dress,is_ball_gown,catalog_id:2,color_ids:[],label_size:'',review_notes:''})}}]})
+   const fetcher=async()=>Response.json({choices:[{message:{content:JSON.stringify({...parts,title:is_dress?parts.title:'Veste bordeaux',is_dress,is_ball_gown,catalog_id:2,color_ids:[],label_size:'',review_notes:''})}}]})
    const result=await generateListingText({fields:{}},[],[{id:2,title:'Vêtements',parent_id:null}],[],{fetcher,token:'test',quick:true})
    assert.equal(result.catalog_id,expected)
  }
+})
+test('le titre précise la pièce et le volume visible prime sur la seule longueur ou la taille',()=>{
+ for(const [title,visual,expected] of [
+   ['Bodies en dentelle', {isDress:true},1835],['Bodysuit noir',{},1835],
+   ['Robe bodycon en dentelle taille XL',{isDress:false,catalogId:1835},1778],
+   ['Robe de bal longue noire tulle bustier',{},1777],
+   ['Robe longue bleu marine col halter froncée jupe volants fluide soirée',{},1778],
+   ['Robe longue de soirée taille XS',{isDress:true,ball:true},1777],
+   ['Jupe bouffante style robe de bal',{catalogId:198},198]
+ ])assert.equal(garmentCategory(title,visual),expected)
 })
 
 test('Claude prépare une fiche à partir de photos privées, sans clé Gemini',async()=>{

@@ -170,7 +170,7 @@ test('the AI receives the Shein characteristics and the size measurements are ap
   const shein=listingFacts({...chartProduct,details:chartProduct.details.slice(0,6)},'S')
   const result=await generateListingText({fields:{size_text:'S',notes:''}},['https://img/1.jpg'],[],[],{fetcher,token:'t',shein})
   const payload=JSON.parse(sent.messages[1].content[0].text)
-  assert.deepEqual(payload.fiche_fournisseur,{caracteristiques:[{name:'Composition',value:'100% Polyester'}]})
+  assert.deepEqual(payload.fiche_fournisseur,{titre:shein.title,caracteristiques:[{name:'Composition',value:'100% Polyester'}]})
   assert.match(sent.messages[0].content,/N’écris aucune mesure/)
   assert.match(result.description,/Taille : S\nMesures \(taille S\) :\n– Tour de poitrine : 88 cm[\s\S]*\n\nMots-clés/)
   await generateListingText({fields:{size_text:'S',notes:''}},['https://img/1.jpg'],[],[],{fetcher,token:'t'})

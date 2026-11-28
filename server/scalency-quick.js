@@ -1,7 +1,7 @@
 import {ScalencyError,remoteId} from './scalency-api.js'
-import {CatalogTemporarilyUnavailable,listingCatalogs,readCategoryOptions} from './scalency-catalogs.js'
+import {CatalogTemporarilyUnavailable,listingCatalogs,workspaceCategoryOptions} from './scalency-catalogs.js'
 import {draftSource} from './scalency-relations.js'
-import {generateListingText,listingAiToken,listingFields} from './listing-studio-core.js'
+import {garmentCategory,generateListingText,listingAiToken,listingFields} from './listing-studio-core.js'
 import {readListingSettings} from './listing-settings.js'
 import {applyListingPresets} from '../src/lib/listingSettings.js'
 import {accountBrandIssue,listingColors,quickIssues,vintedCondition,bioCondition,conditionForCatalog} from '../src/lib/scalencyQuick.js'
@@ -67,7 +67,7 @@ async function generateQuickFields(db,req,row,photosFor,settings){
   const size=fields.size_text||source.stock?.size||defaultSize
   const facts=listingFacts(product,size)
   const result=await generateListingText({...row,fields:{...fields,size_text:size,seo_condition:bioCondition}},urls,catalogs,listingColors,
-    {token:listingAiToken(req),settings,quick:true,shein:facts?{details:facts.details}:null})
+    {token:listingAiToken(req),settings,quick:true,shein:facts?{title:facts.title,details:facts.details}:null})
   let stockSize=''
   if(!size&&!result.label_size&&product?.id){
     const units=checked(await db.from('scalency_physical_catalog').select('size').eq('product_id',product.id).eq('status','en_stock'))
@@ -100,12 +100,14 @@ export async function prepareQuickDraft(db,user,req,row,photosFor,review){
   const [brand,presets]=await Promise.all([accountBrand(db,fields.account_id),readListingSettings(db,fields.account_id)])
   const settings={...presets.effective,condition:vintedCondition,package:'Petit',no_brand:false,description_footer:''}
   const batch=row.payload?.batch
-  const generated=review&&batch?.catalog_pending&&fields.catalog_id&&fields.title&&fields.description
-    ?{fields,productId:row.catalog_product_id,model:batch.ai_model}
+  const savedCategory=garmentCategory(fields.title,{ball:fields.catalog_id===1777,catalogId:fields.catalog_id})
+  const generated=review&&batch?.catalog_pending&&savedCategory&&fields.title&&fields.description
+    ?{fields:savedCategory===fields.catalog_id?fields:{...fields,catalog_id:savedCategory,size_id:null,item_attributes:[]},
+      productId:row.catalog_product_id,model:batch.ai_model}
     :await generateQuickFields(db,req,row,photosFor,settings)
   let category=generated.fields.catalog_id,options=null
   if(category){
-    try{options=await readCategoryOptions(category)}
+    try{options=await workspaceCategoryOptions(db,category)}
     catch(error){
       if(error.status===404)category=null
       else if(!(error instanceof CatalogTemporarilyUnavailable))throw error

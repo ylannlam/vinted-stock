@@ -337,6 +337,7 @@ export default function ScalencyBatchStudio({params,focused=false}){
           return <article className="bs-row bs-draft-row" key={row.id} aria-busy={state==='running'}><input type="checkbox" aria-label={'Sélectionner '+(f.sku||f.title||'ce brouillon')} checked={!!selected[row.id]} disabled={!account||f.account_id!==account||state==='running'} onChange={()=>toggle(row)}/>
             <Cover row={row}/><div className="bs-row-body"><h3>{f.title||f.sku||'Brouillon sans titre'}</h3>
             <p className="bs-meta">{[f.sku&&'SKU '+f.sku,f.size_text&&'Taille '+f.size_text,f.price&&formatMoney(f.price),!account&&profiles.find(a=>a.id===f.account_id)?.login].filter(Boolean).join(' · ')}</p>
+              {row.batch?.category&&<p className="bs-meta">Catégorie Vinted · {row.batch.category}</p>}
             <span className={'bs-badge '+state}>{state==='running'&&row.batch?.catalog_pending?'Vérification de la catégorie…':labels[state]}</span>
             {state==='catalog'&&<p className="bs-meta">{row.batch.catalog_issue||'Le titre et la description sont enregistrés.'}</p>}
             {state==='catalog'&&issues&&<p className="bs-problem">Champs à vérifier · {issues}</p>}

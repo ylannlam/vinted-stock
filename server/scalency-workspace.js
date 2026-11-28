@@ -10,7 +10,7 @@ import {describeDraftCatalogIssues,prepareQuickDraft,quickProfiles,saveQuickBran
 import {bioCondition,conditionForCatalog,withBioCondition} from '../src/lib/scalencyQuick.js'
 import {listingFacts} from '../src/lib/library.js'
 import {catalogChoices,matchingSize} from '../src/lib/listingStudio.js'
-import {CatalogTemporarilyUnavailable,listingCatalogs,readCategoryOptions} from './scalency-catalogs.js'
+import {CatalogTemporarilyUnavailable,listingCatalogs,workspaceCategoryOptions} from './scalency-catalogs.js'
 import {updateSeoDetails} from '../src/lib/vintedSeo.js'
 import {nextHistoryPage} from './scalency-history.js'
 import {managePublication} from './scalency-publication-actions.js'
@@ -137,8 +137,8 @@ async function photosFor(db,photos,seconds){
   if(!photos.length)return []
   return checked(await db.storage.from(ASSET_BUCKET).createSignedUrls(photos.map(p=>p.path),seconds)).map(x=>{if(!x.signedUrl)fail('Une photo est indisponible.',409);return x.signedUrl})
 }
-async function catalogConditions(fields){
-  return fields.catalog_id?readCategoryOptions(fields.catalog_id):null
+async function catalogConditions(db,fields){
+  return fields.catalog_id?workspaceCategoryOptions(db,fields.catalog_id):null
 }
 function applyCondition(fields,options){
   const next={...withBioCondition(fields),status_id:conditionForCatalog(options)}
@@ -147,7 +147,7 @@ function applyCondition(fields,options){
 }
 export async function prepareScalencyPublication(db,row,{quick=false,schedule=null}={}){
   await requireWorkspaceAccount(db,row.fields.account_id)
-  const options=await catalogConditions(row.fields)
+  const options=await catalogConditions(db,row.fields)
   row.fields=applyCondition(row.fields,options)
   if(!row.fields.status_id)fail('Très bon état indisponible pour cette catégorie.',409)
   if(quick)await verifyQuickFields(db,row.fields,options)
@@ -277,7 +277,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
     if(action==='catalogs')return res.json(await remote('catalogs',{query:{limit:100,cursor:q.cursor}}))
     if(action==='catalog-tree')return res.json({data:await listingCatalogs(db)})
     if(action==='catalog-choices')return res.json({data:catalogChoices(await listingCatalogs(db))})
-    if(action==='category')return res.json(await readCategoryOptions(q.id))
+    if(action==='category')return res.json(await workspaceCategoryOptions(db,q.id))
     if(action==='connection')return res.json({configured:!!process.env.SCALENCY_API_KEY,webhook:!!checked(await db.from('scalency_settings').select('id').eq('id','webhook').not('value->>id','is',null).maybeSingle())})
     fail('Vue inconnue.',404)
   }
@@ -298,7 +298,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
     await requireWorkspaceAccount(db,row.fields.account_id)
     const price=String(b.price??'').trim().replace(',','.'),size=String(b.size??'').trim()
     if(!/^\d{1,5}(?:\.\d{1,2})?$/.test(price)||Number(price)<=0||!size||size.length>60)fail('Vérifie le prix et la taille.')
-    const options=await catalogConditions(row.fields),fields={...row.fields,price}
+    const options=await catalogConditions(db,row.fields),fields={...row.fields,price}
     if(size!==fields.size_text){
       const sizeId=matchingSize(size,options)
       if(!sizeId)fail('Choisis une taille proposée pour cette catégorie dans le formulaire détaillé.')
@@ -362,7 +362,7 @@ export async function scalencyHandler(req,res,{db,user,role}){
     const id=remoteId(b.id), input=listingFields(b.fields,{scalency:true})
     if(input.account_id||action==='batch-create')await requireWorkspaceAccount(db,input.account_id)
     const [options,photos]=await Promise.all([
-      catalogConditions(input).catch(error=>{
+      catalogConditions(db,input).catch(error=>{
         if(error instanceof CatalogTemporarilyUnavailable&&action!=='batch-create')return null
         throw error
       }),

@@ -4,7 +4,7 @@ import {womensClothingCatalog} from './womens-clothing-catalog.js'
 const cacheId='listing-catalogs-fr'
 const check=r=>{if(r.error)throw r.error;return r.data}
 
-const temporaryReferenceError=error=>[425,429,502,503,504].includes(error?.status)
+const temporaryReferenceError=error=>[425,429,500,502,503,504].includes(error?.status)
   ||['TimeoutError','AbortError'].includes(error?.name)
   ||/référentiel Vinted se charge/i.test(error?.message)
 
@@ -12,20 +12,29 @@ export class CatalogTemporarilyUnavailable extends ScalencyError {
   constructor(){super('Les options Vinted de cette catégorie sont temporairement indisponibles.',503)}
 }
 
-function confirmedOptionsWhileLoading(id,error){
-  // French Bodies listings with Vinted receipts on Nov 5 (M) and Nov 27 (XL), 2026.
-  // Only these choices were validated together. Publication still requires a live Scalency dry run.
-  if(id==='1835'&&/référentiel Vinted se charge/i.test(error?.message)){
-    return {catalog:{id:1835,title:'Bodies'},source:'confirmed-listings',
-      conditions:[{id:2,title:'Très bon état'}],package_sizes:[{id:1,title:'Petit'}],
-      size_groups:[{sizes:[{id:1739,title:'M'},{id:1741,title:'XL'}]}],attributes:[]}
-  }
-  throw new CatalogTemporarilyUnavailable()
+// Combinations recorded on published French listings, verified on 2026-11-28.
+// Keep the size set specific to the category. Final submission still does a live dry run.
+const publishedSizes=new Map([
+  ['1777',[[1739,'M'],[1740,'L'],[1741,'XL']]],
+  ['1778',[[1738,'S'],[1739,'M'],[1740,'L'],[1741,'XL']]],
+  ['1835',[[1739,'M'],[1741,'XL']]]
+])
+function confirmedOptionsWhileLoading(id){
+  const sizes=publishedSizes.get(id)
+  if(!sizes)throw new CatalogTemporarilyUnavailable()
+  const {title}=womensClothingCatalog.find(row=>row.id===Number(id))
+  return {catalog:{id:Number(id),title},source:'confirmed-listings',conditions:[{id:2,title:'Très bon état'}],
+    package_sizes:[{id:1,title:'Petit'}],size_groups:[{sizes:sizes.map(([id,title])=>({id,title}))}],attributes:[]}
 }
 
 export async function readCategoryOptions(category,read=remote,secondary=listingMetadata,wait=ms=>new Promise(r=>setTimeout(r,ms))){
   const id=remoteId(category),path='catalogs/'+id
-  try{return await read(path)}
+  const primary=async()=>{
+    const result=await read(path)
+    if(result?.offline)throw new CatalogTemporarilyUnavailable()
+    return result
+  }
+  try{return await primary()}
   catch(error){
     if(!temporaryReferenceError(error))throw error
     // Both sources describe the same French Vinted category. Never reuse another category's options.
@@ -34,14 +43,38 @@ export async function readCategoryOptions(category,read=remote,secondary=listing
       if(options?.catalog?.id===Number(id)&&!options.offline&&Array.isArray(options.conditions)
         &&Array.isArray(options.package_sizes)&&Array.isArray(options.size_groups))return options
     }catch{/* Scalency may finish loading its reference data before the second read. */}
-    if(error.status===429)return confirmedOptionsWhileLoading(id,error)
+    if(error.status===429)return confirmedOptionsWhileLoading(id)
     await wait(2000)
-    try{return await read(path)}
+    try{return await primary()}
     catch(retryError){
       if(!temporaryReferenceError(retryError))throw retryError
-      return confirmedOptionsWhileLoading(id,retryError)
+      return confirmedOptionsWhileLoading(id)
     }
   }
+}
+export async function workspaceCategoryOptions(db,category,read=readCategoryOptions){
+  const id=remoteId(category),key='category-options-fr:'+id
+  const usable=options=>options?.catalog?.id===Number(id)&&!options.offline&&options.conditions?.length>0
+    &&options.package_sizes?.length>0&&Array.isArray(options.size_groups)&&Array.isArray(options.attributes)
+  let saved
+  try{
+    saved=check(await db.from('scalency_settings').select('value').eq('id',key).maybeSingle())?.value
+  }catch{/* Reference data is optional. Reading the live catalogue still works. */}
+  const age=Date.now()-Date.parse(saved?.at)
+  const cached=age>=0&&age<7*86400000&&usable(saved.options)?saved.options:null
+  if(cached&&age<15*60000)return cached
+  let options
+  try{options=await read(id)}
+  catch(error){
+    if(error instanceof CatalogTemporarilyUnavailable&&cached)return cached
+    throw error
+  }
+  if(options?.source==='confirmed-listings')return cached||options
+  if(usable(options)){
+    try{check(await db.from('scalency_settings').upsert({id:key,value:{at:new Date().toISOString(),options}}))}
+    catch{/* The current options are usable even when the copy cannot be saved. */}
+  }
+  return options
 }
 // The paginated Scalency index can end at a department, even when its leaf
 // categories and their listing options are available by ID.
